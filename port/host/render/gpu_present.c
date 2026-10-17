@@ -20,6 +20,9 @@
 #include "../../runtime/core/session_log.h"
 #include "../../runtime/mods/textures.h"
 #include "../../gfx/g3d_interp.h"
+#if defined(__ANDROID__)
+#include "../android/bottom_screen.h"
+#endif
 
 #include <math.h>
 #include <stdarg.h>
@@ -1190,6 +1193,92 @@ static SDL_ScaleMode mode_for(SDL_Texture *t, float w, float h)
     return video.smooth_scaling ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST;
 }
 
+#if defined(__ANDROID__)
+/* The lower screen on the second display (host/android/bottom_screen.h): drawn into a texture of its
+ * own size, read back and shown there. */
+static SDL_Texture *bottom_target;
+static int bottom_w, bottom_h;
+
+static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
+{
+    const int w = (int)from->w, h = (int)from->h;
+    SDL_Texture *previous;
+    SDL_Surface *read, *rgba;
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    if (bottom_target == NULL || bottom_w != w || bottom_h != h) {
+        if (bottom_target != NULL) {
+            SDL_DestroyTexture(bottom_target);
+        }
+        bottom_target = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_TARGET, w, h);
+        bottom_w = w;
+        bottom_h = h;
+        if (bottom_target == NULL) {
+            return;
+        }
+    }
+    previous = SDL_GetRenderTarget(renderer);
+    SDL_SetRenderTarget(renderer, bottom_target);
+    SDL_SetTextureScaleMode(lower, SDL_SCALEMODE_NEAREST);
+    SDL_RenderTexture(renderer, lower, from, NULL);
+    read = SDL_RenderReadPixels(renderer, NULL);
+    SDL_SetRenderTarget(renderer, previous);
+    if (read == NULL) {
+        return;
+    }
+    rgba = read->format == SDL_PIXELFORMAT_ABGR8888 ? read : SDL_ConvertSurface(read, SDL_PIXELFORMAT_ABGR8888);
+    if (rgba != NULL) {
+        khdays_bottom_present((const uint8_t *)rgba->pixels, rgba->w, rgba->h, rgba->pitch);
+        if (rgba != read) {
+            SDL_DestroySurface(rgba);
+        }
+    }
+    SDL_DestroySurface(read);
+}
+
+/* With the lower screen on the second display: the window shows the upper screen alone, as wide as it
+ * was drawn. Returns 0 when there is nothing to show that way yet. */
+static int draw_two_displays(void)
+{
+    SDL_Texture *upper, *lower;
+    SDL_FRect upper_from, lower_from;
+    float wu;
+    if (port2d_drawn) {
+        int cu = 0, cl = 0;
+        float pw = 0.0f, ph = 0.0f;
+        upper = screen_texture(port2d_upper, &cu);
+        lower = screen_texture(!port2d_upper, &cl);
+        if (upper == NULL || lower == NULL) {
+            return 0;
+        }
+        SDL_GetTextureSize(upper, &pw, &ph);
+        upper_from = (SDL_FRect){0.0f, 0.0f, pw, ph};
+        lower_from = ds_columns(lower, cl);
+        wu = (float)cu;
+    } else if (screens != NULL) {
+        upper = lower = screens;
+        upper_from = (SDL_FRect){0.0f, 0.0f, W, H};
+        lower_from = (SDL_FRect){0.0f, H, W, H};
+        wu = W;
+    } else {
+        return 0;
+    }
+    present_size((int)wu, H, 0.0f, 1.0e9f); /* the stylus is on the other display */
+    {
+        const SDL_FRect at = {0.0f, 0.0f, wu, H};
+        SDL_SetTextureScaleMode(upper, mode_for(upper, wu, H));
+        SDL_RenderTexture(renderer, upper, &upper_from, &at);
+    }
+    if (hd != NULL && hd_upper) {
+        const SDL_FRect place = {(wu - (float)hd_columns) / 2, 0.0f, (float)hd_columns, H};
+        SDL_RenderTexture(renderer, hd, NULL, &place);
+    }
+    send_bottom(lower, &lower_from);
+    return 1;
+}
+#endif
+
 void khdays_present_draw(void)
 {
     const float left = (float)(columns - W) / 2;
@@ -1208,6 +1297,11 @@ void khdays_present_draw(void)
         hd_movie = NULL;
         khdays_movie_subtitles_release();
     }
+#if defined(__ANDROID__)
+    if (khdays_bottom_attached() && draw_two_displays()) {
+        return;
+    }
+#endif
     if (one_drawn) {
         /* the one picture, as wide as it was made, in the middle; nothing touched */
         int made = 0;

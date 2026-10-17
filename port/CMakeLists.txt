@@ -55,7 +55,10 @@ else()
     set(KHDAYS_CXX_FLAGS ${KHDAYS_COMMON} ${KHDAYS_CRT} -std=gnu++20 -Wall -Wno-unused-function -Wno-missing-braces)
     set(KHDAYS_CXX_STD ${KHDAYS_COMMON} -std=gnu++20)
     set(KHDAYS_QUIET ${KHDAYS_COMMON} -w)
-    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17)
+    # what MSVC warns of in the decomp's C and builds (C89's implicit declarations, a bare return in a
+    # function with a result, a pointer passed as an integer) clang does too
+    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17 -Wno-error=implicit-function-declaration
+        -Wno-error=return-type -Wno-error=int-conversion -Wno-error=incompatible-pointer-types)
     set(KHDAYS_UTF8 "")
 endif()
 
@@ -323,7 +326,8 @@ else()
         host/movies/movie_hd_none.c
         host/net/net_posix.c
         host/posix/shim.c
-        host/posix/android_log.c)
+        host/posix/android_log.c
+        host/android/bottom_screen.c)  # the lower screen on a second display
 endif()
 
 # The input layer -- the control profile and its settings file, the

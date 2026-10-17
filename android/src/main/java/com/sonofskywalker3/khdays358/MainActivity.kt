@@ -12,9 +12,12 @@ import org.libsdl.app.SDLSurface
 
 /**
  * The game's activity. SDLActivity owns the surface, input and the native thread; this subclass names
- * the libraries to load, keeps the screen on and asks the display for its fastest refresh rate.
+ * the libraries to load, keeps the screen on, asks the display for its fastest refresh rate, and runs
+ * the [BottomScreenHost] that puts the lower DS screen on a second display when there is one.
  */
 class MainActivity : SDLActivity() {
+
+    private var bottomScreen: BottomScreenHost? = null
 
     override fun getLibraries(): Array<String> = arrayOf("SDL3", "main")
 
@@ -29,6 +32,13 @@ class MainActivity : SDLActivity() {
         // the game's folder on the shared storage (data/, mods/, saves/): made now so it can be filled
         getExternalFilesDir(null)?.let { Log.i(TAG, "game folder: ${it.absolutePath}") }
         preferFastestDisplayMode()
+        bottomScreen = BottomScreenHost(this).also { it.start() }
+    }
+
+    override fun onDestroy() {
+        bottomScreen?.stop()
+        bottomScreen = null
+        super.onDestroy()
     }
 
     /** The display mode with the highest refresh rate at the current resolution. */

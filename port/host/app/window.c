@@ -3,6 +3,9 @@
  * player's profile, the settings menu opens on Esc or the pad's settings button, sound_output.c plays.
  * Closing the window ends the process (docs/PLATFORM.md, "The PC's side"). */
 #include "host.h"
+#if defined(__ANDROID__)
+#include "../android/bottom_screen.h"
+#endif
 #include "devices.h"
 #include "../render/gpu_present.h"
 #include "../movies/movie_hd.h"
@@ -788,6 +791,11 @@ uint16_t khdays_host_buttons(void)
 int khdays_host_touch(int *x, int *y)
 {
     KhdaysInputSnapshot now;
+#if defined(__ANDROID__)
+    if (khdays_bottom_touch(x, y)) { /* the lower screen on the second display */
+        return 1;
+    }
+#endif
     khdays_host_input(&now);
     if (!now.touching) {
         return 0;
