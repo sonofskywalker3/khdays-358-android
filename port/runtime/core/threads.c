@@ -171,3 +171,16 @@ void khdays_threads_init(void)
         khdays_hal_unimplemented("the game's thread cannot become a context");
     }
 }
+
+int khdays_threads_list(unsigned int *contexts, KhdaysContext **running, int room)
+{
+    int n = 0;
+    for (int i = 0; i < nslots && n < room; ++i) {
+        if (slots[i].context != 0) {
+            contexts[n] = slots[i].context;
+            running[n] = slots[i].running;
+            ++n;
+        }
+    }
+    return n;
+}

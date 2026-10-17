@@ -130,3 +130,8 @@ void khdays_context_delete(KhdaysContext *context)
     }
     free(context);
 }
+
+void *khdays_context_stopped_at(const KhdaysContext *context)
+{
+    return context != current ? context->sp : NULL;
+}

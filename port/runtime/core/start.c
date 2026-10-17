@@ -28,6 +28,7 @@ void khdays_android_log_streams(void); /* host/posix/android_log.c */
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 #ifdef _WIN32
@@ -155,6 +156,24 @@ static void take_working_folder(void)
         snprintf(working_folder_note, sizeof(working_folder_note), "working folder: the app's could not be taken");
     }
     fprintf(stderr, "khdays-native: %s\n", working_folder_note);
+    {
+        /* An app is given no environment: environment.txt there, one NAME=value a line, sets the
+         * port's switches (KHDAYS_...) as a PC's environment would. */
+        FILE *f = fopen("environment.txt", "r");
+        char line[512];
+        while (f != NULL && fgets(line, sizeof(line), f) != NULL) {
+            char *equals = strchr(line, '=');
+            line[strcspn(line, "\r\n")] = '\0';
+            if (line[0] != '#' && equals != NULL && equals != line) {
+                *equals = '\0';
+                setenv(line, equals + 1, 1);
+                fprintf(stderr, "khdays-native: environment.txt: %s=%s\n", line, equals + 1);
+            }
+        }
+        if (f != NULL) {
+            fclose(f);
+        }
+    }
 #else
     const char *own = SDL_GetBasePath();
     if (SDL_GetPathInfo("data/extracted", NULL)) {

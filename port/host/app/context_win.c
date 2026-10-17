@@ -143,3 +143,9 @@ void khdays_context_delete(KhdaysContext *context)
     }
     free(context);
 }
+
+void *khdays_context_stopped_at(const KhdaysContext *context)
+{
+    (void)context;
+    return NULL; /* diag.c walks Windows' threads itself */
+}

@@ -12,6 +12,8 @@
 #include "../input/input.h"
 #include "session_log.h"
 #include "window.h"
+#include "threads.h"
+#include "../../host/app/context.h"
 #include "io.h"
 
 /* the HAL's, in the rewritten game's data area */
@@ -538,6 +540,7 @@ void khdays_diag_callers(char *out, int size, int skip)
 #include <ucontext.h>
 #include <unistd.h>
 #include <unwind.h>
+#include <pthread.h>
 
 /* The handlers before the crash report's (the system's, which writes the tombstone): the crash goes on
  * to them once reported. */
@@ -622,9 +625,93 @@ static void on_crash(int signal_number, siginfo_t *info, void *context_pointer)
     sigaction(signal_number, &previous_crash[signal_number], NULL);
 }
 
+/* The frame chain from a stopped thread's registers: every file keeps its frame pointer
+ * (-fno-omit-frame-pointer), each frame record the caller's frame pointer and the return address. */
+static void print_frame_chain(uintptr_t pc, uintptr_t lr, uintptr_t fp)
+{
+    fprintf(stderr, "  #0  %p %s\n", (void *)pc, symbol_name((const void *)pc));
+    fprintf(stderr, "  #1  %p %s (link register)\n", (void *)lr, symbol_name((const void *)lr));
+    for (int depth = 2; depth < 48 && fp != 0 && (fp & 7) == 0; ++depth) {
+        const uintptr_t *record = (const uintptr_t *)fp;
+        const uintptr_t next = record[0], back = record[1];
+        if (back == 0) {
+            break;
+        }
+        fprintf(stderr, "  #%-2d %p %s\n", depth, (void *)back, symbol_name((const void *)back));
+        if (next <= fp) {
+            break;
+        }
+        fp = next;
+    }
+    fflush(stderr);
+}
+
+/* KHDAYS_STALL_SECONDS: after that long the game thread is stopped by a signal and its stack printed,
+ * with the SDK's threads, and the process ends (exit code 5), as diag.c's watchdog does on Windows. */
+#define STALL_SIGNAL SIGUSR2
+static pthread_t game_thread;
+
+static void on_stall_signal(int signal_number, siginfo_t *info, void *context_pointer)
+{
+    const ucontext_t *context = (const ucontext_t *)context_pointer;
+    (void)signal_number;
+    (void)info;
+#if defined(__aarch64__)
+    print_frame_chain((uintptr_t)context->uc_mcontext.pc, (uintptr_t)context->uc_mcontext.regs[30],
+                      (uintptr_t)context->uc_mcontext.regs[29]);
+#else
+    (void)context;
+#endif
+}
+
+static void *watchdog(void *parameter)
+{
+    const unsigned seconds = (unsigned)(uintptr_t)parameter;
+    sleep(seconds);
+    fprintf(stderr, "khdays-native: still running after %u s; the game thread is at:\n", seconds);
+    fflush(stderr);
+    pthread_kill(game_thread, STALL_SIGNAL);
+    usleep(300000);
+    {
+        /* The SDK's threads: OSi_ThreadInfo (0x02044330) current and list, each OSThread with state at
+         * +0x64, next at +0x68, priority at +0x70. */
+        const unsigned current = *(volatile unsigned *)KHDAYS_W(0x02044334);
+        unsigned t = *(volatile unsigned *)KHDAYS_W(0x02044338);
+        fprintf(stderr, "interrupts: IME %08x IE %08x IF %08x\n", IO32(0x208), IO32(0x210), IO32(0x214));
+        fprintf(stderr, "SDK threads (current %08x, rescheduling %u, cpsr %02x):\n", current,
+                *(volatile unsigned short *)KHDAYS_W(0x02044330), khdays_cpsr_value());
+        for (int n = 0; t != 0 && n < 32; ++n) {
+            fprintf(stderr, "  %08x state %u priority %u\n", t, *(volatile unsigned *)KHDAYS_W(t + 0x64),
+                    *(volatile unsigned *)KHDAYS_W(t + 0x70));
+            t = *(volatile unsigned *)KHDAYS_W(t + 0x68);
+        }
+    }
+    {
+        /* where each of the game's threads stopped: the switch's frame (context_arm64.S) holds its x29
+         * at +80 and its x30 at +88 */
+        unsigned int contexts[32];
+        KhdaysContext *running[32];
+        const int n = khdays_threads_list(contexts, running, 32);
+        for (int i = 0; i < n; ++i) {
+            const uint8_t *frame = (const uint8_t *)khdays_context_stopped_at(running[i]);
+            if (frame == NULL) {
+                continue;
+            }
+            fprintf(stderr, "thread of context %08x stopped in:\n", contexts[i]);
+            print_frame_chain(*(const uintptr_t *)(frame + 88), *(const uintptr_t *)(frame + 88),
+                              *(const uintptr_t *)(frame + 80));
+        }
+    }
+    fflush(stderr);
+    usleep(300000);
+    _exit(5);
+    return NULL;
+}
+
 void khdays_diag_init(void)
 {
     static const int signals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
+    const char *stall = getenv("KHDAYS_STALL_SECONDS");
     struct sigaction action;
     memset(&action, 0, sizeof(action));
     action.sa_sigaction = on_crash;
@@ -632,6 +719,15 @@ void khdays_diag_init(void)
     sigemptyset(&action.sa_mask);
     for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); ++i) {
         sigaction(signals[i], &action, &previous_crash[signals[i]]);
+    }
+    if (stall != NULL && atoi(stall) > 0) {
+        pthread_t thread;
+        game_thread = pthread_self();
+        action.sa_sigaction = on_stall_signal;
+        sigaction(STALL_SIGNAL, &action, NULL);
+        if (pthread_create(&thread, NULL, watchdog, (void *)(uintptr_t)atoi(stall)) == 0) {
+            pthread_detach(thread);
+        }
     }
 }
 
@@ -643,7 +739,15 @@ void khdays_diag_stack(void)
 
 unsigned long long khdays_diag_symbol(const char *name)
 {
-    return (unsigned long long)(uintptr_t)dlsym(RTLD_DEFAULT, name);
+    /* in this module (the game is an app's library, outside the global scope RTLD_DEFAULT searches) */
+    static void *own;
+    if (own == NULL) {
+        Dl_info info;
+        if (dladdr((const void *)khdays_diag_symbol, &info) && info.dli_fname != NULL) {
+            own = dlopen(info.dli_fname, RTLD_NOW | RTLD_NOLOAD);
+        }
+    }
+    return (unsigned long long)(uintptr_t)dlsym(own != NULL ? own : RTLD_DEFAULT, name);
 }
 
 /* The name of the native function at `address`, for traces. */

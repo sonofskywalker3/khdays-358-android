@@ -12,6 +12,11 @@ void khdays_threads_init(void);
  * but the running one, which is the reset's own, not a thread's. */
 void khdays_threads_reset(void);
 
+/* The game's threads' contexts (their OSContext references) and what runs each, for the stall report:
+ * at most `room`; their number. */
+struct KhdaysContext;
+int khdays_threads_list(unsigned int *contexts, struct KhdaysContext **running, int room);
+
 /* OS_InitContext: the context at `context` (re)starts -- its execution
  * context made anew, running the function its image names (pc+4, r0, lr:
  * the OSContext's own words) the first time it is switched to. */

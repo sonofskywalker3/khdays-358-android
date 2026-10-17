@@ -14,6 +14,11 @@ def keystorePath = System.getenv('KHDAYS_KEYSTORE_PATH')
 def keystorePassword = System.getenv('KHDAYS_KEYSTORE_PASSWORD')
 def hasReleaseKey = keystorePath?.trim() && keystorePassword?.trim()
 
+// -PkhdaysNative=<dir>: package the native libraries already built there (<dir>/arm64-v8a/*.so: libmain.so,
+// libSDL3.so, libc++_shared.so from a tree of android/jni configured with the NDK) instead of building
+// port/ again through Gradle.
+def prebuiltNative = project.hasProperty('khdaysNative') ? file(project.property('khdaysNative')) : null
+
 android {
     namespace 'com.sonofskywalker3.khdays358'
     compileSdk 35
@@ -31,7 +36,7 @@ android {
             // pointers 4-byte references into it (docs/PLATFORM.md)
             abiFilters 'arm64-v8a'
         }
-        externalNativeBuild {
+        if (prebuiltNative == null) externalNativeBuild {
             cmake {
                 arguments '-DANDROID_STL=c++_shared',
                           '-DANDROID_PLATFORM=android-29',
@@ -58,7 +63,7 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
-            externalNativeBuild {
+            if (prebuiltNative == null) externalNativeBuild {
                 cmake {
                     arguments '-DCMAKE_BUILD_TYPE=Release'
                 }
@@ -67,7 +72,7 @@ android {
         debug {
             jniDebuggable true
             // optimised with symbols: an unoptimised game is far too slow to test with
-            externalNativeBuild {
+            if (prebuiltNative == null) externalNativeBuild {
                 cmake {
                     arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo'
                 }
@@ -75,11 +80,15 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path 'jni/CMakeLists.txt'
-            version '3.31.6'
+    if (prebuiltNative == null) {
+        externalNativeBuild {
+            cmake {
+                path 'jni/CMakeLists.txt'
+                version '3.31.6'
+            }
         }
+    } else {
+        sourceSets.main.jniLibs.srcDirs = [prebuiltNative]
     }
 
     compileOptions {

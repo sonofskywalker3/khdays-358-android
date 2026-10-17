@@ -27,6 +27,10 @@ KhdaysContext *khdays_context_create(void (*entry)(void *argument), void *argume
 /* Runs `to`, and returns when something switches back to this context. */
 void khdays_context_switch(KhdaysContext *to);
 
+/* Where a context that is not running stopped: its stack pointer, the switch's frame there
+ * (context_arm64.S); NULL where the system's does not say. For the stall report. */
+void *khdays_context_stopped_at(const KhdaysContext *context);
+
 /* Frees a context that is not running. */
 void khdays_context_delete(KhdaysContext *context);
 
