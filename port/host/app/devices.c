@@ -17,7 +17,12 @@ typedef struct Pad {
     SDL_JoystickID id;
     SDL_Gamepad *gamepad;
     Uint64 last_used; /* SDL_GetTicks() of its last button press */
+    int by_mark;      /* its face buttons come named by their marks (marked_pad) */
 } Pad;
+
+/* AYN's built-in pads (Odin, Thor): marked the Nintendo way, A on the right, and Android names their
+ * face buttons by mark, so SDL's "south" is the button marked A on the right. */
+#define AYN_VENDOR 0x2020
 
 static KhdaysProfile profile;
 static KhdaysPublish publish;
@@ -150,11 +155,34 @@ const char *khdays_devices_gamepad_name(void)
     return active >= 0 ? SDL_GetGamepadName(pads[active].gamepad) : NULL;
 }
 
+/* Whether a gamepad names its face buttons by mark rather than by position. */
+static int marked_pad(SDL_Gamepad *gamepad)
+{
+    return SDL_GetGamepadVendor(gamepad) == AYN_VENDOR;
+}
+
+/* The face button in a position, for a pad that names them by their Nintendo
+ * marks (the swap is its own reverse). */
+static SDL_GamepadButton by_position(SDL_GamepadButton button, int by_mark)
+{
+    if (!by_mark) {
+        return button;
+    }
+    switch (button) {
+    case SDL_GAMEPAD_BUTTON_SOUTH: return SDL_GAMEPAD_BUTTON_EAST;
+    case SDL_GAMEPAD_BUTTON_EAST: return SDL_GAMEPAD_BUTTON_SOUTH;
+    case SDL_GAMEPAD_BUTTON_WEST: return SDL_GAMEPAD_BUTTON_NORTH;
+    case SDL_GAMEPAD_BUTTON_NORTH: return SDL_GAMEPAD_BUTTON_WEST;
+    default: return button;
+    }
+}
+
 /* Our input number for one of SDL's gamepad buttons (both are named by
  * position), or -1. The paddles follow the Xbox Elite's P1-P4: upper right,
  * lower right, upper left, lower left. */
-static int pad_input(SDL_GamepadButton button)
+static int pad_input(SDL_GamepadButton sdl_button, int by_mark)
 {
+    const SDL_GamepadButton button = by_position(sdl_button, by_mark);
     switch (button) {
     case SDL_GAMEPAD_BUTTON_SOUTH: return KHDAYS_PAD_SOUTH;
     case SDL_GAMEPAD_BUTTON_EAST: return KHDAYS_PAD_EAST;
@@ -190,7 +218,7 @@ SDL_Gamepad *khdays_devices_gamepad(void)
 SDL_GamepadButton khdays_devices_sdl_button(int input)
 {
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
-        if (pad_input((SDL_GamepadButton)b) == input) {
+        if (pad_input((SDL_GamepadButton)b, active >= 0 && pads[active].by_mark) == input) {
             return (SDL_GamepadButton)b;
         }
     }
@@ -215,7 +243,7 @@ static void read_active_pad(void)
         return;
     }
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
-        const int input = pad_input((SDL_GamepadButton)b);
+        const int input = pad_input((SDL_GamepadButton)b, pads[active].by_mark);
         if (input >= 0) {
             state.pad[input] = SDL_GetGamepadButton(pads[active].gamepad, (SDL_GamepadButton)b);
         }
@@ -260,14 +288,15 @@ static void gamepad_added(SDL_JoystickID id)
         notice(text);
         return;
     }
-    pads[pad_count] = (Pad){id, gamepad, 0};
+    pads[pad_count] = (Pad){id, gamepad, 0, marked_pad(gamepad)};
     if (active < 0 && pad_count >= own_pad()) {
         active = pad_count; /* the first one connected plays (for player N's copy, the Nth) */
         clear_pad_state();
     }
     ++pad_count;
-    fprintf(stderr, "host: gamepad connected: %s%s\n", SDL_GetGamepadName(gamepad),
-            active == pad_count - 1 ? " (playing)" : "");
+    fprintf(stderr, "host: gamepad connected: %s%s%s\n", SDL_GetGamepadName(gamepad),
+            active == pad_count - 1 ? " (playing)" : "",
+            pads[pad_count - 1].by_mark ? " (face buttons by mark)" : "");
 }
 
 static void gamepad_removed(SDL_JoystickID id)
@@ -336,8 +365,8 @@ int khdays_devices_pad_in_use(void)
 static void pad_button(SDL_JoystickID id, SDL_GamepadButton button, int down)
 {
     const int i = find_pad(id);
-    const int input = pad_input(button);
-    if (i < 0 || input < 0) {
+    const int input = i >= 0 ? pad_input(button, pads[i].by_mark) : -1;
+    if (input < 0) {
         return;
     }
     if (down) {
