@@ -358,7 +358,13 @@ static void build_sound(Builder *b, KhdaysProfile *w)
     KhdaysSound *s = &w->sound;
     int *values[] = {&s->volume, &s->music, &s->effects, &s->voices, &s->movies};
     for (size_t i = 0; i < sizeof(volumes) / sizeof(volumes[0]); ++i) {
-        KhdaysRow *r = add_number(b, volumes[i].id, volumes[i].label, values[i], 0, 100, 5);
+        KhdaysRow *r;
+#ifdef __ANDROID__
+        if (volumes[i].id == KHDAYS_SET_VOLUME) {
+            continue; /* the device's own volume buttons are the master volume */
+        }
+#endif
+        r = add_number(b, volumes[i].id, volumes[i].label, values[i], 0, 100, 5);
         r->note = khdays_text(volumes[i].note);
         if (b->context->in_session) {
             r->apply = KHDAYS_APPLY_NOW; /* in a session the game is not paused, so it is heard */

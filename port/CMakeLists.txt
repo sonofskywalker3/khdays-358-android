@@ -326,11 +326,15 @@ else()
         host/app/context_posix.c
         host/app/context_arm64.S
         host/app/files_posix.c
-        host/movies/movie_hd_none.c
         host/net/net_posix.c
         host/posix/shim.c
         host/posix/android_log.c
         host/android/bottom_screen.c)  # the lower screen on a second display
+    if(ANDROID)
+        list(APPEND KHDAYS_PLATFORM_SOURCES host/movies/movie_hd_android.c) # the HD video through MediaCodec
+    else()
+        list(APPEND KHDAYS_PLATFORM_SOURCES host/movies/movie_hd_none.c)
+    endif()
 endif()
 
 # The input layer -- the control profile and its settings file, the
@@ -550,6 +554,9 @@ else()
     target_include_directories(khdays-native PRIVATE host/posix/include)
     target_include_directories(khdays-host-input PRIVATE host/posix/include)
     target_link_libraries(khdays-native PRIVATE dl m)
+    if(ANDROID)
+        target_link_libraries(khdays-native PRIVATE mediandk) # MediaCodec (host/movies/movie_hd_android.c)
+    endif()
     target_link_options(khdays-native PRIVATE -rdynamic -Wl,--allow-multiple-definition)
     if(ANDROID)
         target_link_libraries(khdays-native PRIVATE log android)
