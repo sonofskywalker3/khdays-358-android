@@ -102,6 +102,25 @@ class Rewrite(unittest.TestCase):
             "khdays_ref g(unsigned x) { return (khdays_ref)(x); }",
         )
 
+    def test_cast_assigned_to(self):
+        # mwcc's and MSVC's lvalue cast between pointers: the reference itself, stepped by the cast's type
+        self.check(
+            "void f(char *p) { ++((int *)p); ((int *)p)--; }",
+            "void f(khdays_ref p) { p += sizeof(int); (khdays_ref)((p -= sizeof(int)) + sizeof(int)); }",
+        )
+
+    def test_long_is_32_bits(self):
+        # the game's long and long double are int and double on any host; long long stays
+        self.check(
+            "long f(unsigned long x, long long y) { long double d; return x + y; }",
+            "int f(unsigned int x, long long y) { double d; return x + y; }",
+        )
+
+    def test_hex_escape_ended(self):
+        # adjacent literals the parser joined: "\xbf" "A" is not one escape
+        got = rewrite_text(PRELUDE + 'char s[3] = "\\xbf" "A";', "game.c")
+        self.assertIn('"\\xbf""A"', got)
+
     def test_address_of_local(self):
         self.check(
             "void h(int *x); void f(void) { int x; h(&x); }",

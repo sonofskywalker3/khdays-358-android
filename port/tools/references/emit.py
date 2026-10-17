@@ -302,6 +302,14 @@ class Emitter(c_generator.CGenerator):
         if isinstance(node, c_ast.Constant) and node.type == "string":
             return node.value
         if isinstance(node, c_ast.Cast):
+            # a cast assigned to (mwcc and MSVC take it: `++((int *)p)`): between pointers, both
+            # references, the variable itself -- clang takes no cast as an lvalue
+            if (
+                isinstance(self.tp.type_of_declarator(node.to_type), Pointer)
+                and isinstance(decayed(self.type(node.expr)), Pointer)
+                and (self.is_lvalue(node.expr) or isinstance(node.expr, c_ast.Cast))
+            ):
+                return self.lv(node.expr)
             return f"({self.rv(node)})"
         raise EmitFailure(node, f"not an lvalue: {type(node).__name__}")
 
