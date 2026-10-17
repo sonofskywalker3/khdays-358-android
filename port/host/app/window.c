@@ -109,6 +109,9 @@ static int last_full = KHDAYS_DISPLAY_BORDERLESS; /* the full screen Alt+Enter g
 static void display_now(int display)
 {
     static int shown = -1;
+#if defined(__ANDROID__)
+    display = KHDAYS_DISPLAY_BORDERLESS; /* an app has the whole display, without the system's bars */
+#endif
     if (host_window == NULL || display == shown) {
         return;
     }

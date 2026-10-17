@@ -1095,8 +1095,24 @@ int khdays_host_graphics_flags(void)
     return graphics_flags;
 }
 
-void khdays_present_set_video(const KhdaysVideo *v)
+#if defined(__ANDROID__)
+static KhdaysVideo given_video; /* the settings as given, before the second display's say */
+static int two_displays;        /* they were applied with the lower screen on a display of its own */
+#endif
+
+void khdays_present_set_video(const KhdaysVideo *given)
 {
+    KhdaysVideo copy = *given;
+    const KhdaysVideo *v = &copy;
+#if defined(__ANDROID__)
+    /* the lower screen on a display of its own: the DS's two screens, each where it belongs, whatever
+     * the screens setting says */
+    given_video = *given;
+    two_displays = khdays_bottom_attached();
+    if (two_displays) {
+        copy.one_screen = 0;
+    }
+#endif
     graphics_flags =
         (v->hd_graphics ? KHDAYS_HOST_HD_GRAPHICS : 0) | (v->dump_graphics ? KHDAYS_HOST_DUMP_GRAPHICS : 0) |
         (v->movies == KHDAYS_MOVIES_DS ? KHDAYS_HOST_MOVIES_DS : 0) |
@@ -1298,7 +1314,10 @@ void khdays_present_draw(void)
         khdays_movie_subtitles_release();
     }
 #if defined(__ANDROID__)
-    if (khdays_bottom_attached() && draw_two_displays()) {
+    if (khdays_bottom_attached() != two_displays) {
+        khdays_present_set_video(&given_video); /* the second display came or went */
+    }
+    if (two_displays && draw_two_displays()) {
         return;
     }
 #endif
