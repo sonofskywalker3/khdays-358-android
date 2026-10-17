@@ -182,11 +182,41 @@ def char_value(text: str) -> int:
     return ord(body)
 
 
+def split_hex_escapes(value: str) -> str:
+    """`value` (string literals) with each hex escape that runs into the hex digits after it ended where
+    a byte ends: the parser joins adjacent literals, so the source's "\\xbf" "A" reaches here as
+    "\\xbfA", which C reads as one escape out of a char's range. Escapes that fit a byte stay."""
+    out, i = [], 0
+    while i < len(value):
+        c = value[i]
+        if c != "\\":
+            out.append(c)
+            i += 1
+            continue
+        if i + 1 < len(value) and value[i + 1] == "x":
+            j = i + 2
+            while j < len(value) and value[j] in HEX_DIGITS:
+                j += 1
+            digits = value[i + 2 : j]
+            if len(digits) > 2 and int(digits, 16) > 0xFF:
+                out.append("\\x" + digits[:2] + '""' + digits[2:])
+            else:
+                out.append(value[i:j])
+            i = j
+            continue
+        out.append(value[i : i + 2])  # any other escape: the backslash and the character it escapes
+        i += 2
+    return "".join(out)
+
+
+HEX_DIGITS = "0123456789abcdefABCDEF"
+
+
 def literal_bytes(value: str) -> int:
     """A string literal's size in bytes, its terminating zero included
     (adjacent literals already joined by the parser)."""
     size = 0
-    for part in split_literals(value):
+    for part in split_literals(split_hex_escapes(value)):
         body = part[1:-1]
         i = 0
         while i < len(body):

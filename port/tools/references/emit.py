@@ -33,8 +33,6 @@ REF = "khdays_ref"
 PRELUDE = """/* Rewritten by port/tools/references (specs/010): every pointer of the
  * game's side a 4-byte reference, the DS address it had. */
 #include "khdays_references.h"
-#pragma section(".khdi$m", read, write)
-#pragma section(".khfr$m", read)
 """
 
 # The module number of the data area's records (runtime/core/data_init.c): copied
@@ -85,6 +83,24 @@ class Index:
 
 class EmitFailure(TypeFailure):
     pass
+
+
+def game_long(names: list[str]) -> list[str]:
+    """The game's `long` as `int`: 32 bits on the DS (mwcc) and in MSVC, and `int` keeps it so where a
+    host's `long` is 64 (LP64: Linux, Android, macOS). Its `long double` is a `double` for the same
+    reason; `long long` stays."""
+    if names.count("long") == 1 and "double" in names:
+        return [name for name in names if name != "long"]
+    if names.count("long") != 1:
+        return names
+    out = ["int" if name == "long" else name for name in names]
+    if out.count("int") > 1:
+        out.remove("int")
+    return out
+
+
+# abi_repair.py's `#pragma optimize("", off)`, in each compiler's words
+UNOPTIMIZED = '#if defined(_MSC_VER)\n#pragma optimize("", off)\n#else\n#pragma clang optimize off\n#endif'
 
 
 class Emitter(c_generator.CGenerator):
@@ -180,6 +196,14 @@ class Emitter(c_generator.CGenerator):
 
     # --- types as C ---
 
+    def visit_IdentifierType(self, n):
+        return " ".join(game_long(list(n.names)))
+
+    def visit_Pragma(self, n):
+        if n.string and n.string.replace(" ", "") == 'optimize("",off)':
+            return UNOPTIMIZED
+        return super().visit_Pragma(n)
+
     def decl(self, t: CType, inner: str = "", game=True) -> str:
         """`t` declaring `inner` (an abstract declarator when empty); pointers
         as references on the game's side."""
@@ -206,7 +230,8 @@ class Emitter(c_generator.CGenerator):
                 params = ", ".join(self.decl(p, "", game) for p in t.params) + (", ..." if t.variadic else "")
             return self.decl(t.result, f"{target}({params})", game)
         if isinstance(t, Arithmetic):
-            return f"{q}{t.spelling}{sep}{inner}".rstrip()
+            spelling = " ".join(game_long(t.spelling.split())) if game else t.spelling
+            return f"{q}{spelling}{sep}{inner}".rstrip()
         if isinstance(t, Void):
             return f"{q}void{sep}{inner}".rstrip()
         if isinstance(t, Record):
@@ -364,10 +389,10 @@ class Emitter(c_generator.CGenerator):
         return a if a is not None else f"KHDAYS_REF(&{self.lv(node)})"
 
     def literal(self, node: c_ast.Constant) -> str:
-        from .layout import literal_bytes
+        from .layout import literal_bytes, split_hex_escapes
 
         key = f"{self.file_key}_lit{len(self.literals)}"
-        self.literals.append(node.value)
+        self.literals.append(split_hex_escapes(node.value))
         self.data_objects[key] = self.data_defined[key] = (literal_bytes(node.value), 1)
         return f"KHDAYS_DATA({key})"
 
@@ -384,7 +409,7 @@ class Emitter(c_generator.CGenerator):
     @staticmethod
     def record(key: str, image: str) -> str:
         return (
-            f'__declspec(allocate(".khdi$m")) struct khdays_data_init khdays_place_{key} = '
+            f"KHDAYS_IN_DATA_INITS struct khdays_data_init khdays_place_{key} = "
             f"{{KHDAYS_DATA({key}), &{image}, sizeof({image}), {DATA_AREA_MODULE}}}"
         )
 
@@ -710,7 +735,9 @@ class Emitter(c_generator.CGenerator):
                     parts.append(self.initializer(e))
             return "{" + ", ".join(parts) + "}"
         if isinstance(init, c_ast.Constant) and init.type == "string" and isinstance(target, Array):
-            return init.value  # a char array's initializer, not a pointer
+            from .layout import split_hex_escapes
+
+            return split_hex_escapes(init.value)  # a char array's initializer, not a pointer
         return self.value(init)
 
     # --- the generator's expression entry points ---
@@ -1000,7 +1027,7 @@ class Emitter(c_generator.CGenerator):
         if address is None:
             raise EmitFailure(n, "a data record for an object with no place")
         rest = ", ".join(self.plain.visit(e) for e in exprs[1:])
-        return f'__declspec(allocate(".khdi$m")) struct khdays_data_init {n.name} = {{{address}, {rest}}}'
+        return f"KHDAYS_IN_DATA_INITS struct khdays_data_init {n.name} = {{{address}, {rest}}}"
 
     def visit_Typedef(self, n):
         chain = self.once(n.type, n.name)
@@ -1084,7 +1111,7 @@ class Emitter(c_generator.CGenerator):
         """The native function of each function reference the build numbers
         (runtime/core/window.c builds its table from these)."""
         return "".join(
-            f'__declspec(allocate(".khfr$m")) const struct khdays_function_record '
+            "KHDAYS_IN_FUNCTION_RECORDS const struct khdays_function_record "
             f"khdays_function_{key}_{self.file_key} = {{KHDAYS_FREF({key}), (khdays_function_pointer){name}}};\n"
             for key, name in sorted(self.frefs.items())
         )

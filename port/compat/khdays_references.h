@@ -34,6 +34,19 @@ static __inline khdays_function_pointer khdays_host_function(khdays_ref referenc
     return reference ? khdays_function(reference) : (khdays_function_pointer)0;
 }
 
+/* Where the records the runtime walks go: the data initializers (runtime/core/data_init.c) and the
+ * numbered function references (runtime/core/window.c). MSVC groups a section's $-parts in name order;
+ * an ELF linker gives a section named as a C identifier its __start_ and __stop_ symbols. */
+#if defined(_MSC_VER)
+#pragma section(".khdi$m", read, write)
+#pragma section(".khfr$m", read)
+#define KHDAYS_IN_DATA_INITS __declspec(allocate(".khdi$m"))
+#define KHDAYS_IN_FUNCTION_RECORDS __declspec(allocate(".khfr$m"))
+#else
+#define KHDAYS_IN_DATA_INITS __attribute__((used, section("khdi")))
+#define KHDAYS_IN_FUNCTION_RECORDS __attribute__((used, section("khfr")))
+#endif
+
 /* A function reference the build numbers (one with no DS address: a static
  * function, the port's), and its native function: in section .khfr$m. */
 #pragma pack(push, 8) /* as runtime/core/window.c reads them, whatever the files' packing */

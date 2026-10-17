@@ -58,10 +58,19 @@ typedef struct {
     khdays_function_pointer function;
 } FunctionRecord;
 
+#if defined(_MSC_VER)
 #pragma section(".khfr$a", read)
 #pragma section(".khfr$z", read)
 __declspec(allocate(".khfr$a")) static const FunctionRecord first_function = {0, 0};
 __declspec(allocate(".khfr$z")) static const FunctionRecord last_function = {0, 0};
+#define FIRST_RECORD (&first_function + 1)
+#define END_RECORD (&last_function)
+#else
+/* the ELF linker's bounds of section khfr (compat/khdays_references.h) */
+extern const FunctionRecord __start_khfr[], __stop_khfr[];
+#define FIRST_RECORD (__start_khfr)
+#define END_RECORD (__stop_khfr)
+#endif
 
 static FunctionRecord *numbered;
 static size_t numbered_count;
@@ -75,14 +84,14 @@ static int by_reference(const void *a, const void *b)
 static void sort_numbered(void)
 {
     size_t n = 0;
-    for (const FunctionRecord *r = &first_function + 1; r < &last_function; ++r) {
+    for (const FunctionRecord *r = FIRST_RECORD; r < END_RECORD; ++r) {
         n += r->function != NULL;
     }
     numbered = (FunctionRecord *)malloc((n ? n : 1) * sizeof(FunctionRecord));
     if (numbered == NULL) {
         khdays_hal_unimplemented("no memory for the function references' table");
     }
-    for (const FunctionRecord *r = &first_function + 1; r < &last_function; ++r) {
+    for (const FunctionRecord *r = FIRST_RECORD; r < END_RECORD; ++r) {
         if (r->function != NULL) {
             numbered[numbered_count++] = *r;
         }
