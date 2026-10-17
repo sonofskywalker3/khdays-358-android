@@ -25,11 +25,13 @@ static unsigned khdays_cpsr_value(void)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+static const char *symbol_name(const void *address);
+
+#ifdef _WIN32
 #include <windows.h>
 #include <dbghelp.h>
 
 static HANDLE game_thread;
-static const char *symbol_name(const void *address);
 
 /* The instruction, stack and frame pointers of a thread's context, and the
  * machine type DbgHelp walks it as. */
@@ -479,16 +481,6 @@ void khdays_diag_init(void)
     }
 }
 
-/* printf to stderr, for a temporary hook in the game's C (prepare.py HOOKS). */
-void khdays_debugf(const char *format, ...)
-{
-    va_list args;
-    va_start(args, format);
-    vfprintf(stderr, format, args);
-    va_end(args);
-    fflush(stderr);
-}
-
 void khdays_diag_stack(void)
 {
     CONTEXT context;
@@ -538,6 +530,165 @@ void khdays_diag_callers(char *out, int size, int skip)
         }
         strncat_s(out, (size_t)size, symbol_name(frames[i]), _TRUNCATE);
     }
+}
+
+#else
+#include <dlfcn.h>
+#include <signal.h>
+#include <ucontext.h>
+#include <unistd.h>
+#include <unwind.h>
+
+/* The handlers before the crash report's (the system's, which writes the tombstone): the crash goes on
+ * to them once reported. */
+static struct sigaction previous_crash[32];
+
+typedef struct {
+    void **frames;
+    int count, room, skip;
+} Walk;
+
+static _Unwind_Reason_Code walk_frame(struct _Unwind_Context *context, void *argument)
+{
+    Walk *walk = (Walk *)argument;
+    const uintptr_t pc = _Unwind_GetIP(context);
+    if (pc == 0) {
+        return _URC_END_OF_STACK;
+    }
+    if (walk->skip > 0) {
+        --walk->skip;
+        return _URC_NO_REASON;
+    }
+    if (walk->count >= walk->room) {
+        return _URC_END_OF_STACK;
+    }
+    walk->frames[walk->count++] = (void *)pc;
+    return _URC_NO_REASON;
+}
+
+static int capture(void **frames, int room, int skip)
+{
+    Walk walk = {frames, 0, room, skip + 1};
+    _Unwind_Backtrace(walk_frame, &walk);
+    return walk.count;
+}
+
+static void print_frames(void *const *frames, int count)
+{
+    for (int i = 0; i < count; ++i) {
+        Dl_info info;
+        if (dladdr(frames[i], &info) && info.dli_sname != NULL) {
+            fprintf(stderr, "  #%-2d %p %s+0x%zx\n", i, frames[i], info.dli_sname,
+                    (size_t)((const char *)frames[i] - (const char *)info.dli_saddr));
+        } else if (dladdr(frames[i], &info) && info.dli_fname != NULL) {
+            fprintf(stderr, "  #%-2d %p %s+0x%zx\n", i, frames[i], info.dli_fname,
+                    (size_t)((const char *)frames[i] - (const char *)info.dli_fbase));
+        } else {
+            fprintf(stderr, "  #%-2d %p ?\n", i, frames[i]);
+        }
+    }
+    fflush(stderr);
+}
+
+static void on_crash(int signal_number, siginfo_t *info, void *context_pointer)
+{
+    const ucontext_t *context = (const ucontext_t *)context_pointer;
+#if defined(__aarch64__)
+    const uintptr_t pc = (uintptr_t)context->uc_mcontext.pc;
+    const uintptr_t lr = (uintptr_t)context->uc_mcontext.regs[30];
+#else
+    const uintptr_t pc = 0, lr = 0;
+    (void)context;
+#endif
+    khdays_log("crash: signal %d at %p (%s), address %p", signal_number, (void *)pc, symbol_name((const void *)pc),
+               info->si_addr);
+    khdays_log_close();
+    fprintf(stderr, "khdays-native: signal %d at %p (%s), address %p, called from %p (%s)\n", signal_number,
+            (void *)pc, symbol_name((const void *)pc), info->si_addr, (void *)lr, symbol_name((const void *)lr));
+    if (pc >= 0x01ff8000 && pc < 0x0b000000) {
+        fprintf(stderr,
+                "  the game jumped to DS address 0x%08lx as a host address: a function reference "
+                "called without its native function (KHDAYS_FN)\n",
+                (unsigned long)pc);
+    } else if (khdays_window != NULL && pc >= (uintptr_t)khdays_window + 0x01ff8000 &&
+               pc < (uintptr_t)khdays_window + 0x0b000000) {
+        fprintf(stderr,
+                "  the game jumped into its memory at DS address 0x%08lx: ARM code there (a routine "
+                "it copies at run time) cannot run natively\n",
+                (unsigned long)(pc - (uintptr_t)khdays_window));
+    }
+    fflush(stderr);
+    /* on to the system's handler, which writes the tombstone: taken again as the handler returns */
+    sigaction(signal_number, &previous_crash[signal_number], NULL);
+}
+
+void khdays_diag_init(void)
+{
+    static const int signals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_sigaction = on_crash;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&action.sa_mask);
+    for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); ++i) {
+        sigaction(signals[i], &action, &previous_crash[signals[i]]);
+    }
+}
+
+void khdays_diag_stack(void)
+{
+    void *frames[48];
+    print_frames(frames, capture(frames, 48, 0));
+}
+
+unsigned long long khdays_diag_symbol(const char *name)
+{
+    return (unsigned long long)(uintptr_t)dlsym(RTLD_DEFAULT, name);
+}
+
+/* The name of the native function at `address`, for traces. */
+static const char *symbol_name(const void *address)
+{
+    Dl_info info;
+    if (address == NULL) {
+        return "-";
+    }
+    if (dladdr(address, &info) && info.dli_sname != NULL) {
+        return info.dli_sname;
+    }
+    return "?";
+}
+
+const char *khdays_diag_function_at(const void *address)
+{
+    return symbol_name(address);
+}
+
+void khdays_diag_callers(char *out, int size, int skip)
+{
+    void *frames[24];
+    const int count = capture(frames, 24, skip);
+    size_t used = 0;
+    out[0] = '\0';
+    for (int i = 0; i < count && used + 1 < (size_t)size; ++i) {
+        const int n = snprintf(out + used, (size_t)size - used, "%s%s", i > 0 ? " < " : "",
+                               symbol_name(frames[i]));
+        if (n < 0) {
+            break;
+        }
+        used += (size_t)n;
+    }
+}
+#endif
+
+/* printf to stderr, for a temporary hook in the game's C (prepare.py HOOKS). */
+void khdays_debugf(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+    fflush(stderr);
 }
 
 /* KHDAYS_TRACE_SCRIPT: prints each step of the action-script interpreter (func_02020e58) that differs
@@ -607,10 +758,12 @@ void khdays_check_update(int fn, int next)
 
 static void check_update(intptr_t fn, intptr_t next)
 {
+#ifdef _WIN32
     extern char __ImageBase;
-    static int trace = -1;
     const IMAGE_NT_HEADERS *nt;
     const u8 *base = (const u8 *)&__ImageBase;
+#endif
+    static int trace = -1;
     khdays_input_update_ran((khdays_uptr)fn);
     khdays_cinelist_update_ran((khdays_uptr)fn);
     khdays_roomlist_update_ran((khdays_uptr)fn);
@@ -662,10 +815,21 @@ static void check_update(intptr_t fn, intptr_t next)
     if (next == 0 || next == -1 || next == -2) {
         return;
     }
+#ifdef _WIN32
     nt = (const IMAGE_NT_HEADERS *)(base + ((const IMAGE_DOS_HEADER *)base)->e_lfanew);
     if ((const u8 *)next >= base && (const u8 *)next < base + nt->OptionalHeader.SizeOfImage) {
         return;
     }
+#else
+    {
+        /* code of the module this file is in */
+        Dl_info own, at;
+        if (dladdr((const void *)check_update, &own) && dladdr((const void *)next, &at) &&
+            own.dli_fbase == at.dli_fbase) {
+            return;
+        }
+    }
+#endif
     fprintf(stderr,
             "khdays-native: the update %s returned 0x%08x as the object's next update, "
             "which is not code\n",

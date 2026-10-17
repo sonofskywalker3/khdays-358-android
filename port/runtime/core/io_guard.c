@@ -10,7 +10,15 @@
 #include "window.h"
 
 #include <stdio.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ucontext.h>
+#include <unistd.h>
+#endif
 
 static int is_io(u32 address)
 {
@@ -82,40 +90,36 @@ static int at_ds_address(const unsigned char *host)
            !(host >= khdays_window && (size_t)(host - khdays_window) <= 0xffffffffu);
 }
 
-static LONG CALLBACK io_guard(EXCEPTION_POINTERS *info)
+
+#ifdef _WIN32
+#define khdays_io_guard_exit(code) ExitProcess(code)
+#else
+#define khdays_io_guard_exit(code) _exit(code)
+#endif
+
+/* Whether a fault at `host` is the guard's: a register's DS address in the window, or a DS address
+ * outside it. Then the game stops, named; otherwise it returns. */
+static void judge(const unsigned char *host, const void *site, const char *access)
 {
-    const EXCEPTION_RECORD *record = info->ExceptionRecord;
-    const CONTEXT *context = info->ContextRecord;
-    u32 address;
-    const void *site;
-    const char *access, *function;
-    if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record->ExceptionInformation[0] == 8) {
-        return EXCEPTION_CONTINUE_SEARCH;
+    /* in the window, judged by the DS address alone: the host address's low bits may look like a
+     * register's anywhere in the heaps */
+    const int in_window = khdays_window != NULL && host >= khdays_window && (size_t)(host - khdays_window) <= 0xffffffffu;
+    const u32 address = in_window ? (u32)(host - khdays_window) : (u32)(size_t)host;
+    const char *function;
+    if (!is_io(address) && (in_window || !at_ds_address(host))) {
+        return;
     }
-    site = (const void *)context->Rip;
-    access = record->ExceptionInformation[0] == 1 ? "writes" : "reads";
-    {
-        const unsigned char *host = (const unsigned char *)record->ExceptionInformation[1];
-        /* in the window, judged by the DS address alone: the host address's low bits may look like a
-         * register's anywhere in the heaps, whose faults the memory map commits */
-        const int in_window =
-            khdays_window != NULL && host >= khdays_window && (size_t)(host - khdays_window) <= 0xffffffffu;
-        address = in_window ? (u32)(host - khdays_window) : (u32)(size_t)host;
-        if (!is_io(address) && (in_window || !at_ds_address(host))) {
-            return EXCEPTION_CONTINUE_SEARCH;
-        }
-        function = khdays_diag_function_at(site); /* only for a stop: the names are slow */
-        if (!is_io(address)) {
-            fprintf(stderr,
-                    "khdays-native: %s (%p) %s 0x%08x at its DS address, outside the game's memory (at %p): "
-                    "stopped\n",
-                    function, site, access, address, (void *)khdays_window);
-            khdays_log("stop: %s (%p) %s 0x%08x at its DS address, outside the game's memory (at %p)", function, site,
-                       access, address, (void *)khdays_window);
-            khdays_log_close();
-            fflush(stderr);
-            ExitProcess(6);
-        }
+    function = khdays_diag_function_at(site); /* only for a stop: the names are slow */
+    if (!is_io(address)) {
+        fprintf(stderr,
+                "khdays-native: %s (%p) %s 0x%08x at its DS address, outside the game's memory (at %p): "
+                "stopped\n",
+                function, site, access, address, (void *)khdays_window);
+        khdays_log("stop: %s (%p) %s 0x%08x at its DS address, outside the game's memory (at %p)", function, site,
+                   access, address, (void *)khdays_window);
+        khdays_log_close();
+        fflush(stderr);
+        khdays_io_guard_exit(6);
     }
     fprintf(stderr,
             "khdays-native: %s (%p) %s the register at 0x%08x (%s), which the port does not reach: "
@@ -125,10 +129,65 @@ static LONG CALLBACK io_guard(EXCEPTION_POINTERS *info)
                address, register_name(address));
     khdays_log_close();
     fflush(stderr);
-    ExitProcess(4);
+    khdays_io_guard_exit(4);
+}
+
+#ifdef _WIN32
+static LONG CALLBACK io_guard(EXCEPTION_POINTERS *info)
+{
+    const EXCEPTION_RECORD *record = info->ExceptionRecord;
+    const CONTEXT *context = info->ContextRecord;
+    if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record->ExceptionInformation[0] == 8) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    judge((const unsigned char *)record->ExceptionInformation[1], (const void *)context->Rip,
+          record->ExceptionInformation[0] == 1 ? "writes" : "reads");
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 
 void khdays_io_guard_init(void)
 {
     AddVectoredExceptionHandler(1, io_guard);
 }
+#else
+
+/* The fault handler before the guard's (diag.c's crash report, or the system's): a fault the guard
+ * does not take goes on to it. */
+static struct sigaction previous;
+
+static void io_guard(int signal_number, siginfo_t *info, void *context_pointer)
+{
+    const ucontext_t *context = (const ucontext_t *)context_pointer;
+#if defined(__aarch64__)
+    const void *site = (const void *)context->uc_mcontext.pc;
+    /* ESR's WnR bit (in the fault's record, when the kernel gives it) says a write; else "reaches" */
+    const char *access = "reaches";
+#else
+    const void *site = NULL;
+    const char *access = "reaches";
+    (void)context;
+#endif
+    judge((const unsigned char *)info->si_addr, site, access);
+    /* not the guard's: the handler before it, or the system's on the fault taken again */
+    if (previous.sa_flags & SA_SIGINFO) {
+        if (previous.sa_sigaction != NULL) {
+            previous.sa_sigaction(signal_number, info, context_pointer);
+            return;
+        }
+    } else if (previous.sa_handler != SIG_DFL && previous.sa_handler != SIG_IGN && previous.sa_handler != NULL) {
+        previous.sa_handler(signal_number);
+        return;
+    }
+    sigaction(signal_number, &previous, NULL);
+}
+
+void khdays_io_guard_init(void)
+{
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_sigaction = io_guard;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGSEGV, &action, &previous);
+}
+#endif

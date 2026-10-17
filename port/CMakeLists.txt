@@ -4,7 +4,12 @@
 # port/tools/prepare.py to generate KHDAYS_GEN.
 cmake_minimum_required(VERSION 3.25)
 set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)  # /Z7: no shared PDB to contend on
-project(khdays_native C CXX ASM_MASM)
+project(khdays_native C CXX)
+if(MSVC)
+    enable_language(ASM_MASM)  # the contexts' switch (host/app/context_x64.asm)
+else()
+    enable_language(ASM)  # ... and host/app/context_arm64.S
+endif()
 if(WIN32)
     enable_language(RC)  # the executable icon (resources/game.rc)
 endif()
@@ -23,21 +28,56 @@ endif()
 include("${KHDAYS_GEN}/sources.cmake")
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "The native build is for x64 Windows: use port/build.py")
+    message(FATAL_ERROR "The native build is for 64-bit hosts: x64 Windows (port/build.py) or arm64 Android")
+endif()
+if(NOT WIN32 AND NOT ANDROID)
+    message(FATAL_ERROR "The native build is for x64 Windows (port/build.py) or arm64 Android (android/)")
+endif()
+
+# The compilers' flags, by what they are for. MSVC's: its own. Clang's (Android): the same choices in its
+# words -- the game's structs packed to 4 as mwcc lays them out (/Zp4), its char signed (MSVC's and
+# mwcc's; ARM's is unsigned), MSVC's __declspec, and none of the optimizations MSVC does not make on
+# the decomp's C (type punning, signed overflow, null checks).
+if(MSVC)
+    set(KHDAYS_C_FLAGS /W4 /std:c17)
+    set(KHDAYS_CXX_FLAGS /W4 /std:c++20 /EHsc)
+    set(KHDAYS_CXX_STD /std:c++20 /EHsc)
+    set(KHDAYS_QUIET /W0)
+    set(KHDAYS_GAME_FLAGS /W0 /Zp4 /std:c17)
+    set(KHDAYS_UTF8 /utf-8)
+else()
+    set(KHDAYS_COMMON -fsigned-char -fdeclspec -fms-extensions -fno-strict-aliasing -fwrapv
+        -fno-delete-null-pointer-checks -fno-omit-frame-pointer -Wno-unknown-pragmas -Wno-ignored-pragmas
+        -Wno-microsoft-anon-tag -Wno-ignored-attributes -Wno-error=incompatible-function-pointer-types)
+    # MSVC's C library names (host/posix/include/msvc_crt.h), for the port's own code
+    set(KHDAYS_CRT -include "${CMAKE_CURRENT_SOURCE_DIR}/host/posix/include/msvc_crt.h")
+    set(KHDAYS_C_FLAGS ${KHDAYS_COMMON} ${KHDAYS_CRT} -std=gnu17 -Wall -Wno-unused-function -Wno-missing-braces)
+    set(KHDAYS_CXX_FLAGS ${KHDAYS_COMMON} ${KHDAYS_CRT} -std=gnu++20 -Wall -Wno-unused-function -Wno-missing-braces)
+    set(KHDAYS_CXX_STD ${KHDAYS_COMMON} -std=gnu++20)
+    set(KHDAYS_QUIET ${KHDAYS_COMMON} -w)
+    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17)
+    set(KHDAYS_UTF8 "")
 endif()
 
 set(DECOMP "${CMAKE_CURRENT_SOURCE_DIR}/../external/khdays-decomp")
 
 # Optimized code keeps its frame pointers: the crash and stall reports walk
 # the stack by them (diag.c).
-add_compile_options($<$<AND:$<CONFIG:Release>,$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>>:/Oy->)
+if(MSVC)
+    add_compile_options($<$<AND:$<CONFIG:Release>,$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>>:/Oy->)
+endif()
 # The C library's portable functions (getenv, fopen, sscanf...), not MSVC's _s versions of them.
 add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
 # The window: SDL3, static.
 include(FetchContent)
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
+if(ANDROID)
+    set(SDL_SHARED ON CACHE BOOL "" FORCE)
+    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+else()
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+endif()
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -118,7 +158,7 @@ add_library(khdays-host-imgui STATIC
 target_include_directories(khdays-host-imgui PUBLIC "${imgui_SOURCE_DIR}" "${imgui_SOURCE_DIR}/backends")
 target_compile_definitions(khdays-host-imgui PUBLIC IMGUI_DISABLE_DEFAULT_FONT IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_link_libraries(khdays-host-imgui PUBLIC SDL3::SDL3)
-target_compile_options(khdays-host-imgui PRIVATE /std:c++20 /EHsc)
+target_compile_options(khdays-host-imgui PRIVATE ${KHDAYS_CXX_STD})
 
 # The menu's font, in the executable so that it alone still updates a
 # release: Roboto Medium (Apache License 2.0), from ImGui's own archive.
@@ -217,7 +257,7 @@ endif()
 # (they read the state they are given): the references the port's own
 # graphics are checked against (specs/004), shared by the game and the tests.
 add_library(khdays-gpu STATIC gpu/gpu2d.c gpu/gpu3d.c gpu/texdecode.c gpu/vram_map.c)
-target_compile_options(khdays-gpu PRIVATE /W4 /std:c17)
+target_compile_options(khdays-gpu PRIVATE ${KHDAYS_C_FLAGS})
 
 # The sound: the DS's channels and mixer, the port's own sound driver and
 # mixer, the music streams' reader, the replacements and the offline render.
@@ -243,11 +283,11 @@ add_library(khdays-sound STATIC
     sound/snd7_tables.c
     sound/stream_reader.c
     sound/third_party_decoders.c)
-target_compile_options(khdays-sound PRIVATE /W4 /std:c17)
+target_compile_options(khdays-sound PRIVATE ${KHDAYS_C_FLAGS})
 # Ogg Vorbis (stb_vorbis.c) and FLAC (dr_flac.h), compiled in with the rest:
 # no library loads with the process. Their own code keeps its warnings.
 target_include_directories(khdays-sound PRIVATE "${stb_SOURCE_DIR}" "${dr_libs_SOURCE_DIR}")
-set_source_files_properties(sound/third_party_decoders.c PROPERTIES COMPILE_OPTIONS "/W0")
+set_source_files_properties(sound/third_party_decoders.c PROPERTIES COMPILE_OPTIONS "${KHDAYS_QUIET}")
 
 # The port's own graphics (specs/004): the frame description made from what
 # the game asks for, and its composition -- shared with the GPU's shaders --
@@ -257,7 +297,34 @@ add_library(khdays-gfx STATIC
     gfx/describe.c
     gfx/g3d_geometry.c
     gfx/g3d_interp.c)
-target_compile_options(khdays-gfx PRIVATE /W4 /std:c17)
+target_compile_options(khdays-gfx PRIVATE ${KHDAYS_C_FLAGS})
+
+# What differs by system: Windows' own calls, or POSIX's (host/posix/include/windows.h stands in for the
+# few Windows calls the portable files make).
+if(WIN32)
+    set(KHDAYS_INSTANCE_SOURCE host/app/instance_win.c)
+    set(KHDAYS_PLATFORM_SOURCES
+        resources/game.rc   # the executable's icon (port/resources/game.ico)
+        runtime/core/memory.c
+        host/net/https_win.c               # the update check, asked of GitHub through WinHTTP
+        host/app/context_win.c
+        host/app/context_x64.asm             # the contexts' switch (host/app/context.h)
+        host/app/files_win.c
+        host/movies/movie_hd_win.c            # the HD video through Media Foundation
+        host/net/net_win.c)                # the multiplayer on Winsock
+else()
+    set(KHDAYS_INSTANCE_SOURCE host/app/instance_posix.c)
+    set(KHDAYS_PLATFORM_SOURCES
+        runtime/core/memory_posix.c
+        host/net/https_none.c
+        host/app/context_posix.c
+        host/app/context_arm64.S
+        host/app/files_posix.c
+        host/movies/movie_hd_none.c
+        host/net/net_posix.c
+        host/posix/shim.c
+        host/posix/android_log.c)
+endif()
 
 # The input layer -- the control profile and its settings file, the
 # bindings, the devices, the settings menu (its FPS and ping displays in the
@@ -275,7 +342,7 @@ add_library(khdays-host-input STATIC
     host/screens/ui_font.cpp
     host/screens/ui_text.c
     host/render/png_io.c
-    host/app/instance_win.c          # the player's slot on the PC (specs/015)
+    ${KHDAYS_INSTANCE_SOURCE}        # the player's slot on the PC (specs/015)
     runtime/input/analog.c
     runtime/input/sequencers.c
     ../assets/src/font.cpp       # the port's NFTR decoder
@@ -283,8 +350,8 @@ add_library(khdays-host-input STATIC
 target_include_directories(khdays-host-input PRIVATE ../assets/include "${stb_SOURCE_DIR}" "${KHDAYS_MENU_FONT_DIR}")
 target_link_libraries(khdays-host-input PUBLIC SDL3::SDL3 khdays-host-imgui)
 target_compile_options(khdays-host-input PRIVATE
-    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
-    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+    $<$<COMPILE_LANGUAGE:C>:${KHDAYS_C_FLAGS}>
+    $<$<COMPILE_LANGUAGE:CXX>:${KHDAYS_CXX_FLAGS}>)
 
 # The game: every source the DS build links and the HAL, rewritten with every pointer a reference
 # (prepare.py, port/tools/references), each including only compat/khdays_references.h and the build's
@@ -292,7 +359,7 @@ target_compile_options(khdays-host-input PRIVATE
 # -enum int are MSVC's own (docs/BUILD.md, "Compiler settings worth knowing").
 add_library(khdays-game OBJECT ${KHDAYS_REWRITTEN})
 target_include_directories(khdays-game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/compat" "${KHDAYS_GEN}")
-target_compile_options(khdays-game PRIVATE /W0 /Zp4 /std:c17)
+target_compile_options(khdays-game PRIVATE ${KHDAYS_GAME_FLAGS})
 
 # The MobiClip frame decoder as the decomp reconstructed it in portable C++
 # (libs/mobiclip/video/portable; not in the DS build, which links the ARM
@@ -303,7 +370,7 @@ add_library(khdays-mobiclip OBJECT
     "${MOBICLIP_PORTABLE}/mobiclip_frame_core.cpp"
     "${MOBICLIP_PORTABLE}/mobiclip_reference.cpp")
 target_include_directories(khdays-mobiclip PRIVATE "${MOBICLIP_PORTABLE}")
-target_compile_options(khdays-mobiclip PRIVATE /std:c++20 /EHsc)
+target_compile_options(khdays-mobiclip PRIVATE ${KHDAYS_CXX_STD})
 
 # The one-screen picture's compositions (ui/compositions/port_days.txt),
 # compiled in as bytes so the executable needs no file beside it; edited, they
@@ -323,8 +390,15 @@ endfunction()
 set(KHDAYS_PORT_COMPOSITIONS "${CMAKE_CURRENT_SOURCE_DIR}/ui/compositions/port_days.txt")
 khdays_embed_text(compositions_port "${KHDAYS_PORT_COMPOSITIONS}")
 
-add_executable(khdays-native
-    resources/game.rc   # the executable's icon (port/resources/game.ico)
+if(ANDROID)
+    # the app's libmain.so, which SDLActivity loads and calls SDL_main in (android/)
+    add_library(khdays-native SHARED)
+    set_target_properties(khdays-native PROPERTIES OUTPUT_NAME main)
+else()
+    add_executable(khdays-native)
+endif()
+target_sources(khdays-native PRIVATE
+    ${KHDAYS_PLATFORM_SOURCES}
     $<TARGET_OBJECTS:khdays-game>
     $<TARGET_OBJECTS:khdays-mobiclip>
     runtime/core/arm7.c
@@ -352,7 +426,6 @@ add_executable(khdays-native
     runtime/core/threads.c
     runtime/core/window.c
     runtime/core/io_guard.c
-    runtime/core/memory.c
     runtime/core/game_heap.c          # the game's two heaps over the port's region (specs/022)
     runtime/core/overlays.c
     runtime/core/rom.cpp
@@ -367,10 +440,6 @@ add_executable(khdays-native
     host/app/window.c
     host/app/updates.c                 # a newer release, told of on the title
     host/app/release_version.c
-    host/net/https_win.c               # ... asked of GitHub through WinHTTP
-    host/app/context_win.c
-    host/app/context_x64.asm             # the contexts' switch (host/app/context.h)
-    host/app/files_win.c
     host/app/sound_output.c
     host/settings/settings_sample.cpp       # the settings menu's volume samples (specs/019)
     host/render/gpu_present.c
@@ -396,11 +465,9 @@ add_executable(khdays-native
     runtime/movies/video.c
     runtime/movies/video_mod.c
     runtime/movies/movie_hd.c             # an HD video in a movie's place (specs/013)
-    host/movies/movie_hd_win.c            # the HD video through Media Foundation
     host/movies/movie_subtitles.c         # the theater's subtitles over the HD video
     runtime/net/net_session.c          # the multiplayer's session (specs/015)
     runtime/net/mp_predict.c           # a guest's prediction of its own character (specs/017)
-    host/net/net_win.c                 # ... on Winsock
     ui/elements.c                  # the port's own presentation (specs/011)
     ui/layout.c
     ui/parts.c
@@ -435,21 +502,23 @@ target_include_directories(khdays-native PRIVATE ../assets/include)
 # the frame decoder's state (runtime/movies/video.c)
 set_source_files_properties(runtime/movies/video.c PROPERTIES INCLUDE_DIRECTORIES "${MOBICLIP_PORTABLE}")
 # the port's wording holds the game's own texts in UTF-16 literals, written in UTF-8
-set_source_files_properties(runtime/core/text_patches.cpp PROPERTIES COMPILE_OPTIONS "/utf-8")
+set_source_files_properties(runtime/core/text_patches.cpp PROPERTIES COMPILE_OPTIONS "${KHDAYS_UTF8}")
 # the window's areas (runtime/core/memory.c), the function references' table
 # (runtime/core/window.c), the DS addresses the port reads (khdays_ds_symbols.h)
 target_include_directories(khdays-native PRIVATE "${KHDAYS_GEN}")
 target_include_directories(khdays-native PRIVATE "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${pl_mpeg_SOURCE_DIR}"
                                                   "${ufbx_SOURCE_DIR}")
 target_compile_options(khdays-native PRIVATE
-    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
-    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+    $<$<COMPILE_LANGUAGE:C>:${KHDAYS_C_FLAGS}>
+    $<$<COMPILE_LANGUAGE:CXX>:${KHDAYS_CXX_FLAGS}>)
 
 # Media Foundation (host/movies/movie_hd_win.c, specs/013): Windows' own libraries.
 # ufbx (specs/014), as it is: third-party, not held to the port's warnings.
 add_library(khdays-ufbx STATIC "${ufbx_SOURCE_DIR}/ufbx.c")
 target_link_libraries(khdays-native PRIVATE khdays-ufbx)
-target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3 dbghelp winmm delayimp
+target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3)
+if(WIN32)
+target_link_libraries(khdays-native PRIVATE dbghelp winmm delayimp
                       mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp)
 # The DS's own addresses are held, inaccessible, first thing in main
 # (memory.c), so that an access at one stops the game. DLLs loaded with the
@@ -468,6 +537,21 @@ target_link_options(khdays-native PRIVATE
     # entry point, and start.c attaches to a terminal's console when it was started from one
     /SUBSYSTEM:WINDOWS
     /ENTRY:mainCRTStartup)
+else()
+    # POSIX: the stand-in for the few Windows calls, before the system's headers; the symbols the
+    # crash report names (dladdr) exported
+    target_include_directories(khdays-native PRIVATE host/posix/include)
+    target_include_directories(khdays-host-input PRIVATE host/posix/include)
+    target_link_libraries(khdays-native PRIVATE dl m)
+    target_link_options(khdays-native PRIVATE -rdynamic)
+    if(ANDROID)
+        target_link_libraries(khdays-native PRIVATE log android)
+    endif()
+    target_compile_options(khdays-ufbx PRIVATE ${KHDAYS_QUIET})
+endif()
+
+# The tests and the quality tools: on Windows.
+if(WIN32)
 
 # Renders a DeSmuME savestate's display state and compares it with what
 # DeSmuME showed (port/tools/savestate_gpu.py extracts the input).
@@ -705,3 +789,4 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT KHDAYS_ASAN)
     add_test(NAME khdays-analyze
              COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze.py" --tree "${CMAKE_BINARY_DIR}")
 endif()
+endif() # WIN32: the tests and the quality tools

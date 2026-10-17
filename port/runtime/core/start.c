@@ -22,6 +22,10 @@
 #include "../../host/app/host.h"
 
 #include <SDL3/SDL.h>
+#if defined(__ANDROID__)
+#include <SDL3/SDL_main.h> /* main becomes SDL_main, which SDLActivity calls */
+void khdays_android_log_streams(void); /* host/posix/android_log.c */
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -142,6 +146,16 @@ static char working_folder_note[1024];
  * and saves/ lie beside it. Started where data/extracted is (the repository's root), nothing changes. */
 static void take_working_folder(void)
 {
+#if defined(__ANDROID__)
+    /* the app's own folder on the shared storage: data/, mods/ and saves/ are put there */
+    const char *app = SDL_GetAndroidExternalStoragePath();
+    if (app != NULL && change_folder(app) == 0) {
+        snprintf(working_folder_note, sizeof(working_folder_note), "working folder: the app's, %s", app);
+    } else {
+        snprintf(working_folder_note, sizeof(working_folder_note), "working folder: the app's could not be taken");
+    }
+    fprintf(stderr, "khdays-native: %s\n", working_folder_note);
+#else
     const char *own = SDL_GetBasePath();
     if (SDL_GetPathInfo("data/extracted", NULL)) {
         snprintf(working_folder_note, sizeof(working_folder_note),
@@ -154,8 +168,10 @@ static void take_working_folder(void)
                  "working folder: the one it was started in, without data/extracted (its own could not be taken)");
     }
     fprintf(stderr, "khdays-native: %s\n", working_folder_note);
+#endif
 }
 
+#ifdef _WIN32
 /* Whether a standard handle is unset (nothing given to the process for that stream). */
 static int std_handle_free(DWORD which)
 {
@@ -180,9 +196,18 @@ static void attach_parent_console(void)
             (void)freopen_s(&f, "CONIN$", "r", stdin);
     }
 }
+#else
+/* Off Windows the streams are where the process was given them. */
+static void attach_parent_console(void)
+{
+}
+#endif
 
 int main(int argc, char **argv)
 {
+#if defined(__ANDROID__)
+    khdays_android_log_streams(); /* stderr into logcat: the port reports through it */
+#endif
     /* first: claim the DS's address ranges before anything else (the symbol handler, SDL) allocates
      * there */
     if (!khdays_memory_map()) {

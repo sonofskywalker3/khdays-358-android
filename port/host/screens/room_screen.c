@@ -217,7 +217,7 @@ static void row_pieces(const KhdaysLayoutFrame *fr, float y, int selected)
 }
 
 /* Four bars, lit as the ping is short (none when it is not measured). */
-static void signal(const KhdaysLayoutFrame *fr, float x, float y, float tallest, int ping_ms)
+static void signal_bars(const KhdaysLayoutFrame *fr, float x, float y, float tallest, int ping_ms)
 {
     const int lit = ping_ms < 0                ? 0
                     : ping_ms < s.signal_ms[0] ? 4
@@ -267,7 +267,7 @@ static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysRoomView *v, int i
         const unsigned short *w = wide(r->text[0] != '\0' ? r->text : "-");
         char host[64];
         const float *bar = place("signal");
-        signal(fr, bar[0], y + bar[1], bar[3], r->room.ping_ms);
+        signal_bars(fr, bar[0], y + bar[1], bar[3], r->room.ping_ms);
         if (w != NULL && name != NULL) {
             const float after = name->x + khdays_layout_line_width(&s.layout, w, name->size);
             khdays_layout_draw_text(&s.layout, fr, "name", w, 0, y, alpha);
@@ -420,7 +420,7 @@ static void draw_members(const KhdaysLayoutFrame *fr, const KhdaysRoomView *v)
             text(fr, "card_you", khdays_text(TXT_ROOM_YOU), x, y, 1.0f);
         }
         if (!self && r->room.ping_ms >= 0) {
-            signal(fr, x + bars[0], y + bars[1], bars[3], r->room.ping_ms);
+            signal_bars(fr, x + bars[0], y + bars[1], bars[3], r->room.ping_ms);
             snprintf(line, sizeof(line), "%d ms", r->room.ping_ms);
             text(fr, "card_ping", line, x, y, 1.0f);
         }
