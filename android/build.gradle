@@ -1,0 +1,103 @@
+// The port on Android (arm64). A single-module Gradle project: this directory is both the Gradle root and
+// the application module, so the APK lands in android/build/outputs/apk/. The native code is port/'s
+// CMake tree (jni/CMakeLists.txt), from the game's sources port/tools/prepare.py made into
+// build/port/gen-arm64 (port/tools/build_android.py runs both).
+
+plugins {
+    id 'com.android.application' version '8.7.3'
+    id 'org.jetbrains.kotlin.android' version '2.0.21'
+}
+
+// Release signing: a keystore outside the repository, named by environment variables. Without them
+// the release build is signed with the debug key, which is fine for sideloading onto a test device.
+def keystorePath = System.getenv('KHDAYS_KEYSTORE_PATH')
+def keystorePassword = System.getenv('KHDAYS_KEYSTORE_PASSWORD')
+def hasReleaseKey = keystorePath?.trim() && keystorePassword?.trim()
+
+android {
+    namespace 'com.sonofskywalker3.khdays358'
+    compileSdk 35
+    ndkVersion '27.3.13750724'
+
+    defaultConfig {
+        applicationId 'com.sonofskywalker3.khdays358'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName file("${rootDir}/../VERSION").text.trim()
+
+        ndk {
+            // 64-bit ARM: the game's memory is a 2 GB window anywhere in the address space, its
+            // pointers 4-byte references into it (docs/PLATFORM.md)
+            abiFilters 'arm64-v8a'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared',
+                          '-DANDROID_PLATFORM=android-29',
+                          "-DKHDAYS_GEN=${rootDir}/../build/port/gen-arm64"
+                // libmain.so (the game) and libSDL3.so; AGP packages them with libc++_shared.so
+                targets 'khdays-native', 'SDL3-shared'
+            }
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias 'khdays'
+                keyPassword keystorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+            externalNativeBuild {
+                cmake {
+                    arguments '-DCMAKE_BUILD_TYPE=Release'
+                }
+            }
+        }
+        debug {
+            jniDebuggable true
+            // optimised with symbols: an unoptimised game is far too slow to test with
+            externalNativeBuild {
+                cmake {
+                    arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo'
+                }
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+            version '3.31.6'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    packaging {
+        jniLibs {
+            // SDL's HIDAPI opens USB devices through JNI; nothing needs the legacy extraction
+            useLegacyPackaging false
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}

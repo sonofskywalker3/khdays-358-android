@@ -1,0 +1,5 @@
+# Gradle and the NDK build
+/build/
+/.gradle/
+/.cxx/
+/local.properties
