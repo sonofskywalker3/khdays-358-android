@@ -13,7 +13,7 @@ typedef int s32;
 typedef long long s64;
 /* A native address as an integer (an instruction's, for the diagnostics):
  * the C runtime's uintptr_t, which the game's side does without. */
-#if defined(_WIN64)
+#if defined(_WIN64) || defined(__LP64__)
 typedef unsigned long long khdays_uptr;
 #else
 typedef unsigned int khdays_uptr;
