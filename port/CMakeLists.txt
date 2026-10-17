@@ -57,8 +57,11 @@ else()
     set(KHDAYS_QUIET ${KHDAYS_COMMON} -w)
     # what MSVC warns of in the decomp's C and builds (C89's implicit declarations, a bare return in a
     # function with a result, a pointer passed as an integer) clang does too
-    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17 -Wno-error=implicit-function-declaration
-        -Wno-error=return-type -Wno-error=int-conversion -Wno-error=incompatible-pointer-types)
+    # A plain `inline` function MSVC defines in each file that has it, one copy kept by the linker (a
+    # COMDAT): GNU's inline semantics define it too, and the link keeps the first.
+    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17 -fgnu89-inline
+        -Wno-error=implicit-function-declaration -Wno-error=return-type -Wno-error=int-conversion
+        -Wno-error=incompatible-pointer-types)
     set(KHDAYS_UTF8 "")
 endif()
 
@@ -547,7 +550,7 @@ else()
     target_include_directories(khdays-native PRIVATE host/posix/include)
     target_include_directories(khdays-host-input PRIVATE host/posix/include)
     target_link_libraries(khdays-native PRIVATE dl m)
-    target_link_options(khdays-native PRIVATE -rdynamic)
+    target_link_options(khdays-native PRIVATE -rdynamic -Wl,--allow-multiple-definition)
     if(ANDROID)
         target_link_libraries(khdays-native PRIVATE log android)
     endif()

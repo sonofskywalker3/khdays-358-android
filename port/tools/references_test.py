@@ -116,6 +116,13 @@ class Rewrite(unittest.TestCase):
             "int f(unsigned int x, long long y) { double d; return x + y; }",
         )
 
+    def test_extern_then_static(self):
+        # declared extern, then defined static: static, as MSVC takes it
+        self.check(
+            "extern int f(int x); static inline int f(int x) { return x; } int g(void) { return f(1); }",
+            "static int f(int x); static inline int f(int x) { return x; } int g(void) { return f(1); }",
+        )
+
     def test_hex_escape_ended(self):
         # adjacent literals the parser joined: "\xbf" "A" is not one escape
         got = rewrite_text(PRELUDE + 'char s[3] = "\\xbf" "A";', "game.c")

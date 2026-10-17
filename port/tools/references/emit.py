@@ -122,6 +122,7 @@ class Emitter(c_generator.CGenerator):
         self.line = None
         self.markers = True  # #line before each statement and member
         self.defined_here: set[str] = set()  # the functions the file defines (visit_FileAST)
+        self.static_defined: set[str] = set()  # ... and those of them defined static
         # a variable-argument function of the game's being emitted: its
         # parameters' offsets in its block (id of the parameter's Decl)
         self.va_params: dict[int, int] = {}
@@ -954,6 +955,11 @@ class Emitter(c_generator.CGenerator):
             return self.plain.visit_Decl(n, no_type)
         d = copy.copy(n)
         d.type = self.game_declarators(n.type)
+        if isinstance(n.type, c_ast.FuncDecl) and n.name in self.static_defined and "static" not in n.storage:
+            # declared extern, then defined static in the file (the decomp's split units: `extern
+            # s32 FX_Whole(fx32 v); static inline s32 FX_Whole(...)`): MSVC takes the static, which
+            # clang does not -- each file's copy would be external
+            d.storage = ["static"] + [x for x in n.storage if x != "extern"]
         init = n.init
         d.init = None
         text = super().visit_Decl(d, no_type)
@@ -1098,6 +1104,9 @@ class Emitter(c_generator.CGenerator):
         # the functions this file defines: the game's, whatever their
         # declarations before the definition say
         self.defined_here = {ext.decl.name for ext in n.ext if isinstance(ext, c_ast.FuncDef)}
+        self.static_defined = {
+            ext.decl.name for ext in n.ext if isinstance(ext, c_ast.FuncDef) and "static" in ext.decl.storage
+        }
         out = [PRELUDE]
         for ext in n.ext:
             coord = getattr(ext, "coord", None)
