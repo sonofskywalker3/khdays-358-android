@@ -85,8 +85,14 @@ def player_saves(work: Path, player: int) -> Path:
     return work / "saves" if player == 1 else work / "saves" / f"player{player}"
 
 
-def make_workdir(save: Path | None, mods: Path | None = None, settings: Path | None = None, player: int = 1) -> Path:
-    """A fresh directory with data/ linked in and, if given, a copy of the save
+def make_workdir(
+    save: Path | None,
+    mods: Path | None = None,
+    settings: Path | None = None,
+    player: int = 1,
+    data: Path = ROOT / "data",
+) -> Path:
+    """A fresh directory with data/ (`data`) linked in and, if given, a copy of the save
     (where player `player` keeps it), the mods folder linked in as mods/ and a
     copy of a settings file as saves/settings.ini (screens = one for the
     one-screen walks)."""
@@ -94,7 +100,7 @@ def make_workdir(save: Path | None, mods: Path | None = None, settings: Path | N
     link = work / "data"
     # A junction, not a copy: data/ is gigabytes. `mklink /J` needs no
     # administrator rights.
-    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(ROOT / "data")], check=True, capture_output=True)
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(data.resolve())], check=True, capture_output=True)
     if mods is not None:
         subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(work / "mods"), str(mods.resolve())], check=True, capture_output=True
@@ -257,7 +263,7 @@ def run_walks(args: argparse.Namespace) -> int:
         try:
             players = []
             for player, (name, script_name) in enumerate(zip(names, scripts), start=1):
-                works.append(make_workdir(save, args.mods, args.settings, player))
+                works.append(make_workdir(save, args.mods, args.settings, player, args.data))
                 script = (WALKS_DIR / f"{script_name}.input").read_text(encoding="utf-8").strip()
                 players.append((works[-1], script, works[-1] / "game.log"))
             env = extra_env_of(args)
@@ -352,7 +358,7 @@ def extra_env_of(args: argparse.Namespace) -> dict[str, str]:
 def run_script(args: argparse.Namespace) -> int:
     script = " ".join(args.input.read_text(encoding="utf-8").split())
     extra_env = extra_env_of(args)
-    work = make_workdir(args.save, args.mods, args.settings)
+    work = make_workdir(args.save, args.mods, args.settings, data=args.data)
     try:
         exit_code = run_game(args.exe, work, script, extra_env, args.timeout, args.log, args.window)
         keep_session_log(work, args.log.with_suffix(".session.log"))
@@ -378,6 +384,9 @@ def main() -> int:
         nargs="?",
         default=DEFAULT_EXE,
         help=f"the khdays-native.exe to run (default: {DEFAULT_EXE.relative_to(ROOT)})",
+    )
+    parser.add_argument(
+        "--data", type=Path, default=ROOT / "data", help="the data folder to play from (another extraction's)"
     )
     walks = parser.add_argument_group("regression walks")
     walks.add_argument("--walk-save", type=Path, help="the save the mission, story and play walks start from")
