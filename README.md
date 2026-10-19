@@ -100,10 +100,10 @@ game, the settings menu opens with L3 (press the left stick in).
 own copies of the HD collections, then copied over:
 
 1. On a Windows PC with KINGDOM HEARTS HD 1.5+2.5 ReMIX (Steam or Epic), run the
-   PC installer from the [port's releases](https://github.com/Yokimitsuro/khdays-port/releases).
-   When it asks for your ROM, give it your `.nds` file (for now the PC installer
-   takes the European release only). Tick **HD videos**, and **HD menus** too if
-   you also have KINGDOM HEARTS HD 2.8 Final Chapter Prologue.
+   PC installer from this repository's releases page (the PC port's installer
+   with the North American release added). When it asks for your ROM, give it
+   your `.nds` file. Tick **HD videos**, and **HD menus** too if you also have
+   KINGDOM HEARTS HD 2.8 Final Chapter Prologue.
 2. When it is done, copy the folder it installed to onto the device, all of it,
    into any folder (such as Download). The HD videos take several GB.
 3. On the device, long-press the app's icon and choose **Set up / add HD
