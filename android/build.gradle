@@ -19,6 +19,16 @@ def hasReleaseKey = keystorePath?.trim() && keystorePassword?.trim()
 // port/ again through Gradle.
 def prebuiltNative = project.hasProperty('khdaysNative') ? file(project.property('khdaysNative')) : null
 
+// tools/supported_roms.json, the one list of supported ROMs the PC installer also checks, packaged as the
+// asset supported_roms.json for the on-device setup (setup/SupportedRoms.kt)
+def supportedRomsJson = file("${rootDir}/../tools/supported_roms.json")
+def supportedRomsAssets = layout.buildDirectory.dir('generated/supported-roms-assets')
+def copySupportedRoms = tasks.register('copySupportedRoms', Sync) {
+    from supportedRomsJson
+    into supportedRomsAssets
+}
+tasks.named('preBuild') { dependsOn copySupportedRoms }
+
 android {
     namespace 'com.sonofskywalker3.khdays358'
     compileSdk 35
@@ -90,6 +100,8 @@ android {
     } else {
         sourceSets.main.jniLibs.srcDirs = [prebuiltNative]
     }
+
+    sourceSets.main.assets.srcDir(supportedRomsAssets)
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
