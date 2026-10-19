@@ -56,6 +56,7 @@ typedef union {
 #define ERROR_FILE_NOT_FOUND 2u
 
 typedef long long LONGLONG;
+typedef unsigned long long ULONGLONG;
 typedef unsigned char BOOLEAN;
 
 /* Slim reader/writer locks: a recursive mutex, shared or exclusive alike (a condition variable waits

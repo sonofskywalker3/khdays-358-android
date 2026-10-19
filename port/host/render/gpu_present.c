@@ -1334,7 +1334,7 @@ static int draw_two_displays(void)
     } else {
         return 0;
     }
-    present_size((int)wu, H, 0.0f, 1.0e9f); /* the stylus is on the other display */
+    present_size((int)wu, H);
     {
         const SDL_FRect at = {0.0f, 0.0f, wu, H};
         SDL_SetTextureScaleMode(upper, mode_for(upper, wu, H));
