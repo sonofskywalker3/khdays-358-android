@@ -70,13 +70,52 @@ build, macOS, Windows on ARM and the Nintendo Switch.
 ## Installing
 
 On Windows, the installer from the releases page is all you need besides your
-own copy of the game: it asks for your ROM (the European release of KINGDOM
-HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
+own copy of the game: it asks for your ROM (the European or North American
+release of KINGDOM HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
 KINGDOM HEARTS HD 1.5+2.5 ReMIX folder), prepares the game's data from it, and
 can also make the HD pack from your HD collections, add the port to Steam (PC
 and Steam Deck), and install the mod studio. Nothing of the game comes with
 it. The port tells you when a newer release is out. More:
 [`installer/README.md`](installer/README.md).
+
+### On Android
+
+For 64-bit ARM devices with Vulkan and Android 10 or later. On a device with two
+screens (the AYN Thor), the lower screen goes on the second display by itself.
+
+1. Download the APK from this repository's releases page and open it to install
+   it (allow installs from your browser or file manager when Android asks).
+2. Copy your ROM onto the device with a USB cable or an SD card, into any folder:
+   the `.nds` file of your own KINGDOM HEARTS 358/2 Days cartridge, the European
+   or the North American release.
+3. Open **358/2 Days**. The setup screen asks for the ROM: press **Choose ROM
+   file** and pick it. It is checked and unpacked (about 400 MB free space is
+   needed); then press **Play**. From then on the app opens straight into the
+   game.
+
+The setup screen works by touch, or with the D-pad and A (B goes back). In the
+game, the settings menu opens with L3 (press the left stick in).
+
+**HD cutscenes and menus (optional).** They are made on a Windows PC from your
+own copies of the HD collections, then copied over:
+
+1. On a Windows PC with KINGDOM HEARTS HD 1.5+2.5 ReMIX (Steam or Epic), run the
+   PC installer from the [port's releases](https://github.com/Yokimitsuro/khdays-port/releases).
+   When it asks for your ROM, give it your `.nds` file (for now the PC installer
+   takes the European release only). Tick **HD videos**, and **HD menus** too if
+   you also have KINGDOM HEARTS HD 2.8 Final Chapter Prologue.
+2. When it is done, copy the folder it installed to onto the device, all of it,
+   into any folder (such as Download). The HD videos take several GB.
+3. On the device, long-press the app's icon and choose **Set up / add HD
+   files**, then **Choose the copied folder** and pick it. The app finds the HD
+   files inside it, copies them in, and shows what was added. They are on the
+   next time you play. It then offers to delete the copy you made, to get the
+   space back.
+
+The app keeps the game, the HD files and your saves in
+`Android/data/com.sonofskywalker3.khdays358/files` (saves in `saves/`).
+**Uninstalling the app deletes that folder, saves included**: copy `saves/`
+somewhere else first. Installing a newer APK over the old one keeps everything.
 
 ## Getting started
 
