@@ -32,6 +32,24 @@
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true">
 
+        <!-- The first screen: the game set up from the player's ROM, the HD files added
+             (setup/SetupActivity.kt); it starts the game once that is done. -->
+        <activity
+            android:name=".setup.SetupActivity"
+            android:label="@string/app_name"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
         <activity
             android:name=".MainActivity"
             android:label="@string/app_name"
@@ -41,10 +59,6 @@
             android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
             android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- SDL's HIDAPI handles USB game controllers -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />

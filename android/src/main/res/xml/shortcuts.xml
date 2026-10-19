@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-pressing the app's icon: the setup screen, to choose another ROM or add HD files. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="setup"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/setup_shortcut"
+        android:shortcutLongLabel="@string/setup_shortcut">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.sonofskywalker3.khdays358"
+            android:targetClass="com.sonofskywalker3.khdays358.setup.SetupActivity">
+            <extra
+                android:name="com.sonofskywalker3.khdays358.SETUP"
+                android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

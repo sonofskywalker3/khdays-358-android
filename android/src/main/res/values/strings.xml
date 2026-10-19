@@ -1,3 +1,50 @@
 <resources>
     <string name="app_name">358/2 Days</string>
+
+    <!-- The setup screen (setup/SetupActivity.kt) -->
+    <string name="setup_shortcut">Set up / add HD files</string>
+    <string name="setup_title">358/2 Days</string>
+    <string name="setup_subtitle">Setup</string>
+    <string name="setup_controls_hint">Touch, or the D-pad and A. B goes back.</string>
+
+    <string name="setup_game_heading">1  Your game</string>
+    <string name="setup_game_missing">Not set up yet.</string>
+    <string name="setup_game_ready">Ready: %1$s</string>
+    <string name="setup_game_help">Choose the .nds file you dumped from your own 358/2 Days cartridge. The European and the North American release both work. Copy the file onto this device first, with a USB cable or an SD card; any folder will do.</string>
+    <string name="setup_game_choose">Choose ROM file</string>
+    <string name="setup_game_choose_other">Choose a different ROM file</string>
+    <string name="setup_game_checking">Checking the ROM…</string>
+    <string name="setup_game_extracting">Unpacking the game…</string>
+    <string name="setup_game_decompressing">Unpacking the game\'s files… (%1$d of %2$d)</string>
+    <string name="setup_game_done">Ready: %1$s. You can play now.</string>
+    <string name="setup_game_no_space">Not enough free space: the game needs %1$s, and this device has %2$s free.</string>
+
+    <string name="setup_hd_heading">2  HD (optional)</string>
+    <string name="setup_hd_help_title">The HD cutscenes and HD menus come from your own copies of the HD collections. They are made on a Windows PC, then copied here:</string>
+    <string name="setup_hd_step1">1. On a Windows PC where KINGDOM HEARTS HD 1.5+2.5 ReMIX is installed (Steam or Epic), download the KH 358/2 Days Port installer: github.com/Yokimitsuro/khdays-port/releases</string>
+    <string name="setup_hd_step2">2. Run it. When it asks for your ROM, give it the same .nds file. Tick HD videos. Tick HD menus as well if you also have KINGDOM HEARTS HD 2.8 Final Chapter Prologue.</string>
+    <string name="setup_hd_step3">3. When it is done, copy the folder it installed to onto this device, with a USB cable or an SD card. The whole folder is fine (only its data\\cutscenes and mods folders are used). Any folder on this device will do, such as Download.</string>
+    <string name="setup_hd_step4">4. Choose that folder here. The HD files are copied in and turned on.</string>
+    <string name="setup_hd_choose">Choose the copied folder</string>
+    <string name="setup_hd_videos_yes">HD cutscenes: added ✓</string>
+    <string name="setup_hd_videos_no">HD cutscenes: not added</string>
+    <string name="setup_hd_menus_yes">HD menus and HUD: added ✓</string>
+    <string name="setup_hd_menus_no">HD menus and HUD: not added</string>
+    <string name="setup_hd_other_mods">Other mods: %1$s</string>
+    <string name="setup_hd_looking">Looking for the HD files…</string>
+    <string name="setup_hd_none">No HD files in that folder. Choose the folder the PC installer installed to (it holds data\\cutscenes or mods\\HD PACK), or a folder it is in.</string>
+    <string name="setup_hd_found_videos">HD cutscenes</string>
+    <string name="setup_hd_found_mod">mod \"%1$s\"</string>
+    <string name="setup_hd_copying">Copying %1$s…</string>
+    <string name="setup_hd_already">Everything in that folder is already here.</string>
+    <string name="setup_hd_done">Copied %1$s. It is on next time you play.</string>
+    <string name="setup_hd_no_space">Not enough free space: the HD files need %1$s, and this device has %2$s free.</string>
+    <string name="setup_hd_delete_source">Delete the copy you made (frees %1$s)</string>
+    <string name="setup_hd_deleted">The copy you made was deleted.</string>
+    <string name="setup_hd_delete_failed">Some of the copy could not be deleted; you can delete it with a file manager.</string>
+
+    <string name="setup_play">Play</string>
+    <string name="setup_cancel">Cancel</string>
+    <string name="setup_cancelled">Cancelled.</string>
+    <string name="setup_failed">That did not work: %1$s</string>
 </resources>
