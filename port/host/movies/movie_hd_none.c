@@ -48,3 +48,32 @@ int khdays_hd_picture_begin(KhdaysHdPicture *picture)
 void khdays_hd_picture_done(void)
 {
 }
+
+int khdays_hd_picture_rgba(uint8_t **rgba, size_t *capacity, int *w, int *h)
+{
+    (void)rgba;
+    (void)capacity;
+    (void)w;
+    (void)h;
+    return 0;
+}
+
+void khdays_hd_voice_play(const char *const *paths, int count)
+{
+    (void)paths;
+    (void)count;
+}
+
+void khdays_hd_voice_stop(void)
+{
+}
+
+void khdays_hd_voice_pause(int pause)
+{
+    (void)pause;
+}
+
+void khdays_hd_voice_set_gain(float gain)
+{
+    (void)gain;
+}

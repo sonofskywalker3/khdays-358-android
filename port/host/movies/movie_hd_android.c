@@ -155,19 +155,20 @@ static double clock_now(void)
     }
 }
 
-/* Opens the file's first stream whose type starts with `kind` ("video/" or
- * "audio/") and a decoder for it. Returns its format (to delete), or NULL. */
-static AMediaFormat *open_track(Track *t, const char *kind)
+/* Opens the first stream of the file `path` whose type starts with `kind` ("video/"
+ * or "audio/") and a decoder for it. Returns its format (to delete), or NULL with
+ * the reason in `why`. */
+static AMediaFormat *open_track(Track *t, const char *path, const char *kind, char *why, size_t size)
 {
     struct stat st;
-    t->fd = open(hd.path, O_RDONLY | O_CLOEXEC);
+    t->fd = open(path, O_RDONLY | O_CLOEXEC);
     if (t->fd < 0 || fstat(t->fd, &st) != 0) {
-        snprintf(hd.why, sizeof(hd.why), "the file cannot be opened");
+        snprintf(why, size, "the file cannot be opened");
         return NULL;
     }
     t->extractor = AMediaExtractor_new();
     if (t->extractor == NULL || AMediaExtractor_setDataSourceFd(t->extractor, t->fd, 0, st.st_size) != AMEDIA_OK) {
-        snprintf(hd.why, sizeof(hd.why), "the file is not one Android reads");
+        snprintf(why, size, "the file is not one Android reads");
         return NULL;
     }
     for (size_t i = 0; i < AMediaExtractor_getTrackCount(t->extractor); ++i) {
@@ -177,7 +178,7 @@ static AMediaFormat *open_track(Track *t, const char *kind)
             AMediaExtractor_selectTrack(t->extractor, i);
             t->codec = AMediaCodec_createDecoderByType(mime);
             if (t->codec == NULL) {
-                snprintf(hd.why, sizeof(hd.why), "no decoder for its %s", mime);
+                snprintf(why, size, "no decoder for its %s", mime);
                 AMediaFormat_delete(format);
                 return NULL;
             }
@@ -185,7 +186,7 @@ static AMediaFormat *open_track(Track *t, const char *kind)
         }
         AMediaFormat_delete(format);
     }
-    snprintf(hd.why, sizeof(hd.why), "the file has no %.5s", kind);
+    snprintf(why, size, "the file has no %.5s", kind);
     return NULL;
 }
 
@@ -296,7 +297,7 @@ static int read_video_type(void)
  * Returns 0 (with hd.why) if the picture cannot be played. */
 static int open_video(void)
 {
-    AMediaFormat *format = open_track(&hd.video, "video/");
+    AMediaFormat *format = open_track(&hd.video, hd.path, "video/", hd.why, sizeof(hd.why));
     int64_t duration = 0;
     int32_t rate = 0;
     float rate_f = 0.0f;
@@ -576,7 +577,7 @@ static double sound_queued(void)
  * plays silent. */
 static int open_audio(void)
 {
-    AMediaFormat *format = open_track(&hd.audio, "audio/");
+    AMediaFormat *format = open_track(&hd.audio, hd.path, "audio/", hd.why, sizeof(hd.why));
     media_status_t status = AMEDIA_ERROR_UNKNOWN;
     if (format != NULL) {
         status = AMediaCodec_configure(hd.audio.codec, format, NULL, NULL, 0);
@@ -890,4 +891,251 @@ int khdays_hd_picture_begin(KhdaysHdPicture *picture)
 void khdays_hd_picture_done(void)
 {
     pthread_mutex_unlock(&lock);
+}
+
+static uint8_t clamp8(int v)
+{
+    return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+int khdays_hd_picture_rgba(uint8_t **rgba, size_t *capacity, int *w, int *h)
+{
+    int found = 0;
+    pthread_mutex_lock(&lock);
+    for (int i = 0; i < hd.count && !found; ++i) {
+        const Picture *p = &hd.pictures[i];
+        size_t need;
+        if (p->number != hd.taken) {
+            continue;
+        }
+        found = 1;
+        need = (size_t)p->width * (size_t)p->height * 4u;
+        if (*capacity < need) {
+            uint8_t *grown = (uint8_t *)SDL_realloc(*rgba, need);
+            if (grown == NULL) {
+                found = 0;
+                break;
+            }
+            *rgba = grown;
+            *capacity = need;
+        }
+        *w = p->width;
+        *h = p->height;
+        /* NV12 as keep_picture lays it out: the luma, then the chroma at half the rows, U and V
+         * interleaved; BT.709 limited range in 16.16 fixed point, as movie_hd_win.c converts it */
+        for (int y = 0; y < p->height; ++y) {
+            const uint8_t *luma = p->data + (size_t)y * (size_t)p->width;
+            const uint8_t *chroma = p->data + (size_t)p->width * (size_t)p->height + (size_t)(y / 2) * (size_t)p->width;
+            uint8_t *out = *rgba + (size_t)y * (size_t)p->width * 4u;
+            for (int x = 0; x < p->width; ++x) {
+                const int yy = 76284 * (luma[x] - 16);
+                const int u = chroma[(x & ~1)] - 128, v = chroma[(x & ~1) + 1] - 128;
+                out[4 * x + 0] = clamp8((yy + 117504 * v + 32768) >> 16);
+                out[4 * x + 1] = clamp8((yy - 13954 * u - 34903 * v + 32768) >> 16);
+                out[4 * x + 2] = clamp8((yy + 138392 * u + 32768) >> 16);
+                out[4 * x + 3] = 255;
+            }
+        }
+    }
+    pthread_mutex_unlock(&lock);
+    return found;
+}
+
+/* --- A voice over the game (khdays_hd_voice_play) ---------------------------------------------- */
+
+static pthread_mutex_t voice_lock = PTHREAD_MUTEX_INITIALIZER; /* guards the voice's stream against the pause and the volume */
+static float voice_gain = 1.0f;                                 /* khdays_hd_voice_set_gain */
+static volatile int voice_paused;                               /* khdays_hd_voice_pause */
+
+static struct {
+    pthread_t thread;
+    int have_thread;
+    volatile int stop;
+    char **files;
+    int count;
+    SDL_AudioStream *sound; /* opened by the thread for the first file; destroyed once it has ended */
+} voice;
+
+/* The voice's stream, opened for `spec` the first time, else told the next file's format (what is
+ * queued plays on in its own). NULL if the system gives no sound. */
+static SDL_AudioStream *voice_stream(const SDL_AudioSpec *spec)
+{
+    SDL_AudioStream *stream;
+    pthread_mutex_lock(&voice_lock);
+    if (voice.sound == NULL) {
+        voice.sound = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, spec, NULL, NULL);
+        if (voice.sound == NULL) {
+            fprintf(stderr, "movies: no sound for the voice: %s\n", SDL_GetError());
+        } else {
+            SDL_SetAudioStreamGain(voice.sound, voice_gain);
+            if (!voice_paused) {
+                SDL_ResumeAudioStreamDevice(voice.sound);
+            }
+        }
+    } else {
+        SDL_SetAudioStreamFormat(voice.sound, spec, NULL);
+    }
+    stream = voice.sound;
+    pthread_mutex_unlock(&voice_lock);
+    return stream;
+}
+
+/* The voice's stream for the decoder's output format. NULL if it cannot play. */
+static SDL_AudioStream *voice_format(AMediaCodec *codec, int *frame_bytes, int *rate)
+{
+    AMediaFormat *format = AMediaCodec_getOutputFormat(codec);
+    int32_t channels = 0, freq = 0, encoding = 0;
+    SDL_AudioSpec spec;
+    AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
+    AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &freq);
+    AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_PCM_ENCODING, &encoding);
+    AMediaFormat_delete(format);
+    if (channels <= 0 || freq <= 0) {
+        return NULL;
+    }
+    spec.format = encoding == PCM_FLOAT ? SDL_AUDIO_F32 : SDL_AUDIO_S16;
+    spec.channels = channels;
+    spec.freq = freq;
+    *frame_bytes = channels * (encoding == PCM_FLOAT ? 4 : 2);
+    *rate = freq;
+    return voice_stream(&spec);
+}
+
+/* One file's sound into the voice's stream, a little ahead of the device, to its end or a stop. */
+static void voice_file(const char *file)
+{
+    Track t = {.fd = -1};
+    SDL_AudioStream *stream = NULL;
+    int frame_bytes = 0, rate = 0, ended = 0;
+    double put = 0.0; /* seconds of sound put into the stream */
+    char why[128] = "";
+    AMediaFormat *format = open_track(&t, file, "audio/", why, sizeof(why));
+    media_status_t status = AMEDIA_ERROR_UNKNOWN;
+    if (format != NULL) {
+        status = AMediaCodec_configure(t.codec, format, NULL, NULL, 0);
+        AMediaFormat_delete(format);
+    }
+    if (status != AMEDIA_OK || AMediaCodec_start(t.codec) != AMEDIA_OK) {
+        fprintf(stderr, "movies: no voice in %s (%s)\n", file, why[0] ? why : "its decoder does not start");
+        ended = 1;
+    }
+    while (!ended && !voice.stop) {
+        AMediaCodecBufferInfo info;
+        ssize_t o;
+        if (stream != NULL &&
+            (voice_paused || (double)SDL_GetAudioStreamQueued(stream) / frame_bytes / rate >= SOUND_AHEAD)) {
+            usleep(10000);
+            continue;
+        }
+        o = next_output(&t, &info);
+        if (o == -1) {
+            ended = t.idle > IDLE_LOOKS;
+        } else if (o == -2) {
+            stream = voice_format(t.codec, &frame_bytes, &rate);
+            if (stream == NULL) {
+                fprintf(stderr, "movies: the voice in %s cannot be played\n", file);
+                ended = 1;
+            }
+        } else if (o == -3) {
+            fprintf(stderr, "movies: the voice in %s cannot be decoded; it ends there\n", file);
+            ended = 1;
+        } else {
+            if (info.size > 0 && stream != NULL) {
+                size_t length = 0;
+                const uint8_t *data = AMediaCodec_getOutputBuffer(t.codec, (size_t)o, &length);
+                if (data != NULL) {
+                    SDL_PutAudioStreamData(stream, data + info.offset, info.size);
+                    put += (double)info.size / frame_bytes / rate;
+                }
+            }
+            AMediaCodec_releaseOutputBuffer(t.codec, (size_t)o, false);
+            ended = (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != 0;
+        }
+    }
+    if (stream != NULL) {
+        SDL_FlushAudioStream(stream); /* what the resampler holds back plays too */
+        fprintf(stderr, "movies: the voice of %s: %.1f s of its sound %s\n", file, put,
+                voice.stop ? "before it was stopped" : "to its end");
+    }
+    close_track(&t);
+}
+
+/* The voice's thread: the files' sound one after another; the stream plays on what is queued. */
+static void *voice_run(void *unused)
+{
+    (void)unused;
+    for (int i = 0; i < voice.count && !voice.stop; ++i) {
+        voice_file(voice.files[i]);
+    }
+    return NULL;
+}
+
+void khdays_hd_voice_stop(void)
+{
+    if (!voice.have_thread) {
+        return;
+    }
+    __atomic_store_n(&voice.stop, 1, __ATOMIC_SEQ_CST);
+    pthread_join(voice.thread, NULL);
+    pthread_mutex_lock(&voice_lock);
+    if (voice.sound != NULL) {
+        SDL_DestroyAudioStream(voice.sound); /* the voice stops at once */
+    }
+    for (int i = 0; i < voice.count; ++i) {
+        free(voice.files[i]);
+    }
+    free(voice.files);
+    memset(&voice, 0, sizeof(voice));
+    pthread_mutex_unlock(&voice_lock);
+}
+
+void khdays_hd_voice_play(const char *const *paths, int count)
+{
+    char **files;
+    int n = 0;
+    khdays_hd_voice_stop();
+    if (count <= 0 || (files = (char **)calloc((size_t)count, sizeof(*files))) == NULL) {
+        return;
+    }
+    for (int i = 0; i < count; ++i) {
+        char *file = strdup(paths[i]);
+        if (file != NULL) {
+            files[n++] = file;
+        }
+    }
+    voice.files = files;
+    voice.count = n;
+    if (pthread_create(&voice.thread, NULL, voice_run, NULL) != 0) {
+        for (int i = 0; i < n; ++i) {
+            free(files[i]);
+        }
+        free(files);
+        memset(&voice, 0, sizeof(voice));
+        return;
+    }
+    voice.have_thread = 1;
+}
+
+void khdays_hd_voice_pause(int pause)
+{
+    pthread_mutex_lock(&voice_lock);
+    __atomic_store_n(&voice_paused, pause != 0, __ATOMIC_SEQ_CST);
+    if (voice.sound != NULL) {
+        if (pause) {
+            SDL_PauseAudioStreamDevice(voice.sound);
+        } else {
+            SDL_ResumeAudioStreamDevice(voice.sound);
+        }
+    }
+    pthread_mutex_unlock(&voice_lock);
+}
+
+void khdays_hd_voice_set_gain(float g)
+{
+    pthread_mutex_lock(&voice_lock);
+    voice_gain = g;
+    if (voice.sound != NULL) {
+        SDL_SetAudioStreamGain(voice.sound, g);
+    }
+    pthread_mutex_unlock(&voice_lock);
 }
