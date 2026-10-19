@@ -299,6 +299,43 @@ static void mission_panel(KhdaysSituation *s)
     s->states |= 1u << KHDAYS_ST_MISSION_PANEL;
 }
 
+/* The port's own state "lower-shown": with the 3D on both screens the lower screen shows a picture --
+ * Sora's memories, the game's noise over them (mission 61's Guard Armor) -- not black, nor faded out
+ * by its brightness. Once shown it stays until it has been dark for LOWER_DARK_FRAMES, so a dark frame
+ * of the noise does not switch the picture back and forth. */
+#define LOWER_DARK_FRAMES 8
+
+static void lower_shown(const KhdaysSituationInputs *in, KhdaysSituation *s)
+{
+    static int shown, dark;
+    const uint16_t master = in->master[(in->powcnt1 & 0x8000u) != 0u ? 1 : 0]; /* the lower screen's engine */
+    const int mode = (master >> 14) & 3, factor = (master & 0x1f) > 16 ? 16 : master & 0x1f;
+    int lit = 0, all = 0;
+    if (s->scene != KHDAYS_SIT_FIELD_3D_BOTH) {
+        shown = dark = 0;
+        return;
+    }
+    if (mode == 0 || factor < 12) {
+        for (int y = 4; y < 192; y += 8) {
+            for (int x = 4; x < 256; x += 8) {
+                const uint32_t c = pixel(&pixels, 1, x, y);
+                const uint32_t r = c & 0xffu, g = (c >> 8) & 0xffu, b = (c >> 16) & 0xffu;
+                lit += (r > g ? (r > b ? r : b) : (g > b ? g : b)) > 40u;
+                ++all;
+            }
+        }
+    }
+    if (lit * 4 >= all && all > 0) {
+        shown = 1;
+        dark = 0;
+    } else if (shown && ++dark >= LOWER_DARK_FRAMES) {
+        shown = 0;
+    }
+    if (shown) {
+        s->states |= 1u << KHDAYS_ST_LOWER_SHOWN;
+    }
+}
+
 /* The port's: the title's menu as the inputs have it (Ov000_RefreshMenuLayout): its first level (two
  * options, or three with THEATER MODE), the story level (NEW GAME, and CONTINUE with a save), the
  * mission level; none where the menu does not show, and its fade-in. */
@@ -517,6 +554,7 @@ void khdays_onescreen_prepare(const KhdaysFramePackage *p, int columns, KhdaysCo
             info_new(p, &now);
         }
         mission_panel(&now);
+        lower_shown(&p->situation, &now);
         screens_content(&now);
         if (!told || now.scene != situation.scene || now.states != situation.states) {
             situation = now;

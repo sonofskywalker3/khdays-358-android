@@ -22,6 +22,7 @@ enum KhdaysSection {
     KHDAYS_SECTION_MULTIPLAYER,
     KHDAYS_SECTION_LANGUAGE,
     KHDAYS_SECTION_GENERAL,
+    KHDAYS_SECTION_MODS, /* only while a scripted mod is present (khdays_model_section_shown) */
     KHDAYS_SECTION_COUNT
 };
 
@@ -75,6 +76,7 @@ enum KhdaysSettingId {
     KHDAYS_SET_ENH_LOCK_ON,
     KHDAYS_SET_ENH_MENU,
     KHDAYS_SET_ENH_MOVEMENT,
+    KHDAYS_SET_ENH_MOUSE,
     KHDAYS_SET_LEFT_STICK,
     KHDAYS_SET_RIGHT_STICK,
     KHDAYS_SET_LEFT_DEAD_ZONE,
@@ -84,6 +86,7 @@ enum KhdaysSettingId {
     KHDAYS_SET_CAMERA_SPEED,
     KHDAYS_SET_CAMERA_X,
     KHDAYS_SET_CAMERA_Y,
+    KHDAYS_SET_MOUSE_SPEED,
     KHDAYS_SET_RUN_FROM,
     KHDAYS_SET_WALK_SPEED,
     KHDAYS_SET_STICKS_VIEW,
@@ -118,6 +121,17 @@ enum KhdaysSettingId {
     KHDAYS_SET_LANGUAGE,
     KHDAYS_SET_SESSION_LOG,
     KHDAYS_SET_RESTORE_BOTH,
+    KHDAYS_SET_AUTOSAVE,
+    KHDAYS_SET_SAVE_FILES,
+    /* the Mods section's rows: `layer` the mod (its place in the list), `action` its option */
+    KHDAYS_SET_MOD_NOTE,
+    KHDAYS_SET_MOD_HEADING,
+    KHDAYS_SET_MOD_STATE,
+    KHDAYS_SET_MOD_ENABLED,
+    KHDAYS_SET_MOD_EARLIER,
+    KHDAYS_SET_MOD_LATER,
+    KHDAYS_SET_MOD_RESUME,
+    KHDAYS_SET_MOD_OPTION,
     KHDAYS_SET_COUNT
 };
 
@@ -166,6 +180,7 @@ typedef struct KhdaysModelContext {
     int hd_videos;       /* the HD videos are installed (the movies' volume has a sample) */
     const char *gamepad; /* the gamepad's name, or NULL */
     int pad_family;      /* KhdaysPadFamily */
+    int guest;           /* a guest in a multiplayer session: the host's gameplay mods' options count */
 } KhdaysModelContext;
 
 /* The most rows a section can have: one binding per action, plus the
@@ -181,6 +196,17 @@ const char *khdays_model_section_title(int section);
 /* Builds the rows of `section` for the profile `work` (the rows point into
  * it). Returns how many. */
 int khdays_model_rows(int section, KhdaysProfile *work, const KhdaysModelContext *context, KhdaysRow *rows);
+
+/* The same into `room` rows; returns how many the section has, which may be more than `room` (the Mods
+ * section grows with the mods: build it again into that many). */
+int khdays_model_rows_into(int section, KhdaysProfile *work, const KhdaysModelContext *context, KhdaysRow *rows,
+                           int room);
+
+/* Whether the menu shows a section: the Mods section only while a scripted mod is present. */
+int khdays_model_section_shown(int section);
+
+/* Enter on a command row (a mod's button, its place in the list, Resume, or the profile's commands). */
+void khdays_model_row_command(KhdaysProfile *work, const KhdaysRow *row);
 
 /* An action's name, as the player reads it. */
 const char *khdays_model_action_label(int action);

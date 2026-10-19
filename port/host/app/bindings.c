@@ -36,6 +36,9 @@ void khdays_bindings_mask_held(KhdaysDeviceState *s)
     for (int k = 0; k < KHDAYS_KEY_COUNT; ++k) {
         s->key_masked[k] = s->key[k];
     }
+    for (int m = 0; m < KHDAYS_MOUSE_COUNT; ++m) {
+        s->mouse_masked[m] = s->mouse[m];
+    }
     for (int i = 0; i < KHDAYS_PAD_COUNT; ++i) {
         s->pad_masked[i] = (uint8_t)pad_held(s, i);
     }
@@ -45,13 +48,25 @@ void khdays_bindings_mask_held(KhdaysDeviceState *s)
         const int x = s->stick[i][0], y = s->stick[i][1];
         s->stick_masked[i] = (uint8_t)(x * x + y * y > 3277 * 3277);
     }
-    s->touch_masked = (uint8_t)(s->touching != 0);
 }
 
 /* Whether an input counts as pressed: held, and not masked (waiting to be
  * released). Releasing a masked input removes its mask. */
 static int key_counts(KhdaysDeviceState *s, int key)
 {
+    if (key >= KHDAYS_MOUSE_INPUT) {
+        const int m = key - KHDAYS_MOUSE_INPUT;
+        if (m >= KHDAYS_MOUSE_COUNT || !s->mouse[m]) {
+            if (m < KHDAYS_MOUSE_COUNT) {
+                s->mouse_masked[m] = 0;
+            }
+            return 0;
+        }
+        return !s->mouse_masked[m];
+    }
+    if (key >= KHDAYS_KEY_COUNT) {
+        return 0;
+    }
     if (!s->key[key]) {
         s->key_masked[key] = 0;
         return 0;
@@ -229,13 +244,12 @@ void khdays_bindings_resolve(const KhdaysProfile *p, KhdaysDeviceState *s, Khday
     out->ds_buttons = base;
     out->ds_buttons_field = field;
     out->actions = actions;
-    if (!s->touching) {
-        s->touch_masked = 0; /* the stylus lifted: it may touch again */
-    }
-    out->touching = (uint8_t)(s->touching && !s->touch_masked);
-    out->touch_x = (uint16_t)s->touch_x;
-    out->touch_y = (uint16_t)s->touch_y;
+    /* the mouse's motion as whole counts; the game takes what changed since it last looked */
+    out->mouse_x = (int32_t)floor(s->mouse_x);
+    out->mouse_y = (int32_t)floor(s->mouse_y);
+    out->mouse_speed = (uint16_t)p->enh.mouse_speed;
     out->enhancements = (uint16_t)((p->enh.analog_camera ? KHDAYS_ENH_ANALOG_CAMERA : 0) |
+                                   (p->enh.mouse_camera ? KHDAYS_ENH_MOUSE_CAMERA : 0) |
                                    (p->enh.separate_lock_on ? KHDAYS_ENH_SEPARATE_LOCK_ON : 0) |
                                    (p->enh.dpad_command_menu ? KHDAYS_ENH_DPAD_COMMAND_MENU : 0) |
                                    (p->enh.analog_movement ? KHDAYS_ENH_ANALOG_MOVEMENT : 0));

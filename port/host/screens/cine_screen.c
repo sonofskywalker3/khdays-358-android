@@ -1,12 +1,15 @@
 /* MODO CINE's list on the screen (cine_screen.h), in the theater's pieces: a file
- * tools/hd/theater_cine.py writes (docs/HD_SCREENS.md, "MODO CINE's list"). The rows are the game's
- * page, each scene's name and length; behind them the selected scene's artwork, read on a thread of
- * its own, fades in over FADE_MS. */
+ * tools/hd/theater_cine.py writes (docs/HD_SCREENS.md, "MODO CINE's list"). The rows are the theater's
+ * chapters (the port's list) or the game's page, each one's name and length; behind them the selected
+ * one's artwork, read on a thread of its own, fades in over FADE_MS. */
 #include "cine_screen.h"
 
 #include "layout_screen.h"
+#include "../app/host.h"
 #include "../render/png_io.h"
 #include "../../runtime/menus/cinelist.h"
+#include "../../runtime/movies/movie_hd.h"
+#include "../../runtime/input/input.h"
 #include "../../runtime/core/rom.h"
 
 #include <stdio.h>
@@ -17,10 +20,23 @@
 #define THR_HELP 0
 #define THR_NAMES 1
 #define THR_LENGTHS (THR_NAMES + KHDAYS_CINE_SCENES)
+#define REPEAT_AFTER_MS 400u /* a direction held repeats after this, then every REPEAT_MS */
+#define REPEAT_MS 100u
+#define SOUND_MOVE 0 /* the game's list's (Ov000_List_CursorNextWrap, Ov000_ActivateSceneObject) */
+#define SOUND_CHOICE 1
 
 typedef struct Scene {
     int movie, day, art; /* art: arts' index, -1 none */
 } Scene;
+
+/* One of the theater's chapters: its day, artwork, name, videos in a row and their length. */
+typedef struct Chapter {
+    int day, art;
+    unsigned short *name; /* UTF-16, as the layout's words */
+    char **stems;
+    int stem_count;
+    int seconds;
+} Chapter;
 
 /* An artwork: its file, read on the loader's thread, then a texture on the window's. */
 typedef struct Art {
@@ -42,6 +58,11 @@ static struct {
     Uint8 digit_colour[3];
     Scene *scenes;
     int scene_count;
+    Chapter *chapters; /* those whose videos are all there */
+    int chapter_count;
+    int cursor, first; /* the port's list: the chapter selected, the first of the page shown */
+    uint16_t held;     /* the buttons last seen */
+    Uint64 repeat_at;  /* when a held direction moves again */
     Art *arts;
     int art_count;
     int *order; /* the arts in the order the thread reads them */
@@ -139,11 +160,141 @@ static int art_named(const char *name)
     return s.art_count++;
 }
 
+/* ---- The chapters ----------------------------------------------------------------------------- */
+
+static uint32_t be32(const uint8_t *b)
+{
+    return (uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8 | b[3];
+}
+
+/* An MP4's length in whole seconds, from its movie header (moov's mvhd); 0 when it cannot be read.
+ * Only its boxes' headers and the moov box are read. */
+static int mp4_seconds(const char *path)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "rb");
+    Sint64 at = 0, end;
+    int seconds = 0;
+    if (io == NULL) {
+        return 0;
+    }
+    end = SDL_GetIOSize(io);
+    while (at + 8 <= end && seconds == 0) {
+        uint8_t head[16];
+        uint64_t size;
+        int header = 8;
+        if (SDL_SeekIO(io, at, SDL_IO_SEEK_SET) < 0 || SDL_ReadIO(io, head, 8) != 8) {
+            break;
+        }
+        size = be32(head);
+        if (size == 1) {
+            if (SDL_ReadIO(io, head + 8, 8) != 8) {
+                break;
+            }
+            size = (uint64_t)be32(head + 8) << 32 | be32(head + 12);
+            header = 16;
+        } else if (size == 0) {
+            size = (uint64_t)(end - at);
+        }
+        if (size < (uint64_t)header) {
+            break;
+        }
+        if (memcmp(head + 4, "moov", 4) == 0 && size - (uint64_t)header <= (uint64_t)(end - at)) {
+            const size_t n = (size_t)(size - (uint64_t)header);
+            uint8_t *moov = (uint8_t *)malloc(n);
+            if (moov != NULL && SDL_ReadIO(io, moov, n) == n) {
+                for (size_t i = 0; i + 8 <= n; i += be32(moov + i) > 8 ? be32(moov + i) : n) {
+                    if (memcmp(moov + i + 4, "mvhd", 4) == 0 && i + 40 <= n) {
+                        const uint8_t *m = moov + i + 8; /* version, flags, then its times */
+                        const uint32_t scale = m[0] == 1 ? be32(m + 20) : be32(m + 12);
+                        const uint64_t length =
+                            m[0] == 1 ? (uint64_t)be32(m + 24) << 32 | be32(m + 28) : (uint64_t)be32(m + 16);
+                        seconds = scale != 0 ? (int)((length + scale / 2) / scale) : 0;
+                        break;
+                    }
+                }
+            }
+            free(moov);
+            break;
+        }
+        at += (Sint64)size;
+    }
+    SDL_CloseIO(io);
+    return seconds;
+}
+
+static void chapter_free(Chapter *c)
+{
+    for (int i = 0; i < c->stem_count; ++i) {
+        SDL_free(c->stems[i]);
+    }
+    free(c->stems);
+    SDL_free(c->name);
+    memset(c, 0, sizeof(*c));
+}
+
+/* A `chapter DAY ART VIDEO... | NAME` line, kept when every video is there. */
+static void add_chapter(const char *line)
+{
+    Chapter c;
+    char art[64], *copy, *bar, *word, *rest = NULL;
+    int ok = 1;
+    memset(&c, 0, sizeof(c));
+    if (SDL_sscanf(line, "chapter %d %63s", &c.day, art) != 2 || (bar = strchr(line, '|')) == NULL ||
+        (copy = SDL_strdup(line)) == NULL) {
+        return;
+    }
+    copy[bar - line] = '\0';
+    {
+        const char *name = bar[1] == ' ' ? bar + 2 : bar + 1;
+        c.name = (unsigned short *)SDL_iconv_string("UTF-16LE", "UTF-8", name, SDL_strlen(name) + 1);
+    }
+    word = SDL_strtok_r(copy, " \t", &rest); /* "chapter", its day, its artwork, then its videos */
+    for (int k = 0; word != NULL && ok; ++k, word = SDL_strtok_r(NULL, " \t", &rest)) {
+        char file[1024], **more;
+        if (k < 3) {
+            continue;
+        }
+        khdays_movie_hd_scene_file(word, file, sizeof(file));
+        more = (char **)realloc(c.stems, sizeof(char *) * (size_t)(c.stem_count + 1));
+        ok = more != NULL && SDL_GetPathInfo(file, NULL);
+        if (more != NULL) {
+            c.stems = more;
+            c.stems[c.stem_count] = SDL_strdup(word);
+            ok = ok && c.stems[c.stem_count] != NULL;
+            c.seconds += ok ? mp4_seconds(file) : 0;
+            ++c.stem_count;
+        }
+    }
+    SDL_free(copy);
+    if (ok && c.stem_count > 0 && c.name != NULL) {
+        Chapter *more = (Chapter *)realloc(s.chapters, sizeof(Chapter) * (size_t)(s.chapter_count + 1));
+        if (more != NULL) {
+            c.art = art_named(art);
+            s.chapters = more;
+            s.chapters[s.chapter_count++] = c;
+            return;
+        }
+    }
+    chapter_free(&c);
+}
+
+/* The port's list shows: the theater's chapters there, and Video `hd` to play them. */
+static int chapters_on(void)
+{
+    return s.chapter_count > 0 && (khdays_host_graphics_flags() & KHDAYS_HOST_MOVIES_HD);
+}
+
 /* ---- The pieces' file ------------------------------------------------------------------------- */
 
 static void forget(void)
 {
     stop_reading();
+    for (int i = 0; i < s.chapter_count; ++i) {
+        chapter_free(&s.chapters[i]);
+    }
+    free(s.chapters);
+    s.chapters = NULL;
+    s.chapter_count = 0;
     for (int i = 0; i < s.art_count; ++i) {
         if (s.arts[i].texture != NULL) {
             SDL_DestroyTexture(s.arts[i].texture);
@@ -210,6 +361,8 @@ static int load(SDL_Renderer *renderer, int language)
             s.digit_colour[0] = (Uint8)r;
             s.digit_colour[1] = (Uint8)g;
             s.digit_colour[2] = (Uint8)bl;
+        } else if (SDL_strncmp(line, "chapter ", 8) == 0) {
+            add_chapter(line);
         } else if (SDL_sscanf(line, "scene %d %d %63s", &movie, &day, art) == 3) {
             Scene *more = (Scene *)realloc(s.scenes, sizeof(Scene) * (size_t)(s.scene_count + 1));
             if (more != NULL) {
@@ -316,11 +469,36 @@ static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysCineView *v, int i
                             1.0f);
 }
 
-static void draw_scroll(const KhdaysLayoutFrame *fr, int first)
+/* A row of the port's list: the chapter's name and length, its day's square and DAY on a day's first. */
+static void draw_chapter_row(const KhdaysLayoutFrame *fr, int index, float top)
+{
+    const Chapter *c = &s.chapters[index];
+    char length[32];
+    unsigned short length16[32];
+    khdays_layout_draw_placed(&s.layout, fr, index == s.cursor ? "row_selected" : "row", 0, top, 1.0f);
+    if (index == 0 || s.chapters[index - 1].day != c->day) {
+        khdays_layout_draw_placed(&s.layout, fr, "square", 0, top, 1.0f);
+        if (c->day > 0) {
+            khdays_layout_draw_placed(&s.layout, fr, "day", 0, top, 1.0f);
+            draw_day(fr, c->day, top);
+        }
+    }
+    if (index == s.cursor) {
+        khdays_layout_draw_placed(&s.layout, fr, "glove", 0, top, 1.0f);
+    }
+    snprintf(length, sizeof(length), "%02d:%02d", c->seconds / 60, c->seconds % 60);
+    for (int k = 0; k < (int)sizeof(length); ++k) {
+        length16[k] = (unsigned char)length[k]; /* digits and a colon */
+    }
+    khdays_layout_draw_text(&s.layout, fr, "name", c->name, 0, top, 1.0f);
+    khdays_layout_draw_text(&s.layout, fr, "length", length16, 0, top, 1.0f);
+}
+
+static void draw_scroll(const KhdaysLayoutFrame *fr, int first, int total)
 {
     const KhdaysLayoutPlace *trough = khdays_layout_place(&s.layout, "trough");
     const KhdaysLayoutPlace *thumb = khdays_layout_place(&s.layout, "thumb");
-    const int pages = KHDAYS_CINE_SCENES - s.rows_shown;
+    const int pages = total - s.rows_shown;
     if (trough == NULL || thumb == NULL) {
         return;
     }
@@ -353,27 +531,94 @@ int khdays_cine_screen_draw(SDL_Renderer *renderer)
         const Scene *sc;
         s.tried = v.language;
         s.ok = load(renderer, v.language);
+        s.cursor = s.first = 0;
         sc = s.ok ? scene_of(v.movies[v.cursor]) : NULL;
         if (s.ok) {
-            start_reading(sc != NULL && sc->art >= 0 ? sc->art : 0);
+            start_reading(chapters_on() ? SDL_max(s.chapters[0].art, 0) : sc != NULL && sc->art >= 0 ? sc->art : 0);
         }
     }
-    if (!s.ok) {
-        return 0;
+    if (!s.ok || khdays_movie_hd_showing()) {
+        return 0; /* (a chapter's videos, or the game's movie, over it) */
     }
     khdays_layout_begin(renderer, &fr);
-    draw_background(&fr, scene_of(v.movies[v.cursor]));
+    if (chapters_on()) {
+        const Chapter *c = &s.chapters[s.cursor];
+        const Scene art = {0, c->day, c->art};
+        draw_background(&fr, &art);
+    } else {
+        draw_background(&fr, scene_of(v.movies[v.cursor]));
+    }
     khdays_layout_draw_placed(&s.layout, &fr, "veil", 0, 0, 1.0f);
     khdays_layout_draw_placed(&s.layout, &fr, "heading", 0, 0, 1.0f);
     khdays_layout_draw_placed(&s.layout, &fr, "help_bar", 0, 0, 1.0f);
-    for (int i = 0; i < s.rows_shown && v.first + i < KHDAYS_CINE_SCENES; ++i) {
-        draw_row(&fr, &v, v.first + i, s.row_top + (float)i * s.pitch);
+    if (chapters_on()) {
+        for (int i = 0; i < s.rows_shown && s.first + i < s.chapter_count; ++i) {
+            draw_chapter_row(&fr, s.first + i, s.row_top + (float)i * s.pitch);
+        }
+        draw_scroll(&fr, s.first, s.chapter_count);
+    } else {
+        for (int i = 0; i < s.rows_shown && v.first + i < KHDAYS_CINE_SCENES; ++i) {
+            draw_row(&fr, &v, v.first + i, s.row_top + (float)i * s.pitch);
+        }
+        draw_scroll(&fr, v.first, KHDAYS_CINE_SCENES);
     }
-    draw_scroll(&fr, v.first);
     khdays_layout_draw_text(&s.layout, &fr, "help", khdays_layout_string(&s.strings, THR_HELP), 0, 0, 1.0f);
     khdays_layout_shade(renderer, v.master);
     khdays_layout_end(renderer, &fr);
     return 1;
+}
+
+/* The port's list's cursor moved by `step`, round at its ends when `wrap` (a row, as the game's list),
+ * else held there (a page); the page follows it. */
+static void move_cursor(int step, int wrap)
+{
+    const int to = wrap ? ((s.cursor + step) % s.chapter_count + s.chapter_count) % s.chapter_count
+                        : SDL_clamp(s.cursor + step, 0, s.chapter_count - 1);
+    if (to == s.cursor) {
+        return;
+    }
+    s.cursor = to;
+    if (s.cursor < s.first) {
+        s.first = s.cursor;
+    } else if (s.cursor >= s.first + s.rows_shown) {
+        s.first = s.cursor - s.rows_shown + 1;
+    }
+    khdays_cinelist_sound(SOUND_MOVE);
+}
+
+void khdays_cine_screen_buttons(uint16_t buttons)
+{
+    const uint16_t directions = KHDAYS_KEY_UP | KHDAYS_KEY_DOWN | KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT;
+    const Uint64 now = SDL_GetTicks();
+    uint16_t pressed = (uint16_t)(buttons & ~s.held);
+    KhdaysCineView v;
+    khdays_cinelist_view(&v);
+    const int mine = v.shown && s.ok && chapters_on();
+    khdays_cinelist_take(mine);
+    s.held = buttons;
+    if (!mine || khdays_movie_hd_showing() || v.master != 0) {
+        return; /* the game's list, a chapter's videos, or the list's fade */
+    }
+    if (pressed & directions) {
+        s.repeat_at = now + REPEAT_AFTER_MS;
+    } else if ((buttons & directions) && now >= s.repeat_at) {
+        pressed |= (uint16_t)(buttons & directions);
+        s.repeat_at = now + REPEAT_MS;
+    }
+    if (pressed & KHDAYS_KEY_A) {
+        /* (no choice's sound: the videos start at once, the game held and silent under them) */
+        char key[32];
+        snprintf(key, sizeof(key), "chapter %d", s.cursor + 1);
+        khdays_movie_hd_chapter(key, s.chapters[s.cursor].stems, s.chapters[s.cursor].stem_count);
+    } else if (pressed & KHDAYS_KEY_UP) {
+        move_cursor(-1, 1);
+    } else if (pressed & KHDAYS_KEY_DOWN) {
+        move_cursor(1, 1);
+    } else if (pressed & KHDAYS_KEY_LEFT) {
+        move_cursor(-s.rows_shown, 0);
+    } else if (pressed & KHDAYS_KEY_RIGHT) {
+        move_cursor(s.rows_shown, 0);
+    }
 }
 
 void khdays_cine_screen_renderer_gone(void)

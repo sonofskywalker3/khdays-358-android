@@ -171,13 +171,25 @@ def same_folder(a: str, b: str) -> bool:
 
 
 def hd_made(state: dict[str, Any], step: str, folders: dict[str, str], made: Path) -> bool:
-    """Whether an HD step was made from these collection folders and what it made is still there: an
-    update then leaves it as it is."""
+    """Whether an HD step was made from these collection folders by these tools and what it made is
+    still there: an update then leaves it as it is."""
     record = state.get("steps", {}).get(step)
     if not record or record.get("complete") is not True or not made.is_dir() or not any(made.iterdir()):
         return False
+    if record.get("made_by") != made_by(step):
+        return False  # other tools (or a record from before they were kept): made again
     recorded = record.get("inputs", {})
     return set(recorded) == set(folders) and all(same_folder(recorded[k], folders[k]) for k in folders)
+
+
+def made_by(step: str) -> str:
+    """What an HD step's pieces are made by: its tools as installed beside the installer, with their
+    arguments, and for the videos the scene map; an update whose tools differ makes them again."""
+    tools = HD_MENU_TOOLS if step == "hd-menus" else HD_VIDEO_TOOLS
+    parts = [repr(tools).encode()] + [(tool_folders()["hd"] / t).read_bytes() for t, _ in tools]
+    if step == "hd-videos":
+        parts.append((HERE.parent / SCENE_MAP).read_bytes())
+    return hashlib.sha256(b"".join(parts)).hexdigest()
 
 
 # ---- The commands ------------------------------------------------------------------------------
@@ -236,16 +248,23 @@ def verify_rom(args: argparse.Namespace) -> dict[str, Any]:
     "find-rom",
     "a supported ROM already on this computer where KH Melon Mix keeps a player's own",
     lambda p: p.add_argument(
-        "folders", type=Path, nargs="*", help="KINGDOM HEARTS HD 1.5+2.5 ReMIX folders (default: Steam's)"
+        "folders",
+        type=Path,
+        nargs="*",
+        help="KINGDOM HEARTS HD 1.5+2.5 ReMIX folders (default: Steam's and the Epic Games Store's)",
     ),
 )
 def find_rom(args: argparse.Namespace) -> dict[str, Any]:
     folders = list(args.folders)
     if not folders:
+        import epic_library
         import steam_library
 
-        found = steam_library.app_folder(steam_library.APP_1525)
-        folders = [found] if found is not None else []
+        found = [
+            steam_library.app_folder(steam_library.APP_1525),
+            epic_library.collection_folder(epic_library.MARKER_1525),
+        ]
+        folders = [f for f in found if f is not None]
     for folder in folders:
         candidate = folder / "Image" / "melon" / "roms" / "days.nds"
         if candidate.is_file():
@@ -365,9 +384,13 @@ HD_MENU_TOOLS = [
     ("ddd_camp.py", ["{ddd}", "{mare}", "{settings}"]),
 ]
 HD_VIDEO_TOOLS = [
-    ("theater_movies.py", ["{mare}", "--movies", "{movies}", "--videos", "--subtitles"]),
+    ("theater_movies.py", ["{mare}", "--movies", "{movies}", "--videos", "--subtitles", "--music"]),
 ]
+# theater_movies.py's scene map (which of the theater's scene videos the port plays), beside the tools
+# in the repository's layout, so the videos it names are made too
+SCENE_MAP = "port/movies/hd_scenes.txt"
 HD_MOD = "HD PACK"
+HD_ERRORS = "hd-errors.log"  # under setup/: what each HD tool that failed said
 HAND = "menu/fm/title.2ld"  # kh2_first's entry whose remastered sheet newgame_dialog takes the glove from
 HAND_ASSET = "UK_title_2ld0.png"
 INPUTS_FILE = HERE / "hd_inputs.txt"
@@ -388,16 +411,54 @@ runpy.run_path(tool, run_name="__main__")
 """
 
 
+def run_hd_tools(
+    runs: list[tuple[str, list[str]]],
+    line_of: Callable[[str, list[str]], list[str]],
+    cwd: Path,
+    log: Path,
+    language: str,
+) -> list[dict[str, Any]]:
+    """Each HD tool run in turn. One that fails leaves its screens with the DS's look and the others
+    are made all the same (a copy changed by a mod may lack what one of them reads); what each failed
+    one said is kept whole in `log`, which is removed when none fails. Each tool, made or not."""
+    import subprocess
+
+    pieces: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, (tool, template) in enumerate(runs):
+        progress(i, len(runs), words("hd-making", language, what=tool))
+        line = line_of(tool, template)
+        done = subprocess.run(line, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if done.returncode != 0:
+            said = done.stderr.strip()
+            last = said.splitlines()[-1] if said else f"exit status {done.returncode}"
+            errors.append(f"== {tool} ({' '.join(line[1:])})" + chr(10) + (said or last) + chr(10))
+            pieces.append({"tool": tool, "made": False, "error": last})
+            continue
+        pieces.append({"tool": tool, "made": True})
+    log.unlink(missing_ok=True)
+    if errors:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_bytes(chr(10).join(errors).encode("utf-8"))
+    return pieces
+
+
 def tool_arguments(template: list[str], places: dict[str, Path]) -> list[str]:
     return [str(places[a[1:-1]]) if a.startswith("{") and a.endswith("}") else a for a in template]
+
+
+def tools_digest(repository: Path) -> str:
+    """What the trace depends on: the HD tools and the scene map, as they are in `repository`."""
+    parts = [(repository / "tools" / "hd" / t).read_bytes() for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS]
+    return hashlib.sha256(b"".join(parts + [(repository / SCENE_MAP).read_bytes()])).hexdigest()
 
 
 def _inputs_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mare", type=Path, required=True, help="<1.5+2.5>/Image/Mare.hed_out/original (an extraction)")
     p.add_argument("--settings", type=Path, required=True, help="<1.5+2.5>/Image/SettingMenu.hed_out/original")
-    p.add_argument("--ddd", type=Path, required=True, help="<2.8>/Image/dt/kh3d_first.hed_out")
-    p.add_argument("--kh2", type=Path, required=True, help="<1.5+2.5>/Image/dt/kh2_first.hed_out")
-    p.add_argument("--movies", type=Path, required=True, help="<1.5+2.5>/STEAM/Mare/MOVIE/Days/dt")
+    p.add_argument("--ddd", type=Path, required=True, help="<2.8>/Image/dt (or en)/kh3d_first.hed_out")
+    p.add_argument("--kh2", type=Path, required=True, help="<1.5+2.5>/Image/dt (or en)/kh2_first.hed_out")
+    p.add_argument("--movies", type=Path, required=True, help="<1.5+2.5>/STEAM/Mare/MOVIE/Days/dt (or EPIC/.../en)")
     p.add_argument("--data", type=Path, default=HERE.parent / "data" / "extracted", help="the game's extracted data")
     p.add_argument("--out", type=Path, default=INPUTS_FILE)
 
@@ -427,7 +488,8 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
         root = Path(temp)
         # the tools in the repository's layout, the game's data beside them (read only: a junction to
         # data/extracted alone, so nothing they write reaches the repository's data or mods)
-        for rel in [f"tools/hd/{t}" for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS] + ["tools/decompress_data.py"]:
+        copied = [f"tools/hd/{t}" for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS] + ["tools/decompress_data.py", SCENE_MAP]
+        for rel in copied:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repository / rel, root / rel)
         (root / "data").mkdir()
@@ -476,27 +538,53 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
                     break
         finally:
             subprocess.run(["cmd", "/c", "rmdir", str(root / "data" / "extracted")], capture_output=True)
-    tools_digest = hashlib.sha256(
-        b"".join((repository / "tools" / "hd" / t).read_bytes() for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS)
-    ).hexdigest()
     lines = [
         "# The collection files the HD tools read (installer/setup_steps.py trace-inputs):",
         "# '<archive> <entry>' (its data and remastered assets) or 'movies <file>'.",
-        f"# tools {tools_digest}",
+        f"# tools {tools_digest(repository)}",
     ]
     for archive in sorted(entries):
         lines += [f"{archive} {rel}" for rel in sorted(entries[archive])]
-    args.out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    args.out.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
     return {"inputs": sum(len(v) for v in entries.values()), "out": str(args.out)}
 
 
-# The collections' places (from their Steam folder) and what each HD choice needs.
+# The collections' places and what each HD choice needs. Steam's copies keep their language's archives
+# in Image/dt and Days's videos in STEAM/Mare/MOVIE/Days/dt; the Epic Games Store's keep the archives in
+# Image/en and the videos in EPIC/Mare/MOVIE/Days/en (seen in a copy of its own); the
+# videos are found where the collection has them.
 KH2_EXE = "KINGDOM HEARTS II FINAL MIX.exe"
 COLLECTION_ARCHIVES = {
     "1.5+2.5": {"Mare": "Image/Mare", "SettingMenu": "Image/SettingMenu", "kh2_first": "Image/dt/kh2_first"},
     "2.8": {"kh3d_first": "Image/dt/kh3d_first"},
 }
 MOVIES = "STEAM/Mare/MOVIE/Days/dt"
+LANGUAGE_FOLDERS = ("dt", "en")
+
+
+def archive_base(folder: Path, kind: str, archive: str) -> Path:
+    """Where `archive` of collection `kind` is in `folder` (its .hed and .pkg beside this name): its
+    language folder the one the collection has."""
+    rel = COLLECTION_ARCHIVES[kind][archive]
+    for language in LANGUAGE_FOLDERS if "/dt/" in rel else ():
+        base = folder / rel.replace("/dt/", f"/{language}/")
+        if base.with_name(base.name + ".hed").is_file():
+            return base
+    return folder / rel
+
+
+def movies_folder(folder: Path) -> Path:
+    """Days's videos in the 1.5+2.5 collection `folder`: Steam's STEAM/Mare/MOVIE/Days/dt, else the
+    folder in the same place of the collection that holds them (*/Mare/MOVIE/Days/*)."""
+    if (folder / MOVIES).is_dir():
+        return folder / MOVIES
+    first = hd_inputs().get("movies", [])
+    for candidate in sorted(folder.glob("*/Mare/MOVIE/Days/*")):
+        if candidate.is_dir() and (not first or (candidate / first[0]).is_file()):
+            return candidate
+    return folder / MOVIES
+
+
 DATA_TOOLS = {"theater_mission.py", "theater_cine.py", "save_screen.py", "ddd_camp.py"}  # take --data
 
 MESSAGES.update(
@@ -536,6 +624,18 @@ MESSAGES.update(
             "de": "Die HD-Teile sind fertig.",
             "it": "I pezzi HD sono pronti.",
         },
+        "hd-partial": {
+            "en": "The HD pieces are ready, but for those of {tools}: those screens keep the DS's look (your copy "
+            "may be changed by a mod). What went wrong is in {log}; please attach it to a report.",
+            "es": "Las piezas HD están listas, menos las de {tools}: esas pantallas se quedan con el aspecto de la "
+            "DS (puede que un mod haya cambiado tu copia). Lo que falló está en {log}; adjúntalo si lo reportas.",
+            "fr": "Les éléments HD sont prêts, sauf ceux de {tools} : ces écrans gardent l'aspect de la DS (un mod a "
+            "peut-être changé votre copie). Ce qui a échoué est dans {log} ; joignez-le à un rapport.",
+            "de": "Die HD-Teile sind fertig, außer denen von {tools}: Diese Bildschirme behalten das Aussehen der DS "
+            "(vielleicht hat ein Mod deine Kopie verändert). Was schiefging, steht in {log}; häng es an einen Bericht.",
+            "it": "I pezzi HD sono pronti, tranne quelli di {tools}: quelle schermate restano con l'aspetto del DS "
+            "(forse una mod ha cambiato la tua copia). Cosa è andato storto è in {log}; allegalo a una segnalazione.",
+        },
     }
 )
 
@@ -557,7 +657,7 @@ def check_folder(kind: str, folder: Path) -> list[str]:
     inputs = hd_inputs()
     missing = []
     for archive, rel in COLLECTION_ARCHIVES[kind].items():
-        base = folder / rel
+        base = archive_base(folder, kind, archive)
         if not (base.with_name(base.name + ".hed").is_file() and base.with_name(base.name + ".pkg").is_file()):
             missing.append(rel + ".hed/.pkg")
             continue
@@ -569,9 +669,10 @@ def check_folder(kind: str, folder: Path) -> list[str]:
         if absent:
             missing.append(f"{rel}: {len(absent)} entries ({absent[0]}...)")
     if kind == "1.5+2.5":
-        absent = [m for m in inputs.get("movies", []) if not (folder / MOVIES / m).is_file()]
+        movies = movies_folder(folder)
+        absent = [m for m in inputs.get("movies", []) if not (movies / m).is_file()]
         if absent:
-            missing.append(f"{MOVIES}: {len(absent)} files ({absent[0]}...)")
+            missing.append(f"{movies.relative_to(folder).as_posix()}: {len(absent)} files ({absent[0]}...)")
         try:
             collection_archive.load_table(folder / KH2_EXE)
         except (OSError, collection_archive.ArchiveError):
@@ -579,15 +680,29 @@ def check_folder(kind: str, folder: Path) -> list[str]:
     return missing
 
 
-@command("find-collections", "the KINGDOM HEARTS collections Steam has on this computer, each checked", lambda p: None)
+@command(
+    "find-collections",
+    "the KINGDOM HEARTS collections Steam or the Epic Games Store has on this computer, each checked",
+    lambda p: None,
+)
 def find_collections(args: argparse.Namespace) -> dict[str, Any]:
+    import epic_library
     import steam_library
 
     steam = steam_library.steam_folder()
     found = []
-    for kind, app in (("1.5+2.5", steam_library.APP_1525), ("2.8", steam_library.APP_28)):
+    for kind, app, marker in (
+        ("1.5+2.5", steam_library.APP_1525, epic_library.MARKER_1525),
+        ("2.8", steam_library.APP_28, epic_library.MARKER_28),
+    ):
+        # Steam's copy first, the Epic Games Store's when Steam has none that is whole
         folder = steam_library.app_folder(app, steam) if steam is not None else None
         missing = check_folder(kind, folder) if folder is not None else None
+        if folder is None or missing:
+            epic = epic_library.collection_folder(marker)
+            epic_missing = check_folder(kind, epic) if epic is not None else None
+            if epic is not None and (folder is None or not epic_missing):
+                folder, missing = epic, epic_missing
         found.append(
             {
                 "kind": kind,
@@ -652,14 +767,14 @@ def _build_arguments(p: argparse.ArgumentParser) -> None:
 @command("build-hd", "the HD pieces made from the player's collections", _build_arguments)
 def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     import collection_archive
-    import subprocess
 
     install = args.install.resolve()
     if args.menus and (args.c1525 is None or args.c28 is None):
         raise Refusal("hd-needs-both")
     if args.videos and args.c1525 is None:
         raise Refusal("hd-needs-1525")
-    # an update leaves the pieces already made from the same collections (their folder deleted: made again)
+    # an update leaves the pieces already made from the same collections by the same tools (their folder
+    # deleted: made again)
     made_before = load_state(install)
     if args.menus and hd_made(
         made_before, "hd-menus", {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, install / "mods" / HD_MOD
@@ -687,8 +802,10 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             (root / "tools" / "hd").mkdir(parents=True, exist_ok=True)
             shutil.copy2(tools["hd"] / tool, root / "tools" / "hd" / tool)
         shutil.copy2(tools["rom"] / "decompress_data.py", root / "tools")
+        (root / SCENE_MAP).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(HERE.parent / SCENE_MAP, root / SCENE_MAP)
         places = {
-            "movies": args.c1525 / MOVIES if args.c1525 else Path(),
+            "movies": movies_folder(args.c1525) if args.c1525 else Path(),
             "mare": src / "Mare.hed_out" / "original",
             "settings": src / "SettingMenu.hed_out" / "original",
             "ddd": src / "kh3d_first.hed_out",
@@ -702,35 +819,48 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
         for archive, folder in wanted.items():
             kind = "1.5+2.5" if archive in COLLECTION_ARCHIVES["1.5+2.5"] else "2.8"
             progress(0, 1, words("hd-making", args.language, what=archive))
-            with collection_archive.Archive(folder / COLLECTION_ARCHIVES[kind][archive], cipher) as a:
+            with collection_archive.Archive(archive_base(folder, kind, archive), cipher) as a:
                 collection_archive.materialise(a, inputs.get(archive, []), src / f"{archive}.hed_out")
         runs = (HD_MENU_TOOLS if args.menus else []) + (HD_VIDEO_TOOLS if args.videos else [])
-        for i, (tool, template) in enumerate(runs):
-            progress(i, len(runs), words("hd-making", args.language, what=tool))
+
+        def line_of(tool: str, template: list[str]) -> list[str]:
             # (the installed Python is isolated by its ._pth file; -I would hide a developer's own packages)
             line = [sys.executable, str(root / "tools" / "hd" / tool), *tool_arguments(template, places)]
             if (tool, template) in HD_MENU_TOOLS:
                 line += ["--mod", HD_MOD]
             if tool in DATA_TOOLS:
                 line += ["--data", str(data)]
-            done = subprocess.run(line, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            if done.returncode != 0:
-                raise RuntimeError(
-                    f"{tool}: {done.stderr.strip().splitlines()[-1] if done.stderr.strip() else done.returncode}"
-                )
-            pieces.append({"tool": tool, "made": True})
-        # whole, into their places
+            return line
+
+        log = install / "setup" / HD_ERRORS
+        pieces = run_hd_tools(runs, line_of, root, log, args.language)
+        if not any(p["made"] for p in pieces):
+            first = pieces[0]
+            raise RuntimeError(f"{first['tool']}: {first['error']} ({log})")
+        made = {p["tool"] for p in pieces if p["made"]}
+        menus = [tool for tool, _ in HD_MENU_TOOLS if args.menus]
+        videos = [tool for tool, _ in HD_VIDEO_TOOLS if args.videos]
+        # whole, into their places: the menus when any was made (those that were not keep the DS's look,
+        # and the step stays undone so the next run tries them again), the videos when all were
         state = load_state(install)
-        if args.menus:
+        if menus and any(tool in made for tool in menus):
             replace_folder(root / "mods" / HD_MOD, install / "mods" / HD_MOD)
-            mark_step(state, "hd-menus", {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)})
-        if args.videos:
+            if all(tool in made for tool in menus):
+                mark_step(
+                    state, "hd-menus", {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, made_by=made_by("hd-menus")
+                )
+        if videos and all(tool in made for tool in videos):
             replace_folder(root / "data" / "cutscenes", install / "data" / "cutscenes")
-            mark_step(state, "hd-videos", {"1.5+2.5": str(args.c1525)})
+            mark_step(state, "hd-videos", {"1.5+2.5": str(args.c1525)}, made_by=made_by("hd-videos"))
         save_state(install, state)
     finally:
         remove(work)
     progress(1, 1, words("hd-ready", args.language))
+    missing = [p["tool"] for p in pieces if not p["made"]]
+    if missing:
+        log = install / "setup" / HD_ERRORS
+        message = words("hd-partial", args.language, tools=", ".join(missing), log=str(log))
+        return {"pieces": pieces, "missing": ", ".join(missing), "message": message}
     return {"pieces": pieces, "message": words("hd-ready", args.language)}
 
 

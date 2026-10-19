@@ -16,6 +16,10 @@ extern "C" { // the host's C headers that say nothing of C++
 #include "pad_icons.h"
 #include "settings_skin.h"
 
+#ifndef KHDAYS_VERSION
+#define KHDAYS_VERSION "0.0.0" /* port/CMakeLists.txt gives the VERSION file's */
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -26,12 +30,12 @@ extern "C" { // the host's C headers that say nothing of C++
 
 namespace {
 
-constexpr Uint64 kCaptureMs = 5000;          // how long a new binding waits for its key or button
-constexpr Uint64 kRepeatDelayMs = 400;       // a held gamepad direction starts repeating after this,
-constexpr Uint64 kRepeatEveryMs = 100;       // and then repeats this often
-constexpr int kClose = KHDAYS_SECTION_COUNT; // the column's last entry
+constexpr Uint64 kCaptureMs = 5000;         // how long a new binding waits for its key or button
+constexpr Uint64 kRepeatDelayMs = 400;      // a held gamepad direction starts repeating after this,
+constexpr Uint64 kRepeatEveryMs = 100;      // and then repeats this often
+constexpr int kQuit = KHDAYS_SECTION_COUNT; // the column's last entry, Quit the game (B or Escape close the menu)
 
-enum Mode { MODE_BROWSE, MODE_CAPTURE, MODE_CONFLICT, MODE_UNBOUND, MODE_PRESET, MODE_TEXT, MODE_UPDATE };
+enum Mode { MODE_BROWSE, MODE_CAPTURE, MODE_CONFLICT, MODE_UNBOUND, MODE_PRESET, MODE_TEXT, MODE_UPDATE, MODE_QUIT };
 enum { FACE_ACCEPT, FACE_CLEAR, FACE_BACK, FACE_COUNT };
 constexpr int PLACE_VALUE = KHDAYS_PLACE_VALUE;
 
@@ -46,7 +50,7 @@ struct Menu {
     KhdaysProfile work{};     // what the menu edits
     KhdaysProfile original{}; // what it started from
     KhdaysProfile reported{}; // what khdays_settings_take_changes last reported
-    int column = 0;           // the column's entry (kClose: Close)
+    int column = 0;           // the column's entry (kQuit: Quit the game)
     int section = 0;          // the section shown
     bool in_rows = false;     // the focus is on the section's rows
     int row = 0, cell = 0;
@@ -72,10 +76,10 @@ struct Menu {
     // What the last key or button pressed does (the Controls section's test row).
     int test_action = -2; // -2 nothing pressed yet, -1 nothing
     // The rows of the section shown.
-    KhdaysRow rows[KHDAYS_MODEL_ROWS_MAX];
+    std::vector<KhdaysRow> rows = std::vector<KhdaysRow>(KHDAYS_MODEL_ROWS_MAX);
     int count = 0;
     // The situation (khdays_settings_set_situation) and the graphics card.
-    int in_session = 0, hd_videos = 0, graphics_card = 1;
+    int in_session = 0, hd_videos = 0, graphics_card = 1, guest = 0;
     // Where the last drawing put things, in the renderer's pixels.
     std::vector<Place> places;
     float density = 1.0f;
@@ -147,11 +151,17 @@ void settle()
     KhdaysModelContext context{};
     context.graphics_card = m.graphics_card;
     context.in_session = m.in_session;
+    context.guest = m.guest;
     context.hd_videos = m.hd_videos;
     context.gamepad = khdays_devices_gamepad_name();
     context.pad_family = pad_family();
     khdays_model_refresh(&m.work);
-    m.count = khdays_model_rows(m.section, &m.work, &context, m.rows);
+    m.count = khdays_model_rows_into(m.section, &m.work, &context, m.rows.data(), (int)m.rows.size());
+    if (m.count > (int)m.rows.size()) {
+        // a section with more rows than ever before (the Mods section grows with the mods)
+        m.rows.resize((size_t)m.count);
+        m.count = khdays_model_rows_into(m.section, &m.work, &context, m.rows.data(), (int)m.rows.size());
+    }
     if (m.row >= m.count) {
         m.row = m.count - 1;
     }
@@ -279,6 +289,8 @@ void input_label(int device, int input, char *text, size_t size)
 {
     if (input == KHDAYS_NO_INPUT) {
         SDL_strlcpy(text, "-", size);
+    } else if (device == KHDAYS_DEVICE_KEYBOARD && khdays_mouse_input_name(input) != nullptr) {
+        SDL_strlcpy(text, khdays_mouse_input_name(input), size);
     } else if (device == KHDAYS_DEVICE_KEYBOARD) {
         // the label on this keyboard's key, for its layout
         const SDL_Keycode key = SDL_GetKeyFromScancode((SDL_Scancode)input, SDL_KMOD_NONE, false);
@@ -404,17 +416,32 @@ void choose_section(int section)
 
 void column_move(int dir)
 {
-    m.column = std::clamp(m.column + dir, 0, kClose);
-    if (m.column < kClose) {
+    int next = m.column + dir;
+    while (next >= 0 && next < kQuit && !khdays_model_section_shown(next)) {
+        next += dir;
+    }
+    if (next < 0) {
+        return;
+    }
+    m.column = std::clamp(next, 0, kQuit);
+    if (m.column < kQuit) {
         choose_section(m.column);
     }
 }
 
-// Enter on a column entry: go into the section's rows, or close the menu.
+// Quit the game: asked first, with "Cancel" chosen.
+void ask_quit()
+{
+    m.mode = MODE_QUIT;
+    m.choice = 1;
+}
+
+// Enter on a column entry: go into the section's rows, or ask whether to quit the game.
 bool column_enter()
 {
-    if (m.column == kClose) {
-        return try_close(false);
+    if (m.column == kQuit) {
+        ask_quit();
+        return false;
     }
     choose_section(m.column);
     for (int i = 0; i < m.count; ++i) {
@@ -432,7 +459,10 @@ bool column_enter()
 // The shoulder buttons move between the sections.
 void switch_section(int dir)
 {
-    const int next = (m.section + dir + KHDAYS_SECTION_COUNT) % KHDAYS_SECTION_COUNT;
+    int next = m.section;
+    do {
+        next = (next + dir + KHDAYS_SECTION_COUNT) % KHDAYS_SECTION_COUNT;
+    } while (!khdays_model_section_shown(next));
     const bool rows = m.in_rows;
     m.column = next;
     choose_section(next);
@@ -556,7 +586,7 @@ bool activate()
             m.mode = MODE_PRESET;
             m.choice = 0;
         } else {
-            khdays_model_command(&m.work, r->command);
+            khdays_model_row_command(&m.work, r);
         }
         break;
     default: break;
@@ -675,6 +705,12 @@ void capture_event(const SDL_Event *e)
         }
     } else if (e->type == SDL_EVENT_GAMEPAD_REMOVED && m.cap_device == KHDAYS_DEVICE_GAMEPAD) {
         m.mode = MODE_BROWSE; // the gamepad was unplugged
+    } else if (e->type == SDL_EVENT_MOUSE_BUTTON_DOWN && m.cap_device == KHDAYS_DEVICE_KEYBOARD &&
+               e->button.button >= SDL_BUTTON_LEFT && e->button.button <= SDL_BUTTON_X2) {
+        // the mouse's buttons share the keyboard's column (SDL numbers them from 1: left, middle, right, X1, X2)
+        finish_capture(KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_LEFT + (e->button.button - SDL_BUTTON_LEFT));
+    } else if (e->type == SDL_EVENT_MOUSE_WHEEL && m.cap_device == KHDAYS_DEVICE_KEYBOARD && e->wheel.y != 0.0f) {
+        finish_capture(KHDAYS_MOUSE_INPUT + (e->wheel.y > 0.0f ? KHDAYS_MOUSE_WHEEL_UP : KHDAYS_MOUSE_WHEEL_DOWN));
     }
 }
 
@@ -695,6 +731,17 @@ bool answer_prompt(bool yes)
             khdays_model_command(&m.work, m.preset == KHDAYS_PRESET_KH2 ? KHDAYS_CMD_PRESET_KH2 : KHDAYS_CMD_PRESET_DS);
         }
         m.mode = MODE_BROWSE;
+        return false;
+    }
+    if (m.mode == MODE_QUIT) {
+        m.mode = MODE_BROWSE;
+        if (yes) {
+            // as closing the window: the settings are saved, then the game ends (window.c)
+            SDL_Event quit;
+            SDL_zero(quit);
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+        }
         return false;
     }
     m.mode = MODE_BROWSE;
@@ -824,8 +871,9 @@ bool mouse_click(float x, float y)
     if (const Place *entry = place_at(KHDAYS_PLACE_ENTRY, x, y)) {
         m.in_rows = false;
         m.column = entry->index;
-        if (entry->index == kClose) {
-            return try_close(false);
+        if (entry->index == kQuit) {
+            ask_quit();
+            return false;
         }
         choose_section(entry->index);
         return false;
@@ -1103,8 +1151,11 @@ std::string footer_warning()
 void draw_column(float row_h, float pad)
 {
     const float w = ImGui::GetContentRegionAvail().x;
-    for (int i = 0; i <= kClose; ++i) {
-        if (i == kClose) {
+    for (int i = 0; i <= kQuit; ++i) {
+        if (i < kQuit && !khdays_model_section_shown(i)) {
+            continue;
+        }
+        if (i == kQuit) {
             ImGui::Dummy(ImVec2(w, row_h * 0.5f));
         }
         const ImVec2 p = ImGui::GetCursorScreenPos();
@@ -1129,7 +1180,7 @@ void draw_column(float row_h, float pad)
         }
         text_at(ImVec2(p.x + pad + moved, p.y + (row_h - ImGui::GetFontSize()) / 2),
                 i == m.section || i == m.column ? kWhite : kGrey,
-                i == kClose ? khdays_text(TXT_CLOSE) : khdays_model_section_title(i));
+                i == kQuit ? khdays_text(TXT_QUIT_GAME) : khdays_model_section_title(i));
         ImGui::Dummy(ImVec2(w, row_h));
         record(KHDAYS_PLACE_ENTRY, i, p, q);
     }
@@ -1745,6 +1796,11 @@ void draw_prompt(float w, float h, float row_h, float pad)
         }
         yes = khdays_text(TXT_APPLY);
         no = khdays_text(TXT_CANCEL);
+    } else if (m.mode == MODE_QUIT) {
+        question = khdays_text(TXT_QUIT_GAME_Q);
+        details.push_back(khdays_text(TXT_QUIT_GAME_DETAIL));
+        yes = khdays_text(TXT_QUIT_GAME);
+        no = khdays_text(TXT_CANCEL);
     } else if (m.mode == MODE_UPDATE) {
         question = khdays_text(TXT_UPDATE_TITLE);
         SDL_snprintf(line, sizeof(line), khdays_text(TXT_UPDATE_DETAIL), m.update_have, m.update_new);
@@ -1941,6 +1997,11 @@ void khdays_settings_set_situation(int in_session, int hd_videos)
     m.hd_videos = hd_videos;
 }
 
+void khdays_settings_set_guest(int guest)
+{
+    m.guest = guest;
+}
+
 void khdays_settings_set_graphics_card(int available)
 {
     m.graphics_card = available;
@@ -1974,7 +2035,7 @@ int khdays_settings_handle(const SDL_Event *e, SDL_Window *window)
         settle();
         return 0;
     }
-    if (m.mode == MODE_CONFLICT || m.mode == MODE_UNBOUND || m.mode == MODE_PRESET) {
+    if (m.mode == MODE_CONFLICT || m.mode == MODE_UNBOUND || m.mode == MODE_PRESET || m.mode == MODE_QUIT) {
         if (e->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             if (e->button.button == SDL_BUTTON_LEFT) {
                 closed = mouse_click(e->button.x * m.density, e->button.y * m.density);
@@ -2191,9 +2252,9 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         khdays_skin_screen(ImGui::GetBackgroundDrawList(), screen);
         // the faded picture of the section shown (the HD menu's own five, the port's choice of one
         // for each of its sections: KHDAYS_SECTION_*)
-        static const char *const emblems[KHDAYS_SECTION_COUNT] = {"emblem_keyboard", "emblem_pad",   "emblem_pad",
-                                                                  "emblem_screen",   "emblem_sound", "emblem_pad",
-                                                                  "emblem_film",     "emblem_screen"};
+        static const char *const emblems[KHDAYS_SECTION_COUNT] = {"emblem_keyboard", "emblem_pad",    "emblem_pad",
+                                                                  "emblem_screen",   "emblem_sound",  "emblem_pad",
+                                                                  "emblem_film",     "emblem_screen", "emblem_screen"};
         if (m.section >= 0 && m.section < KHDAYS_SECTION_COUNT) {
             khdays_skin_place(ImGui::GetBackgroundDrawList(), emblems[m.section], screen);
         }
@@ -2246,7 +2307,7 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         const float body = std::max(row_h, ImGui::GetContentRegionAvail().y - footer);
 
         // the column: as wide as its longest entry
-        float column_w = width_of(khdays_text(TXT_CLOSE));
+        float column_w = width_of(khdays_text(TXT_QUIT_GAME));
         for (int s = 0; s < KHDAYS_SECTION_COUNT; ++s) {
             column_w = std::max(column_w, width_of(khdays_model_section_title(s)));
         }
@@ -2296,8 +2357,11 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         m.rows_height = ImGui::GetWindowHeight();
         ImGui::EndChild();
 
-        // the footer
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + inner);
+        // the footer, clear of the version at its right end
+        char version[64];
+        SDL_snprintf(version, sizeof(version), khdays_text(TXT_VERSION), KHDAYS_VERSION);
+        const float version_w = width_of(version) + pad;
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + std::max(inner * 0.5f, inner - version_w));
         ImGui::PushStyleColor(ImGuiCol_Text, m.skin ? kSkinHeading : kGrey);
         if (!note.empty()) {
             ImGui::TextUnformatted(note.c_str());
@@ -2312,6 +2376,13 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         }
         ImGui::PopStyleColor();
         ImGui::PopTextWrapPos();
+        {
+            // the port's version, in the window's bottom right corner
+            const ImVec2 lo = ImGui::GetWindowPos(), extent = ImGui::GetWindowSize();
+            const ImVec2 at(lo.x + extent.x - ImGui::GetStyle().WindowPadding.x - width_of(version),
+                            lo.y + extent.y - ImGui::GetStyle().WindowPadding.y - ImGui::GetFontSize());
+            text_at(at, kGrey, version);
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor(2 + scroll_colours);
@@ -2377,7 +2448,9 @@ int khdays_settings_row_info(int row, int *id, int *action)
         return 0;
     }
     *id = m.rows[row].id;
-    *action = m.rows[row].kind == KHDAYS_ROW_BINDING ? m.rows[row].action : -1;
+    // a binding's action, a mod option's place among its mod's
+    *action =
+        m.rows[row].kind == KHDAYS_ROW_BINDING || m.rows[row].id == KHDAYS_SET_MOD_OPTION ? m.rows[row].action : -1;
     return 1;
 }
 

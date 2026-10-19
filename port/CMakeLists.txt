@@ -18,8 +18,9 @@ endif()
 # compares it with the latest release's (host/app/updates.c).
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" KHDAYS_VERSION LIMIT_COUNT 1)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
-# only the file that tells it: a new version rebuilds that file alone
-set_source_files_properties(host/app/updates.c PROPERTIES COMPILE_DEFINITIONS "KHDAYS_VERSION=\"${KHDAYS_VERSION}\"")
+# only the files that tell it (the update check, the settings menu's corner): a new version rebuilds them alone
+set_source_files_properties(host/app/updates.c host/settings/settings_menu.cpp
+                            PROPERTIES COMPILE_DEFINITIONS "KHDAYS_VERSION=\"${KHDAYS_VERSION}\"")
 
 set(KHDAYS_GEN "" CACHE PATH "Output directory of port/tools/prepare.py")
 if(NOT EXISTS "${KHDAYS_GEN}/sources.cmake")
@@ -165,6 +166,24 @@ target_include_directories(khdays-host-imgui PUBLIC "${imgui_SOURCE_DIR}" "${img
 target_compile_definitions(khdays-host-imgui PUBLIC IMGUI_DISABLE_DEFAULT_FONT IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_link_libraries(khdays-host-imgui PUBLIC SDL3::SDL3)
 target_compile_options(khdays-host-imgui PRIVATE ${KHDAYS_CXX_STD})
+
+# Gameplay mods' scripts (runtime/scripts): Lua 5.4 (MIT), its core and the libraries the mods are
+# given; not its interpreter, compiler, files, debug or modules.
+FetchContent_Declare(
+    lua
+    URL https://www.lua.org/ftp/lua-5.4.9.tar.gz
+    URL_HASH SHA256=2335b6c582a52654f94612bf10d2f4672805d05329aa6568b1d8cd9e5c6fb8e6
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR none
+)
+FetchContent_MakeAvailable(lua)
+file(GLOB khdays_lua_sources "${lua_SOURCE_DIR}/src/*.c")
+list(FILTER khdays_lua_sources EXCLUDE REGEX "/(lua|luac|liolib|ldblib|loadlib|linit)\\.c$")
+add_library(khdays-lua STATIC ${khdays_lua_sources})
+target_include_directories(khdays-lua PUBLIC "${lua_SOURCE_DIR}/src")
+if(MSVC)
+    target_compile_options(khdays-lua PRIVATE /W3 /wd4244 /wd4324)
+endif()
 
 # The menu's font, in the executable so that it alone still updates a
 # release: Roboto Medium (Apache License 2.0), from ImGui's own archive.
@@ -352,6 +371,8 @@ add_library(khdays-host-input STATIC
     host/settings/settings_corner.c       # and what it leaves when closed
     host/screens/ui_font.cpp
     host/screens/ui_text.c
+    runtime/scripts/queue.c          # the Mods page: what it asks of the mods,
+    runtime/scripts/view.c           # and what it shows of them
     host/render/png_io.c
     ${KHDAYS_INSTANCE_SOURCE}        # the player's slot on the PC (specs/015)
     runtime/input/analog.c
@@ -400,6 +421,8 @@ const unsigned int khdays_${name}_size = ${size}u;
 endfunction()
 set(KHDAYS_PORT_COMPOSITIONS "${CMAKE_CURRENT_SOURCE_DIR}/ui/compositions/port_days.txt")
 khdays_embed_text(compositions_port "${KHDAYS_PORT_COMPOSITIONS}")
+# The theater's HD scenes in place of the game's (movies/hd_scenes.txt), compiled in the same way.
+khdays_embed_text(scenes_port "${CMAKE_CURRENT_SOURCE_DIR}/movies/hd_scenes.txt")
 
 if(ANDROID)
     # the app's libmain.so, which SDLActivity loads and calls SDL_main in (android/)
@@ -427,12 +450,26 @@ target_sources(khdays-native PRIVATE
     runtime/menus/newgame.c            # the new game's dialogs and the port's subtitles question
     runtime/menus/saveslots.c          # the save files beyond the DS's three
     runtime/core/sha1.c               # SHA-1: the saves' signatures, the rooms' passwords
+    runtime/menus/autosave.c           # the autosave after a cleared mission
     runtime/menus/savelist.c           # the port's save list over the game's
     runtime/menus/cinelist.c           # MODO CINE's list, read for the port to draw
     runtime/net/roomlist.c           # the port's list of Mission Mode's rooms over the game's
     runtime/menus/charselect.c         # Mission Mode's character select, read and steered for the port
     runtime/menus/camp.c               # Mission Mode's camp menu, read for the port
     runtime/menus/retry.c              # Mission Mode's Retry in the pause
+    runtime/scripts/scripts.c          # gameplay mods' scripts: found, loaded, run at the frame point
+    runtime/scripts/sandbox.c          # ... each in its own Lua state
+    runtime/scripts/manifest.c
+    runtime/scripts/order.c
+    runtime/scripts/folders.cpp
+    runtime/scripts/mods_log.c
+    runtime/scripts/api_events.c
+    runtime/scripts/api_mod.c
+    runtime/scripts/api_state.c
+    runtime/scripts/api_menus.c        # ... their options in the settings menu's Mods page
+    runtime/scripts/api_actions.c      # ... the game's actions they ask for
+    runtime/scripts/game_link.c        # ... the game's side of their interface
+    runtime/core/sha256.c             # SHA-256: the mods' fingerprints
     runtime/core/io_regs.c
     runtime/core/threads.c
     runtime/core/window.c
@@ -469,6 +506,7 @@ target_sources(khdays-native PRIVATE
     runtime/mods/names.cpp
     runtime/mods/textures.c
     runtime/mods/models.cpp
+    runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
     runtime/mods/tiles2d.c
     runtime/mods/sheet_colours.c        # the colours each 2D sheet is drawn with, for the studio (specs/018)
     runtime/core/files.c
@@ -476,7 +514,12 @@ target_sources(khdays-native PRIVATE
     runtime/movies/video.c
     runtime/movies/video_mod.c
     runtime/movies/movie_hd.c             # an HD video in a movie's place (specs/013)
+    runtime/movies/scene_trace.c          # KHDAYS_TRACE_SCENES: the field's event scripts
+    runtime/movies/scene_map.c            # the theater's HD scenes: the map
+    runtime/movies/scenes.c               # its files, and the scene the event runs
     host/movies/movie_subtitles.c         # the theater's subtitles over the HD video
+    host/movies/theater_music.c           # ... and its music
+    host/movies/music_schedule.c
     runtime/net/net_session.c          # the multiplayer's session (specs/015)
     runtime/net/mp_predict.c           # a guest's prediction of its own character (specs/017)
     ui/elements.c                  # the port's own presentation (specs/011)
@@ -487,6 +530,7 @@ target_sources(khdays-native PRIVATE
     ui/badges.c                    # the badges' icons on the mission panel
     ui/crowns.c                    # the crowns on the story's day list
     ui/mission_list.c              # the camp's mission list from the game's files
+    ui/autosave_notice.cpp         # the notice of an autosave, in the game's font
     ui/save_numbers.cpp            # the file numbers on the game's own save lists in pages
     ui/rooms2d.c                   # the port's list of rooms on the game's own screens (prepare.py's hooks)
     ui/room_icons.cpp              # each room's signal and lock on the game's own list
@@ -498,6 +542,7 @@ target_sources(khdays-native PRIVATE
     ui/situation_decide.c          # what the game shows, from what it runs
     ui/composition.c
     "${CMAKE_CURRENT_BINARY_DIR}/compositions_port.c"
+    "${CMAKE_CURRENT_BINARY_DIR}/scenes_port.c"
     host/render/gpu_hd.c
     "${KHDAYS_GEN}/ds_functions.c"  # the native function at each DS address
     ../assets/src/mesh.cpp         # DS models decoded, for the graphics dump's glTF
@@ -527,6 +572,7 @@ target_compile_options(khdays-native PRIVATE
 # ufbx (specs/014), as it is: third-party, not held to the port's warnings.
 add_library(khdays-ufbx STATIC "${ufbx_SOURCE_DIR}/ufbx.c")
 target_link_libraries(khdays-native PRIVATE khdays-ufbx)
+target_link_libraries(khdays-native PRIVATE khdays-lua)
 target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3)
 if(WIN32)
 target_link_libraries(khdays-native PRIVATE dbghelp winmm delayimp
@@ -588,9 +634,23 @@ add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_h
 target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
+add_executable(khdays-scenes-test tests/scenes_test.c runtime/movies/scene_map.c)
+target_compile_options(khdays-scenes-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-scenes COMMAND khdays-scenes-test)
+# A replaced room's own animation (runtime/mods/room_animation.cpp): keys, loops, scrolls, frames.
+add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/mods/room_animation.cpp)
+target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
+target_compile_options(khdays-room-animation-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-room-animation COMMAND khdays-room-animation-test)
+# The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
+add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
+target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-music-schedule COMMAND khdays-music-schedule-test)
 # ... and its decoder on one of the player's files, when they are there.
-add_executable(khdays-movie-hd-decode-test tests/movie_hd_decode_test.c host/movies/movie_hd_win.c)
-target_link_libraries(khdays-movie-hd-decode-test PRIVATE SDL3::SDL3 mfplat mfreadwrite mfuuid ole32)
+add_executable(khdays-movie-hd-decode-test tests/movie_hd_decode_test.c host/movies/movie_hd_win.c
+               host/movies/theater_music.c host/movies/music_schedule.c)
+target_include_directories(khdays-movie-hd-decode-test PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-movie-hd-decode-test PRIVATE khdays-sound SDL3::SDL3 mfplat mfreadwrite mfuuid ole32)
 target_compile_options(khdays-movie-hd-decode-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd-decode
          COMMAND khdays-movie-hd-decode-test "${CMAKE_CURRENT_SOURCE_DIR}/../data/cutscenes/cinematics/hd808.mp4" 7.19)
@@ -646,6 +706,14 @@ foreach(installer_test ${KHDAYS_INSTALLER_TESTS})
     string(REPLACE "_" "-" installer_test_name "${installer_test_name}")
     add_test(NAME khdays-installer-${installer_test_name} COMMAND "${Python3_EXECUTABLE}" "${installer_test}")
 endforeach()
+# The HD tools' readers (tools/hd/): one test each, in Python, named after its file.
+file(GLOB KHDAYS_HD_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/hd/tests/*_test.py")
+foreach(hd_test ${KHDAYS_HD_TESTS})
+    get_filename_component(hd_test_name "${hd_test}" NAME_WE)
+    string(REGEX REPLACE "_test$" "" hd_test_name "${hd_test_name}")
+    string(REPLACE "_" "-" hd_test_name "${hd_test_name}")
+    add_test(NAME khdays-hd-${hd_test_name} COMMAND "${Python3_EXECUTABLE}" "${hd_test}")
+endforeach()
 
 # The execution contexts the game's threads run on (host/app/context.h): more of
 # them than the old fixed table held, each resumed in turn.
@@ -673,6 +741,20 @@ target_link_libraries(khdays-saveslots-test PRIVATE SDL3::SDL3)
 target_compile_options(khdays-saveslots-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-saveslots COMMAND khdays-saveslots-test)
 
+# Gameplay mods' scripts (runtime/scripts): manifests, the load order, the sandbox, the events and the
+# state names, against a game of the test's own.
+add_executable(khdays-script-test tests/script_test.c runtime/scripts/scripts.c runtime/scripts/sandbox.c
+               runtime/scripts/manifest.c runtime/scripts/order.c runtime/scripts/folders.cpp
+               runtime/scripts/mods_log.c runtime/scripts/queue.c runtime/scripts/api_events.c
+               runtime/scripts/api_mod.c runtime/scripts/api_state.c runtime/scripts/api_menus.c
+               runtime/scripts/api_actions.c
+               runtime/scripts/view.c runtime/core/sha256.c)
+target_link_libraries(khdays-script-test PRIVATE khdays-lua SDL3::SDL3)
+target_compile_options(khdays-script-test PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-script COMMAND khdays-script-test)
+
 # The sound's tests: the channels and mixers against fixed programs, the
 # bridge's queues, and (to come) the drivers, the stream reader and the
 # replacements; no game data needed.
@@ -699,7 +781,7 @@ set_tests_properties(khdays-render PROPERTIES SKIP_RETURN_CODE 77)
 
 # The fuzzers: libFuzzer through MSVC, with AddressSanitizer, over a reader of
 # what arrives from outside (the server's datagrams, a router's answers, the
-# game's session); not in Debug (MSVC's AddressSanitizer does not combine with
+# game's session, a mod's mod.ini and the load order); not in Debug (MSVC's AddressSanitizer does not combine with
 # its run-time checks). Each replays its kept inputs (port/fuzz/<name>/)
 # and fuzzes 15 s in the test suite; port/tools/fuzz.py runs them longer.
 set(KHDAYS_FUZZ_SECONDS 15)
@@ -738,7 +820,7 @@ if(KHDAYS_ASAN)
     set(KHDAYS_PORT_TARGETS khdays-native khdays-gpu khdays-sound khdays-gfx khdays-host-input khdays-mobiclip
         khdays-gpu-test khdays-input-test khdays-movie-hd-test khdays-movie-hd-decode-test khdays-net-test
         khdays-server khdays-server-test khdays-elements-test khdays-onescreen-test khdays-thread-test
-        khdays-save-test khdays-sound-test khdays-render-test)
+        khdays-save-test khdays-sound-test khdays-render-test khdays-music-schedule-test)
     foreach(target IN LISTS KHDAYS_PORT_TARGETS)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE $<$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>:/fsanitize=address>)
@@ -759,6 +841,7 @@ khdays_fuzz_target(session fuzz/fuzz_session.c host/net/net_stub.c runtime/core/
 if(TARGET khdays-fuzz-session)
     target_link_libraries(khdays-fuzz-session PRIVATE SDL3::SDL3)
 endif()
+khdays_fuzz_target(mods fuzz/fuzz_mods.c runtime/scripts/manifest.c runtime/scripts/order.c runtime/core/sha256.c)
 
 # The static analysis (port/tools/analyze.py, in the Release tree's tests): the port's own sources of
 # each target compiled again with /analyze and their own flags, not linked, built only when asked;

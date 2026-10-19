@@ -108,6 +108,8 @@ Settings load_settings(const fs::path& root, std::string* note) {
                 read.browser_tree = value != "list";
             else if (key == "theme")
                 read.theme = value;
+            else if (key == "collection_1525")
+                read.collection_1525 = value;
             else if (key == "cache_mb") {
                 int mb = 0;
                 const auto r = std::from_chars(value.data(), value.data() + value.size(), mb);
@@ -159,7 +161,8 @@ bool save_settings(const Settings& s, std::string* why) {
             << "mod = " << s.mod << "\n"
             << "cache_mb = " << s.cache_mb << "\n"
             << "browser = " << (s.browser_tree ? "tree" : "list") << "\n"
-            << "theme = " << s.theme << "\n";
+            << "theme = " << s.theme << "\n"
+            << "collection_1525 = " << s.collection_1525 << "\n";
         if (!out) {
             if (why != nullptr)
                 *why = "cannot write " + u8(tmp);

@@ -14,6 +14,7 @@
 #include "rom.h"
 #include "runtime.h"
 #include "session_log.h"
+#include "../movies/scene_trace.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -273,6 +274,7 @@ void khdays_host_frame(void)
         khdays_log("scene %d -> %u (argument %u)", logged_scene == ~0u ? -1 : (int)logged_scene, scene[2], scene[4]);
         logged_scene = scene[2];
     }
+    khdays_scene_trace_frame(frame);
     trace_player(frame);
     trace_heap(frame);
     trace_mission(frame, scene[2] == 2);

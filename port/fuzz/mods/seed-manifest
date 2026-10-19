@@ -1,0 +1,7 @@
+id = example.where
+name = Where
+version = 1.0
+author = khdays-port
+kind = visual
+api = 1
+main = scripts/main.lua

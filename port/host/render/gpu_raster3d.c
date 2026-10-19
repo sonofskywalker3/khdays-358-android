@@ -603,7 +603,8 @@ void khdays_raster3d_set_hud_shapes(const KhdaysShape3d *shapes, int count)
 
 /* The shapes of group "all": every polygon whose box's middle is in a shape's rectangle is placed as
  * the shape says (a model in a menu's frame, drawn larger; each vertex moved once), every other one
- * hidden. Works on placed_polys and moved, which place_hud filled; whether anything moved. */
+ * hidden; a `whole` shape places them all, and a `world` one leaves the HUD's where place_hud put them.
+ * Works on placed_polys and moved, which place_hud filled; whether anything moved. */
 static uint8_t *vertex_moved; /* a flag per vertex (grows as needed) */
 static int32_t vertex_moved_room;
 
@@ -627,7 +628,8 @@ static int place_all(const KhdaysG3dList *list, int origin_x)
         for (int i = 0; i < list->npolys; ++i) {
             KhdaysG3dPolygon *p = &placed_polys[i];
             float x0 = 1e9f, x1 = -1e9f, mx, my;
-            if (p->count <= 0 || p->first < 0 || p->first + p->count > list->nverts) {
+            if (p->count <= 0 || p->first < 0 || p->first + p->count > list->nverts ||
+                (h->world && (p->flags & KHDAYS_G3D_HUD))) {
                 continue;
             }
             for (int k = 0; k < p->count; ++k) {

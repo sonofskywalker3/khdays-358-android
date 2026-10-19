@@ -250,7 +250,7 @@ def make(settings: Path, lang: str, out_dir: Path, preview: Path | None):
     out_dir.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels, "RGBA").save(out_dir / "settings_atlas.png")
     Image.fromarray(sheet, "L").save(out_dir / "settings_font.png")
-    (out_dir / "settings.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    (out_dir / "settings.txt").write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
     print(f"{lang}: {len(entries)} parts, atlas {pixels.shape[1]} x {pixels.shape[0]}, {len(glyphs)} glyphs")
     if preview is not None:
         preview.mkdir(parents=True, exist_ok=True)

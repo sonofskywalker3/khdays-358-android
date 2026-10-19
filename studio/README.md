@@ -399,15 +399,37 @@ extent, markers and names; write a room's models and collision (a mesh per
 kind of face, its names in the material) to a glTF to build on.
 
 ```powershell
-.\build\studio\release\khdays-studio.exe --replace-room <Mod> <code> <room> [<model> [<collision model>]]
+.\build\studio\release\khdays-studio.exe --replace-room <Mod> <code> <room> [<model> | kh2:<map> [<collision model> | game]]
 .\build\studio\release\khdays-studio.exe --revert-room <Mod> <code> <room>
 .\build\studio\release\khdays-studio.exe --rebuild-worlds <Mod>
 ```
 
-replace a room by a model (placed as its change says, or as it is), or make
-it again from the change the mod holds, and print what was made and every
-warning; give a room back to the game; write every world the mod changes
+replace a room by a model (placed as its change says, or as it is) or by a
+KH2 map of the player's collection (`kh2:tt02`: taken out, made and placed
+first by KH2's units; `kh2-collision` takes the map's own floors and walls), or make it again from the change the mod holds, and
+print what was made and every warning (markers left in a wall or with no
+ground under them named); give a room back to the game; write every world the mod changes
 again from its changes (after a game update, or on another player's copy).
+
+```powershell
+.\build\studio\release\khdays-studio.exe --kh2-room <map> <out.gltf> [<folder>]
+.\build\studio\release\khdays-studio.exe --kh2-maps [<world>]
+```
+
+makes a KINGDOM HEARTS II FINAL MIX map (`tt02`, the Usual Spot) of the
+player's own KINGDOM HEARTS HD 1.5+2.5 ReMIX copy into a model to replace a
+room with: its background, skies and pieces (placed, moving as in KH2), its
+remastered pictures as PNG beside it, scrolling and changing textures; from
+`<folder>/original/map/<map>.map` and `<folder>/remastered/map/<map>.map/`
+as the collection's archives give them (`saves/collection/kh2` when not
+given). What it makes is Square Enix's work from the player's copy: theirs to
+play with, not to share. The window's Maps view does the same from the room's
+Replace panel ("A KH2 room": the world's maps of the copy with their radar
+pictures, or one by its name); the collection's folder is in the settings
+(`collection_1525`, empty: the one the install used for its HD pieces).
+`--kh2-maps` lists the maps of the player's copy of the worlds Days shares (or
+one), each with the Days rooms made from it (`studio/data/kh2_rooms.txt`) and,
+once taken out, its pieces and moving textures.
 
 ```powershell
 .\build\studio\release\khdays-studio.exe --check-missions

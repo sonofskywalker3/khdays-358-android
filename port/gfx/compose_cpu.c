@@ -108,6 +108,7 @@ static uint kd_left_out_obj(uint i)
 #define KD_HD_TEXEL(i) (0u * (i))
 #define KD_SUB_X 0.0f
 #define KD_SUB_Y 0.0f
+#define KD_PIXEL 1.0f
 #define KD_ELEMENT(i) kd_element((i))
 #define KD_EL_TEXEL(image, i) kd_el_texel((image), (i))
 #define KD_ASFLOAT(u) kd_asfloat((u))

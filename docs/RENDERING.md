@@ -38,6 +38,7 @@ including it, the types `uint` and `int` (32 bits) and `float`, and:
 | `KD_HD_FIRST(id)`, `KD_HD_WIDTH(id)`, `KD_HD_HEIGHT(id)`, `KD_HD_INFO(id)` | replacement id's first texel, size and info (`textures.h`) |
 | `KD_HD_TEXEL(i)` | texel i of the replacements |
 | `KD_SUB_X`, `KD_SUB_Y` | where the output pixel lies inside its DS pixel (0-1, float) |
+| `KD_PIXEL` | the output pixel's size in DS pixels (1 / N, float) |
 | `KD_ELEMENT(i)` | word i of the screen's elements (`gfx/elements.h`) |
 | `KD_EL_TEXEL(image, i)` | texel i of element image `image` (`KE_IMAGE`) |
 | `KD_ASFLOAT(u)` | the float whose bits `u` holds |
@@ -218,8 +219,8 @@ The replacement graphics (`runtime/mods/textures.h`: mods' 3D textures, 2D tile
 sheets, models' textures) share one buffer the 3D pass and the 2D composition
 both read (SDL's GPU API binds at most 8 storage buffers to a pass): a table of
 four words per replacement (its first texel's place, width, height, what it is),
-then all the texels, one word each; a still picture's are followed by smaller
-copies, each half the one before (info bit 0x8).
+then all the texels, one word each; a still picture's and a 2D sheet in its own
+colours are followed by smaller copies, each half the one before (info bit 0x8).
 
 With the 3D on both screens the game moves engine A to the other screen at
 every VBlank (POWCNT1 bit 15), drawing each screen's view in turn while the
@@ -271,7 +272,13 @@ named by where its bytes came from: its file's tile sheet
 (any whole multiple of the original's size) is drawn instead at its own
 resolution -- indexed, with the game's palettes (its fades and palette effects
 kept), or in colour -- only while the tile's bytes are still the sheet's: tiles
-the game draws over itself (its text) stay its own. The map of replaced tiles
+the game draws over itself (its text) stay its own. An indexed sheet's pixel is
+its nearest texel's. In colour, every texel under the output pixel counts by how
+much of it the pixel covers (its colour weighted by its alpha), read from the
+smaller copy with one to two texels to the pixel while a copy's texel still
+comes from one tile: a sheet larger than shown keeps its lines, and its soft
+edges show what is under them by their alpha (`KD_SEE_THROUGH`), the pixel
+composed with the tile and without it, as the elements are. The map of replaced tiles
 holds, where a replaced sheet's tile starts, the replacement's id + 1 in bits
 20-31 and the tile's number in bits 0-19; a page is mapped again when its
 memory, its bank or its bytes' origin changed.
@@ -294,6 +301,21 @@ sides or front only as its file says (glTF `doubleSided`; FBX both), unless
 `<model>.bones.txt` says `cull back` or `cull none`. A room of a mission world
 whose world the same mod replaces is drawn with HD graphics off too: its new
 ground is played either way.
+
+**A model that moves by itself** (`runtime/mods/room_animation.cpp`; the
+studio's KH2 rooms are made so). Its glTF's own animations move its nodes: a
+joint that follows no game node is drawn with its node's matrix now times its
+inverse bind, so a piece skinned to its own bones moves as the file says (a
+mesh on an animated node with no skin is made still on loading, and the log
+says so). The port's glTF extras say the rest: `khdays_sky` on a node (its
+meshes drawn as far as can be drawn, behind everything, never past the far
+plane), on a material `khdays_scroll` `[u, v]` (texture coordinates, 0..1 over
+the picture, added each game frame) and `khdays_frames` `{"pictures": [...],
+"frames": [[picture, game frames], ...], "loop": true, "loop_from": i}`
+(pictures in turn), on an animation `khdays_loop` and `khdays_loop_from`
+(seconds). Its clock is the game's frames (60 a second) from its first draw,
+standing while the game is paused (gPauseMode); the studio's room preview
+moves it by its own clock.
 
 **The colours of runtime-built sheets** (`runtime/mods/sheet_colours.h`). For
 the studio's sheets whose layout the game builds at run time (the field HUD's),

@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGETS = ["server", "portmap", "session"]
+TARGETS = ["server", "portmap", "session", "mods"]
 
 
 def run_one(tree: Path, name: str, minutes: float, jobs: int) -> int:

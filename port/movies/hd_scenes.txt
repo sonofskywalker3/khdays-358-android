@@ -1,0 +1,163 @@
+# The theater's HD scenes the port plays in place of the game's own event scenes: the
+# videos of the HD collection's 358/2 Days theater, made from the player's own copy into
+# data/cutscenes/cinematics/<stem>.mp4, played instead of the scene's skippable stretch, the game's
+# own skip ending it. A mod's cutscenes/scenes.txt adds entries or replaces these by their script.
+#
+# <script> <video stem> [<video stem> ...] ; <evidence>
+#   <script>  an event archive's entry, EV_<world>#<index> (ev/EV_S.p2's entry 4: EV_S#4), a
+#             mission's script section, mi/<mission>/<script>:<section>, or a day's monologue,
+#             mnl#<record> (ui/mnl's text record, picked by the story's day)
+#   off       in place of the stems: the game's own scene (a mod may switch an entry off)
+
+# Roxas's monologues (scene 10, before the calendar): the theater's clips are his voice over black,
+# so their sound alone is heard over the game's own page (his picture and the DS's text), the game
+# going on as on the DS. The clips tell the texts in their own words; each is paired by its subject.
+# Record 2 (his first day of work) has no clip.
+mnl#0 hd000 ; words: the day it all started, the seventh, when he met her
+mnl#1 hd003 ; words: seven days with only the name and the number, the people around him unknown
+mnl#3 hd007a ; words: the Organization collects hearts; he does not know what a heart is
+mnl#4 hd007b ; words: Nobodies, born without hearts
+mnl#5 hd007c ; words: the Keyblade releases hearts; why him
+mnl#6 hd007d ; words: the castle and the town; the paths of darkness between worlds
+mnl#7 hd007e ; words: good and bad in the Organization, all for Kingdom Hearts; fighting to be whole
+
+# Day 7: the castle at night (Roxas in his room, EV_S#0, has no theater scene: the theater's hd003,
+# his words over black, is the day's monologue, ui/mnl, not this scene)
+EV_S#196 hd002 ; pictures: the castle at night, 4.1 s
+# Day 8
+EV_S#4 hd004 ; lines 15/15, in order
+EV_S#6 hd006 ; lines: 33% of the theater's found in the scene's
+# Day 14
+EV_S#7 hd008 ; lines: 43% of the theater's found in the scene's
+EV_S#8 hd009 ; lines: 24% of the theater's found in the scene's
+# Day 22
+EV_S#12 hd010 ; lines: 51% of the theater's found in the scene's
+# Day 23
+EV_S#13 hd011 ; lines: 27% of the theater's found in the scene's
+EV_S#14 hd012 ; lines (by meaning, 3 of 3): Axel already gone, the winning stick; pictures: Saïx in the Grey Area
+# Day 24
+EV_S#19 hd017 ; lines: 23% of the theater's found in the scene's
+EV_S#20 hd018 ; lines: 29% of the theater's found in the scene's
+EV_S#21 hd019 ; lines (by meaning, 1 of 1): his name; pictures: Roxas alone on the clock tower
+# Day 25
+EV_S#23 hd020 ; lines: 55% of the theater's found in the scene's
+EV_S#24 hd021 ; lines: 38% of the theater's found in the scene's
+EV_S#25 hd022 ; lines: 48% of the theater's found in the scene's
+# Day 26
+EV_S#27 hd024 ; lines: 26% of the theater's found in the scene's
+EV_S#28 hd025 ; lines: 35% of the theater's found in the scene's
+# Day 27
+EV_S#30 hd027 ; lines: 58% of the theater's found in the scene's
+# Day 49
+EV_S#31 hd028 ; lines: 49% of the theater's found in the scene's
+# Day 50
+EV_S#32 hd029 ; pictures: the shells on the bed, Roxas asleep
+EV_S#33 hd030 ; pictures: Roxas down the corridor into the Grey Area
+EV_S#34 hd031 ; lines: 54% of the theater's found in the scene's
+# Day 51
+EV_S#36 hd033 ; pictures: Roxas alone on the clock tower at sunset (no lines on either side)
+# Day 71
+EV_S#38 hd034 ; lines: 45% of the theater's found in the scene's
+EV_S#39 hd035 ; lines: 37% of the theater's found in the scene's
+# Day 72
+EV_S#40 hd036 ; lines: 36% of the theater's found in the scene's
+EV_S#43 hd039 ; lines: 28% of the theater's found in the scene's
+# Day 74
+EV_S#48 hd043a ; lines: 95% of the theater's found in the scene's
+EV_S#49 hd043b ; lines: 32% of the theater's found in the scene's
+EV_S#50 hd044 ; lines: 47% of the theater's found in the scene's
+# Day 75
+EV_S#53 hd046 ; lines (by meaning): best friends; pictures: Axel, Roxas and Xion on the clock tower
+# Day 94
+EV_S#55 hd048a ; lines: 28% of the theater's found in the scene's
+EV_S#56 hd048b ; lines: 20% of the theater's found in the scene's
+# Day 95
+EV_S#58 hd050 ; lines: 42% of the theater's found in the scene's
+EV_S#59 hd051 ; pictures: the mansion's gate, Naminé and DiZ
+# Day 96
+EV_S#63 hd054 ; lines: 41% of the theater's found in the scene's
+EV_S#64 hd055 ; lines: 35% of the theater's found in the scene's
+# Day 117
+EV_S#68 hd056 ; lines: 33% of the theater's found in the scene's
+EV_S#70 hd059 ; lines: 32% of the theater's found in the scene's
+# Day 118
+EV_S#75 hd063 ; lines: 45% of the theater's found in the scene's
+EV_S#76 hd064 ; lines: 60% of the theater's found in the scene's
+# Day 149
+EV_S#81 hd065 ; lines: 64% of the theater's found in the scene's
+EV_S#82 hd066a ; lines: 73% of the theater's found in the scene's
+EV_S#83 hd066b ; lines (by meaning, 1 of 1): not a sham; pictures: Xion on her bed
+# Day 150
+EV_S#84 hd067 ; lines: 85% of the theater's found in the scene's
+EV_S#85 hd068 ; lines: 42% of the theater's found in the scene's
+# Day 151
+EV_S#87 hd070 ; lines: 91% of the theater's found in the scene's
+EV_S#88 hd071 ; lines: 48% of the theater's found in the scene's
+# Day 172
+EV_S#96 hd074 ; lines (by meaning, 1 of 1): Xion; pictures: Roxas by Xion's bed, the shell
+EV_S#98 hd076 ; lines: 45% of the theater's found in the scene's
+EV_S#99 hd077 ; pictures: Xion asleep, the shells (no lines on either side)
+# Day 193
+EV_S#102 hd080 ; lines: 63% of the theater's found in the scene's
+EV_S#104 hd082a ; lines (1 of 1): Xion's name called; pictures: Xion falls in Twilight Town
+EV_S#106 hd082b ; lines: 21% of the theater's found in the scene's
+EV_S#107 hd084 ; lines: 63% of the theater's found in the scene's
+EV_S#108 hd085 ; lines: 46% of the theater's found in the scene's
+EV_S#109 hd086a ; pictures: Naminé drawing (no lines on either side)
+# Day 194
+EV_S#110 hd086b ; lines: 88% of the theater's found in the scene's
+# Day 224
+EV_S#113 hd087 ; lines: 50% of the theater's found in the scene's
+EV_S#178 hd086h ; pictures: Xion alone on her bed (no lines on either side)
+# Day 255
+EV_S#116 hd089 ; lines: 37% of the theater's found in the scene's
+EV_S#117 hd090 ; lines: 40% of the theater's found in the scene's
+EV_S#119 hd092 ; lines (by meaning, 2 of 2): not who he was; pictures: Xion before Sora's pod
+# Day 276
+EV_S#123 hd094 ; lines: 27% of the theater's found in the scene's
+EV_S#124 hd095 ; lines: 35% of the theater's found in the scene's
+# Day 296
+EV_S#128 hd096 ; lines: 53% of the theater's found in the scene's
+# Day 297
+EV_S#130 hd098 ; lines: 54% of the theater's found in the scene's
+EV_S#131 hd099 ; lines: 59% of the theater's found in the scene's
+EV_S#132 hd100a ; lines: 60% of the theater's found in the scene's
+# Day 299
+EV_S#138 hd106 ; lines (by meaning, 3 of 3): what happened to Xion; pictures: Xemnas on his throne
+EV_S#139 hd107 ; lines: 56% of the theater's found in the scene's
+EV_S#140 hd108 ; lines: 100% of the theater's found in the scene's
+EV_S#141 hd109 ; lines: 22% of the theater's found in the scene's
+EV_S#142 hd110 ; pictures: Riku before the Memory's Skyscraper and Kingdom Hearts (no lines on either side)
+EV_S#143 hd111 ; lines (by meaning, 2 of 2): what to do, Riku; pictures: Xion on her bed, Kingdom Hearts
+# Day 300
+EV_S#144 hd112a ; pictures: Roxas and Axel on the clock tower, Xion joins them at sunset (no lines on either side)
+EV_S#145 hd112b ; lines: 38% of the theater's found in the scene's
+# Day 301
+EV_S#146 hd112c ; pictures: Roxas alone on the clock tower at sunset (no lines on either side)
+# Day 321
+EV_S#147 hd113 ; lines (by meaning, 1 of 1): what is this; pictures: Roxas wakes, his hand
+EV_S#151 hd115b ; lines: 36% of the theater's found in the scene's
+EV_S#152 hd116 ; lines: 42% of the theater's found in the scene's
+# Day 322
+EV_S#153 hd117 ; lines: 35% of the theater's found in the scene's
+# Day 352
+EV_S#154 hd118 ; lines (by meaning, 2 of 2): wrecking everything, Riku; pictures: Kingdom Hearts, Xion on her bed
+EV_S#155 hd119 ; lines: 31% of the theater's found in the scene's
+EV_S#159 hd123 ; lines: 34% of the theater's found in the scene's
+# Day 353
+EV_S#160 hd124 ; lines: 41% of the theater's found in the scene's
+EV_S#162 hd126 ; lines: 42% of the theater's found in the scene's
+EV_S#163 hd127 ; lines: 41% of the theater's found in the scene's
+EV_S#164 hd128 ; lines: 58% of the theater's found in the scene's
+# Day 354
+EV_S#165 hd129 ; lines: 36% of the theater's found in the scene's
+EV_S#166 hd130a ; lines: 54% of the theater's found in the scene's
+# Day 355
+EV_S#169 hd132 ; lines: 55% of the theater's found in the scene's
+EV_S#187 hd131a ; lines (by meaning): Xion a replica, both special Nobodies, Axel hiding things; pictures: Roxas on his bed
+EV_S#188 hd132a ; lines (by meaning, 3 of 3): he tried, he must find out about himself; pictures: Roxas with the stick in his room
+# Day 356
+EV_S#171 hd133b ; lines: 45% of the theater's found in the scene's
+EV_S#174 hd136 ; lines: 72% of the theater's found in the scene's
+# Day 358
+EV_S#177 hd140 ; pictures: Riku and the hooded Roxas at the Memory's Skyscraper (the theater lists it in no chapter and has no subtitles for it)

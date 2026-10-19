@@ -90,6 +90,22 @@ enum { KHDAYS_LAYER_BASE, KHDAYS_LAYER_FIELD, KHDAYS_LAYER_COUNT };
  * bound to anything (SDL_SCANCODE_ESCAPE). */
 #define KHDAYS_SETTINGS_KEY 41
 
+/* The mouse's buttons and its wheel, bound in the keyboard's column: input KHDAYS_MOUSE_INPUT plus
+ * one of these, past every scancode (SDL_SCANCODE_COUNT). A notch of the wheel is a press of a
+ * moment. Its left button, unbound, is the stylus on the lower screen. */
+#define KHDAYS_MOUSE_INPUT 512
+typedef enum KhdaysMouseInput {
+    KHDAYS_MOUSE_LEFT,
+    KHDAYS_MOUSE_MIDDLE,
+    KHDAYS_MOUSE_RIGHT,
+    KHDAYS_MOUSE_X1, /* the side buttons */
+    KHDAYS_MOUSE_X2,
+    KHDAYS_MOUSE_WHEEL_UP,
+    KHDAYS_MOUSE_WHEEL_DOWN,
+    KHDAYS_MOUSE_COUNT
+} KhdaysMouseInput;
+#define KHDAYS_KEYBOARD_INPUTS (KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_COUNT)
+
 typedef enum KhdaysStickRole {
     KHDAYS_STICK_NONE,
     KHDAYS_STICK_DPAD,   /* the DS D-pad's eight directions */
@@ -107,6 +123,8 @@ typedef struct KhdaysEnhancements {
     int camera_speed; /* percent of the game's own turn rate, 10..300 */
     int camera_invert_x;
     int camera_invert_y;
+    int mouse_camera; /* the camera turned by the mouse's motion, the mouse held by the window */
+    int mouse_speed;  /* percent, 10..300 */
     int separate_lock_on;
     int dpad_command_menu;
     int analog_movement;
@@ -159,8 +177,8 @@ typedef enum KhdaysDisplay {
  * full colour; or as the DS showed them. */
 typedef enum KhdaysMovies { KHDAYS_MOVIES_HD, KHDAYS_MOVIES_PC, KHDAYS_MOVIES_DS, KHDAYS_MOVIES_COUNT } KhdaysMovies;
 
-/* The graphics API ([video] backend): SDL's choice (Direct3D 12 on Windows),
- * or one asked for -- Vulkan where Direct3D 12 misbehaves on a card. */
+/* The graphics API ([video] backend): SDL's choice (Direct3D 12 on Windows, Vulkan under Wine or
+ * Proton), or one asked for -- Vulkan where Direct3D 12 misbehaves on a card. */
 typedef enum KhdaysBackend {
     KHDAYS_BACKEND_AUTO,
     KHDAYS_BACKEND_D3D12,
@@ -242,6 +260,10 @@ const char *khdays_action_name(int action);
 int khdays_action_from_name(const char *name);
 const char *khdays_pad_input_name(int input);
 int khdays_pad_input_from_name(const char *name);
+/* The keyboard column's mouse inputs by name ("Mouse Left", ..., "Mouse Wheel Down"): NULL for an
+ * input that is not the mouse's, -1 for a name that is not one. */
+const char *khdays_mouse_input_name(int input);
+int khdays_mouse_input_from_name(const char *name);
 
 /* The action an input drives on a device in a layer, or -1. */
 int khdays_profile_owner(const KhdaysProfile *profile, int device, int layer, int input);

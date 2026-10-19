@@ -14,16 +14,16 @@ typedef struct KhdaysDeviceState {
     uint8_t pad[KHDAYS_PAD_COUNT]; /* gamepad buttons held; the triggers come from trigger[] */
     int16_t trigger[2];            /* left, right: 0..32767 */
     int16_t stick[2][2];           /* [left, right][x, y] in SDL's range; y grows downwards */
-    int touching;                  /* the stylus: the left mouse button on the lower screen */
-    int touch_x, touch_y;
+    uint8_t mouse[KHDAYS_MOUSE_COUNT]; /* the mouse's buttons held, a wheel's notch for a moment */
+    double mouse_x, mouse_y;           /* the mouse camera: the mouse's motion summed, right and up positive */
 
     /* Inputs held when a mask was set (the settings menu closed, or the window
      * got the focus back). They are ignored until released, so the press that
      * closed the menu never reaches the game. */
     uint8_t key_masked[KHDAYS_KEY_COUNT];
     uint8_t pad_masked[KHDAYS_PAD_COUNT];
+    uint8_t mouse_masked[KHDAYS_MOUSE_COUNT];
     uint8_t stick_masked[2];
-    uint8_t touch_masked;
 
     /* What each stick was doing last time, for the hysteresis. */
     int stick_active[2]; /* past its dead zone */

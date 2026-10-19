@@ -1,7 +1,10 @@
 """The KINGDOM HEARTS collections' archives (a `.hed` index and its `.pkg`), read as the collections'
 own code reads them, from our own reverse engineering (installer/README.md, "How it works").
   python collection_archive.py <archive without .hed/.pkg> <out folder> <kh2 exe> <path> [<path> ...]
-writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`.
+writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`; a path the
+archive does not hold is named and left out (exit status 3 when it holds none of them).
+  python collection_archive.py --has <archive without .hed/.pkg> <path> [<path> ...]
+prints the paths the archive holds, one a line (the studio's KH2 rooms: which maps a copy has).
 """
 
 from __future__ import annotations
@@ -186,12 +189,24 @@ def materialise(archive: Archive, paths: list[str], out: Path) -> int:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) >= 3 and argv[1] == "--has":
+        with Archive(Path(argv[2]), None) as archive:
+            for path in argv[3:]:
+                if archive.has(path):
+                    print(path)
+        return 0
     if len(argv) < 5:
         print(__doc__)
         return 2
     base, out, exe, paths = Path(argv[1]), Path(argv[2]), Path(argv[3]), argv[4:]
     with Archive(base, Cipher(load_table(exe))) as archive:
-        print(f"{materialise(archive, paths, out)} files written to {out}")
+        held = [path for path in paths if archive.has(path)]
+        for path in paths:
+            if path not in held:
+                print(f"{path} is not in {base}")
+        if not held:
+            return 3
+        print(f"{materialise(archive, held, out)} files written to {out}")
     return 0
 
 

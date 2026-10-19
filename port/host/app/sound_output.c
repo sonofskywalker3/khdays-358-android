@@ -5,6 +5,7 @@
 #include "sound_output.h"
 #include "host.h"
 #include "../movies/movie_hd.h"
+#include "../movies/theater_music.h"
 #include "profile.h"
 #include "../../runtime/core/clock.h"
 #include "../../runtime/sound/sound.h"
@@ -107,6 +108,10 @@ void khdays_sound_output_set(const KhdaysSound *settings)
                                     settings->movies);
     /* an HD video's volume is the master volume times the movies' volume */
     khdays_hd_set_gain((float)settings->volume / 100.0f * (float)settings->movies / 100.0f);
+    /* a monologue's voice (the theater's) is a voice: the master volume times the voices' */
+    khdays_hd_voice_set_gain((float)settings->volume / 100.0f * (float)settings->voices / 100.0f);
+    /* the theater's music over an HD video is music: the master volume times the music's */
+    khdays_theater_music_set_gain((float)settings->volume / 100.0f * (float)settings->music / 100.0f);
 }
 
 void khdays_sound_output_mute(int mute)

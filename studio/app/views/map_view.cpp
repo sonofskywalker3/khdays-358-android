@@ -2,12 +2,15 @@
 // exits, any face or marker picked to read what it is -- and replaced by the modder's model, its
 // collision made and shown as the game will read it (docs/STUDIO.md, "Rooms").
 #include "../app.h"
+#include "../save_dialog.h"
 
 #include "core/models/bones.h"
 #include "core/models/game_model.h"
 #include "core/models/model_files.h"
 #include "core/files/paths.h"
+#include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
+#include "mods/room_animation.h"  // port/runtime: as the port moves a room
 #include "core/rooms/room_export.h"
 #include "core/mods/settings.h"
 #include "core/rooms/worlds.h"
@@ -16,6 +19,7 @@
 #include "khdays/vfs/filesystem.h"
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 
 #include <SDL3/SDL.h>
 
@@ -25,8 +29,11 @@ extern "C" {
 
 #include <algorithm>
 #include <cmath>
+#include <atomic>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 namespace studio {
 
@@ -58,6 +65,8 @@ struct Replacing {
     fs::path model_source, collision_source;   // the files as given (or the mod's copies)
     assets::ImportedModel raw, raw_collision;  // as read
     assets::ImportedModel placed;              // placed: what is drawn
+    RoomPlacement placed_with;                 // where `placed` was put (drawn moved to the place now while dragged)
+    SurfaceMap surfaces;                       // its floors and roofs from above, as placed_with puts them
     bool dirty = false, built_ok = false;
     RoomCollision built;
     CollisionReport report;
@@ -66,6 +75,7 @@ struct Replacing {
     int view = 0;  // 0 yours, 1 the game's, 2 both
     bool next_is_collision = false;
     bool other_collision = false;  // the collision from another model, chosen (its file perhaps not yet)
+    bool kh2_collision = false;    // that model the KH2 map's own floors and walls
     std::string placed_text;       // how the model was placed (lined up, as it is, or to place by hand)
     bool placed_ok = true;
 };
@@ -89,9 +99,40 @@ struct MapView {
     int picked_list = -1, picked_face = -1, picked_marker = -1;
     std::unique_ptr<Preview> preview;
     Replacing rep;
+    bool open_replace = false;  // the mod's replacement just opened: its panel shown open
 };
 
 MapView m;
+
+// KH2's rooms of the player's collection, listed and made on a thread of their own (the archives are read
+// by the installer's reader in Python), what it made taken by the window once done. Kept across rooms.
+struct Kh2Picker {
+    bool shown = false;
+    int world = -1;  // in kKh2Worlds
+    std::vector<std::string> maps;
+    std::map<std::string, bool> out;  // a map taken out of the copy already
+    std::map<std::string, assets::DecodedTexture> radars;
+    std::string typed, error;
+    std::vector<Kh2Pair> pairs;  // the studio's, then the mod's
+    int pairs_for = -2;          // the mod they were read for
+    fs::path collection;
+    std::string collection_for = "\x01";  // the setting `collection` was found for
+    std::thread worker;
+    std::atomic<bool> busy{false};
+    std::string working;  // the map being made; empty while listing
+    // left by the worker
+    std::mutex mutex;
+    bool listed = false, made = false;
+    std::vector<std::string> found;
+    std::string done_map, failed;
+    fs::path model;
+    Kh2Made outcome;
+    ~Kh2Picker() {
+        if (worker.joinable())
+            worker.join();
+    }
+};
+Kh2Picker kh2;
 
 // The collision drawn and picked: the one made when the modder's is shown
 // (the game's when it is kept).
@@ -294,6 +335,7 @@ void open(App& app) {
                 return;
             }
             p.active = p.from_mod = true;
+            m.open_replace = true;
             const fs::path folder = change_models(mod->dir, m.world.code, index);
             p.model_source = folder / path_u8(p.r.model);
             if (!import_model(p.model_source, &p.raw, &why))
@@ -302,6 +344,7 @@ void open(App& app) {
                 p.collision_source = folder / path_u8(p.r.collision);
                 if (!import_model(p.collision_source, &p.raw_collision, &why))
                     p.error = why;
+                p.kh2_collision = !p.r.kh2.empty() && p.r.collision == p.r.kh2 + "_collision.gltf";
             }
             p.dirty = p.error.empty();
         }
@@ -319,12 +362,21 @@ void rebuild() {
         return;
     p.placed = p.raw;
     place_model(&p.placed, p.r.place);
-    assets::ImportedModel collision = p.collision_source.empty() ? p.placed : p.raw_collision;
-    if (!p.collision_source.empty())
-        place_model(&collision, p.r.place);
+    p.placed_with = p.r.place;
     if (!m.has_collision) {
         p.error = "this room has no collision in the game's data to replace";
         return;
+    }
+    // only what lies around the room, as the save keeps it
+    const RoomZone zone = p.r.zone >= 0 ? room_zone(m.collision, p.r.zone) : RoomZone{};
+    if (p.r.zone >= 0)
+        cut_to_zone(&p.placed, zone);
+    p.surfaces = surface_map(p.placed);
+    assets::ImportedModel collision = p.collision_source.empty() ? p.placed : p.raw_collision;
+    if (!p.collision_source.empty()) {
+        place_model(&collision, p.r.place);
+        if (p.r.zone >= 0)
+            cut_to_zone(&collision, zone);
     }
     if (p.r.keep_collision) {
         // only the look replaced: the game's own floor and walls are the ones shown and saved
@@ -389,6 +441,59 @@ std::array<float, 3> face_tint(int list, const RoomFace& f) {
                            : std::array<float, 3>{0.4f, 0.55f, 1.0f};
 }
 
+// Where a marker stands on the modder's room: on one of its floors, over it with nothing near above, or under
+// one of its surfaces (in it); `to` the point of that floor or surface over or under it.
+enum class Footing { none, on, floating, under };
+
+Footing footing(const std::array<float, 3>& q, std::array<float, 3>* to) {
+    const Replacing& p = m.rep;
+    // the marker in the room as it was placed (the model may be dragged since)
+    const auto b = placed_point(p.placed_with, unplaced_point(p.r.place, q));
+    float below = -1e30f, above = 1e30f;
+    for (const auto& h : p.surfaces.heights_at(b[0], b[2])) {
+        if (h.up && h.y <= b[1] + 0.05f)
+            below = std::max(below, h.y);
+        if (h.y > b[1] + 0.05f)
+            above = std::min(above, h.y);
+    }
+    const bool has_below = below > -1e29f, has_above = above < 1e29f;
+    auto live = [&](float y) { return placed_point(p.r.place, unplaced_point(p.placed_with, {b[0], y, b[2]})); };
+    if (has_below && b[1] - below <= 0.35f) {
+        *to = live(below);
+        return Footing::on;
+    }
+    if (has_above && (!has_below || above - b[1] < 2.0f)) {
+        *to = live(above);
+        return Footing::under;
+    }
+    if (has_below) {
+        *to = live(below);
+        return Footing::floating;
+    }
+    return Footing::none;
+}
+
+// Where vertex v is drawn when its joints are moved as `moved` says (palette entry: matrix); as it is
+// when none of its joints moves.
+std::array<float, 3> skinned(const std::map<std::uint32_t, Mat>& moved, const assets::NeutralVertex& v) {
+    std::array<float, 3> pos{0, 0, 0};
+    float total = 0.0f;
+    for (std::size_t k = 0; k < 4; ++k) {
+        const auto found = moved.find(v.joints[k]);
+        if (v.weights[k] <= 0.0f || found == moved.end())
+            continue;
+        const auto q = mat_point(found->second, v.position);
+        for (std::size_t c = 0; c < 3; ++c)
+            pos[c] += v.weights[k] * q[c];
+        total += v.weights[k];
+    }
+    if (total <= 0.0f)
+        return v.position;
+    for (auto& c : pos)
+        c /= total;
+    return pos;
+}
+
 void draw_room(App& app, ImVec2 size) {
     if (!m.preview)
         m.preview = std::make_unique<Preview>(app.device);
@@ -448,11 +553,32 @@ void draw_room(App& app, ImVec2 size) {
             }
         }
         if (yours) {
-            // the modder's, placed: as the port draws it (its vertex colours, its textures)
-            for (const auto& mesh : m.rep.placed.model.meshes) {
+            // the modder's, placed: as the port draws it (its vertex colours, its textures), moving by itself
+            // as the port moves it, by the studio's clock at 60 frames a second
+            const assets::ImportedModel& placed = m.rep.placed;
+            // while its scale, turn or move is dragged: shown where the place now puts it
+            const bool moving = !same_place(m.rep.placed_with, m.rep.r.place);
+            const auto frames = static_cast<std::uint64_t>(SDL_GetTicks() * 60 / 1000);
+            std::map<std::uint32_t, Mat> moved;  // a joint's palette entry: its node now times its inverse bind
+            if (!placed.joints.empty()) {
+                const auto worlds =
+                    khdays::room::node_worlds(placed.nodes, placed.animations, static_cast<double>(frames) / 60.0);
+                for (const auto& j : placed.joints) {
+                    const bool on_node = j.node >= 0 && static_cast<std::size_t>(j.node) < worlds.size();
+                    moved[j.palette_index] =
+                        mat_mul(on_node ? worlds[static_cast<std::size_t>(j.node)] : j.world, j.inverse_bind);
+                }
+            }
+            for (const auto& mesh : placed.model.meshes) {
+                std::string shown = mesh.texture_name;
+                if (!mesh.texture_frames.empty()) {
+                    shown = mesh.texture_frames[khdays::room::frame_at(mesh.texture_frames, mesh.texture_frames_loop,
+                                                                       mesh.texture_frames_loop_from, frames)]
+                                .first;
+                }
                 const assets::DecodedTexture* t = nullptr;
-                for (const auto& [name, decoded] : m.rep.placed.textures) {
-                    if (name == mesh.texture_name && !decoded.rgba.empty())
+                for (const auto& [name, decoded] : placed.textures) {
+                    if (name == shown && !decoded.rgba.empty())
                         t = &decoded;
                 }
                 PreviewImage image;
@@ -460,11 +586,14 @@ void draw_room(App& app, ImVec2 size) {
                     image = {t->rgba.data(), t->width, t->height};
                 const float tw = t != nullptr ? static_cast<float>(t->width) : 1.0f;
                 const float th = t != nullptr ? static_cast<float>(t->height) : 1.0f;
+                const auto offset = khdays::room::scroll_offset(mesh.scroll, frames, tw, th);
                 auto vertex = [&](const assets::NeutralVertex& v) {
                     PreviewVertex o;
-                    o.position = v.position;
+                    o.position = skinned(moved, v);
                     o.normal = v.normal;
-                    o.uv = {v.texcoord[0] / tw, v.texcoord[1] / th};
+                    if (moving)
+                        o.position = placed_point(m.rep.r.place, unplaced_point(m.rep.placed_with, o.position));
+                    o.uv = {(v.texcoord[0] + offset[0]) / tw, (v.texcoord[1] + offset[1]) / th};
                     o.colour = {v.color[0] / 255.0f, v.color[1] / 255.0f, v.color[2] / 255.0f, v.color[3] / 255.0f};
                     return o;
                 };
@@ -541,29 +670,59 @@ void draw_room(App& app, ImVec2 size) {
         return true;
     };
 
-    // the markers: a dot and the way it faces
+    // the markers: a dot and the way it faces; over the modder's room, coloured by where each stands on it
+    // (green on its floor, yellow over it, red under or in it) with a line to that floor or surface
     int near_marker = -1;
     float best = 9.0f * ImGui::GetStyle().FontScaleDpi;
     const std::vector<Marker> shown_markers = showing_built() ? markers(m.rep.built) : m.markers;
+    const bool footings = yours && !m.rep.surfaces.triangles.empty();
+    const ImU32 footing_colour[4] = {IM_COL32(170, 170, 170, 255), IM_COL32(80, 220, 100, 255),
+                                     IM_COL32(255, 210, 60, 255), IM_COL32(255, 60, 60, 255)};
+    std::array<int, 4> counted{0, 0, 0, 0};
     if (m.show_markers) {
         for (std::size_t k = 0; k < shown_markers.size(); ++k) {
             const Marker& mk = shown_markers[k];
             const std::array<float, 3> q{static_cast<float>(mk.place[0]) * kFx, static_cast<float>(mk.place[1]) * kFx,
                                          static_cast<float>(mk.place[2]) * kFx};
+            ImU32 colour = IM_COL32(255, 60, 60, 255);
+            std::array<float, 3> to{};
+            Footing stands = Footing::none;
+            if (footings) {
+                stands = footing(q, &to);
+                colour = footing_colour[static_cast<int>(stands)];
+                ++counted[static_cast<std::size_t>(stands)];
+            }
             float x, y;
             if (!project(q, &x, &y))
                 continue;
+            float tx, ty;
+            if ((stands == Footing::floating || stands == Footing::under) && project(to, &tx, &ty)) {
+                list->AddLine(ImVec2(x, y), ImVec2(tx, ty), colour, 2.0f);
+                list->AddCircle(ImVec2(tx, ty), 3.0f, colour, 0, 1.5f);
+            }
             const float turn = static_cast<float>(mk.extra) / 65536.0f * 6.2831853f;
             float fx, fy;
             if (project({q[0] + std::sin(turn), q[1], q[2] + std::cos(turn)}, &fx, &fy)) {
-                list->AddLine(ImVec2(x, y), ImVec2(fx, fy), IM_COL32(255, 80, 80, 220), 2.0f);
+                list->AddLine(ImVec2(x, y), ImVec2(fx, fy), (colour & 0x00ffffffu) | 0xdc000000u, 2.0f);
             }
             const bool picked = static_cast<int>(k) == m.picked_marker;
-            list->AddCircleFilled(ImVec2(x, y), picked ? 6.0f : 4.0f,
-                                  picked ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 60, 60, 255));
+            list->AddCircleFilled(ImVec2(x, y), picked ? 6.0f : 4.0f, picked ? IM_COL32(255, 255, 255, 255) : colour);
             const float d = std::hypot(x - mouse.x, y - mouse.y);
             if (hovered && d < best)
                 best = d, near_marker = static_cast<int>(k);
+        }
+    }
+    if (footings && m.show_markers && !shown_markers.empty()) {
+        // how many stand where, in the picture's corner
+        const S says[3] = {S::map_markers_on, S::map_markers_over, S::map_markers_under};
+        ImVec2 pen(at.x + 8.0f, at.y + 6.0f);
+        for (int s = 0; s < 3; ++s) {
+            const std::string text =
+                fmt(app.language, says[s], {std::to_string(counted[static_cast<std::size_t>(s + 1)])});
+            list->AddCircleFilled(ImVec2(pen.x + 5.0f, pen.y + ImGui::GetFontSize() * 0.5f), 5.0f,
+                                  footing_colour[s + 1]);
+            list->AddText(ImVec2(pen.x + 14.0f, pen.y), IM_COL32(235, 235, 235, 255), text.c_str());
+            pen.x += 14.0f + ImGui::CalcTextSize(text.c_str()).x + 16.0f;
         }
     }
     if (near_marker >= 0)
@@ -950,15 +1109,50 @@ std::vector<std::array<float, 3>> game_points() {
     return out;
 }
 
+// The KH2 map this room was made from (the studio's pairs, then the mod's), or null.
+const Kh2Pair* room_pair(App& app) {
+    if (kh2.pairs_for != app.mod) {
+        const Mod* mod = app.current_mod();
+        std::vector<std::string> notes;
+        kh2.pairs = kh2_pairs(mod != nullptr ? mod->dir : fs::path(), &notes);
+        kh2.pairs_for = app.mod;
+        for (const auto& note : notes)
+            app.tell(note, false);
+    }
+    return m.room != nullptr ? kh2_pair_of(kh2.pairs, m.world.code, m.room->index) : nullptr;
+}
+
 // The modder's model lined up with the room when it is made from it, and the person told what was done.
 void line_up(App& app) {
     Replacing& p = m.rep;
     if (p.raw.model.meshes.empty())
         return;
-    const RoomAlignment a = align_with_room(game_points(), p.raw);
+    // the KH2 map this room was made from, where Days put it
+    const Kh2Pair* pair = !p.r.kh2.empty() ? room_pair(app) : nullptr;
+    if (pair != nullptr && pair->placed && pair->map == p.r.kh2) {
+        p.r.place = RoomPlacement{};
+        p.r.place.scale = 0.01f;
+        p.r.place.turn = {0, pair->turn_y, 0};
+        p.r.place.move = pair->move;
+        char turn[32], move[96];
+        std::snprintf(turn, sizeof(turn), "%g", pair->turn_y);
+        std::snprintf(move, sizeof(move), "%.2f %.2f %.2f", pair->move[0], pair->move[1], pair->move[2]);
+        p.placed_text = fmt(app.language, S::map_align_pair, {turn, move});
+        p.placed_ok = true;
+        p.dirty = true;
+        return;
+    }
+    const RoomAlignment a = !p.r.kh2.empty() && m.has_collision ? kh2_alignment(game_points(), m.collision, p.raw)
+                                                                : align_with_room(game_points(), p.raw);
     char share[16];
     std::snprintf(share, sizeof(share), "%.0f", a.share * 100.0);
-    if (a.verdict == RoomAlignment::turned) {
+    if (a.verdict == RoomAlignment::kh2_units) {
+        p.r.place = a.place;
+        char scale[32];
+        std::snprintf(scale, sizeof(scale), "%g", a.place.scale);
+        p.placed_text = fmt(app.language, S::map_align_kh2, {scale});
+        p.placed_ok = true;
+    } else if (a.verdict == RoomAlignment::turned) {
         p.r.place = a.place;
         char turn[64], scale[32];
         std::snprintf(turn, sizeof(turn), "%.0f, %.0f, %.0f", a.place.turn[0], a.place.turn[1], a.place.turn[2]);
@@ -996,23 +1190,264 @@ void line_up(App& app) {
     p.dirty = true;
 }
 
-void choose_room_export(App& app) {
-    static const SDL_DialogFileFilter gltf[] = {{"glTF", "gltf"}};
-    SDL_ShowSaveFileDialog(
-        [](void* user, const char* const* files, int) {
-            if (files == nullptr || files[0] == nullptr)
-                return;
-            App* a = static_cast<App*>(user);
-            std::lock_guard lock(a->dialog_mutex);
-            a->dialog_room_exports.emplace_back(files[0]);
-        },
-        &app, app.window, gltf, 1, nullptr);
+// The KH2 map's own floors and walls as the room's collision model; false (the reason in the room's
+// error) when they cannot be made.
+bool load_kh2_collision(App& app, const std::string& map) {
+    Replacing& p = m.rep;
+    fs::path file;
+    std::string why;
+    if (make_kh2_collision(app.settings.root, map, &file, &why) && import_model(file, &p.raw_collision, &why)) {
+        p.collision_source = file;
+        return true;
+    }
+    p.error = why;
+    return false;
+}
+
+// The worker's results taken: its list of maps, or the model it made (offered as the room's model).
+void kh2_take(App& app, const Item& item) {
+    bool listed = false, made = false;
+    std::string failed, map;
+    fs::path model;
+    Kh2Made outcome;
+    {
+        std::lock_guard lock(kh2.mutex);
+        std::swap(listed, kh2.listed);
+        std::swap(made, kh2.made);
+        failed = kh2.failed;
+        map = kh2.done_map;
+        model = kh2.model;
+        outcome = kh2.outcome;
+        if (listed)
+            kh2.maps = kh2.found;
+    }
+    if (kh2.worker.joinable() && !kh2.busy)
+        kh2.worker.join();
+    if (listed) {
+        kh2.error = failed;
+        // this room's own KH2 room first
+        const Kh2Pair* pair = m.room != nullptr ? kh2_pair_of(kh2.pairs, m.world.code, m.room->index) : nullptr;
+        if (pair != nullptr) {
+            const auto at = std::find(kh2.maps.begin(), kh2.maps.end(), pair->map);
+            if (at != kh2.maps.end())
+                std::rotate(kh2.maps.begin(), at, at + 1);
+        }
+        kh2.out.clear();
+        for (const auto& name : kh2.maps)
+            kh2.out[name] = kh2_map_taken_out(app.settings.root, name);
+    }
+    if (!made)
+        return;
+    if (!failed.empty()) {
+        kh2.error = failed;
+        app.tell(fmt(app.language, S::save_failed, {failed}), false);
+        return;
+    }
+    kh2.error.clear();
+    kh2.out[map] = true;
+    kh2.radars.erase(map);
+    m.rep.next_is_collision = false;
+    m.rep.r.kh2 = map;
+    // the game's floor and walls kept, unless KH2's were chosen
+    if (!m.rep.kh2_collision) {
+        m.rep.r.keep_collision = true;
+        m.rep.other_collision = false;
+        m.rep.collision_source.clear();
+        m.rep.raw_collision = {};
+        m.rep.r.collision.clear();
+    }
+    room_offer(app, item, model);
+    if (m.rep.kh2_collision) {
+        load_kh2_collision(app, map);  // KH2's own floors and walls: the new map's
+        m.rep.dirty = true;
+    }
+    app.tell(fmt(app.language, S::map_kh2_made,
+                 {map, std::to_string(outcome.triangles), std::to_string(outcome.pictures),
+                  std::to_string(outcome.pieces), std::to_string(outcome.animations)}),
+             true);
+    for (const auto& line : outcome.report)
+        app.tell(map + ": " + line, false);
+}
+
+void kh2_start(App& app, const std::string& map, const std::string& world) {
+    if (kh2.busy)
+        return;
+    if (kh2.worker.joinable())
+        kh2.worker.join();
+    kh2.busy = true;
+    kh2.working = map;
+    kh2.error.clear();
+    const Settings settings = app.settings;
+    kh2.worker = std::thread([settings, map, world] {
+        std::vector<std::string> found;
+        std::string why;
+        Kh2Made outcome;
+        const fs::path model = map.empty() ? fs::path() : kh2_made_model(settings.root, map);
+        const bool ok = map.empty() ? kh2_world_maps(settings, world, &found, &why)
+                                    : take_out_kh2_map(settings, map, &why) &&
+                                          make_kh2_room(kh2_folder(settings.root), map, model, &outcome, &why);
+        std::lock_guard lock(kh2.mutex);
+        kh2.failed = ok ? std::string() : why;
+        if (map.empty()) {
+            kh2.found = std::move(found);
+            kh2.listed = true;
+        } else {
+            kh2.done_map = map;
+            kh2.model = model;
+            kh2.outcome = std::move(outcome);
+            kh2.made = true;
+        }
+        kh2.busy = false;
+    });
+}
+
+// The KH2 rooms of the player's copy to take as the room's model: a world's, or one by its name.
+void draw_kh2_picker(App& app) {
+    const auto lang = app.language;
+    const ImVec4 warn(0.95f, 0.8f, 0.35f, 1);
+    ImGui::Indent();
+    ImGui::TextWrapped("%s", tr(lang, S::map_kh2_hint));
+    if (kh2.collection_for != app.settings.collection_1525) {
+        kh2.collection = kh2_collection(app.settings);
+        kh2.collection_for = app.settings.collection_1525;
+    }
+    if (kh2.collection.empty()) {
+        ImGui::TextColored(warn, "%s", tr(lang, S::map_kh2_no_collection));
+        ImGui::Unindent();
+        return;
+    }
+    ImGui::TextDisabled("%s", u8(kh2.collection).c_str());
+    // the KH2 room this room was made from, when it is known
+    const Kh2Pair* pair = room_pair(app);
+    if (pair != nullptr) {
+        ImGui::TextWrapped("%s", fmt(lang, S::map_kh2_pair, {pair->map, pair->evidence}).c_str());
+        ImGui::BeginDisabled(kh2.busy);
+        if (ImGui::Button((std::string(tr(lang, S::map_kh2_use)) + " " + pair->map + "##pair").c_str()))
+            kh2_start(app, pair->map, {});
+        ImGui::EndDisabled();
+    } else {
+        ImGui::TextDisabled("%s", tr(lang, S::map_kh2_no_pair));
+    }
+    if (kh2.world < 0) {
+        kh2.world = 0;
+        for (int w = 0; w < kKh2WorldCount; ++w) {
+            if (m.world.code == kKh2Worlds[w])
+                kh2.world = w;
+        }
+    }
+    ImGui::BeginDisabled(kh2.busy);
+    ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+    if (ImGui::Combo(tr(lang, S::map_kh2_world), &kh2.world, kKh2Worlds, kKh2WorldCount))
+        kh2.maps.clear();
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::map_kh2_list)))
+        kh2_start(app, {}, kKh2Worlds[kh2.world]);
+    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    ImGui::InputText(tr(lang, S::map_kh2_by_name), &kh2.typed);
+    ImGui::SameLine();
+    if (ImGui::Button((std::string(tr(lang, S::map_kh2_use)) + "##typed").c_str()) && !kh2.typed.empty())
+        kh2_start(app, kh2.typed, {});
+    ImGui::EndDisabled();
+    if (kh2.busy) {
+        ImGui::TextDisabled("%s", kh2.working.empty() ? tr(lang, S::map_kh2_list)
+                                                      : fmt(lang, S::map_kh2_working, {kh2.working}).c_str());
+    }
+    if (!kh2.error.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.4f, 0.4f, 1));
+        ImGui::TextWrapped("%s", kh2.error.c_str());
+        ImGui::PopStyleColor();
+    }
+    const float side = 4 * ImGui::GetFontSize();
+    for (const auto& name : kh2.maps) {
+        ImGui::PushID(name.c_str());
+        auto radar = kh2.radars.find(name);
+        if (radar == kh2.radars.end() && kh2.out[name]) {
+            assets::DecodedTexture picture;
+            kh2_radar(app.settings.root, name, &picture);
+            radar = kh2.radars.emplace(name, std::move(picture)).first;
+        }
+        if (radar != kh2.radars.end() && !radar->second.rgba.empty()) {
+            const GpuImage& image = app.images->pixels("kh2-radar/" + name, 1, radar->second.rgba, radar->second.width,
+                                                       radar->second.height);
+            ImGui::Image(ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(image.texture))),
+                         ImVec2(side, side));
+        } else {
+            ImGui::Dummy(ImVec2(side, side));
+        }
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        if (pair != nullptr && pair->map == name)
+            ImGui::Text("%s  (%s)", name.c_str(), tr(lang, S::map_kh2_pair_mark));
+        else
+            ImGui::TextUnformatted(name.c_str());
+        if (!kh2.out[name])
+            ImGui::TextDisabled("%s", tr(lang, S::map_kh2_not_out));
+        ImGui::BeginDisabled(kh2.busy);
+        if (ImGui::SmallButton(tr(lang, S::map_kh2_use)))
+            kh2_start(app, name, {});
+        ImGui::EndDisabled();
+        ImGui::EndGroup();
+        ImGui::PopID();
+    }
+    ImGui::Unindent();
+}
+
+// The modder's room raised so that most of the room's markers stand on one of its floors, and the person
+// told how many do.
+void raise_to_room_markers(App& app) {
+    Replacing& p = m.rep;
+    if (p.dirty)
+        rebuild();
+    std::vector<std::array<float, 3>> feet;
+    for (const auto& mk : showing_built() ? markers(p.built) : m.markers) {
+        feet.push_back({static_cast<float>(mk.place[0]) * kFx, static_cast<float>(mk.place[1]) * kFx,
+                        static_cast<float>(mk.place[2]) * kFx});
+    }
+    std::size_t on = 0;
+    const float raise = raise_to_markers(p.surfaces, feet, &on);
+    char by[32];
+    std::snprintf(by, sizeof(by), "%+.2f", raise);
+    if (on > 0) {
+        p.r.place.move[1] += raise;
+        p.placed_text = fmt(app.language, S::map_raised, {by, std::to_string(on), std::to_string(feet.size())});
+        p.placed_ok = on * 2 >= feet.size();
+        p.dirty = true;
+    } else {
+        p.placed_text = tr(app.language, S::map_raised_none);
+        p.placed_ok = false;
+    }
+}
+
+void choose_room_export(App& app, const Item& item) {
+    choose_save_file(app, export_name(item), "glTF", "gltf", app.dialog_room_exports);
+}
+
+// Above the picture while the room is being replaced: which room it shows,
+// and why it is not yours when yours could not be built.
+void draw_shown_room(App& app) {
+    const auto lang = app.language;
+    const Replacing& p = m.rep;
+    if (!p.active)
+        return;
+    const char* views[3] = {tr(lang, S::map_show_new), tr(lang, S::map_show_game), tr(lang, S::map_show_both)};
+    ImGui::SetNextItemWidth(12 * ImGui::GetFontSize());
+    ImGui::Combo(tr(lang, S::map_show), &m.rep.view, views, 3);
+    if (!p.built_ok && !p.dirty) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.4f, 0.4f, 1));
+        ImGui::TextWrapped("%s",
+                           fmt(lang, S::map_yours_not_shown, {p.error.empty() ? std::string("-") : p.error}).c_str());
+        ImGui::PopStyleColor();
+    }
 }
 
 void draw_replace(App& app, const Item& item) {
     const auto lang = app.language;
     Replacing& p = m.rep;
     const ImVec4 warn(0.95f, 0.8f, 0.35f, 1), good(0.55f, 0.9f, 0.55f, 1);
+    if (m.open_replace) {
+        ImGui::SetNextItemOpen(true);
+        m.open_replace = false;
+    }
     if (!ImGui::CollapsingHeader(tr(lang, S::map_replace), p.active ? ImGuiTreeNodeFlags_DefaultOpen : 0))
         return;
     const Mod* mod = app.current_mod();
@@ -1020,30 +1455,35 @@ void draw_replace(App& app, const Item& item) {
     // 1. the model: the person's, or the game's room exported to start from
     ImGui::SeparatorText(tr(lang, S::map_step_model));
     ImGui::TextWrapped("%s", tr(lang, S::map_replace_hint));
+    kh2_take(app, item);
     if (ImGui::Button(tr(lang, S::choose_file))) {
         p.next_is_collision = false;
+        p.r.kh2.clear();  // the modder's own model, not a KH2 room
         choose_file(app, item);
     }
     same_line_if_room(button_width(tr(lang, S::map_export)));
     if (ImGui::Button(tr(lang, S::map_export)))
-        choose_room_export(app);
+        choose_room_export(app, item);
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", tr(lang, S::map_export_hint));
+    same_line_if_room(button_width(tr(lang, S::map_kh2_source)));
+    if (ImGui::Button(tr(lang, S::map_kh2_source)))
+        kh2.shown = !kh2.shown;
+    if (kh2.shown)
+        draw_kh2_picker(app);
     if (mod == nullptr) {
         ImGui::TextColored(warn, "%s", tr(lang, S::choose_mod_first));
         return;
     }
     if (!p.active)
         return;
+    if (!p.r.kh2.empty())
+        ImGui::TextColored(warn, "%s %s", p.r.kh2.c_str(), tr(lang, S::map_kh2_note));
     ImGui::TextUnformatted(
         fmt(lang, S::map_model_file, {p.model_source.empty() ? std::string("-") : u8(p.model_source.filename())})
             .c_str());
-    const char* views[3] = {tr(lang, S::map_show_new), tr(lang, S::map_show_game), tr(lang, S::map_show_both)};
-    same_line_if_room(12 * ImGui::GetFontSize() + check_width(tr(lang, S::map_show)));
-    ImGui::SetNextItemWidth(12 * ImGui::GetFontSize());
-    ImGui::Combo(tr(lang, S::map_show), &p.view, views, 3);
 
     // 2. where it sits: lined up by the tool when it can, the person's hand otherwise
     ImGui::SeparatorText(tr(lang, S::map_step_place));
@@ -1054,6 +1494,10 @@ void draw_replace(App& app, const Item& item) {
     }
     if (ImGui::Button(tr(lang, S::map_align_button)))
         line_up(app);
+    // the height that puts most of the room's markers on one of its floors
+    same_line_if_room(button_width(tr(lang, S::map_raise_to_markers)));
+    if (ImGui::Button(tr(lang, S::map_raise_to_markers)) && p.built_ok)
+        raise_to_room_markers(app);
     bool changed = false;
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::DragFloat(tr(lang, S::map_scale), &p.r.place.scale, 0.01f, 0.001f, 1000.0f, "%.3f");
@@ -1066,14 +1510,33 @@ void draw_replace(App& app, const Item& item) {
     changed |= ImGui::IsItemDeactivatedAfterEdit();
     if (p.r.place.scale <= 0.0f)
         p.r.place.scale = 0.001f;
+    // only what lies around the room: a KH2 map is a whole place, the room a part of it
+    bool cut = p.r.zone >= 0;
+    if (ImGui::Checkbox(tr(lang, S::map_zone), &cut)) {
+        p.r.zone = cut ? kZoneMargin : -1.0f;
+        changed = true;
+    }
+    if (cut) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+        ImGui::DragFloat(tr(lang, S::map_zone_margin), &p.r.zone, 0.25f, 0.0f, 1000.0f, "%.1f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        if (p.r.zone < 0)
+            p.r.zone = 0;
+    }
 
     // 3. the floor and walls: the game's kept, made from the model, or from a simpler one
     ImGui::SeparatorText(tr(lang, S::map_step_collision));
-    int source = p.r.keep_collision ? 0 : p.other_collision || !p.collision_source.empty() ? 2 : 1;
+    int source = p.r.keep_collision                                 ? 0
+                 : p.kh2_collision                                  ? 3
+                 : p.other_collision || !p.collision_source.empty() ? 2
+                                                                    : 1;
     const int before = source;
     ImGui::RadioButton(tr(lang, S::map_collision_keep), &source, 0);
     ImGui::RadioButton(tr(lang, S::map_collision_mine), &source, 1);
     ImGui::RadioButton(tr(lang, S::map_collision_other), &source, 2);
+    if (!p.r.kh2.empty())
+        ImGui::RadioButton(tr(lang, S::map_collision_kh2), &source, 3);
     if (source == 2) {
         ImGui::SameLine();
         ImGui::TextUnformatted(p.collision_source.empty() ? "-" : u8(p.collision_source.filename()).c_str());
@@ -1085,12 +1548,15 @@ void draw_replace(App& app, const Item& item) {
     }
     if (source != before) {
         p.r.keep_collision = source == 0;
-        p.other_collision = source == 2;
+        p.other_collision = source == 2 || source == 3;
+        p.kh2_collision = source == 3;
         if (source != 2) {
             p.collision_source.clear();
             p.raw_collision = {};
             p.r.collision.clear();
         }
+        if (source == 3 && !load_kh2_collision(app, p.r.kh2))
+            p.kh2_collision = p.other_collision = false;
         p.dirty = true;
     }
 
@@ -1138,8 +1604,8 @@ void draw_replace(App& app, const Item& item) {
         static const S words[] = {S::map_warn_dropped,         S::map_warn_too_big,          S::map_warn_no_ground,
                                   S::map_warn_gate_unplaced,   S::map_warn_wall_unplaced,    S::map_warn_name_kept,
                                   S::map_warn_marker_floating, S::map_warn_collision_shared, S::map_warn_model_shared,
-                                  S::map_warn_passable};
-        static_assert(sizeof(words) / sizeof(words[0]) == RoomWarning::passable + 1, "a word per warning");
+                                  S::map_warn_passable,        S::map_warn_marker_in_wall};
+        static_assert(sizeof(words) / sizeof(words[0]) == RoomWarning::marker_in_wall + 1, "a word per warning");
         std::string text = tr(lang, words[w.kind]);
         for (std::size_t k = 0; k < w.args.size(); ++k) {
             const std::string key = "{" + std::to_string(k) + "}";
@@ -1262,9 +1728,12 @@ void draw_map_view(App& app, const Item& item) {
         ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", m.error.c_str());
         return;
     }
+    if (m.rep.dirty)
+        rebuild();  // the modder's room made before it is counted and drawn
     ImGui::TextUnformatted(
         fmt(lang, S::map_room, {std::to_string(m.room->index), std::to_string(m.room->id), world_path(m.world.code)})
             .c_str());
+    draw_shown_room(app);
     if (m.has_collision) {
         ImGui::TextDisabled(
             "%s", fmt(lang, S::map_counts,
@@ -1289,8 +1758,6 @@ void draw_map_view(App& app, const Item& item) {
     ImGui::Checkbox(tr(lang, S::map_ceilings), &m.show_ceilings);
     same_line_if_room(check_width(tr(lang, S::map_markers)));
     ImGui::Checkbox(tr(lang, S::map_markers), &m.show_markers);
-    if (m.rep.dirty)
-        rebuild();  // the modder's model placed before the picture draws it
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     draw_room(app, ImVec2(avail.x, std::max(260.0f, avail.y * 0.5f)));
     ImGui::TextDisabled("%s", tr(lang, S::map_controls));

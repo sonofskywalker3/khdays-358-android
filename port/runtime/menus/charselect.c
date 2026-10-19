@@ -7,7 +7,9 @@
 #include "../input/input.h"
 #include "../core/io.h"
 #include "../core/rom.h"
+#include "../core/utf8.h"
 #include "../core/window.h"
+#include "../../host/screens/ui_text.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -58,7 +60,8 @@ extern int Ov008_CountPlayers(void);
 #define NAMES 0x436u
 #define NAME_LENGTH 11u
 #define STAT_ROW 9u
-#define ALWAYS 13 /* characters 0-12 are always there; 13 on are bought */
+#define ALWAYS 13                       /* characters 0-12 are always there; 13 on are bought */
+#define RANDOM KHDAYS_SELECT_CHARACTERS /* the grid's random choice, after the characters */
 #define ASK_WAIT                                                                                                       \
     120u                 /* VBlanks a move may take to be answered before the port lets it go (the
                              * host's answer comes within a few frames) */
@@ -73,6 +76,7 @@ extern int Ov008_CountPlayers(void);
 #define HELP_CHANGE 0x39
 #define HELP_CHANGE_START 0x3a
 #define HELP_HOST 0x3b
+#define GLYPH_Y 0x334du /* the Y button in the game's font (text/font_eu_10.nftr), which its text never writes */
 
 typedef struct Screen {
     int overlay;
@@ -100,6 +104,7 @@ static volatile LONG columns = 5;
 /* the game's thread's own */
 static KhdaysSelectView now; /* as last read, after the game's update */
 static int want = -1;        /* the character the player moved to, until the game has it */
+static int on_random;        /* the player is on the grid's random choice */
 static int asked;            /* the port's request for it is made */
 static u32 asked_at;
 static int a_kept; /* an A pressed while the move was unanswered */
@@ -195,13 +200,14 @@ static float grid_x(int position, int count, int cols)
     return (float)(position % cols) - (float)(in_row - 1) / 2.0f;
 }
 
-/* The character a direction leads to from `from` (KHDAYS_KEY_*), the ones taken stepped over. */
+/* The character a direction leads to from `from` (KHDAYS_KEY_*), the ones taken stepped over; the
+ * grid's last is RANDOM, the random choice. */
 static int step(int from, u16 key, uint32_t choosable, uint32_t busy)
 {
-    int list[KHDAYS_SELECT_CHARACTERS], count = 0, at = 0;
+    int list[KHDAYS_SELECT_CHARACTERS + 1], count = 0, at = 0;
     const int cols = (int)columns > 0 ? (int)columns : 1;
-    for (int c = 0; c < KHDAYS_SELECT_CHARACTERS; ++c) {
-        if (choosable & (1u << c)) {
+    for (int c = 0; c <= RANDOM; ++c) {
+        if (c == RANDOM || (choosable & (1u << c))) {
             if (c == from) {
                 at = count;
             }
@@ -215,7 +221,7 @@ static int step(int from, u16 key, uint32_t choosable, uint32_t busy)
         const int dir = key == KHDAYS_KEY_RIGHT ? 1 : -1;
         for (int k = 1; k < count; ++k) {
             const int c = list[((at + dir * k) % count + count) % count];
-            if (!(busy & (1u << c))) {
+            if (c == RANDOM || !(busy & (1u << c))) {
                 return c;
             }
         }
@@ -230,7 +236,7 @@ static int step(int from, u16 key, uint32_t choosable, uint32_t busy)
             for (int p = row * cols; p < count && p < (row + 1) * cols; ++p) {
                 const float d = grid_x(p, count, cols) - x;
                 const float dist = d < 0 ? -d : d;
-                if (!(busy & (1u << list[p])) && (best < 0 || dist < best_d)) {
+                if ((list[p] == RANDOM || !(busy & (1u << list[p]))) && (best < 0 || dist < best_d)) {
                     best = p;
                     best_d = dist;
                 }
@@ -240,6 +246,42 @@ static int step(int from, u16 key, uint32_t choosable, uint32_t busy)
             }
         }
         return from;
+    }
+}
+
+/* A character the game lets be chosen and no other place is on, at random: another than `now` when
+ * there is one; -1 when none is free. */
+static int roll(uint32_t choosable, uint32_t busy, int now_on)
+{
+    static u32 state;
+    int list[KHDAYS_SELECT_CHARACTERS], count = 0;
+    for (int c = 0; c < KHDAYS_SELECT_CHARACTERS; ++c) {
+        if ((choosable & (1u << c)) && !(busy & (1u << c)) && c != now_on) {
+            list[count++] = c;
+        }
+    }
+    if (count == 0) {
+        return now_on >= 0 && (choosable & (1u << now_on)) ? now_on : -1;
+    }
+    if (state == 0) {
+        state = (khdays_events_vblank_count() ^ (u32)GetTickCount64()) * 2654435761u | 1u;
+    }
+    state ^= state << 13; /* xorshift32 */
+    state ^= state >> 17;
+    state ^= state << 5;
+    return list[state % (u32)count];
+}
+
+/* The player chose at random (the grid's random choice, or Y): the character moves there and the
+ * game's A follows once it has it, as a choice. */
+static void choose_at_random(void)
+{
+    const int c = roll(now.choosable, taken(&now), now.places[now.self].character);
+    on_random = 0;
+    if (c >= 0) {
+        want = c;
+        asked = 0;
+        a_kept = 1;
     }
 }
 
@@ -323,6 +365,10 @@ static int read_screen(const Screen *sc, GameRow rows[KHDAYS_SELECT_PLACES], Khd
     }
     messages(sc, rows, self, menu, v);
     shown_character = want >= 0 ? want : v->places[self].character;
+    if (on_random && !v->places[self].ready) {
+        shown_character = -1;
+        v->random = 1;
+    }
     v->character = shown_character;
     for (int i = 0; i < 4; ++i) {
         v->stat_label[i] = rd8(sc->captions + 6u + (u32)i);
@@ -404,7 +450,7 @@ void khdays_charselect_update_ran(uintptr_t update)
             }
             on = i;
             seen_at = khdays_events_vblank_count();
-            if (v.shown) {
+            if (v.shown || want >= 0) {
                 move_self(&screens[i], rows, &v);
                 if (want >= 0) {
                     /* the player sees the move at once */
@@ -443,12 +489,15 @@ uint16_t khdays_charselect_buttons(uint16_t buttons)
 {
     static const u16 keys[4] = {KHDAYS_KEY_UP, KHDAYS_KEY_DOWN, KHDAYS_KEY_LEFT, KHDAYS_KEY_RIGHT};
     const u16 directions = KHDAYS_KEY_UP | KHDAYS_KEY_DOWN | KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT;
+    const int a_pressed = (buttons & KHDAYS_KEY_A) && !(held & KHDAYS_KEY_A);
+    const int y_pressed = (buttons & KHDAYS_KEY_Y) && !(held & KHDAYS_KEY_Y);
     u16 out = buttons;
-    if (!active()) {
-        if (on >= 0 && khdays_events_vblank_count() - seen_at > SEEN_FRAMES) {
+    int choosing;
+    if (on < 0 || khdays_events_vblank_count() - seen_at > SEEN_FRAMES) {
+        if (on >= 0) {
             on = -1; /* the screen left: nothing of it kept */
             want = -1;
-            asked = a_kept = a_give = 0;
+            on_random = asked = a_kept = a_give = 0;
             AcquireSRWLockExclusive(&lock);
             memset(&shown, 0, sizeof(shown));
             ReleaseSRWLockExclusive(&lock);
@@ -456,31 +505,74 @@ uint16_t khdays_charselect_buttons(uint16_t buttons)
         held = buttons;
         return buttons;
     }
-    out &= (u16)~directions; /* the port's grid, not the game's */
-    if (!now.places[now.self].ready) {
-        const int from = want >= 0 ? want : now.places[now.self].character;
-        for (int k = 0; k < 4; ++k) {
-            if (repeated(buttons, keys[k])) {
-                const int to = step(from, keys[k], now.choosable, taken(&now));
-                if (to != from && to >= 0) {
-                    want = to;
-                    asked = 0;
+    choosing = !now.places[now.self].ready;
+    if (!choosing || !active()) {
+        on_random = 0;
+    }
+    if (active()) {
+        out &= (u16)~directions; /* the port's grid, not the game's */
+        if (choosing) {
+            const int from = on_random ? RANDOM : want >= 0 ? want : now.places[now.self].character;
+            for (int k = 0; k < 4; ++k) {
+                if (repeated(buttons, keys[k])) {
+                    const int to = step(from, keys[k], now.choosable, taken(&now));
+                    if (to != from && to >= 0) {
+                        on_random = to == RANDOM;
+                        want = to == RANDOM ? -1 : to;
+                        asked = 0;
+                    }
+                    break;
                 }
-                break;
+            }
+            if (on_random && a_pressed) {
+                choose_at_random();
             }
         }
     }
-    if (want >= 0 && (buttons & KHDAYS_KEY_A) && !(held & KHDAYS_KEY_A)) {
+    if (choosing && y_pressed) {
+        choose_at_random(); /* on the game's own screen too: its directions stay its own */
+    }
+    if (want >= 0 && a_pressed) {
         a_kept = 1; /* the game would take it on the character before the move */
     }
-    if (want >= 0 || a_kept) {
-        out &= (u16)~KHDAYS_KEY_A;
+    if (want >= 0 || a_kept || on_random) {
+        out &= (u16)~KHDAYS_KEY_A; /* (on the random choice the game's A would choose its own) */
     }
     if (a_give) {
         out |= KHDAYS_KEY_A;
         a_give = 0;
     }
     held = buttons;
+    return out;
+}
+
+void *khdays_charselect_help(int message, void *game, void *out, int units)
+{
+    const u16 *from = (const u16 *)game;
+    u16 *to = (u16 *)out;
+    const char *word = khdays_text_in(TXT_SELECT_RANDOM, language());
+    int n = 0;
+    if (message != HELP_CHOOSE || from == NULL || to == NULL || units < 4) {
+        return game;
+    }
+    if (word == NULL) {
+        word = khdays_text_in(TXT_SELECT_RANDOM, 1);
+    }
+    while (from[n] != 0 && n < units - 1) {
+        to[n] = from[n];
+        ++n;
+    }
+    /* then two spaces, Y and its word, as the game writes its buttons */
+    if (n + 4 < units) {
+        to[n++] = ' ';
+        to[n++] = ' ';
+        to[n++] = GLYPH_Y;
+        to[n++] = ' ';
+    }
+    for (const unsigned char *p = (const unsigned char *)word; *p != 0 && n < units - 1;) {
+        to[n++] = khdays_utf8_next(&p);
+    }
+    to[n] = 0;
     return out;
 }
 

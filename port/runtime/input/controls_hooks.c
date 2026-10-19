@@ -7,6 +7,7 @@
 #include "../core/window.h"
 #include "analog.h"
 #include "input.h"
+#include "../net/net_session.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -76,6 +77,30 @@ void khdays_controls_selection(int locked, int scheme, int held, int pressed, in
     last_flags = flags;
     last_active = active;
     last_selected = selected;
+}
+
+/* With the 3D on both screens (Sora's memories) the game runs the memory's battle on every other frame,
+ * whose lock-on logic drops the buttons (data_0204be04, the screen shown, is not 0 there): an L or R
+ * press read then is kept for the player's next frame, so none is lost. */
+#define KEPT_FRAMES 4
+
+int khdays_controls_selection_pressed(int pressed, int other_screen)
+{
+    static int kept;
+    static uint32_t kept_at;
+    const uint32_t now = khdays_input_game_frames();
+    if (other_screen) {
+        if ((pressed & 0x300) != 0) {
+            kept |= pressed & 0x300;
+            kept_at = now;
+        }
+        return pressed;
+    }
+    if (kept != 0 && now - kept_at <= KEPT_FRAMES) {
+        pressed |= kept;
+    }
+    kept = 0;
+    return pressed;
 }
 
 void khdays_controls_selection_live(int live)
@@ -157,6 +182,36 @@ void *khdays_trace_pointer(const char *what, void *result)
 
 /* ---- The camera (Ov002_Camera_UpdateFollow) -------------------------------- */
 
+/* The mouse camera: the mouse's motion since the camera last took it, as a share of the game's own
+ * turn (or tilt) of a frame -- MOUSE_COUNTS_A_FRAME counts at 100 % a frame's -- so its scale is the
+ * game's in both directions. What moved while the camera did not follow (another scene, a menu) is
+ * not taken. */
+#define MOUSE_COUNTS_A_FRAME 40
+static int32_t mouse_seen[2];
+static u32 mouse_frame[2];
+static long long mouse_rest[2]; /* what the division left, for slow motions */
+
+static int mouse_share(const KhdaysInputSnapshot *in, int axis, int rate)
+{
+    const int32_t total = axis ? in->mouse_y : in->mouse_x;
+    const u32 frame = khdays_input_game_frames();
+    const long long per = 100LL * MOUSE_COUNTS_A_FRAME;
+    long long moved;
+    if ((in->enhancements & KHDAYS_ENH_MOUSE_CAMERA) == 0 || in->ui_open) {
+        mouse_frame[axis] = 0;
+        return 0;
+    }
+    if (mouse_frame[axis] == 0 || frame - mouse_frame[axis] > 2u) {
+        mouse_seen[axis] = total;
+        mouse_rest[axis] = 0;
+    }
+    mouse_frame[axis] = frame != 0 ? frame : 1;
+    moved = (long long)rate * (long long)(total - mouse_seen[axis]) * in->mouse_speed + mouse_rest[axis];
+    mouse_seen[axis] = total;
+    mouse_rest[axis] = moved % per;
+    return (int)(moved / per);
+}
+
 /* Where the game applies its own turn input (bits 4 and 8 turn, 1 and 2 tilt; `rate` its turn a
  * frame; `inverted` its horizontal inversion, Config 0x37c3): returns the right stick's share of the
  * game's rate to add to the yaw target. Right on the stick turns as every "right" of the game's does
@@ -168,9 +223,10 @@ int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int
     int turn = 0;
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open && in->camera_x != 0) {
         turn = -scaled(rate, in->camera_x, in->camera_speed);
-        if (inverted) {
-            turn = -turn;
-        }
+    }
+    turn -= mouse_share(in, 0, rate); /* right on the mouse as right on the stick */
+    if (inverted) {
+        turn = -turn;
     }
     if (bits != 0 || turn != 0 || bits != last_bits || target != last_target || pitch != last_pitch) {
         trace("camera: bits %x flags %08x flags2 %08x yaw %04x target %04x rate %x pitch %d inverted %d stick %d", bits,
@@ -191,9 +247,10 @@ int khdays_controls_camera_pitch(int rate, int inverted)
     int tilt = 0;
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open && in->camera_y != 0) {
         tilt = -scaled(rate, in->camera_y, in->camera_speed);
-        if (inverted) {
-            tilt = -tilt;
-        }
+    }
+    tilt -= mouse_share(in, 1, rate); /* up on the mouse as up on the stick */
+    if (inverted) {
+        tilt = -tilt;
     }
     return tilt;
 }
@@ -210,14 +267,43 @@ void khdays_trace_camera_request(int found, int x, int y, int kind, int state)
 
 /* ---- Movement (Ov022_HeadingFromHeldDpad, Ov022_SteerIdleByAim) ---------------- */
 
-/* Whether analog movement drives this actor now, and its stick. An actor's buttons come from the
- * control packet a game frame after Pad_Sample read them, so its stick is the snapshot before this
- * frame's. */
-static int analog_moving(int actor, const KhdaysInputSnapshot **in)
+/* A movement stick and its player's settings. */
+typedef struct Stick {
+    int x, y, run_threshold, walk_speed;
+} Stick;
+
+#define PARTY 4 /* the game's members: the host's and three guests' */
+
+/* Whether analog movement drives this actor now, and its stick. The local actor's stick is the
+ * snapshot before this frame's (its buttons reach the game a frame later); on the host a guest's actor
+ * takes the stick that guest sent with its controls (net_session.c). */
+static int analog_moving(int actor, Stick *s)
 {
-    *in = khdays_input_previous_snapshot();
-    return ((*in)->enhancements & KHDAYS_ENH_ANALOG_MOVEMENT) != 0 && ((*in)->move_x != 0 || (*in)->move_y != 0) &&
-           actor == local_actor();
+    const KhdaysInputSnapshot *in = khdays_input_previous_snapshot();
+    if (actor == local_actor()) {
+        if ((in->enhancements & KHDAYS_ENH_ANALOG_MOVEMENT) == 0 || (in->move_x == 0 && in->move_y == 0)) {
+            return 0;
+        }
+        s->x = in->move_x;
+        s->y = in->move_y;
+        s->run_threshold = in->run_threshold;
+        s->walk_speed = in->walk_speed;
+        return 1;
+    }
+    for (int member = 1; member < PARTY; ++member) {
+        KhdaysNetStick n;
+        if (GetEntryField20ByIndex(member) == actor) {
+            if (!khdays_net_stick((unsigned int)member, &n) || !n.on || (n.x == 0 && n.y == 0)) {
+                return 0;
+            }
+            s->x = n.x;
+            s->y = n.y;
+            s->run_threshold = n.run_threshold;
+            s->walk_speed = n.walk_speed;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* The heading the game made from the D-pad (-1 for none). With analog movement it becomes the stick's
@@ -225,10 +311,10 @@ static int analog_moving(int actor, const KhdaysInputSnapshot **in)
 int khdays_controls_move_heading(int actor, int heading)
 {
     static int last_heading = -2, last_buttons = -1;
-    const KhdaysInputSnapshot *in;
+    Stick in;
     int result = heading;
     if (heading != -1 && analog_moving(actor, &in)) {
-        result = khdays_analog_heading(in->move_x, in->move_y);
+        result = khdays_analog_heading(in.x, in.y);
     }
     if (trace_on() && actor == local_actor()) {
         const int buttons = *(u16 *)KHDAYS_W(actor + 0x18) | *(u16 *)KHDAYS_W(actor + 0x1a) << 16;
@@ -253,11 +339,11 @@ static struct {
  * threshold, the walk speed's share of it, never more than the game's own. */
 int khdays_controls_move_rate(int actor, int rate)
 {
-    const KhdaysInputSnapshot *in;
+    Stick in;
     walking.actor = 0;
     if (rate > 0 && analog_moving(actor, &in)) {
-        const int tilt = khdays_analog_tilt(in->move_x, in->move_y);
-        const int walk = khdays_analog_rate(rate, tilt, in->run_threshold, in->walk_speed);
+        const int tilt = khdays_analog_tilt(in.x, in.y);
+        const int walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
         if (walk < rate) {
             walking.actor = actor;
             walking.frame = khdays_input_game_frames();

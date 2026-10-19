@@ -1,6 +1,6 @@
-// The pause part (pause.h): Mission Mode's Retry (runtime/menus/retry.c) in a mission played alone,
-// drawn in engine A's BG2 as a third line under the game's Continue and Give Up, in the game's 8-dot
-// font. A mod's pictures of the pause (mods/<Mod>/layouts/pause/<lang>/, tools/hd/hd_pause.py) are
+// The pause part (pause.h): the Retry of Mission Mode and the challenges (runtime/menus/retry.c) in a
+// mission played alone, drawn in engine A's BG2 as a third line under the game's Continue and Give Up,
+// in the game's 8-dot font. A mod's pictures of the pause (mods/<Mod>/layouts/pause/<lang>/, tools/hd/hd_pause.py) are
 // drawn instead of the game's pieces where the game puts them; a language missing any keeps the
 // game's.
 #include "pause.h"

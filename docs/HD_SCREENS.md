@@ -141,7 +141,12 @@ Written by `tools/hd/theater_mission.py`, in the theater's pieces; drawn by
 It shows the characters the game lets be chosen, in its order, grey unless a
 place is on one (then in colour, framed in the place's colour); this copy's
 character large with its name, weapon and gauges; each place's plate along the
-bottom, ringed once its player has chosen; the game's message and help.
+bottom, ringed once its player has chosen; the game's message and help. The
+grid ends with a random choice, a "?" with the player's Y in its corner: A on it
+(or Y anywhere, also on the game's own screen without these pieces, whose help
+line then says "Y Random" with the game's own Y, 0x334d in `text/font_eu_10.nftr`,
+which its text never writes) moves to a character nobody is on, at random, and
+chooses it.
 
 ## The settings menu (`layouts/settings/<lang>/settings.txt`)
 
@@ -163,6 +168,24 @@ A piece of a left, a middle and a right part has its ends scaled with the
 rectangle's height and its middle stretched between them (its other states
 placed as they lie against its shown one); a stacked one likewise upright; one
 of a whole part is stretched over it.
+
+## The HD videos' music
+
+Written by `tools/hd/theater_movies.py --music` as
+`data/cutscenes/cinematics/music/hd<id>.txt`, beside the tracks it names
+(`bgm_<n>.ogg`, Ogg Vorbis); played with the HD video by
+`host/movies/theater_music.c`, at the video's clock and the Music volume.
+
+| Line | What it is |
+|---|---|
+| `rate R` | the video's frames a second (30) |
+| `from field\|stop` | `field`: the music comes from the video before (it plays on when that one's track is this one's first, from frame 0) |
+| `to field\|stop` | `field`: it goes on into the next video of the same course |
+| `cue FIRST END TRACK LOOP` | `TRACK` plays from its start at frame `FIRST`, to before `END`; past its end it goes back to sample `LOOP` (-1: it plays once) |
+| `volume FIRST END LEVEL` | the music's level moves to `LEVEL` percent between the two frames, from the level before (100 at first) |
+
+A mod's video (`mods/<Mod>/movies/` or `cutscenes/cinematics/`) has music only
+from a `music/` folder beside it.
 
 ## The HD videos' subtitles
 
@@ -381,7 +404,7 @@ lines). Into `layouts/pause/`: `hand.png` and per language `title.png`,
 the game's (its `pause/etcicon.NSCR` strips over `pause/pausebg_&.pbg`) and the
 port's Retry.
 
-### The videos and subtitles (`theater_movies.py MARE`)
+### The videos, subtitles and music (`theater_movies.py MARE`)
 
 `--videos`: the theater's videos as the port plays them in the game's movies'
 place (`data/cutscenes/cinematics/hd<id>.mp4`): `hd8NN.mp4`, `DOP.mp4` as the

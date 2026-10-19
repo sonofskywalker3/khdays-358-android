@@ -772,3 +772,28 @@ TEST(every_sheet_exported_coloured) {
         khdays_png_free(px);
     }
 }
+
+TEST(the_tile_grid_lies_over_the_export) {
+    Assembly a;
+    a.width = 16;
+    a.height = 8;
+    a.spots = {{0, 0, 0}, {8, 0, 1}};
+    const std::uint32_t grey = 0xff808080u, red = 0xff0000ffu;
+    const auto at = [](const Bytes& p, int w, int x, int y) {
+        std::uint32_t v = 0;
+        std::memcpy(
+            &v, &p[(static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)) * 4], 4);
+        return v;
+    };
+    // at 1x: one-pixel borders, the marked tile in its colour, the insides clear
+    const Bytes one = render_tile_grid(a, 1, grey, {{{1}, red}});
+    CHECK(one.size() == static_cast<std::size_t>(16) * 8 * 4);
+    CHECK(at(one, 16, 0, 0) == grey && at(one, 16, 7, 4) == grey);
+    CHECK(at(one, 16, 3, 3) == 0);
+    CHECK(at(one, 16, 8, 0) == red && at(one, 16, 15, 7) == red);
+    CHECK(at(one, 16, 11, 4) == 0);
+    // at 8x the same places, two pixels thick
+    const Bytes eight = render_tile_grid(a, 8, grey, {});
+    CHECK(at(eight, 128, 1, 1) == grey && at(eight, 128, 2, 2) == 0);
+    CHECK(at(eight, 128, 64, 30) == grey && at(eight, 128, 127, 63) == grey);
+}

@@ -94,6 +94,20 @@ M4 placement_matrix(const RoomPlacement& p) {
     return mul(t, mul(rz, mul(ry, mul(rx, s))));
 }
 
+M4 to_m4(const std::array<float, 16>& f) {
+    M4 m{};
+    for (std::size_t k = 0; k < 16; ++k)
+        m[k] = f[k];
+    return m;
+}
+
+std::array<float, 16> to_floats(const M4& m) {
+    std::array<float, 16> f{};
+    for (std::size_t k = 0; k < 16; ++k)
+        f[k] = static_cast<float>(m[k]);
+    return f;
+}
+
 std::array<float, 3> apply(const M4& m, const std::array<float, 3>& v, double w) {
     std::array<float, 3> r{};
     for (int row = 0; row < 3; ++row) {
@@ -169,9 +183,12 @@ bool write_room_model(const std::filesystem::path& mod_dir, const std::string& k
         if (!result.ok)
             return fail_with(why, file + ": " + result.why);
         written->insert("graphics/" + key.substr(0, key.rfind('/') + 1) + file);
-        refs[texture] = {file, decoded.width, decoded.height};
+        refs[texture] = {file, decoded.width, decoded.height,
+                         assets::texels_translucent(decoded.rgba.data(), decoded.rgba.size() / 4)};
     }
-    const std::string text = assets::to_gltf(model.model, refs);
+    // a model that moves by itself written as its scene, its skeleton and animation kept
+    const std::string text = assets::moves_by_itself(model) ? assets::scene_to_gltf(assets::scene_of(model, refs))
+                                                            : assets::to_gltf(model.model, refs);
     const auto result = write_into_mod(
         mod_dir, gltf,
         [&](const std::filesystem::path& temporary) -> std::string {
@@ -194,6 +211,36 @@ bool write_room_model(const std::filesystem::path& mod_dir, const std::string& k
     return true;
 }
 
+// A model's joints at rest: each palette entry its joint's global times its inverse bind.
+std::map<std::uint32_t, M4> rest_palette(const assets::ImportedModel& m) {
+    std::map<std::uint32_t, M4> palette;
+    for (const auto& j : m.joints)
+        palette[j.palette_index] = mul(to_m4(j.world), to_m4(j.inverse_bind));
+    return palette;
+}
+
+// Where a vertex is drawn: through its joints when the model keeps its skeleton, else as it is.
+std::array<float, 3> posed(const std::map<std::uint32_t, M4>& palette, const assets::NeutralVertex& v) {
+    if (palette.empty())
+        return v.position;
+    std::array<float, 3> pos{0, 0, 0};
+    float total = 0;
+    for (std::size_t k = 0; k < 4; ++k) {
+        const auto found = palette.find(v.joints[k]);
+        if (v.weights[k] <= 0 || found == palette.end())
+            continue;
+        const auto q = apply(found->second, v.position, 1);
+        for (std::size_t c = 0; c < 3; ++c)
+            pos[c] += v.weights[k] * q[c];
+        total += v.weights[k];
+    }
+    if (total <= 0)
+        return v.position;
+    for (auto& c : pos)
+        c /= total;
+    return pos;
+}
+
 }  // namespace
 
 std::filesystem::path rooms_folder(const std::filesystem::path& mod_dir, const std::string& code) {
@@ -214,6 +261,8 @@ std::string change_text(const RoomReplacement& r) {
     o << "world " << r.world << "\n";
     o << "room " << r.room << "\n";
     o << "model " << r.model << "\n";
+    if (!r.kh2.empty())
+        o << "kh2 " << r.kh2 << "\n";
     if (!r.collision.empty())
         o << "collision " << r.collision << "\n";
     if (r.keep_collision)
@@ -221,6 +270,8 @@ std::string change_text(const RoomReplacement& r) {
     o << "scale " << r.place.scale << "\n";
     o << "turn " << r.place.turn[0] << " " << r.place.turn[1] << " " << r.place.turn[2] << "\n";
     o << "move " << r.place.move[0] << " " << r.place.move[1] << " " << r.place.move[2] << "\n";
+    if (r.zone >= 0)
+        o << "zone " << r.zone << "\n";
     o << "ground-limit " << r.ground_limit << "\n";
     for (const auto& [member, use] : r.objects)
         o << "object " << member << " " << use_word(use) << "\n";
@@ -267,6 +318,8 @@ bool read_change(const std::filesystem::path& file, RoomReplacement* out, std::s
             v >> r.room;
         else if (word == "model")
             r.model = rest;
+        else if (word == "kh2")
+            r.kh2 = rest;
         else if (word == "collision")
             r.collision = rest;
         else if (word == "collision-kept")
@@ -277,6 +330,8 @@ bool read_change(const std::filesystem::path& file, RoomReplacement* out, std::s
             v >> r.place.turn[0] >> r.place.turn[1] >> r.place.turn[2];
         else if (word == "move")
             v >> r.place.move[0] >> r.place.move[1] >> r.place.move[2];
+        else if (word == "zone")
+            v >> r.zone;
         else if (word == "ground-limit")
             v >> r.ground_limit;
         else if (word == "object") {
@@ -458,6 +513,151 @@ RoomAlignment align_with_room(const std::vector<std::array<float, 3>>& room_poin
     return best;
 }
 
+namespace {
+
+// A KH2 room's middle from above and its floor's height under it, from its still meshes but its skies
+// (its pieces may stand far off, waiting); false when it has none.
+bool kh2_floor_middle(const assets::ImportedModel& kh2, float* x, float* z, float* floor_y) {
+    std::array<float, 3> lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
+    struct Tri {
+        std::array<float, 3> a, b, c;
+    };
+    std::vector<Tri> ups;
+    for (const auto& mesh : kh2.model.meshes) {
+        if (mesh.sky)
+            continue;
+        auto still = [](const assets::NeutralVertex& v) { return v.joints[0] == 0 && v.weights[0] >= 0.999f; };
+        for (const auto& v : mesh.vertices) {
+            if (!still(v))
+                continue;
+            for (std::size_t c = 0; c < 3; ++c)
+                lo[c] = std::min(lo[c], v.position[c]), hi[c] = std::max(hi[c], v.position[c]);
+        }
+        for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+            const auto& p = mesh.vertices[mesh.indices[i]];
+            const auto& q = mesh.vertices[mesh.indices[i + 1]];
+            const auto& r = mesh.vertices[mesh.indices[i + 2]];
+            if (!still(p) || !still(q) || !still(r))
+                continue;
+            const float e0[3] = {q.position[0] - p.position[0], q.position[1] - p.position[1],
+                                 q.position[2] - p.position[2]};
+            const float e1[3] = {r.position[0] - p.position[0], r.position[1] - p.position[1],
+                                 r.position[2] - p.position[2]};
+            const float n[3] = {e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                                e0[0] * e1[1] - e0[1] * e1[0]};
+            const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (len > 0 && n[1] / len > 0.9f)
+                ups.push_back({p.position, q.position, r.position});
+        }
+    }
+    if (lo[0] > hi[0])
+        return false;
+    const float kx = (lo[0] + hi[0]) / 2, kz = (lo[2] + hi[2]) / 2;
+    // the lowest upward triangle holding the middle, else the nearest one's middle
+    float y = lo[1];
+    bool held = false;
+    float nearest = 1e30f;
+    for (const auto& t : ups) {
+        auto side = [&](const std::array<float, 3>& u, const std::array<float, 3>& w) {
+            return (w[0] - u[0]) * (kz - u[2]) - (w[2] - u[2]) * (kx - u[0]);
+        };
+        const float s0 = side(t.a, t.b), s1 = side(t.b, t.c), s2 = side(t.c, t.a);
+        const bool inside = (s0 >= 0 && s1 >= 0 && s2 >= 0) || (s0 <= 0 && s1 <= 0 && s2 <= 0);
+        const float cy = (t.a[1] + t.b[1] + t.c[1]) / 3;
+        if (inside) {
+            if (!held || cy < y)
+                y = cy;
+            held = true;
+        } else if (!held) {
+            const float dx = (t.a[0] + t.b[0] + t.c[0]) / 3 - kx, dz = (t.a[2] + t.b[2] + t.c[2]) / 3 - kz;
+            if (dx * dx + dz * dz < nearest) {
+                nearest = dx * dx + dz * dz;
+                y = cy;
+            }
+        }
+    }
+    *x = kx;
+    *z = kz;
+    *floor_y = y;
+    return true;
+}
+
+// A game room's middle from above and its ground's height under it (the collision's 20.12 units): the
+// ground holding the middle, else the nearest ground's middle; false when the room has no faces.
+bool room_ground_middle(const RoomCollision& room, double* x, double* z, double* ground) {
+    double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
+    for (const auto& list : room.faces) {
+        for (const auto& f : list) {
+            for (std::size_t v = 0; v < f.corners && v < 4; ++v) {
+                for (std::size_t c = 0; c < 3; ++c)
+                    lo[c] = std::min(lo[c], static_cast<double>(f.v[v][c])),
+                    hi[c] = std::max(hi[c], static_cast<double>(f.v[v][c]));
+            }
+        }
+    }
+    if (lo[0] > hi[0])
+        return false;
+    const double dx = (lo[0] + hi[0]) / 2, dz = (lo[2] + hi[2]) / 2;
+    double y = lo[1];
+    if (!ground_under(room, dx, dz, hi[1] + 4096.0, &y)) {
+        double best = 1e300;
+        for (const auto& g : room.faces[kGround]) {
+            double cx = 0, cy = 0, cz = 0;
+            for (std::size_t v = 0; v < g.corners && v < 4; ++v)
+                cx += g.v[v][0], cy += g.v[v][1], cz += g.v[v][2];
+            const double k = g.corners > 0 ? 1.0 / g.corners : 0;
+            const double d = (cx * k - dx) * (cx * k - dx) + (cz * k - dz) * (cz * k - dz);
+            if (d < best) {
+                best = d;
+                y = cy * k;
+            }
+        }
+    }
+    *x = dx;
+    *z = dz;
+    *ground = y;
+    return true;
+}
+
+}  // namespace
+
+RoomAlignment kh2_alignment(const std::vector<std::array<float, 3>>& room_points, const RoomCollision& room,
+                            const assets::ImportedModel& kh2) {
+    RoomAlignment a = align_with_room(room_points, kh2);
+    if (a.verdict != RoomAlignment::unrelated)
+        return a;
+    a = RoomAlignment{};
+    a.verdict = RoomAlignment::kh2_units;
+    a.place.scale = 0.01f;  // KH2's units are a hundredth of the game's (the Usual Spot, room 0 of Twilight Town)
+    float kx = 0, kz = 0, floor_y = 0;
+    double dx = 0, dz = 0, ground = 0;
+    if (!kh2_floor_middle(kh2, &kx, &kz, &floor_y) || !room_ground_middle(room, &dx, &dz, &ground))
+        return a;
+    const float s = a.place.scale;
+    a.place.move = {static_cast<float>(dx / 4096.0) - s * kx, static_cast<float>(ground / 4096.0) - s * floor_y,
+                    static_cast<float>(dz / 4096.0) - s * kz};
+    return a;
+}
+
+std::array<float, 3> placed_point(const RoomPlacement& place, const std::array<float, 3>& v) {
+    return apply(placement_matrix(place), v, 1);
+}
+
+std::array<float, 3> unplaced_point(const RoomPlacement& place, const std::array<float, 3>& v) {
+    // the matrix's columns are the turned axes times the scale: back along each, over the scale squared
+    const M4 m = placement_matrix(place);
+    const double d[3] = {v[0] - m[12], v[1] - m[13], v[2] - m[14]};
+    const double s2 = static_cast<double>(place.scale) * place.scale;
+    std::array<float, 3> out{};
+    for (std::size_t c = 0; c < 3; ++c)
+        out[c] = static_cast<float>((m[c * 4] * d[0] + m[c * 4 + 1] * d[1] + m[c * 4 + 2] * d[2]) / s2);
+    return out;
+}
+
+bool same_place(const RoomPlacement& a, const RoomPlacement& b) {
+    return a.scale == b.scale && a.turn == b.turn && a.move == b.move;
+}
+
 bool placed_model(const std::filesystem::path& model, const RoomPlacement& place, assets::ImportedModel* out,
                   std::string* why) {
     assets::ImportedModel m;
@@ -470,6 +670,32 @@ bool placed_model(const std::filesystem::path& model, const RoomPlacement& place
 
 void place_model(assets::ImportedModel* model, const RoomPlacement& place) {
     assets::ImportedModel& m = *model;
+    if (!m.animations.empty()) {
+        // a model with its own animation keeps its skeleton: the place goes on its roots and joints,
+        // the meshes loading made still are placed
+        const M4 p = placement_matrix(place);
+        for (auto& node : m.nodes) {
+            if (node.parent < 0)
+                node.local = to_floats(mul(p, to_m4(node.local)));
+        }
+        std::set<std::uint32_t> skinned;
+        for (auto& j : m.joints) {
+            j.world = to_floats(mul(p, to_m4(j.world)));
+            skinned.insert(j.palette_index);
+        }
+        for (auto& mesh : m.model.meshes) {
+            for (auto& v : mesh.vertices) {
+                bool on_joint = false;
+                for (std::size_t k = 0; k < 4; ++k)
+                    on_joint = on_joint || (v.weights[k] > 0 && skinned.count(v.joints[k]) != 0);
+                if (!on_joint) {
+                    v.position = apply(p, v.position, 1);
+                    v.normal = apply(p, v.normal, 0);
+                }
+            }
+        }
+        return;
+    }
     // the palette as the file poses it: each joint's global times its inverse bind
     std::map<std::uint32_t, M4> palette;
     for (const auto& j : m.joints) {
@@ -517,7 +743,17 @@ void place_model(assets::ImportedModel* model, const RoomPlacement& place) {
 
 CollisionSource collision_source(const assets::ImportedModel& placed, bool visible) {
     CollisionSource s;
-    for (const auto& mesh : placed.model.meshes) {
+    // a model that keeps its skeleton (its own animation) at rest: each vertex through its joints
+    const auto palette = rest_palette(placed);
+    std::vector<assets::NeutralMesh> at_rest;
+    if (!palette.empty()) {
+        at_rest = placed.model.meshes;
+        for (auto& mesh : at_rest) {
+            for (auto& v : mesh.vertices)
+                v.position = posed(palette, v);
+        }
+    }
+    for (const auto& mesh : palette.empty() ? placed.model.meshes : at_rest) {
         const std::string material = !mesh.material_name.empty() ? mesh.material_name : mesh.texture_name;
         const char passable = visible && mesh.alpha_mode == assets::NeutralMesh::AlphaMode::blend ? 1 : 0;
         for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
@@ -544,6 +780,336 @@ CollisionSource collision_source(const assets::ImportedModel& placed, bool visib
         }
     }
     return s;
+}
+
+bool RoomZone::holds(float x, float z) const {
+    const auto i = static_cast<std::int64_t>(std::floor(x / cell)) - x0;
+    const auto k = static_cast<std::int64_t>(std::floor(z / cell)) - z0;
+    if (i < 0 || k < 0 || i >= width || k >= depth)
+        return false;
+    return in[static_cast<std::size_t>(k * width + i)] != 0;
+}
+
+namespace {
+
+// The cells of `zone` that a room's faces cover from above: their edges (a wall from above is one) and
+// the cells whose middles they hold.
+std::vector<char> covered_cells(const RoomCollision& room, const RoomZone& zone) {
+    const float c = zone.cell;
+    const int w = zone.width, d = zone.depth;
+    std::vector<char> covered(static_cast<std::size_t>(w) * static_cast<std::size_t>(d), 0);
+    auto mark = [&](double x, double z) {
+        const auto i = static_cast<std::int64_t>(std::floor(x / c)) - zone.x0;
+        const auto k = static_cast<std::int64_t>(std::floor(z / c)) - zone.z0;
+        if (i >= 0 && k >= 0 && i < w && k < d)
+            covered[static_cast<std::size_t>(k * w + i)] = 1;
+    };
+    for (const auto& list : room.faces) {
+        for (const auto& f : list) {
+            const std::size_t n = std::min<std::size_t>(f.corners, 4);
+            if (n < 3)
+                continue;
+            double px[4], pz[4];
+            for (std::size_t v = 0; v < n; ++v)
+                px[v] = f.v[v][0] / 4096.0, pz[v] = f.v[v][2] / 4096.0;
+            for (std::size_t v = 0; v < n; ++v) {
+                const std::size_t u = (v + 1) % n;
+                const double length = std::hypot(px[u] - px[v], pz[u] - pz[v]);
+                const int steps = static_cast<int>(length / (c / 2)) + 1;
+                for (int s = 0; s <= steps; ++s) {
+                    const double t = static_cast<double>(s) / steps;
+                    mark(px[v] + t * (px[u] - px[v]), pz[v] + t * (pz[u] - pz[v]));
+                }
+            }
+            double flo[2] = {px[0], pz[0]}, fhi[2] = {px[0], pz[0]};
+            for (std::size_t v = 1; v < n; ++v) {
+                flo[0] = std::min(flo[0], px[v]), fhi[0] = std::max(fhi[0], px[v]);
+                flo[1] = std::min(flo[1], pz[v]), fhi[1] = std::max(fhi[1], pz[v]);
+            }
+            for (auto i = static_cast<std::int64_t>(std::floor(flo[0] / c)); i * c <= fhi[0]; ++i) {
+                for (auto k = static_cast<std::int64_t>(std::floor(flo[1] / c)); k * c <= fhi[1]; ++k) {
+                    const double x = (static_cast<double>(i) + 0.5) * c, z = (static_cast<double>(k) + 0.5) * c;
+                    bool above = false, below = false;
+                    for (std::size_t v = 0; v < n; ++v) {
+                        const std::size_t u = (v + 1) % n;
+                        const double side = (px[u] - px[v]) * (z - pz[v]) - (pz[u] - pz[v]) * (x - px[v]);
+                        above = above || side > 0;
+                        below = below || side < 0;
+                    }
+                    if (!(above && below))
+                        mark(x, z);
+                }
+            }
+        }
+    }
+    return covered;
+}
+
+// The cells outside what the covered ones close in: those reached from the zone's edges.
+std::vector<char> outside_cells(const std::vector<char>& covered, int w, int d) {
+    std::vector<char> outside(covered.size(), 0);
+    std::vector<std::size_t> stack;
+    auto reach = [&](int i, int k) {
+        const auto at = static_cast<std::size_t>(k) * static_cast<std::size_t>(w) + static_cast<std::size_t>(i);
+        if (covered[at] == 0 && outside[at] == 0) {
+            outside[at] = 1;
+            stack.push_back(at);
+        }
+    };
+    for (int i = 0; i < w; ++i)
+        reach(i, 0), reach(i, d - 1);
+    for (int k = 0; k < d; ++k)
+        reach(0, k), reach(w - 1, k);
+    while (!stack.empty()) {
+        const std::size_t at = stack.back();
+        stack.pop_back();
+        const int i = static_cast<int>(at % static_cast<std::size_t>(w)),
+                  k = static_cast<int>(at / static_cast<std::size_t>(w));
+        if (i > 0)
+            reach(i - 1, k);
+        if (i + 1 < w)
+            reach(i + 1, k);
+        if (k > 0)
+            reach(i, k - 1);
+        if (k + 1 < d)
+            reach(i, k + 1);
+    }
+    return outside;
+}
+
+// Each cell's distance (in cells) to the nearest cell not outside, in two sweeps.
+std::vector<float> distance_cells(const std::vector<char>& outside, int w, int d) {
+    const float far = 1e30f;
+    std::vector<float> dist(outside.size(), far);
+    for (std::size_t at = 0; at < outside.size(); ++at) {
+        if (outside[at] == 0)
+            dist[at] = 0;
+    }
+    const float diagonal = std::sqrt(2.0f);
+    auto relax = [&](int i, int k, int di, int dk, float step) {
+        const int ni = i + di, nk = k + dk;
+        if (ni < 0 || nk < 0 || ni >= w || nk >= d)
+            return;
+        float& here = dist[static_cast<std::size_t>(k) * static_cast<std::size_t>(w) + static_cast<std::size_t>(i)];
+        here = std::min(
+            here,
+            dist[static_cast<std::size_t>(nk) * static_cast<std::size_t>(w) + static_cast<std::size_t>(ni)] + step);
+    };
+    for (int k = 0; k < d; ++k) {
+        for (int i = 0; i < w; ++i) {
+            relax(i, k, -1, 0, 1), relax(i, k, 0, -1, 1), relax(i, k, -1, -1, diagonal), relax(i, k, 1, -1, diagonal);
+        }
+    }
+    for (int k = d - 1; k >= 0; --k) {
+        for (int i = w - 1; i >= 0; --i) {
+            relax(i, k, 1, 0, 1), relax(i, k, 0, 1, 1), relax(i, k, 1, 1, diagonal), relax(i, k, -1, 1, diagonal);
+        }
+    }
+    return dist;
+}
+
+}  // namespace
+
+RoomZone room_zone(const RoomCollision& room, float margin) {
+    RoomZone zone;
+    const float c = zone.cell;
+    double lo[2] = {1e30, 1e30}, hi[2] = {-1e30, -1e30};
+    for (const auto& list : room.faces) {
+        for (const auto& f : list) {
+            for (std::size_t v = 0; v < f.corners && v < 4; ++v) {
+                const double x = f.v[v][0] / 4096.0, z = f.v[v][2] / 4096.0;
+                lo[0] = std::min(lo[0], x), hi[0] = std::max(hi[0], x);
+                lo[1] = std::min(lo[1], z), hi[1] = std::max(hi[1], z);
+            }
+        }
+    }
+    if (lo[0] > hi[0])
+        return zone;
+    const double pad = std::max(0.0f, margin) + 2 * c;
+    zone.x0 = static_cast<std::int64_t>(std::floor((lo[0] - pad) / c));
+    zone.z0 = static_cast<std::int64_t>(std::floor((lo[1] - pad) / c));
+    zone.width = static_cast<int>(std::floor((hi[0] + pad) / c) - zone.x0 + 1);
+    zone.depth = static_cast<int>(std::floor((hi[1] + pad) / c) - zone.z0 + 1);
+    // the cells the room covers or closes in, and those within the margin of them
+    const auto dist =
+        distance_cells(outside_cells(covered_cells(room, zone), zone.width, zone.depth), zone.width, zone.depth);
+    zone.in.assign(dist.size(), 0);
+    const float reach_cells = std::max(0.0f, margin) / c;
+    for (std::size_t at = 0; at < dist.size(); ++at)
+        zone.in[at] = dist[at] <= reach_cells ? 1 : 0;
+    return zone;
+}
+
+namespace {
+
+// The model's drawn triangles (its skies left out), each corner where it is drawn at rest.
+std::vector<std::array<std::array<float, 3>, 3>> drawn_triangles(const assets::ImportedModel& placed) {
+    const auto palette = rest_palette(placed);
+    std::vector<std::array<std::array<float, 3>, 3>> out;
+    for (const auto& mesh : placed.model.meshes) {
+        if (mesh.sky)
+            continue;
+        for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+            out.push_back({posed(palette, mesh.vertices[mesh.indices[i]]),
+                           posed(palette, mesh.vertices[mesh.indices[i + 1]]),
+                           posed(palette, mesh.vertices[mesh.indices[i + 2]])});
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+SurfaceMap surface_map(const assets::ImportedModel& placed) {
+    SurfaceMap s;
+    for (const auto& t : drawn_triangles(placed)) {
+        const float e0[3] = {t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]};
+        const float e1[3] = {t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]};
+        const float n[3] = {e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                            e0[0] * e1[1] - e0[1] * e1[0]};
+        const float length = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        if (!(length > 0) || std::fabs(n[1] / length) <= 0.3f)
+            continue;
+        const std::size_t at = s.triangles.size();
+        s.triangles.push_back(t);
+        s.up.push_back(n[1] > 0 ? 1 : 0);
+        const float lo_x = std::min({t[0][0], t[1][0], t[2][0]}), hi_x = std::max({t[0][0], t[1][0], t[2][0]});
+        const float lo_z = std::min({t[0][2], t[1][2], t[2][2]}), hi_z = std::max({t[0][2], t[1][2], t[2][2]});
+        if (hi_x - lo_x > 64 || hi_z - lo_z > 64) {
+            s.wide.push_back(at);  // a ground far and wide: asked every time, not cell by cell
+            continue;
+        }
+        for (auto i = static_cast<std::int64_t>(std::floor(lo_x)); i <= static_cast<std::int64_t>(std::floor(hi_x));
+             ++i) {
+            for (auto k = static_cast<std::int64_t>(std::floor(lo_z)); k <= static_cast<std::int64_t>(std::floor(hi_z));
+                 ++k)
+                s.cells[{i, k}].push_back(at);
+        }
+    }
+    return s;
+}
+
+std::vector<SurfaceMap::Height> SurfaceMap::heights_at(float x, float z) const {
+    std::vector<Height> out;
+    const auto cell = cells.find({static_cast<std::int64_t>(std::floor(x)), static_cast<std::int64_t>(std::floor(z))});
+    std::vector<std::size_t> asked = wide;
+    if (cell != cells.end())
+        asked.insert(asked.end(), cell->second.begin(), cell->second.end());
+    for (const std::size_t i : asked) {
+        const auto& t = triangles[i];
+        // where (x, z) falls on it from above, by its corners' weights
+        const double d = (t[1][2] - t[2][2]) * (t[0][0] - t[2][0]) + (t[2][0] - t[1][0]) * (t[0][2] - t[2][2]);
+        if (std::fabs(d) < 1e-12)
+            continue;
+        const double a = ((t[1][2] - t[2][2]) * (x - t[2][0]) + (t[2][0] - t[1][0]) * (z - t[2][2])) / d;
+        const double b = ((t[2][2] - t[0][2]) * (x - t[2][0]) + (t[0][0] - t[2][0]) * (z - t[2][2])) / d;
+        const double c = 1 - a - b;
+        if (a < -1e-6 || b < -1e-6 || c < -1e-6)
+            continue;
+        out.push_back({static_cast<float>(a * t[0][1] + b * t[1][1] + c * t[2][1]), up[i] != 0});
+    }
+    return out;
+}
+
+float raise_to_markers(const SurfaceMap& surfaces, const std::vector<std::array<float, 3>>& markers, std::size_t* on) {
+    // per marker, each raise that would put a floor under it a tenth below its feet
+    std::vector<std::vector<float>> raises;
+    for (const auto& q : markers) {
+        std::vector<float> r;
+        for (const auto& h : surfaces.heights_at(q[0], q[2])) {
+            const float d = q[1] - 0.1f - h.y;
+            if (h.up && std::fabs(d) <= 50.0f)
+                r.push_back(d);
+        }
+        raises.push_back(std::move(r));
+    }
+    // the raise the most markers agree on (within 0.15), the smallest of equals, then their mean
+    const float near = 0.15f;
+    float best = 0;
+    std::size_t most = 0;
+    for (const auto& r : raises) {
+        for (const float d : r) {
+            std::size_t count = 0;
+            for (const auto& other : raises) {
+                bool agrees = false;
+                for (const float e : other)
+                    agrees = agrees || std::fabs(e - d) <= near;
+                count += agrees ? 1 : 0;
+            }
+            if (count > most || (count == most && std::fabs(d) < std::fabs(best))) {
+                most = count;
+                best = d;
+            }
+        }
+    }
+    if (most > 0) {
+        float sum = 0;
+        for (const auto& r : raises) {
+            float closest = 1e30f;
+            for (const float e : r) {
+                if (std::fabs(e - best) < std::fabs(closest - best))
+                    closest = e;
+            }
+            if (std::fabs(closest - best) <= near)
+                sum += closest;
+        }
+        best = sum / static_cast<float>(most);
+    }
+    if (on != nullptr)
+        *on = most;
+    return best;
+}
+
+std::size_t cut_to_zone(assets::ImportedModel* placed, const RoomZone& zone) {
+    assets::ImportedModel& m = *placed;
+    // a model that keeps its skeleton: each vertex where its joints put it
+    const auto palette = rest_palette(m);
+    auto where = [&](const assets::NeutralVertex& v) { return posed(palette, v); };
+    std::size_t dropped = 0;
+    std::vector<assets::NeutralMesh> kept;
+    for (auto& mesh : m.model.meshes) {
+        if (!mesh.sky) {
+            std::vector<std::array<float, 3>> at(mesh.vertices.size());
+            for (std::size_t v = 0; v < mesh.vertices.size(); ++v)
+                at[v] = where(mesh.vertices[v]);
+            std::vector<std::uint32_t> indices;
+            for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+                const auto& a = at[mesh.indices[i]];
+                const auto& b = at[mesh.indices[i + 1]];
+                const auto& c = at[mesh.indices[i + 2]];
+                const bool over = zone.holds(a[0], a[2]) || zone.holds(b[0], b[2]) || zone.holds(c[0], c[2]) ||
+                                  zone.holds((a[0] + b[0] + c[0]) / 3, (a[2] + b[2] + c[2]) / 3);
+                if (over)
+                    indices.insert(indices.end(), {mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]});
+                else
+                    ++dropped;
+            }
+            // only the vertices still used
+            std::map<std::uint32_t, std::uint32_t> renumbered;
+            std::vector<assets::NeutralVertex> vertices;
+            for (auto& index : indices) {
+                const auto found = renumbered.emplace(index, static_cast<std::uint32_t>(vertices.size()));
+                if (found.second)
+                    vertices.push_back(mesh.vertices[index]);
+                index = found.first->second;
+            }
+            mesh.indices = std::move(indices);
+            mesh.vertices = std::move(vertices);
+        }
+        if (!mesh.indices.empty())
+            kept.push_back(std::move(mesh));
+    }
+    m.model.meshes = std::move(kept);
+    std::set<std::string> used;
+    for (const auto& mesh : m.model.meshes) {
+        used.insert(mesh.texture_name);
+        for (const auto& frame : mesh.texture_frames)
+            used.insert(frame.first);
+    }
+    m.textures.erase(
+        std::remove_if(m.textures.begin(), m.textures.end(), [&](const auto& t) { return used.count(t.first) == 0; }),
+        m.textures.end());
+    return dropped;
 }
 
 std::vector<std::pair<int, ObjectUse>> object_uses(const WorldRoom& room, const RoomReplacement& r) {
@@ -602,6 +1168,8 @@ bool build_room(const World& w, const std::filesystem::path& mod_dir, const Room
     assets::ImportedModel placed;
     if (!placed_model(folder / path_u8(r.collision.empty() ? r.model : r.collision), r.place, &placed, why))
         return false;
+    if (r.zone >= 0)
+        cut_to_zone(&placed, room_zone(original, r.zone));
     CollisionRules rules;
     rules.ground_limit = r.ground_limit;
     rules.names_by_material = r.names_by_material;
@@ -778,6 +1346,18 @@ bool write_world_outputs(const std::filesystem::path& nitrofs, const std::filesy
                 assets::ImportedModel m;
                 if (!placed_model(change_models(mod_dir, r.world, r.room) / path_u8(r.model), r.place, &m, why))
                     return false;
+                if (r.zone >= 0) {
+                    // only what lies around the room
+                    const WorldRoom& room = w.rooms[static_cast<std::size_t>(r.room)];
+                    const auto& data = w.archive.entries[static_cast<std::size_t>(room.collision_member)].data;
+                    RoomCollision floor;
+                    std::string problem;
+                    if (data.empty() || !parse_collision(data, &floor, &problem))
+                        return fail_with(why, "room " + std::to_string(r.room) + ": no floor to cut the model to");
+                    o.lines.push_back("room " + std::to_string(r.room) + ": " +
+                                      std::to_string(cut_to_zone(&m, room_zone(floor, r.zone))) +
+                                      " triangles away from the room left out");
+                }
                 it = placed.emplace(id, std::move(m)).first;
             }
             model = it->second;

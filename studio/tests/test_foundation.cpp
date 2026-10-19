@@ -128,6 +128,21 @@ TEST(text_language_and_palettes) {
     CHECK(any_palette_key(texture("x/a@b/tex/head")).empty());  // an @ outside the name
 }
 
+TEST(export_names) {
+    const auto item = [](Kind kind, const std::string& key, const std::string& group) {
+        Item i;
+        i.kind = kind;
+        i.key = key;
+        i.group = group;
+        return i;
+    };
+    CHECK(export_name(item(Kind::sheet, "UI/btl/es/main.p2#0/chr/0", "UI/btl/es/main.p2#0")) == "main.p2#0_es.png");
+    CHECK(export_name(item(Kind::sheet, "UI/btl/main.p2#1/chr/1", "UI/btl/main.p2#1")) == "main.p2#1_1.png");
+    CHECK(export_name(item(Kind::sheet, "UI/cm/cmo_es.p2#3/chr/0", "UI/cm/cmo_es.p2#3")) == "cmo_es.p2#3.png");
+    CHECK(export_name(item(Kind::model, "ba/ch/ro/def.p.z/mdl/ro_b", "ba/ch/ro/def.p.z")) == "ro_b.gltf");
+    CHECK(export_name(item(Kind::room, "mi/wd/wd_tw/room/0", "mi/wd/wd_tw")) == "wd_tw_room0.gltf");
+}
+
 TEST(mod_names) {
     std::string why;
     CHECK(valid_mod_name("KH2 Sora FBX", &why));

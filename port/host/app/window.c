@@ -7,6 +7,7 @@
 #include "../android/bottom_screen.h"
 #endif
 #include "devices.h"
+#include "press_edges.h"
 #include "../render/gpu_present.h"
 #include "../movies/movie_hd.h"
 #include "profile.h"
@@ -16,6 +17,7 @@
 #include "../settings/settings_sample.h"
 #include "../settings/settings_ui.h"
 #include "../screens/cine_screen.h"
+#include "../../runtime/menus/cinelist.h"
 #include "../screens/room_screen.h"
 #include "../screens/select_screen.h"
 #include "../screens/camp_screen.h"
@@ -30,6 +32,8 @@
 #include "../../runtime/core/language.h"
 #include "../../runtime/movies/movie_hd.h"
 #include "../../runtime/net/net_session.h"
+#include "../../runtime/scripts/queue.h"
+#include "../../runtime/scripts/view.h"
 #include "../../runtime/core/runtime.h"
 #include "../../runtime/core/session_log.h"
 #include "../../ui/situation.h"
@@ -49,6 +53,8 @@ static uint32_t frame[2 * W * H];
 static SDL_AtomicInt frame_new;     /* set by khdays_host_present, cleared by the window */
 static SDL_AtomicInt frame_pending; /* a frame event is already on its way */
 static Uint32 frame_event;          /* our SDL event: "a new frame is ready" */
+static Uint64 last_redraw;          /* SDL_GetTicks of the last redraw */
+#define MOVIE_REDRAW_MS 8           /* an HD video drawn at least this often (ms) */
 
 /* The frame packages. There are three, so neither thread ever waits for the
  * other: the game thread fills one, the newest finished one waits in
@@ -67,17 +73,22 @@ static SDL_AtomicInt scale;   /* the internal resolution the picture is composed
 
 static SDL_Mutex *input_lock;
 static KhdaysInputSnapshot input;
+/* Presses and releases since the game's last read of the pad (press_edges.h), under input_lock. */
+static KhdaysPressEdges edges, edges_field;
 
 static SDL_Semaphore *ready; /* signalled when the window is up (or failed) */
 static SDL_AtomicInt started;
 static SDL_Semaphore *closed; /* signalled when the window and the sound are gone */
 static Uint32 close_event;    /* our SDL event: khdays_host_close's request */
+static Uint32 wake_event;     /* our SDL event: khdays_host_wake's, the loop looks again */
 
 /* Stores the latest input for the game thread to read. */
 static void publish(const KhdaysInputSnapshot *snapshot)
 {
     SDL_LockMutex(input_lock);
     const uint32_t generation = input.generation + 1;
+    khdays_press_edges_note(&edges, input.ds_buttons, snapshot->ds_buttons);
+    khdays_press_edges_note(&edges_field, input.ds_buttons_field, snapshot->ds_buttons_field);
     input = *snapshot;
     input.generation = generation;
     SDL_UnlockMutex(input_lock);
@@ -202,13 +213,69 @@ static char *ping_line(void)
     return line;
 }
 
+/* The mods' notices shown now (runtime/scripts/view.h), each for five seconds; each also kept for the
+ * settings menu's notice line. */
+typedef struct ModNotice {
+    char *line;
+    Uint64 until;
+} ModNotice;
+static ModNotice *mod_notices;
+static int mod_notice_count, mod_notice_capacity;
+
+static void take_mod_notices(void)
+{
+    const Uint64 now = SDL_GetTicks();
+    int kind, kept = 0;
+    char *mod, *text;
+    for (int i = 0; i < mod_notice_count; ++i) {
+        if (mod_notices[i].until > now) {
+            mod_notices[kept++] = mod_notices[i];
+        } else {
+            SDL_free(mod_notices[i].line);
+        }
+    }
+    mod_notice_count = kept;
+    while (khdays_scripts_take_notice(&kind, &mod, &text)) {
+        static const int formats[] = {[KHDAYS_NOTICE_STOPPED] = TXT_MOD_STOPPED,
+                                      [KHDAYS_NOTICE_PAUSED] = TXT_MOD_PAUSED,
+                                      [KHDAYS_NOTICE_REFUSED] = TXT_MOD_REFUSED};
+        char said[400], *line = NULL;
+        if (kind == KHDAYS_NOTICE_SAID) {
+            SDL_snprintf(said, sizeof(said), "%s", text);
+        } else {
+            SDL_snprintf(said, sizeof(said), khdays_text(formats[kind]), text);
+        }
+        if (SDL_asprintf(&line, "%s: %s", mod, said) >= 0) {
+            khdays_settings_add_notice(line);
+            if (mod_notice_count == mod_notice_capacity) {
+                const int grown = mod_notice_capacity == 0 ? 4 : mod_notice_capacity * 2;
+                ModNotice *more = SDL_realloc(mod_notices, (size_t)grown * sizeof(*more));
+                if (more != NULL) {
+                    mod_notices = more;
+                    mod_notice_capacity = grown;
+                }
+            }
+            if (mod_notice_count < mod_notice_capacity) {
+                mod_notices[mod_notice_count].line = line;
+                mod_notices[mod_notice_count].until = now + 5000;
+                ++mod_notice_count;
+            } else {
+                SDL_free(line);
+            }
+        }
+        free(mod);
+        free(text);
+    }
+}
+
 /* Draws the last frame, with the FPS and ping displays and the settings menu
  * over it. Draws nothing while the graphics card is lost (the loop recreates
  * it). */
 static void redraw(SDL_Window *window, SDL_Renderer *renderer)
 {
-    int pictures, frames, fps;
+    int pictures, frames, fps, corner_rows;
     char *ping;
+    last_redraw = SDL_GetTicks();
     if (khdays_present_lost()) {
         return;
     }
@@ -223,9 +290,14 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
         khdays_settings_fps_draw(renderer, pictures, frames);
     }
     ping = ping_line();
+    corner_rows = (fps != 0) + (ping != NULL);
     if (ping != NULL) {
         khdays_settings_ping_draw(renderer, ping, fps);
         SDL_free(ping);
+    }
+    take_mod_notices();
+    for (int i = 0; i < mod_notice_count; ++i) {
+        khdays_settings_corner_draw(renderer, mod_notices[i].line, corner_rows + i);
     }
     khdays_settings_draw(renderer, window);
     SDL_RenderPresent(renderer);
@@ -329,7 +401,8 @@ static void stop_game_for_menu(void)
     if (settings_stopped) {
         khdays_clock_hold(KHDAYS_HOLD_SETTINGS, 1);
         khdays_sound_output_pause(1);
-        khdays_hd_pause(1); /* an HD video playing for a movie pauses too */
+        khdays_hd_pause(1);       /* an HD video playing for a movie pauses too */
+        khdays_hd_voice_pause(1); /* and a monologue's voice */
     }
 }
 
@@ -350,8 +423,10 @@ static void open_settings(void)
         khdays_settings_add_notice(text);
     }
     khdays_settings_set_situation(!settings_stopped, khdays_settings_sample_has_movies());
+    khdays_settings_set_guest(khdays_net_own_aid() > 0);
     khdays_settings_open(khdays_devices_profile());
     heard = khdays_settings_profile()->sound;
+    khdays_scripts_ask(KHDAYS_ASK_SETTINGS_OPENED, NULL, NULL, 0); /* the mods hear it */
 }
 
 /* Closes the settings menu: saves and applies what changed, and lets the game
@@ -359,6 +434,7 @@ static void open_settings(void)
 static void close_settings(void)
 {
     apply_changes();
+    khdays_scripts_ask(KHDAYS_ASK_SETTINGS_CLOSED, NULL, NULL, 0);
     khdays_settings_sample_stop();
     if (khdays_settings_changed()) {
         khdays_devices_set_profile(khdays_settings_profile()); /* as closing may have fixed it */
@@ -380,7 +456,29 @@ static void close_settings(void)
         khdays_clock_hold(KHDAYS_HOLD_SETTINGS, 0);
         khdays_sound_output_pause(0);
         khdays_hd_pause(0);
+        khdays_hd_voice_pause(0);
         settings_stopped = 0;
+    }
+}
+
+/* The mouse pointer is hidden over the game while its window has the focus (the touch screen is not
+ * used) and shown over the settings menu or when another window has the focus. With the mouse camera
+ * on, the window also holds the mouse while the game has the input (devices.c). */
+static void mouse_follow(SDL_Window *window)
+{
+    const int menu = khdays_settings_is_open();
+    const int focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    const int hold = !menu && khdays_devices_profile()->enh.mouse_camera && focused;
+    const int shown = menu || !focused;
+    if (hold != (int)SDL_GetWindowRelativeMouseMode(window)) {
+        SDL_SetWindowRelativeMouseMode(window, hold != 0);
+    }
+    if (shown != (int)SDL_CursorVisible()) {
+        if (shown) {
+            SDL_ShowCursor();
+        } else {
+            SDL_HideCursor();
+        }
     }
 }
 
@@ -444,8 +542,9 @@ static int host_thread(void *unused)
     display_now(profile.video.display);
     khdays_present_set_video(&profile.video);
     renderer = window ? khdays_present_open(window, notice) : NULL;
-    frame_event = SDL_RegisterEvents(2);
+    frame_event = SDL_RegisterEvents(3);
     close_event = frame_event + 1;
+    wake_event = frame_event + 2;
     if (renderer == NULL || frame_event == 0) {
         fprintf(stderr, "host: cannot open the window: %s\n", SDL_GetError());
         SDL_SignalSemaphore(ready);
@@ -473,6 +572,8 @@ static int host_thread(void *unused)
             }
         }
         animating = khdays_settings_is_open();
+        khdays_devices_frame(); /* a wheel's notch let go */
+        mouse_follow(window);
         /* The 3D at the monitor's refresh rate: draw a picture
          * whenever VSync lets one through, between events. */
         const int smooth = khdays_present_smooth();
@@ -488,9 +589,17 @@ static int host_thread(void *unused)
          * on both screens): it is decided again as the game's VBlanks pass. */
         const int settling = khdays_present_settling();
         keep_subtitles();
+        if (!khdays_settings_is_open()) {
+            khdays_cine_screen_buttons(khdays_cinelist_seen()); /* MODO CINE's chapters, the port's list */
+        }
         if (movie && !khdays_settings_is_open()) {
             khdays_movie_hd_poll();
             khdays_movie_hd_host_buttons(khdays_host_buttons());
+            /* drawn on time even while events keep coming (a gamepad's stream of them): the game,
+             * held for a scene's video, sends no frames that would draw it */
+            if (SDL_GetTicks() - last_redraw >= MOVIE_REDRAW_MS) {
+                redraw(window, renderer);
+            }
         }
         if (khdays_present_lost()) {
             /* the port noticed it itself (SDL's renderer does not on D3D12):
@@ -513,6 +622,7 @@ static int host_thread(void *unused)
             }
             continue;
         }
+        mouse_follow(window);
         if (event.type == SDL_EVENT_QUIT) {
             if (khdays_settings_is_open() && khdays_settings_profile_changed()) {
                 save_settings(); /* closed with the menu open: keep what was changed */
@@ -527,6 +637,7 @@ static int host_thread(void *unused)
                 }
             }
             khdays_sound_output_close();
+            khdays_hd_voice_stop(); /* a monologue's voice still heard */
             khdays_ui_font_forget();
             khdays_settings_renderer_gone();
             khdays_save_screen_renderer_gone();
@@ -719,6 +830,17 @@ void khdays_host_close(void)
     }
 }
 
+void khdays_host_wake(void)
+{
+    SDL_Event event;
+    if (!SDL_GetAtomicInt(&started)) {
+        return;
+    }
+    SDL_zero(event);
+    event.type = wake_event;
+    SDL_PushEvent(&event);
+}
+
 void khdays_host_present(const uint32_t *upper, const uint32_t *lower)
 {
     if (!SDL_GetAtomicInt(&started)) {
@@ -773,7 +895,8 @@ void khdays_host_frame_publish(KhdaysFramePackage *package)
     }
 }
 
-void khdays_host_input(KhdaysInputSnapshot *out)
+/* Copies the latest snapshot. Headless (no window), everything is 0. */
+static void khdays_host_input(KhdaysInputSnapshot *out)
 {
     if (input_lock == NULL) {
         memset(out, 0, sizeof(*out));
@@ -781,6 +904,19 @@ void khdays_host_input(KhdaysInputSnapshot *out)
     }
     SDL_LockMutex(input_lock);
     *out = input;
+    SDL_UnlockMutex(input_lock);
+}
+
+void khdays_host_input_take(KhdaysInputSnapshot *out)
+{
+    if (input_lock == NULL) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
+    SDL_LockMutex(input_lock);
+    *out = input;
+    out->ds_buttons = khdays_press_edges_take(&edges, input.ds_buttons);
+    out->ds_buttons_field = khdays_press_edges_take(&edges_field, input.ds_buttons_field);
     SDL_UnlockMutex(input_lock);
 }
 

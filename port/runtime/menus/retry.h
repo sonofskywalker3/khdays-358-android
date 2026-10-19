@@ -1,6 +1,6 @@
-/* Mission Mode's Retry (retry.c): the pause of a mission played alone gets a line between
- * Continue and Give Up that starts the mission again from its beginning, after the game's own
- * "Are you sure?". The lines are drawn by the pause part (ui/pause.cpp). */
+/* The Retry of Mission Mode and the story's challenges (retry.c): the pause of a mission played alone
+ * gets a line between Continue and Give Up that starts the mission again from its beginning, after the
+ * game's own "Are you sure?". The lines are drawn by the pause part (ui/pause.cpp). */
 #ifndef KHDAYS_RETRY_H
 #define KHDAYS_RETRY_H
 

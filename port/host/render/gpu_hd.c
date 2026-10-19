@@ -19,13 +19,16 @@ static uint32_t changed_upload_size;
 
 /* A still picture's texels are followed by smaller copies, each half the one before, down to a texel
  * (raster3d.hlsl hd_texel reads the one with about a texel to a pixel): read at full size, a texture
- * drawn much smaller (a mod's model far away) flickered at its cut-outs and edges. Not for pictures
- * that change, nor for the 2D's sheets and bitmaps. */
+ * drawn much smaller (a mod's model far away) flickered at its cut-outs and edges. A 2D sheet in its
+ * own colours has them too (compose.h kd_hd reads them while a copy's texel comes from one tile): one
+ * larger than shown lost its lines. Not for pictures that change, indexed sheets, nor bitmaps. */
 #define SMALLER 0x8u /* in a table entry's info: the smaller copies follow its texels */
 
 static int has_smaller(uint32_t id, const KhdaysTextureReplacement *r)
 {
-    return r->info == 0 && khdays_textures_version((int)id) == 0 && (r->width > 1 || r->height > 1);
+    const uint32_t kind = r->info & (KHDAYS_REPLACEMENT_INDEXED | KHDAYS_REPLACEMENT_TILES | KHDAYS_REPLACEMENT_BITMAP);
+    return (kind == 0 || kind == KHDAYS_REPLACEMENT_TILES) && khdays_textures_version((int)id) == 0 &&
+           (r->width > 1 || r->height > 1);
 }
 
 /* The words a replacement takes on the card: its texels, and the smaller copies of a still picture. */

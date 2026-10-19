@@ -8,11 +8,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The two DS screens in the window's logical picture: 256x192 each, the
- * lower one below the upper one (window.c). */
-#define SCREEN_W 256
-#define SCREEN_H 192
-
 typedef struct Pad {
     SDL_JoystickID id;
     SDL_Gamepad *gamepad;
@@ -31,6 +26,10 @@ static KhdaysInputSnapshot snapshot;
 static int game_input = 1;    /* 0 while the settings menu has the input */
 static int settings_request;  /* the settings button was pressed */
 static int hud_mode_requests; /* presses of the HUD mode button not taken yet */
+/* A notch of the wheel is a press held this long, so the game, reading its buttons once a frame of
+ * its own (30 a second in the field), sees it once */
+#define WHEEL_PRESS_MS 100
+static Uint64 wheel_until[2]; /* SDL_GetTicks() when each wheel direction's press ends, 0 none */
 
 /* The connected gamepads, in the order they arrived; `active` is the index
  * of the one that plays, or -1. */
@@ -415,37 +414,35 @@ static void read_keyboard(void)
     }
 }
 
-/* The mouse acts as the stylus while its left button is down over the lower
- * screen. This is where the lower screen is drawn, in the renderer's logical
- * coordinates (khdays_devices_set_touch_area). */
-static float touch_left, touch_top = SCREEN_H;
-
-void khdays_devices_set_touch_area(float left, float top)
+/* A mouse input pressed: its HUD mode request, if it is that button's */
+static void mouse_pressed(int mouse)
 {
-    touch_left = left;
-    touch_top = top;
+    pad_in_use = 0;
+    if (khdays_profile_owner(&profile, KHDAYS_DEVICE_KEYBOARD, KHDAYS_LAYER_BASE, KHDAYS_MOUSE_INPUT + mouse) ==
+        KHDAYS_ACT_HUD_MODE) {
+        ++hud_mode_requests;
+    }
 }
 
-static void read_mouse(SDL_Renderer *renderer, float wx, float wy, int down)
+void khdays_devices_frame(void)
 {
-    float x, y;
-    state.touching = 0;
-    if (!down || renderer == NULL) {
-        return;
+    const Uint64 now = SDL_GetTicks();
+    int changed = 0;
+    for (int w = 0; w < 2; ++w) {
+        if (wheel_until[w] != 0 && now >= wheel_until[w]) {
+            wheel_until[w] = 0;
+            state.mouse[KHDAYS_MOUSE_WHEEL_UP + w] = 0;
+            changed = 1;
+        }
     }
-    SDL_RenderCoordinatesFromWindow(renderer, wx, wy, &x, &y);
-    x -= touch_left;
-    y -= touch_top - SCREEN_H;
-    if (x >= 0 && x < SCREEN_W && y >= SCREEN_H && y < 2 * SCREEN_H) {
-        state.touching = 1;
-        state.touch_x = (int)x;
-        state.touch_y = (int)y - SCREEN_H;
+    if (changed) {
+        send();
     }
 }
 
 void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer)
 {
-    static int mouse_down;
+    (void)renderer;
     switch (event->type) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
@@ -458,19 +455,36 @@ void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer)
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (event->button.button != SDL_BUTTON_LEFT) {
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+        const int mouse = event->button.button - SDL_BUTTON_LEFT + KHDAYS_MOUSE_LEFT; /* SDL's 1-5 */
+        if (mouse < KHDAYS_MOUSE_LEFT || mouse > KHDAYS_MOUSE_X2) {
             return;
         }
-        mouse_down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-        pad_in_use = mouse_down ? 0 : pad_in_use;
-        read_mouse(renderer, event->button.x, event->button.y, mouse_down);
+        state.mouse[mouse] = (uint8_t)(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+        if (state.mouse[mouse]) {
+            mouse_pressed(mouse);
+        }
         break;
-    case SDL_EVENT_MOUSE_MOTION:
-        if (!mouse_down) {
+    }
+    case SDL_EVENT_MOUSE_WHEEL: {
+        const float y = event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+        const int w = y > 0.0f ? 0 : 1; /* up, down */
+        if (y == 0.0f) {
             return;
         }
-        read_mouse(renderer, event->motion.x, event->motion.y, 1);
+        state.mouse[KHDAYS_MOUSE_WHEEL_UP + w] = 1;
+        wheel_until[w] = SDL_GetTicks() + WHEEL_PRESS_MS;
+        mouse_pressed(KHDAYS_MOUSE_WHEEL_UP + w);
+        break;
+    }
+    case SDL_EVENT_MOUSE_MOTION:
+        /* the mouse camera: its motion summed, right and up positive, as the camera stick's (with
+         * the camera's inversions); taken only while the window holds the mouse (window.c) */
+        if (!SDL_GetWindowRelativeMouseMode(SDL_GetWindowFromID(event->motion.windowID))) {
+            return;
+        }
+        state.mouse_x += profile.enh.camera_invert_x ? -event->motion.xrel : event->motion.xrel;
+        state.mouse_y += profile.enh.camera_invert_y ? event->motion.yrel : -event->motion.yrel;
         break;
     case SDL_EVENT_GAMEPAD_ADDED: gamepad_added(event->gdevice.which); break;
     case SDL_EVENT_GAMEPAD_REMOVED: gamepad_removed(event->gdevice.which); break;
@@ -493,9 +507,9 @@ void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer)
         /* SDL sends no gamepad events to an unfocused window, so a button
          * released meanwhile would stay held: release everything now. */
         memset(state.key, 0, sizeof(state.key));
+        memset(state.mouse, 0, sizeof(state.mouse));
+        wheel_until[0] = wheel_until[1] = 0;
         clear_pad_state();
-        state.touching = 0;
-        mouse_down = 0;
         break;
     case SDL_EVENT_WINDOW_FOCUS_GAINED:
         /* What is held as the window comes back only counts once released. */

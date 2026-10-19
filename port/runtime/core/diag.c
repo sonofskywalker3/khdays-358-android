@@ -513,6 +513,20 @@ static const char *symbol_name(const void *address)
     if (SymFromAddr(GetCurrentProcess(), (DWORD64)(size_t)address, &displacement, symbol)) {
         return symbol->Name;
     }
+    {
+        /* no symbol (a system DLL's): its module and the offset in it */
+        static char where[MAX_PATH + 32];
+        HMODULE module = NULL;
+        char path[MAX_PATH];
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)address, &module) &&
+            GetModuleFileNameA(module, path, (DWORD)sizeof(path)) > 0) {
+            const char *name = strrchr(path, '\\');
+            snprintf(where, sizeof(where), "%s+0x%llx", name != NULL ? name + 1 : path,
+                     (unsigned long long)((const char *)address - (const char *)module));
+            return where;
+        }
+    }
     return "?";
 }
 
@@ -805,6 +819,10 @@ void khdays_trace_script(void *st, void *entry)
     const u32 cmd_reference = *(const u32 *)(e + 0x10); /* the game's pointer: a reference */
     const u8 *cmd = cmd_reference ? (const u8 *)KHDAYS_W(cmd_reference) : NULL;
     u32 now[8];
+    {
+        extern void khdays_scene_step(void *st); /* runtime/movies/scene_trace.c */
+        khdays_scene_step(st);
+    }
     if (enabled < 0) {
         enabled = getenv("KHDAYS_TRACE_SCRIPT") != NULL;
     }

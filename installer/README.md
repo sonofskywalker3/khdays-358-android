@@ -14,6 +14,7 @@ is made on the player's computer from the player's own copies.
 | `messages.iss` | the installer's own words in the game's five languages |
 | `setup_steps.py` | the helper: each step the installer cannot do by itself (`--help` lists them) |
 | `steam_library.py` | where Steam keeps the collections (its folder, libraries, app manifests) |
+| `epic_library.py` | where the Epic Games Store keeps them (its launcher's manifests, the default folder) |
 | `steam_shortcut.py` | the port added to Steam as a non-Steam game, and taken out again |
 | `collection_archive.py` | the collections' archives (`.hed`/`.pkg`) read as their own code reads them |
 | `hd_inputs.txt` | the collection files the HD tools read (traced: `setup_steps.py trace-inputs`) |
@@ -42,19 +43,32 @@ what the installer made and asks whether the saves and settings go too (to the R
 The multiplayer server (`khdays-server.exe`) is always installed beside the game, for a player
 who wants to host their own; the game's default server is the maintainer's.
 
+The example gameplay mods (`port/mods_examples`) and their interface (`docs/SCRIPTING.md`) go to
+`mods-examples/`, outside `mods/`: none runs until the player copies its folder into `mods/`.
+
 ## The HD pieces
 
 Optional, from the player's own copies, on the HD page: **HD menus and HUD** (both KINGDOM HEARTS
 HD 1.5+2.5 ReMIX and HD 2.8 Final Chapter Prologue: the tools' `mods/HD PACK`) and **HD videos**
-(1.5+2.5: the theater's videos and their subtitles in `data/cutscenes`). The helper reads the
-entries the tools need straight from the collections' archives (`collection_archive.py`: the
+(1.5+2.5: the game's movies and the theater's scenes that `port/movies/hd_scenes.txt` names, with
+their subtitles, in `data/cutscenes`, about 6.5 GB; the installer carries the scene map beside the
+tools). The helper reads the entries the tools need straight from the collections' archives (`collection_archive.py`: the
 format and its encryption found by our own reverse engineering of the collections' executables;
 the cipher's table is read from the player's own `KINGDOM HEARTS II FINAL MIX.exe`, never kept),
 runs the tools under a folder of their own and puts what they made in place whole. An update
-leaves the pieces already made from the same collections as they are (deleting their folder makes
-them again). Either folder may be left empty: a choice whose collection is not given cannot be
-ticked. (The page is a text page with its own Browse buttons, because Inno's folder page refuses an
-empty folder.)
+leaves the pieces already made from the same collections by the same tools as they are (deleting
+their folder makes them again; an installer whose tools or scene map differ makes them again). Either folder may be left empty: a choice whose collection is not given cannot be
+ticked. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
+launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), and either store's copy
+is read: Steam's keeps its language's archives in `Image/dt` and Days's videos in
+`STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in `Image/en` and the videos in
+`EPIC/Mare/MOVIE/Days/en` (any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
+page with its own Browse buttons, because Inno's folder page refuses an empty folder.) A tool that
+fails (a copy a mod changed may lack what it reads) leaves its screens with the DS's look and the
+others are made all the same: the installer says which, keeps what each said whole in
+`setup/hd-errors.log` for a report, and leaves the step undone so the next run tries again. The
+pictures a tool cuts at known places are taken at their places scaled to the copy's picture, as a
+mod may have put a smaller one there.
 
 ## Add to Steam
 
@@ -71,7 +85,9 @@ beside it. The entry's id is the port's own, made from its path, so the same num
 remove it. Turning the option off on a later run, or uninstalling, takes the entry out again.
 
 Under Proton or Wine (a Steam Deck, Linux) the installer runs in a Wine prefix, whose Steam is
-not the computer's: the option is shown off and disabled, with a note, and the helper refuses it
+not the computer's (told by Wine's `wine_get_version` in `ntdll.dll`, which Windows's has not; a
+`Software\Wine` registry key is no sign, Windows programs leave one too): the option is shown off
+and disabled, with a note, and the helper refuses it
 even for a silent `/STEAM=yes`; the game is added to Steam by hand from Desktop Mode (a non-Steam
 game pointing to `khdays-native.exe` in the install folder, Proton forced in its Compatibility
 properties). The folder grant is skipped there too. `steam_shortcut.py` can also map a Proton tool
@@ -97,7 +113,8 @@ version with the commit after it (`0.1.0+e593a05`, `-modified` when files change
 ## Updates
 
 A newer installer run over an install updates it in place: the port's files are replaced, and the
-game's data (already made), the HD pieces, the saves, the settings and the mods are kept. The port
+game's data (already made), the HD pieces (unless its HD tools differ), the saves, the settings and
+the mods are kept. The port
 itself tells the player when a newer release is out (at each start it asks GitHub for the latest
 release, `host/app/updates.c`; a setting turns it off), with a link to the release's page.
 
@@ -142,7 +159,10 @@ HEARTS II FINAL MIX's `Axa::PackageFile`), nothing taken from other tools:
   entry's header.
 
 `python collection_archive.py <archive without .hed/.pkg> <out folder> <kh2 exe> <path> [<path> ...]`
-writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`.
+writes each path's data as `original/<path>` and its assets as `remastered/<path>/<asset>`; a path the
+archive does not hold is named and left out (exit status 3 when it holds none of them).
+`python collection_archive.py --has <archive without .hed/.pkg> <path> [<path> ...]` prints the paths
+it holds. The studio takes KH2's maps out of the player's copy with both (studio/README.md, `--kh2-room`).
 
 **Steam** (`steam_shortcut.py`) keeps each user's non-Steam games in
 `userdata/<account>/config/shortcuts.vdf` (binary KeyValues) and a game's compatibility tool in

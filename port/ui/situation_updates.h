@@ -7,3 +7,4 @@ KHDAYS_UPDATE(Ov000_TickLoadScene)      /* the title's save list being made (pla
 KHDAYS_UPDATE(Ov000_TickSelectionScene) /* the title's save list, a file to choose (play walk f1161-1945) */
 KHDAYS_UPDATE(Ov008_OpenShopState)      /* Mission Mode's camp opens its shop (camp_shop script f3097) */
 KHDAYS_UPDATE(Ov008_WaitShopClosed)     /* and waits while the shop is open (f3099-4525) */
+KHDAYS_UPDATE(Ov023_SceneRun)           /* the field's event runs (its status is the scene's only then) */

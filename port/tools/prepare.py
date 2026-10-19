@@ -613,6 +613,34 @@ HOOKS = {
             "    { extern void khdays_trace_script(void *st, void *entry); khdays_trace_script(st, cur); }\n",
         )
     ],
+    # An event script's skippable stretch begins or ends (runtime/movies/scene_trace.c): the script
+    # machine's skip target is set (an operand) or cleared (-1).
+    "main@020221f8": [
+        (  # Game_ActionSetBranchTarget
+            "    *(int *)(param_1 + 0x588) = 0;\n    return 1;\n}\n",
+            "    *(int *)(param_1 + 0x588) = 0;\n"
+            "    { extern void khdays_scene_target(unsigned int state, int operand);\n"
+            "      khdays_scene_target((unsigned int)param_1, operand); }\n"
+            "    return 1;\n}\n",
+        )
+    ],
+    # The day's monologue (ov007, scene 10) begins with its record picked by the story's day, and
+    # ends asking for the calendar: the theater's voice for it may be heard over its page
+    # (runtime/movies/scene_trace.c).
+    "ov007@0204cb80": [
+        (  # Ov007_SceneInit
+            "    heap[0x1d] = (int)Ov007_GetVarRecordByIndex(heap + 2, idx);\n",
+            "    heap[0x1d] = (int)Ov007_GetVarRecordByIndex(heap + 2, idx);\n"
+            "    { extern void khdays_scene_monologue(int record); khdays_scene_monologue(idx); }\n",
+        )
+    ],
+    "ov007@0204d31c": [
+        (  # Ov007_RequestSceneChange
+            "    Scene_RequestPending(SCENE_CALENDAR, r1);\n",
+            "    Scene_RequestPending(SCENE_CALENDAR, r1);\n"
+            "    { extern void khdays_scene_monologue_ends(void); khdays_scene_monologue_ends(); }\n",
+        )
+    ],
     # A scene has ended and the next is not built yet: a language the
     # settings menu asked for is set there, so that every scene is built whole
     # in one language (runtime/core/language.c).
@@ -1013,12 +1041,27 @@ HOOKS = {
     # The field's pace with three or four players: the game drops to frame mode 1 (a step every
     # three frames, 20 a second); the port keeps mode 0's. KHDAYS_MP_DS_PACE=1 keeps the game's.
     "ov002@020679d4": [
+        (  # Ov002_ConstructGameplayScene: the record the field is built from (its mission, its event
+            # script), seen by the port and set by a test (runtime/movies/scene_trace.c)
+            "    src = param_1 ? (char *)param_1 : (char *)&data_0204c240;\n",
+            "    src = param_1 ? (char *)param_1 : (char *)&data_0204c240;\n"
+            "    { extern void khdays_scene_field_record(void *record, int from_argument);\n"
+            "      khdays_scene_field_record(src, param_1 != 0); }\n",
+        ),
         (  # Ov002_ConstructGameplayScene
             "    if (Session_IsActive() != 0 && *(int *)(Session_GetSetup() + 4) >= 3) {\n        i = 1;\n",
             "    if (Session_IsActive() != 0 && *(int *)(Session_GetSetup() + 4) >= 3) {\n"
             "        { extern int khdays_mp_field_mode(int players); i = khdays_mp_field_mode("
             "*(int *)(Session_GetSetup() + 4)); }\n",
-        )
+        ),
+        (  # the field begins (a mission, or the same one again after Retry): the mods' mission start
+            # waits for its first run (runtime/scripts/scripts.h)
+            "    if (Session_IsActive() != 0) {\n        return (void *)Ov002_UpdatePendingRequest;\n    }\n"
+            "    return (void *)Ov002_TickGameplayState;\n}\n",
+            "    { extern void khdays_scripts_field_begins(void); khdays_scripts_field_begins(); }\n"
+            "    if (Session_IsActive() != 0) {\n        return (void *)Ov002_UpdatePendingRequest;\n    }\n"
+            "    return (void *)Ov002_TickGameplayState;\n}\n",
+        ),
     ],
     # A guest's prediction of its own character (runtime/net/mp_predict.c): the battle is
     # host-simulated, and a guest's own character runs the host's branch from its own last control,
@@ -1150,21 +1193,30 @@ HOOKS = {
             '#include "nitro/types.h"\n'
             "extern void khdays_trace_call(const char *what);\n"
             "extern void khdays_trace_call_arg(const char *what, int arg);\n"
-            "extern void *khdays_trace_pointer(const char *what, void *result);\n",
+            "extern void *khdays_trace_pointer(const char *what, void *result);\n"
+            "extern int khdays_controls_selection_pressed(int pressed, int other_screen);\n",
         ),
         (
+            # the player's battle only: with the 3D on both screens Sora's memory's runs on the other frames
+            # (data_0204be04 1), and the L and R pressed then are kept for the player's next frame
             "    held = gPadHeld;\n",
             "    { extern void khdays_controls_selection(int locked, int scheme, int held, int pressed, int flags,"
             " int active, int selected, int repeat100, int repeat200, int repeat_any);\n"
+            "      if (runtimeMode == 0)\n"
             "      khdays_controls_selection(context->flags0 & 4, GameState_GetField(0x37c4, 1), gPadHeld,"
             " gPadPressed, context->flags0, context->activationState, context->selectedIndex,"
             " context->repeat100, context->repeat200, context->repeatAny); }\n"
             "    held = gPadHeld;\n",
         ),
         (
+            "    pressed = gPadPressed;\n",
+            "    pressed = (s16)khdays_controls_selection_pressed(gPadPressed, runtimeMode != 0);\n",
+        ),
+        (
             "    if (suppressInput != 0) {\n        held = 0;\n        pressed = 0;\n    }\n",
             "    if (suppressInput != 0) {\n        held = 0;\n        pressed = 0;\n    }\n"
-            "    { extern void khdays_controls_selection_live(int live); khdays_controls_selection_live(!suppressInput); }\n",
+            "    { extern void khdays_controls_selection_live(int live);\n"
+            "      if (runtimeMode == 0) khdays_controls_selection_live(!suppressInput); }\n",
         ),
         (
             "Ov022_SetSelectionEnabled(0);",
@@ -1365,6 +1417,46 @@ HOOKS = {
             "          } }\n",
         )
     ],
+    # Gameplay mods' scripts (runtime/scripts/scripts.h): the frame point, once the game's logic of the
+    # frame is done and before its pacing; and the game's own moments the mods hear.
+    "main@02000bcc": [
+        (  # main's frame loop
+            "        SoundMgr_Update();\n\n        /* frame-rate pacing",
+            "        SoundMgr_Update();\n"
+            "        { extern void khdays_scripts_frame(void); khdays_scripts_frame(); }\n\n"
+            "        /* frame-rate pacing",
+        )
+    ],
+    "ov002@02068090": [
+        (  # Ov002_BeginMissionRun: the session request went through, a run starts (the first after the
+            # field begins is the mission's start)
+            "        pfnStep = Ov002_SessionTick;\n",
+            "        pfnStep = Ov002_SessionTick;\n"
+            "        { extern void khdays_scripts_mission_start(void); khdays_scripts_mission_start(); }\n",
+        )
+    ],
+    "ov005@020550e4": [
+        (  # Ov005_CommitMissionResults: complete is the routine's own rule for status 3, story missions only
+            "    int rank,reward;\n",
+            "    int rank,reward;\n"
+            "    { extern void khdays_scripts_mission_end(int mission, int rank, int complete);\n"
+            "      khdays_scripts_mission_end(config->missionIndex, config->resultRank,\n"
+            "                                 config->rewardMode == 255 && config->nOption64 == 0\n"
+            "                                     ? config->missionResultValue == config->missionTargetValue : -1); }\n",
+        )
+    ],
+    "ov022@020acc94": [
+        (  # Ov022_ActorSetHp: the HP before, then the change told once it is made
+            "    struct Ent *pSelf = (struct Ent *)pEnt;\n",
+            "    struct Ent *pSelf = (struct Ent *)pEnt;\n    const int khdays_before = pSelf->nHp;\n",
+        ),
+        (
+            "    Ov002_GetPanelWord0220(pSelf->nId, pSelf->nHp);\n}\n",
+            "    Ov002_GetPanelWord0220(pSelf->nId, pSelf->nHp);\n"
+            "    { extern void khdays_scripts_hp(void *entity, int before); khdays_scripts_hp(pEnt, khdays_before); }\n"
+            "}\n",
+        ),
+    ],
 }
 
 
@@ -1451,6 +1543,33 @@ _ov008_list, _ov008_members = _rooms2d_hooks(
     "        Ov008_ForwardSevenArgs(data_ov008_02090d0c, 99, visibleRowIndex * 0x18 + 0x23, 1, 1, 0, 0);\n",
     "        visibleRowIndex = (visibleRowIndex + 1) & 0xff;\n    }\n",
 )
+# Mission Mode's character select on the game's own screens: "Y Random" added to its help line
+# (runtime/menus/charselect.c), written into a buffer on the function's stack.
+_SELECT_HELP = "extern void *khdays_charselect_help(int message, void *game, void *out, int units);\n"
+HOOKS["ov006@02050fc8"] = [  # Ov006_UpdateMissionMemberMenuScreen
+    (
+        "void *Ov006_UpdateMissionMemberMenuScreen(void)\n{\n",
+        _SELECT_HELP + "void *Ov006_UpdateMissionMemberMenuScreen(void)\n{\n    u16 khdays_help[128];\n",
+    ),
+    (
+        "Ov006_MissionDrawTextRunFwd(record, 0xa, 0xb4, (u8)1, 1, 0, 0);",
+        "Ov006_MissionDrawTextRunFwd(khdays_charselect_help((int)messageId, record, khdays_help, 128), 0xa, 0xb4,"
+        " (u8)1, 1, 0, 0);",
+    ),
+]
+HOOKS["ov008@0207ce84"] = [  # Ov008_LobbyStep
+    (
+        "Ov008LobbyStep Ov008_LobbyStep(void)\n{\n",
+        _SELECT_HELP + "Ov008LobbyStep Ov008_LobbyStep(void)\n{\n    u16 khdays_help[128];\n",
+    ),
+    (
+        "Ov008_ForwardSevenArgs(Ov008_GetVarRecordByIndex(data_ov008_02090fa0->records, bHost != 0 ? 0x3b : 0x38),"
+        " 10, 0xb4, 1, 1, 0, 0);",
+        "Ov008_ForwardSevenArgs(khdays_charselect_help(bHost != 0 ? 0x3b : 0x38,"
+        " Ov008_GetVarRecordByIndex(data_ov008_02090fa0->records, bHost != 0 ? 0x3b : 0x38), khdays_help, 128),"
+        " 10, 0xb4, 1, 1, 0, 0);",
+    ),
+]
 HOOKS["ov006@02050360"] = _ov006_list  # Ov006_UpdateMissionMenuOptionScreen
 HOOKS["ov008@0207c248"] = _ov008_list  # Ov008_UpdateMissionMenuOptionScreen
 HOOKS["ov006@020508e0"] = _ov006_members  # Ov006_UpdateMissionMenuSelectionScreen
@@ -1715,6 +1834,27 @@ FILE_HOOKS = {
         ),
     ],
 }
+
+# New games start with Config's "Command list" (option 6) on X with the D-pad, not X alone, so the
+# command menu moves in all four directions (runtime/input/sequencers.c). Every place that makes a
+# fresh game state sets it, Mission Mode's guest game too (a whole state copied from /ttl/ttl.p2).
+# Saved games keep their own.
+_X_ALONE = "GameState_SetField(CONFIG_COMMAND_LIST, 1, 1);"
+_X_WITH_DPAD = "GameState_SetField(CONFIG_COMMAND_LIST, 1, 0); /* the port's: X with the D-pad */"
+_COMMAND_LIST = [
+    ("src/overlays/scenes/ov000_title/Ov000_SetupWorkArea.c", _X_ALONE, _X_WITH_DPAD),
+    ("src/overlays/scenes/ov008_camp_menu/Ov008_SetupWorkArea.c", _X_ALONE, _X_WITH_DPAD),
+    ("src/overlays/scenes/ov009_camp_save/Ov009_SetupWorkArea.c", _X_ALONE, _X_WITH_DPAD),
+    ("src/overlays/screens/ov025_camp_menu_2/Ov025_SetupWorkArea.c", _X_ALONE, _X_WITH_DPAD),
+    (
+        "src/overlays/scenes/ov000_title/Ov000_HandleLoadConfirm.c",
+        "GameState_SetFlag(0x200b);",
+        "GameState_SetFlag(0x200b);"
+        " GameState_SetField(0x37c6, 1, 0); /* the port's: the guest's Command list, X with the D-pad */",
+    ),
+]
+for _rel, _old, _new in _COMMAND_LIST:
+    FILE_HOOKS.setdefault(_rel, []).append((_old, _new))
 
 
 # Calls whose native form the ROM shows but no mechanical rule gives (see
@@ -2036,6 +2176,11 @@ PORT_DS_SYMBOLS = (
     # the game's language and its message databases' table (runtime/core/language.c)
     "gLangPath",
     "data_0204c238",
+    # the mods' interface (runtime/scripts/game_link.c): the game's state, the object list's frame
+    # count, the current mission
+    "gGameState",
+    "gObjSystem",
+    "data_0204c23c",
 )
 
 

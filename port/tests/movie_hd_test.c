@@ -1,6 +1,7 @@
 /* How an HD movie runs (runtime/movies/movie_hd.c), against a scripted game and video: the ids, the
  * lookup, every transition, the buttons the game is given and the clock's pause reasons (with the real
- * runtime/core/clock.c). It runs in a folder of its own, which it creates and leaves behind. */
+ * runtime/core/clock.c); an event scene's videos and a monologue's voice. It runs in a
+ * folder of its own, which it creates and leaves behind. */
 #include "../host/movies/movie_hd.h"
 #include "../host/app/host.h"
 #include "../host/app/sound_output.h"
@@ -35,6 +36,13 @@ int khdays_host_graphics_flags(void)
     return graphics_flags;
 }
 
+/* the window woken as a scene's video begins (the held game sends no frames) */
+static int wakes;
+void khdays_host_wake(void)
+{
+    ++wakes;
+}
+
 /* A mod's video (mods/<Mod>/movies/hd<id>.mp4, as khdays-studio saves one):
  * the one mod holds hd843's once the test gives it. */
 static int mod_has_843;
@@ -45,6 +53,13 @@ int khdays_mods_find(const char *relative, char *path, int size)
     }
     snprintf(path, (size_t)size, "mods/m/movies/hd843.mp4");
     return 1;
+}
+
+/* the game's: what the event pause's Skip stops (the scenes' course asks it) */
+static int sound_effects_stopped;
+void SoundMgr_StopAllSePlayers(void)
+{
+    ++sound_effects_stopped;
 }
 
 int khdays_hd_open(const char *path, KhdaysHdInfo *info, char *why, size_t size)
@@ -68,9 +83,10 @@ void khdays_hd_start(void)
 {
     started = 1;
 }
+static int hd_paused; /* the decoder paused (START's pause over a scene) */
 void khdays_hd_pause(int pause)
 {
-    (void)pause;
+    hd_paused = pause;
 }
 void khdays_hd_close(void)
 {
@@ -86,6 +102,19 @@ int khdays_hd_status(char *why, size_t size)
 void khdays_sound_output_mute(int mute)
 {
     muted = mute;
+}
+/* a monologue's voice: the files asked for, and the stops */
+static char voice_path[260];
+static int voices, voice_files, voice_stops;
+void khdays_hd_voice_play(const char *const *paths, int count)
+{
+    snprintf(voice_path, sizeof(voice_path), "%s", count > 0 ? paths[0] : "");
+    voice_files = count;
+    ++voices;
+}
+void khdays_hd_voice_stop(void)
+{
+    ++voice_stops;
 }
 /* the subtitles asked for when a video starts: its movie, in the game's language */
 static char subtitles_movie[16];
@@ -320,6 +349,120 @@ int main(void)
     khdays_movie_hd_poll();
     CHECK(!khdays_movie_hd_showing() && !muted && !held());
     khdays_movie_hd_game_buttons(0);
+
+    /* an event scene of two videos: the game held while they play, then let go to take
+     * its own skip at its event's next step, shown until the scene ends */
+    {
+        static uint8_t event[0x600]; /* the event machine's state: its skip request at +0x588 */
+        char *const stems[] = {"hd010", "hd011"};
+        const int opened_before = opens, stopped_before = sound_effects_stopped;
+        touch("data/cutscenes/cinematics/hd010.mp4");
+        touch("data/cutscenes/cinematics/hd011.mp4");
+        CHECK(khdays_movie_hd_scene("EV_S#12", 0x1234u, stems, 2) == 1);
+        CHECK(khdays_movie_hd_showing() && held() && muted && opens == opened_before + 1 && wakes == 1);
+        CHECK(strcmp(opened_path, "data/cutscenes/cinematics/hd010.mp4") == 0 && strcmp(subtitles_movie, "010") == 0);
+        CHECK(khdays_movie_hd_game_buttons(A) == 0);
+        status_now = 1;
+        khdays_movie_hd_poll(); /* the first ended: the second */
+        CHECK(opens == opened_before + 2 && strcmp(subtitles_movie, "011") == 0 && held());
+        status_now = 1;
+        khdays_movie_hd_poll(); /* the last ended: let go */
+        CHECK(khdays_movie_hd_showing() && !held() && muted);
+        CHECK(khdays_movie_hd_game_buttons(START) == 0); /* a scene's own skip: no button given */
+        khdays_movie_hd_scene_step(0x9999u, event);      /* another event's step */
+        CHECK(*(uint32_t *)(event + 0x588) == 0);
+        khdays_movie_hd_scene_step(0x1234u, event);
+        CHECK(*(uint32_t *)(event + 0x588) == 1 && sound_effects_stopped == stopped_before + 1);
+        khdays_movie_hd_scene_ended();
+        CHECK(!khdays_movie_hd_showing() && !muted && !held());
+        khdays_movie_hd_game_buttons(0);
+        khdays_movie_hd_game_buttons(0);
+    }
+
+    /* a scene whose video is missing: the game's own scene plays, nothing held */
+    {
+        char *const stems[] = {"hd010", "hd999"};
+        const int opened_before = opens;
+        CHECK(khdays_movie_hd_scene("EV_S#12", 0x1234u, stems, 2) == 0);
+        CHECK(!khdays_movie_hd_showing() && !held() && !muted && opens == opened_before);
+        graphics_flags = 0; /* movies = pc or ds: none of the scenes */
+        CHECK(khdays_movie_hd_scene("EV_S#12", 0x1234u, stems, 1) == 0 && !khdays_movie_hd_showing());
+        graphics_flags = KHDAYS_HOST_MOVIES_HD;
+    }
+
+    /* START during a scene's video: the video paused, the game let go with START once to open its own
+     * pause; Continue holds it again and the video goes on, Skip lets it unwind to the scene's end */
+    {
+        static uint8_t event[0x600];
+        char *const stems[] = {"hd010"};
+        const int closed_before = closes;
+        touch("data/cutscenes/cinematics/hd010.mp4");
+        CHECK(khdays_movie_hd_scene("EV_S#12", 0x1234u, stems, 1) == 1);
+        CHECK(khdays_movie_hd_scene_state() == 0x1234u);
+        khdays_movie_hd_host_buttons(0);
+        khdays_movie_hd_host_buttons(START);
+        CHECK(khdays_movie_hd_scene_paused() && khdays_movie_hd_showing() && hd_paused && !held() && muted);
+        khdays_movie_hd_scene_frame(0, 0); /* before the game read its START: waits */
+        CHECK(khdays_movie_hd_scene_paused());
+        CHECK(khdays_movie_hd_game_buttons(START) == START); /* START pressed for the pause ... */
+        khdays_movie_hd_scene_frame(0, 0);                   /* (refused: the screen fades) */
+        CHECK(khdays_movie_hd_game_buttons(START) == 0);     /* ... every other frame ... */
+        khdays_movie_hd_scene_frame(0, 0);
+        CHECK(khdays_movie_hd_game_buttons(START) == START); /* ... until it opens */
+        khdays_movie_hd_scene_frame(1, 0);                   /* the pause open */
+        CHECK(khdays_movie_hd_game_buttons(START) == 0);     /* held since: not a new press */
+        CHECK(khdays_movie_hd_game_buttons(0) == 0);
+        CHECK(khdays_movie_hd_game_buttons(A) == A); /* the pause's choices are the player's */
+        CHECK(khdays_movie_hd_scene_paused());
+        khdays_movie_hd_scene_frame(0, 0); /* closed by Continue */
+        CHECK(!khdays_movie_hd_scene_paused() && khdays_movie_hd_showing() && held() && !hd_paused);
+        CHECK(khdays_movie_hd_game_buttons(A) == 0); /* held for the video again: none */
+        /* again, and Skip */
+        khdays_movie_hd_host_buttons(0);
+        khdays_movie_hd_host_buttons(START);
+        khdays_movie_hd_game_buttons(START);
+        khdays_movie_hd_scene_frame(1, 0);
+        khdays_movie_hd_scene_frame(0, 1);
+        CHECK(!khdays_movie_hd_scene_paused() && khdays_movie_hd_showing() && !held() && closes == closed_before + 1);
+        khdays_movie_hd_scene_step(0x1234u, event); /* nothing more to ask: the game's own skip runs */
+        CHECK(*(uint32_t *)(event + 0x588) == 0);
+        khdays_movie_hd_scene_ended();
+        CHECK(!khdays_movie_hd_showing() && !muted && khdays_movie_hd_scene_state() == 0u);
+        khdays_movie_hd_game_buttons(0);
+        khdays_movie_hd_game_buttons(0);
+        /* a pause the game does not open: the video goes on */
+        CHECK(khdays_movie_hd_scene("EV_S#12", 0x1234u, stems, 1) == 1);
+        khdays_movie_hd_host_buttons(0);
+        khdays_movie_hd_host_buttons(START);
+        for (int i = 0; i <= 90; ++i) {
+            khdays_movie_hd_game_buttons(0);
+            khdays_movie_hd_scene_frame(0, 0);
+        }
+        CHECK(!khdays_movie_hd_scene_paused() && held() && !hd_paused);
+        khdays_movie_hd_scene_ended();
+        khdays_movie_hd_game_buttons(0);
+        khdays_movie_hd_game_buttons(0);
+    }
+
+    /* a day's monologue (scene 10): its clip's voice over the game's page, the game going on */
+    {
+        char *const stems[] = {"hd000"}, *const missing[] = {"hd001"};
+        touch("data/cutscenes/cinematics/hd000.mp4");
+        CHECK(khdays_movie_hd_voice("mnl#0", stems, 1) == 1);
+        CHECK(voices == 1 && voice_files == 1 && strcmp(voice_path, "data/cutscenes/cinematics/hd000.mp4") == 0);
+        CHECK(!khdays_movie_hd_showing() && !held() && !muted);
+        CHECK(khdays_movie_hd_game_buttons(START) == START); /* the game's own page takes its buttons */
+        khdays_movie_hd_game_buttons(0);
+        khdays_movie_hd_voice_stop();
+        CHECK(voice_stops == 1);
+        CHECK(khdays_movie_hd_voice("mnl#9", missing, 1) == 0 && voices == 1); /* no file: the page alone */
+        graphics_flags = 0;
+        CHECK(khdays_movie_hd_voice("mnl#0", stems, 1) == 0 && voices == 1); /* movies = pc or ds */
+        graphics_flags = KHDAYS_HOST_MOVIES_HD;
+    }
+    DeleteFileA("data/cutscenes/cinematics/hd000.mp4");
+    DeleteFileA("data/cutscenes/cinematics/hd010.mp4");
+    DeleteFileA("data/cutscenes/cinematics/hd011.mp4");
 
     /* failing to open: the game's movie, said once */
     open_ok = 0;

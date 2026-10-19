@@ -52,35 +52,99 @@ KD_FN uint kd_keep(uint c)
     return (c & KD_HD) != 0u ? c : (c & 0x7fffu);
 }
 
-/* The texel of replaced tile `entry` (a KD_HD_BG or KD_HD_OBJ word) at (u, v),
- * the place inside the 8x8 tile in fractional DS pixels, read at the
- * replacement's own resolution. For an indexed sheet it returns KD_HD_INDEX
- * | the game's palette index (0 when transparent); otherwise KD_HD | its
- * colour (0 when its alpha is under half). */
-KD_FN uint kd_hd(uint entry, float u, float v)
+KD_FN float kd_minf(float a, float b)
+{
+    return a < b ? a : b;
+}
+KD_FN float kd_maxf(float a, float b)
+{
+    return a > b ? a : b;
+}
+
+/* A replaced tile in the game's palette: KD_HD_INDEX | the index at (u, v), or 0 where it is clear. */
+KD_FN uint kd_hd_index(uint id, uint tile, float u, float v)
+{
+    const uint info = KD_HD_INFO(id);
+    const uint scale = (info >> 8) & 0xffu, columns = info >> 16, side = 8u * scale;
+    uint x = (uint)(u * (float)scale), y = (uint)(v * (float)scale), texel;
+    x = (x < side ? x : side - 1u) + (tile % columns) * side;
+    y = (y < side ? y : side - 1u) + (tile / columns) * side;
+    if (x >= KD_HD_WIDTH(id) || y >= KD_HD_HEIGHT(id)) {
+        return 0u;
+    }
+    texel = KD_HD_TEXEL(KD_HD_FIRST(id) + y * KD_HD_WIDTH(id) + x);
+    return (texel & 0xffu) != 0u ? KD_HD_INDEX | (texel & 0xffu) : 0u;
+}
+
+/* A replaced tile in its own colours: the texels under an output pixel `ru` x `rv` DS pixels wide,
+ * centred at (u, v), averaged by how much of each it covers. A picture bigger than shown is read from
+ * a smaller copy (gpu_hd.c), so no line is skipped. KD_HD | the colour, with how much of what is
+ * under it shows in bits 24-30 (KD_SEE_THROUGH); 0 where it is clear. */
+KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv)
+{
+    const uint info = KD_HD_INFO(id);
+    const uint scale = (info >> 8) & 0xffu, columns = info >> 16;
+    uint side = 8u * scale; /* a tile's texels across, in the copy read */
+    uint width = KD_HD_WIDTH(id), height = KD_HD_HEIGHT(id), first = KD_HD_FIRST(id);
+    float texels = kd_maxf(ru, rv) * (float)scale; /* texels under the pixel, across */
+    float k, x0, x1, y0, y1, r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f, area = 0.0f;
+    uint x, y, ox, oy, seen;
+    if ((info & 8u) != 0u) {
+        /* the next smaller copy while its texels still come from one tile each */
+        while (texels >= 2.0f && (side & 1u) == 0u) {
+            first += width * height;
+            width = width > 1u ? width >> 1 : 1u;
+            height = height > 1u ? height >> 1 : 1u;
+            side >>= 1;
+            texels *= 0.5f;
+        }
+    }
+    k = (float)side / 8.0f; /* texels in a DS pixel */
+    ox = (tile % columns) * side;
+    oy = (tile / columns) * side;
+    x0 = kd_maxf((u - 0.5f * ru) * k, 0.0f);
+    x1 = kd_minf((u + 0.5f * ru) * k, (float)side);
+    y0 = kd_maxf((v - 0.5f * rv) * k, 0.0f);
+    y1 = kd_minf((v + 0.5f * rv) * k, (float)side);
+    for (y = (uint)y0; (float)y < y1; ++y) {
+        const float wy = kd_minf((float)(y + 1u), y1) - kd_maxf((float)y, y0);
+        for (x = (uint)x0; (float)x < x1; ++x) {
+            const float w = wy * (kd_minf((float)(x + 1u), x1) - kd_maxf((float)x, x0));
+            uint texel;
+            float ta;
+            area += w;
+            if (ox + x >= width || oy + y >= height) {
+                continue; /* past the picture: clear */
+            }
+            texel = KD_HD_TEXEL(first + (oy + y) * width + ox + x);
+            ta = w * (float)(texel >> 24);
+            r += ta * (float)(texel & 255u);
+            g += ta * (float)((texel >> 8) & 255u);
+            b += ta * (float)((texel >> 16) & 255u);
+            a += ta;
+        }
+    }
+    if (a <= 0.0f || area <= 0.0f) {
+        return 0u;
+    }
+    seen = (uint)((1.0f - a / (area * 255.0f)) * 127.0f + 0.5f);
+    if (seen >= 127u) {
+        return 0u;
+    }
+    return KD_HD | (seen << 24) | (uint)(r / a + 0.5f) | ((uint)(g / a + 0.5f) << 8) | ((uint)(b / a + 0.5f) << 16);
+}
+
+/* Replaced tile `entry` (a KD_HD_BG or KD_HD_OBJ word) at (u, v) inside its 8x8 tile, in DS pixels,
+ * for an output pixel `ru` x `rv` DS pixels wide. Bitmaps are read by kd_hd_bitmap. */
+KD_FN uint kd_hd(uint entry, float u, float v, float ru, float rv)
 {
     const uint id = (entry >> 20) - 1u;
     const uint tile = entry & 0xfffffu;
     const uint info = KD_HD_INFO(id);
-    const uint scale = (info >> 8) & 0xffu, columns = info >> 16;
-    const uint side = 8u * scale;
-    const uint width = KD_HD_WIDTH(id);
-    uint x, y, texel;
-    if ((info & 4u) != 0u || columns == 0u || scale == 0u || u < 0.0f || v < 0.0f) {
-        return 0u; /* (a bitmap is read by kd_hd_bitmap) */
-    }
-    x = (uint)(u * (float)scale);
-    y = (uint)(v * (float)scale);
-    x = (x < side ? x : side - 1u) + (tile % columns) * side;
-    y = (y < side ? y : side - 1u) + (tile / columns) * side;
-    if (x >= width || y >= KD_HD_HEIGHT(id)) {
+    if ((info & 4u) != 0u || (info >> 16) == 0u || ((info >> 8) & 0xffu) == 0u || u < 0.0f || v < 0.0f) {
         return 0u;
     }
-    texel = KD_HD_TEXEL(KD_HD_FIRST(id) + y * width + x);
-    if ((info & 1u) != 0u) {
-        return (texel & 0xffu) != 0u ? KD_HD_INDEX | (texel & 0xffu) : 0u;
-    }
-    return (texel >> 24) >= 128u ? KD_HD | (texel & 0xffffffu) : 0u;
+    return (info & 1u) != 0u ? kd_hd_index(id, tile, u, v) : kd_hd_colour(id, tile, u, v, ru, rv);
 }
 
 /* The texel of a replaced bitmap (KHDAYS_REPLACEMENT_BITMAP: a movie's frame) for unit `entry`, at the
@@ -114,6 +178,12 @@ KD_FN float kd_affine_sub(int at, int along_x, int along_y)
     return f - (float)floor(f);
 }
 
+/* How many DS pixels an output pixel spans along an affine picture's axis (steps in 8 fractional bits). */
+KD_FN float kd_affine_reach(int along_x, int along_y)
+{
+    return (float)((along_x < 0 ? -along_x : along_x) + (along_y < 0 ? -along_y : along_y)) / 256.0f * KD_PIXEL;
+}
+
 /* --- A layer's colour at (x, row): KD_OPAQUE | BGR555, or 0 ------------------- */
 
 KD_FN uint kd_ext_color(uint slot, uint pal, uint index)
@@ -144,7 +214,7 @@ KD_FN uint kd_text(uint base, int x, int row)
     if (hd != 0u) {
         const float fu = (entry & 0x400u) ? 1.0f - KD_SUB_X : KD_SUB_X;
         const float fv = (entry & 0x800u) ? 1.0f - KD_SUB_Y : KD_SUB_Y;
-        const uint r = kd_hd(hd, (float)px + fu, (float)py + fv);
+        const uint r = kd_hd(hd, (float)px + fu, (float)py + fv, KD_PIXEL, KD_PIXEL);
         if ((r & KD_HD) != 0u) {
             return r;
         }
@@ -195,7 +265,8 @@ KD_FN uint kd_affine(uint base, int x, int row)
         if (hd != 0u) {
             const float su = kd_affine_sub(refx + pa * x, pa, pb), sv = kd_affine_sub(refy + pc * x, pc, pd);
             const uint r = kd_hd(hd, (float)tx + ((entry & 0x400u) && k == KDK_AFFINE_EXT ? 1.0f - su : su),
-                                 (float)ty + ((entry & 0x800u) && k == KDK_AFFINE_EXT ? 1.0f - sv : sv));
+                                 (float)ty + ((entry & 0x800u) && k == KDK_AFFINE_EXT ? 1.0f - sv : sv),
+                                 kd_affine_reach(pa, pb), kd_affine_reach(pc, pd));
             if ((r & KD_HD) != 0u) {
                 return r;
             }
@@ -286,7 +357,7 @@ typedef struct KdSprite {
     uint window; /* 1: a sprite-window sprite covers the pixel */
 } KdSprite;
 
-KD_FN uint kd_sprite_texel(uint flags, uint tile_word, uint w, uint tx, uint ty, float fu, float fv)
+KD_FN uint kd_sprite_texel(uint flags, uint tile_word, uint w, uint tx, uint ty, float fu, float fv, float ru, float rv)
 {
     const uint obj = KD_DESC(KD_OBJ);
     const uint mode = (flags >> KDS_MODE_SHIFT) & 3u;
@@ -321,7 +392,7 @@ KD_FN uint kd_sprite_texel(uint flags, uint tile_word, uint w, uint tx, uint ty,
         }
         hd = KD_HD_OBJ((address & kd_obj_mask()) >> 5);
         if (hd != 0u) {
-            const uint r = kd_hd(hd, (float)(tx & 7u) + fu, (float)(ty & 7u) + fv);
+            const uint r = kd_hd(hd, (float)(tx & 7u) + fu, (float)(ty & 7u) + fv, ru, rv);
             if ((r & KD_HD) != 0u) {
                 return r;
             }
@@ -345,7 +416,7 @@ KD_FN uint kd_sprite_texel(uint flags, uint tile_word, uint w, uint tx, uint ty,
         }
         hd = KD_HD_OBJ((address & kd_obj_mask()) >> 5);
         if (hd != 0u) {
-            const uint r = kd_hd(hd, (float)(tx & 7u) + fu, (float)(ty & 7u) + fv);
+            const uint r = kd_hd(hd, (float)(tx & 7u) + fu, (float)(ty & 7u) + fv, ru, rv);
             if ((r & KD_HD) != 0u) {
                 return r;
             }
@@ -373,7 +444,7 @@ KD_FN KdSprite kd_sprites(int x, int row)
         const uint base = KD_SPRITES + (uint)i * KD_SPRITE_WORDS;
         const uint size = KD_DESC(base + KDS_SIZE);
         uint box, dy, bw, bh, w, h, tx, ty, color, mode, prio;
-        float fu, fv;
+        float fu, fv, ru = KD_PIXEL, rv = KD_PIXEL;
         int dx;
         if (!(size & KDS_SHOWN) || KD_LEFT_OUT_OBJ((uint)i) != 0u) {
             continue;
@@ -400,13 +471,15 @@ KD_FN KdSprite kd_sprites(int x, int row)
             ty = (uint)ay;
             fu = kd_affine_sub(kd_s16(papb) * rx + kd_s16(papb >> 16) * ry, kd_s16(papb), kd_s16(papb >> 16));
             fv = kd_affine_sub(kd_s16(pcpd) * rx + kd_s16(pcpd >> 16) * ry, kd_s16(pcpd), kd_s16(pcpd >> 16));
+            ru = kd_affine_reach(kd_s16(papb), kd_s16(papb >> 16));
+            rv = kd_affine_reach(kd_s16(pcpd), kd_s16(pcpd >> 16));
         } else {
             tx = (size & KDS_HFLIP) ? w - 1u - (uint)dx : (uint)dx;
             ty = (size & KDS_VFLIP) ? h - 1u - dy : dy;
             fu = (size & KDS_HFLIP) ? 1.0f - KD_SUB_X : KD_SUB_X;
             fv = (size & KDS_VFLIP) ? 1.0f - KD_SUB_Y : KD_SUB_Y;
         }
-        color = kd_sprite_texel(size, KD_DESC(base + KDS_TILE), w, tx, ty, fu, fv);
+        color = kd_sprite_texel(size, KD_DESC(base + KDS_TILE), w, tx, ty, fu, fv, ru, rv);
         if (color == 0u) {
             continue;
         }
@@ -839,9 +912,9 @@ KD_FN uint kd_mix5(uint a, uint b, float t)
     return mixed;
 }
 
-/* A layer's colour the elements made but do not cover: KD_HD, their colour,
- * and in bits 24-30 how much of what is under them shows (1-127 of 127; 0
- * covers it, as every other colour). */
+/* A layer's or a sprite's colour that does not cover all of what is under it (the elements', a replaced
+ * tile's soft edge): KD_HD, the colour, and in bits 24-30 how much of what is under it shows (1-127 of
+ * 127; 0 covers it, as every other colour). */
 #define KD_SEE_THROUGH(c) ((((c) & KD_HD) != 0u) ? (((c) >> 24) & 0x7fu) : 0u)
 
 /* Layer b's colour at (x, row) with the elements that take its slot, the topmost over the ones under
@@ -977,6 +1050,17 @@ KD_FN float kd_through_alpha(uint c)
     return 1.0f - (float)KD_SEE_THROUGH(c) / 127.0f;
 }
 
+/* What lets what is under it show at the pixel: the first such layer, or the topmost sprite
+ * (KD_LAYER_SPRITE) when no layer does or the sprite is over the pixel's other layers; else -1. */
+KD_FN int kd_through(uint color[4], KdSprite spr, uint mask)
+{
+    const int layer = kd_through_layer(color);
+    if (KD_SEE_THROUGH(spr.color) != 0u && (layer < 0 || kd_top(color, spr, mask).layer0 == KD_LAYER_SPRITE)) {
+        return (int)KD_LAYER_SPRITE;
+    }
+    return layer;
+}
+
 /* Two pixels of the one-screen pass (kd_split: K in bits 0-23, and 0, or
  * 1 + F x 254 in bits 24-31, for K + F x X) mixed: t of a, 1 - t of b. */
 KD_FN uint kd_mix_split(uint a, uint b, float t)
@@ -1038,19 +1122,25 @@ KD_FN uint kd_pixel(int x, int row)
             }
         }
         {
-            const int through = kd_through_layer(color);
             const uint mask = kd_mask(x, row, spr.window);
+            const int through = kd_through(color, spr, mask);
             const uint alpha3d = (flags & KDF_BG0_IS_3D) != 0u ? kd_alpha3d(x, row) : 31u;
             const uint fine3d = (fine != 0u && (flags & KDF_BG0_IS_3D) != 0u) ? kd_fine3d(x, row) : 0u;
             uint under[4];
+            KdSprite spr_under = spr;
             float t = 1.0f;
             for (b = 0; b < 4; ++b) {
                 under[b] = color[b];
             }
             if (through >= 0) {
-                /* the elements that let it show through: the pixel with them and without them */
-                t = kd_through_alpha(color[through]);
-                under[through] = 0u;
+                /* what lets it show through: the pixel with it and without it */
+                if (through == (int)KD_LAYER_SPRITE) {
+                    t = kd_through_alpha(spr.color);
+                    spr_under.color = 0u;
+                } else {
+                    t = kd_through_alpha(color[through]);
+                    under[through] = 0u;
+                }
             }
             if ((flags & KDF_SPLIT) != 0u) {
                 uint with[4];
@@ -1058,11 +1148,11 @@ KD_FN uint kd_pixel(int x, int row)
                     with[b] = color[b];
                 }
                 result = kd_split(with, spr, mask, x, row);
-                return through >= 0 ? kd_mix_split(result, kd_split(under, spr, mask, x, row), t) : result;
+                return through >= 0 ? kd_mix_split(result, kd_split(under, spr_under, mask, x, row), t) : result;
             }
             result = kd_compose(color, spr, mask, alpha3d, fine3d);
             if (through >= 0) {
-                const uint below = kd_compose(under, spr, mask, alpha3d, fine3d);
+                const uint below = kd_compose(under, spr_under, mask, alpha3d, fine3d);
                 result = fine != 0u ? kd_mix8(result, below, t) : kd_mix5(result, below, t);
             }
         }
@@ -1137,18 +1227,25 @@ KD_FN uint kd_pixel_wide(int column, int row)
         mask = ((flags >> KDF_WIN_ON_SHIFT) & 7u) != 0u ? KD_DESC(KD_WINOUT) & 0x3fu : 0x3fu;
     }
     {
-        const int through = kd_through_layer(color);
+        const int through = kd_through(color, spr, mask);
         uint result = kd_compose(color, spr, mask, alpha3d, fine3d);
         if (through >= 0) {
-            /* the elements that let it show through: the pixel with them and without them */
+            /* what lets it show through: the pixel with it and without it */
             uint under[4];
-            const float t = kd_through_alpha(color[through]);
+            KdSprite spr_under = spr;
+            float t;
             for (b = 0; b < 4; ++b) {
                 under[b] = color[b];
             }
-            under[through] = 0u;
-            result = (flags & KDF_FINE) != 0u ? kd_mix8(result, kd_compose(under, spr, mask, alpha3d, fine3d), t)
-                                              : kd_mix5(result, kd_compose(under, spr, mask, alpha3d, 0u), t);
+            if (through == (int)KD_LAYER_SPRITE) {
+                t = kd_through_alpha(spr.color);
+                spr_under.color = 0u;
+            } else {
+                t = kd_through_alpha(color[through]);
+                under[through] = 0u;
+            }
+            result = (flags & KDF_FINE) != 0u ? kd_mix8(result, kd_compose(under, spr_under, mask, alpha3d, fine3d), t)
+                                              : kd_mix5(result, kd_compose(under, spr_under, mask, alpha3d, 0u), t);
         }
         if ((flags & KDF_FINE) != 0u) {
             return kd_bright8(result, KD_DESC(KD_MASTER));

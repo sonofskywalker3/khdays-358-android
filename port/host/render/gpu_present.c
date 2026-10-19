@@ -134,14 +134,32 @@ static const char *shot_dir;
 static uint32_t shot_frames[64];
 static int shot_count;
 
+/* Wine or Proton (a Steam Deck, Linux): its ntdll names its version. */
+static int under_wine(void)
+{
+    SDL_SharedObject *ntdll = SDL_LoadObject("ntdll.dll");
+    int wine = 0;
+    if (ntdll != NULL) {
+        wine = SDL_LoadFunction(ntdll, "wine_get_version") != NULL;
+        SDL_UnloadObject(ntdll);
+    }
+    SDL_ClearError();
+    return wine;
+}
+
 /* Makes a renderer on a new GPU device. Returns NULL with the reason in `why`. */
 static SDL_Renderer *gpu_renderer(char *why, size_t size)
 {
     static const char *const names[KHDAYS_BACKEND_COUNT] = {NULL, "direct3d12", "vulkan"};
     const int debug = SDL_getenv("KHDAYS_GPU_DEBUG") != NULL;
     const char *name = video.backend > 0 && video.backend < KHDAYS_BACKEND_COUNT ? names[video.backend] : NULL;
+    SDL_GPUDevice *made = NULL;
     SDL_Renderer *r;
-    device = SDL_CreateGPUDevice(SHADER_FORMATS, debug, name);
+    if (name == NULL && SDL_GetHint(SDL_HINT_GPU_DRIVER) == NULL && under_wine()) {
+        /* Automatic under Wine: its Direct3D 12 is made of Vulkan (vkd3d), so Vulkan straight away */
+        made = SDL_CreateGPUDevice(SHADER_FORMATS, debug, "vulkan");
+    }
+    device = made != NULL ? made : SDL_CreateGPUDevice(SHADER_FORMATS, debug, name);
     if (device == NULL && name != NULL) {
         /* the graphics API asked for is not available: use the system's (the settings menu says so) */
         char text[480];
@@ -392,14 +410,14 @@ int khdays_present_scale(void)
 
 /* Lays out the picture for its width now: the two screens one above the
  * other, the DS's 256 columns of each in the middle, fitted to the window. */
-static void present_size(int w, int h, float touch_left, float touch_top);
+static void present_size(int w, int h);
 
 static void layout(void)
 {
     columns = khdays_present_columns();
     /* one screen: each frame sets what it shows (khdays_present_draw); until then, leave it */
     presented_w = presented_h = 0;
-    present_size(columns, video.one_screen ? H : 2 * H, (float)(columns - W) / 2, video.one_screen ? 1.0e9f : (float)H);
+    present_size(columns, video.one_screen ? H : 2 * H);
 }
 
 void khdays_present_resized(void)
@@ -816,8 +834,43 @@ int khdays_present_fps(int *pictures, int *frames)
     return video.show_fps;
 }
 
+/* The game's pause over an HD scene's paused video: the video's picture as RGBA, taken once a pause
+ * (-1 when none could be), in two buffers used in turn, so the next pause's picture is a backdrop
+ * the card has not kept (gfx_render.c knows a backdrop by its address). */
+static uint8_t *paused_rgba[2];
+static size_t paused_capacity[2];
+static int paused_turn, paused_w, paused_h, paused_got;
+
+/* One screen: the video's picture behind everything, fitted inside the picture as the video shows,
+ * and no 3D. The pause's panel is the upper screen's 2D (seen: engine A's BG3 over the scene's 3D,
+ * the 3D alone darkened), which the situation's shapes draw over it; the scene the game holds under
+ * the pause is its 3D. */
+static void under_paused_video(KhdaysOneScreenDraw *one)
+{
+    if (paused_got == 0) {
+        paused_turn ^= 1;
+        uint8_t **rgba = &paused_rgba[paused_turn];
+        paused_got = khdays_hd_picture_rgba(rgba, &paused_capacity[paused_turn], &paused_w, &paused_h) ? 1 : -1;
+    }
+    if (paused_got > 0) {
+        one->backdrop = paused_rgba[paused_turn];
+        one->backdrop_w = paused_w;
+        one->backdrop_h = paused_h;
+        one->backdrop_ax = one->backdrop_ay = 0.5f;
+        one->backdrop_fit = 1;
+        one->animated = 0;
+        one->picture_w = one->picture_h = 0;
+        one->pieces = NULL;
+        one->piece_count = 0;
+    }
+    one->hide3d_all = 1;
+}
+
 void khdays_present_package(const KhdaysFramePackage *p)
 {
+    if (!khdays_movie_hd_scene_paused()) {
+        paused_got = 0; /* the next pause takes the video's picture anew */
+    }
     note_logic_frame(p);
     latest = p;
     present(p, 1);
@@ -996,9 +1049,12 @@ static void present(const KhdaysFramePackage *p, int first)
             if (raster && khdays_raster3d_targets(&c3d, &a3d, &raster_columns)) {
                 one.columns = raster_columns;
             }
+            if (khdays_movie_hd_scene_paused()) {
+                under_paused_video(&one);
+            }
             /* at the DS's own size without 3D, but for a picture with a backdrop of its own (the
              * camp's Preferences page: an HD picture, no model) */
-            drawn = khdays_gfx_render_draw_one(p, raster || composition.backdrop != NULL ? n : 1, raster, &one);
+            drawn = khdays_gfx_render_draw_one(p, raster || one.backdrop != NULL ? n : 1, raster, &one);
             one_drawn = drawn;
             one_made = one_made || drawn;
         } else {
@@ -1132,16 +1188,14 @@ void khdays_present_set_video(const KhdaysVideo *given)
     layout();
 }
 
-/* The logical presentation `w` x `h`, set when it changes, and where the lower
- * screen is for the stylus (no screen: nowhere). */
-static void present_size(int w, int h, float touch_left, float touch_top)
+/* The logical presentation `w` x `h`, set when it changes. */
+static void present_size(int w, int h)
 {
     if (renderer != NULL && (w != presented_w || h != presented_h)) {
         SDL_SetRenderLogicalPresentation(renderer, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
         presented_w = w;
         presented_h = h;
     }
-    khdays_devices_set_touch_area(touch_left, touch_top);
 }
 
 /* An HD video in a movie's place: its newest picture due, over the whole window, letterboxed; the last
@@ -1183,7 +1237,7 @@ static void draw_hd_movie(void)
         khdays_hd_picture_done();
     }
     if (hd_movie != NULL) {
-        present_size(hd_movie_w, hd_movie_h, 0.0f, 1.0e9f);
+        present_size(hd_movie_w, hd_movie_h);
         SDL_RenderTexture(renderer, hd_movie, NULL, NULL);
         if (khdays_subtitles_shown()) {
             khdays_movie_subtitles_draw(renderer, hd_movie_time, hd_movie_fps, hd_movie_w, hd_movie_h);
@@ -1304,11 +1358,15 @@ void khdays_present_draw(void)
     fps_count(1);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    if (khdays_movie_hd_showing()) {
+    /* the game's pause over a scene's paused video: on one screen its panel over the video's picture
+     * (under_paused_video), on two the game's screens as they are (the panel is engine A's 2D, over the
+     * scene's 3D: no picture of it apart) */
+    const int paused = khdays_movie_hd_scene_paused();
+    if (khdays_movie_hd_showing() && !paused) {
         draw_hd_movie();
         return;
     }
-    if (hd_movie != NULL) {
+    if (hd_movie != NULL && !paused) {
         SDL_DestroyTexture(hd_movie); /* the video is over */
         hd_movie = NULL;
         khdays_movie_subtitles_release();
@@ -1325,7 +1383,7 @@ void khdays_present_draw(void)
         /* the one picture, as wide as it was made, in the middle; nothing touched */
         int made = 0;
         SDL_Texture *picture = khdays_gfx_render_picture(renderer, &made);
-        present_size(columns, H, 0.0f, 1.0e9f);
+        present_size(columns, H);
         if (picture != NULL) {
             const SDL_FRect at = {((float)columns - (float)made) / 2, 0, (float)made, H};
             one_at_x = at.x;
@@ -1340,7 +1398,7 @@ void khdays_present_draw(void)
         int wu = 0, wl = 0;
         SDL_Texture *upper = screen_texture(port2d_upper, &wu);
         SDL_Texture *lower = screen_texture(!port2d_upper, &wl);
-        present_size(2 * W, H, (float)W, 0.0f);
+        present_size(2 * W, H);
         if (upper != NULL && lower != NULL) {
             const SDL_ScaleMode mode = video.smooth_scaling ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST;
             const SDL_FRect upper_from = ds_columns(upper, wu), lower_from = ds_columns(lower, wl);
@@ -1351,9 +1409,10 @@ void khdays_present_draw(void)
             SDL_RenderTexture(renderer, lower, &lower_from, &lower_at);
         }
     } else if (port2d_drawn) {
-        if (video.one_screen) {
-            present_size(columns, 2 * H, (float)(columns - W) / 2, (float)H); /* stacked: the two-screen picture */
-        }
+        /* stacked: the two-screen picture. Set each frame, as every picture sets its own: an HD video
+         * left its size behind (seen: after hd818's 1280 x 720, the two screens letterboxed into it at
+         * 0.4 of their size) */
+        present_size(columns, 2 * H);
         /* the port's own screens, the DS's 256 columns in the middle (engine A as wide as it was drawn) */
         int cu = 0, cl = 0;
         SDL_Texture *upper = screen_texture(port2d_upper, &cu);
@@ -1371,6 +1430,7 @@ void khdays_present_draw(void)
         /* the 1x screens, the DS's 256 columns in the middle */
         const SDL_FRect upper = {0, 0, W, H}, lower = {0, H, W, H};
         const SDL_FRect upper_at = {left, 0, W, H}, lower_at = {left, H, W, H};
+        present_size(columns, 2 * H);
         SDL_RenderTexture(renderer, screens, &upper, &upper_at);
         SDL_RenderTexture(renderer, screens, &lower, &lower_at);
     }

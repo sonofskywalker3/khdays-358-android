@@ -21,6 +21,11 @@ void khdays_sound_archive_close(KhdaysSoundArchive *archive);
 const char *khdays_sound_archive_player_name(const KhdaysSoundArchive *archive, int player);
 const char *khdays_sound_archive_stream_player_name(const KhdaysSoundArchive *archive, int player);
 
+/* A sequence archive's entry by its names (as in "seqarc/<archive>/<entry>"): its archive's number and
+ * its index there. Returns 0 when there is none of those names. */
+int khdays_sound_archive_find_entry(const KhdaysSoundArchive *archive, const char *sequence_archive, const char *entry,
+                                    int *number, int *index);
+
 /* A sound's identifier, the path under
  * a mod's sounds/ without the extension: "seq/<name>", "seqarc/<archive>/
  * <entry>", "wave/<archive>/<index>", "strm/<name>" -- an unnamed one by

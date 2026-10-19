@@ -5,11 +5,12 @@
 
 #include "../gfx/onescreen.h"
 
-StructuredBuffer<uint> shapes : register(t0, space0); // KO_WORDS a shape
-StructuredBuffer<uint> keys : register(t1, space0);   // the colours made transparent (BGR555)
+// the buffers read by their bytes (raster3d.hlsl says why)
+ByteAddressBuffer shapes : register(t0, space0); // KO_WORDS a shape
+ByteAddressBuffer keys : register(t1, space0);   // the colours made transparent (BGR555)
 // an animated picture's pieces this frame (ui/composition.h KhdaysPiece, 32 words each): its
 // rectangle in the picture, its texels in the atlas, its corners' colours, its blend
-StructuredBuffer<uint> pieces : register(t2, space0);
+ByteAddressBuffer pieces : register(t2, space0);
 
 [[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, C x 192 at N
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
@@ -71,8 +72,8 @@ uint source_at(uint lower, float x, float y)
 
 #define KO_STEPS
 #define KO_FN
-#define KO_SHAPE(i, w) shapes[(i) * KO_WORDS + (w)]
-#define KO_KEY(i) keys[(i)]
+#define KO_SHAPE(i, w) shapes.Load(((i) * KO_WORDS + (w)) * 4u)
+#define KO_KEY(i) keys.Load((i) * 4u)
 #define KO_ASFLOAT(u) asfloat(u)
 #define KO_FLOOR(f) floor(f)
 #define KO_ABS(i) abs(i)
@@ -115,7 +116,7 @@ float4 backdrop_texel(float ix, float iy, int lo_x, int lo_y, int hi_x, int hi_y
 
 float4 piece_corner(uint at)
 {
-    return float4(asfloat(pieces[at]), asfloat(pieces[at + 1u]), asfloat(pieces[at + 2u]), asfloat(pieces[at + 3u]));
+    return asfloat(pieces.Load4(at * 4u));
 }
 
 // An animated picture at (px, py) of its texels: its ground, then each piece over it whose
@@ -125,17 +126,17 @@ float3 animated_at(float px, float py)
     float3 c = float3((float)(backdrop & 255u), (float)((backdrop >> 8) & 255u), (float)((backdrop >> 16) & 255u)) / 255.0f;
     for (uint i = 0u; i < piece_count; ++i) {
         const uint at = i * 32u;
-        const float x0 = asfloat(pieces[at]), y0 = asfloat(pieces[at + 1u]);
-        const float x1 = asfloat(pieces[at + 2u]), y1 = asfloat(pieces[at + 3u]);
+        const float x0 = asfloat(pieces.Load(at * 4u)), y0 = asfloat(pieces.Load((at + 1u) * 4u));
+        const float x1 = asfloat(pieces.Load((at + 2u) * 4u)), y1 = asfloat(pieces.Load((at + 3u) * 4u));
         float u, v, w, h, fx, fy;
         float4 s, k;
         if (px < x0 || py < y0 || px >= x1 || py >= y1) {
             continue;
         }
-        u = asfloat(pieces[at + 4u]);
-        v = asfloat(pieces[at + 5u]);
-        w = asfloat(pieces[at + 6u]);
-        h = asfloat(pieces[at + 7u]);
+        u = asfloat(pieces.Load((at + 4u) * 4u));
+        v = asfloat(pieces.Load((at + 5u) * 4u));
+        w = asfloat(pieces.Load((at + 6u) * 4u));
+        h = asfloat(pieces.Load((at + 7u) * 4u));
         fx = (px - x0) / (x1 - x0);
         fy = (py - y0) / (y1 - y0);
         s = backdrop_texel(u + fx * w, v + fy * h, (int)min(u, u + w), (int)min(v, v + h),
@@ -143,7 +144,7 @@ float3 animated_at(float px, float py)
         k = lerp(lerp(piece_corner(at + 8u), piece_corner(at + 12u), fx),
                  lerp(piece_corner(at + 16u), piece_corner(at + 20u), fx), fy);
         s = saturate(s * k);
-        switch (pieces[at + 24u]) {
+        switch (pieces.Load((at + 24u) * 4u)) {
         case 1u: // KHDAYS_PIECE_ADD
             c = saturate(c + s.rgb * s.a);
             break;

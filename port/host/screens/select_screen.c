@@ -9,6 +9,7 @@
 #include "ui_text.h"
 #include "../../runtime/menus/charselect.h"
 #include "../../runtime/core/rom.h"
+#include "../app/profile.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,8 @@
 #define GREY_LIGHT 140 /* the grey faces' light: the characters nobody is on */
 #define RING 3.0f      /* the white ring around a place's circle */
 #define EDGE 2.0f      /* a panel's edge */
+#define QUESTION 0.55f /* the random choice's "?": its height in its tile's */
+#define KEY_SIZE 36.0f /* the random choice's button (Y) in its tile's corner */
 static const Uint8 BLACK[3] = {0, 0, 0}, WHITE[3] = {255, 255, 255}, EDGE_GREY[3] = {110, 110, 110},
                    BAR_OFF[3] = {40, 40, 40}, OTHERS_GREY[3] = {80, 80, 80};
 
@@ -168,12 +171,37 @@ static int character_of(const KhdaysSelectView *v, int place)
     return place == v->self ? v->character : v->places[place].character;
 }
 
+/* A big "?" in the middle of a w x h box at (x, y): the random choice. */
+static void question(const KhdaysLayoutFrame *fr, float x, float y, float w, float h, float grey)
+{
+    static const unsigned short mark[2] = {'?', 0};
+    const float ink = s.layout.ink_bottom - s.layout.ink_top;
+    const float size = ink > 0 ? QUESTION * h / ink : 1.0f;
+    const float width = khdays_layout_line_width(&s.layout, mark, size);
+    const float mx = x + (w - width) / 2, my = y + (h - ink * size) / 2;
+    if (!s.layout.font_colours) {
+        khdays_layout_draw_line(&s.layout, fr, mark, mx, my, size, grey, 1.0f, 1); /* its shadow */
+    }
+    khdays_layout_draw_line(&s.layout, fr, mark, mx, my, size, grey, 1.0f, 0);
+}
+
 static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
 {
     const float *f = place("face");
     const float *row = place("stat"), *bar = place("gauge");
     const int c = v->character;
     const float t = s.frame_place;
+    if (v->random) {
+        unsigned short name[32];
+        khdays_layout_fill_rounded(s.layout.renderer, fr, f[0] - t, f[1] - t, f[2] + 2 * t, f[3] + 2 * t, 10, BLACK,
+                                   PANEL_ALPHA);
+        question(fr, f[0], f[1], f[2], f[3], 255.0f);
+        khdays_layout_ring_rounded(s.layout.renderer, fr, f[0] - t, f[1] - t, f[2] + 2 * t, f[3] + 2 * t, 10, t,
+                                   KHDAYS_PLACE_COLOURS[v->self & 3], 1.0f);
+        khdays_layout_utf8(khdays_text(TXT_SELECT_RANDOM), name, 32);
+        line(fr, "name", name, 0, 0);
+        return;
+    }
     if (c < 0 || c >= KHDAYS_SELECT_CHARACTERS) {
         return;
     }
@@ -208,11 +236,26 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
             list[count++] = c;
         }
     }
-    for (int p = 0; p < count; ++p) {
-        const int row = p / s.columns, in_row = SDL_min(s.columns, count - row * s.columns);
+    for (int p = 0; p <= count; ++p) {
+        /* the characters, then the random choice (charselect.c's grid has it last too) */
+        const int row = p / s.columns, in_row = SDL_min(s.columns, count + 1 - row * s.columns);
         const float left = tile[0] + (float)(s.columns - in_row) * (tile[2] + s.gap) / 2;
         const float x = left + (float)(p % s.columns) * (tile[2] + s.gap), y = tile[1] + (float)row * (tile[3] + s.gap);
         int on[KHDAYS_SELECT_PLACES], n = 0;
+        if (p == count) {
+            const float t = v->random ? s.frame_place : s.frame_other;
+            khdays_layout_fill_rounded(s.layout.renderer, fr, x - t, y - t, tile[2] + 2 * t, tile[3] + 2 * t, 8, BLACK,
+                                       TILE_ALPHA);
+            question(fr, x, y, tile[2], tile[3], v->random ? 255.0f : (float)GREY_LIGHT);
+            khdays_layout_draw_action(&s.layout, fr, KHDAYS_ACT_Y, x + tile[2] - KEY_SIZE - 8,
+                                      y + tile[3] - KEY_SIZE - 8, KEY_SIZE, 1.0f);
+            khdays_layout_ring_rounded(s.layout.renderer, fr, x - t, y - t, tile[2] + 2 * t, tile[3] + 2 * t, 8, t,
+                                       v->random ? KHDAYS_PLACE_COLOURS[v->self & 3] : OTHERS_GREY, 1.0f);
+            if (v->random) {
+                circle(fr, "tag", v->self, x + tag_at[0], y + tag_at[1], tag_at[2]);
+            }
+            break;
+        }
         for (int i = 0; i < KHDAYS_SELECT_PLACES; ++i) {
             if ((v->places[i].present || i == v->self) && character_of(v, i) == list[p]) {
                 on[n++] = i;

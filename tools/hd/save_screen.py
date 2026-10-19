@@ -33,6 +33,7 @@ EMPTY = (0x6E, 0x8100)  # "No data."
 # the load list's help says them with Y.
 GUEST_WORDS = {"es": "Juego invitado", "en": "Guest Play", "fr": "Invitation", "de": "Gastspiel", "it": "Gioca ospite"}
 # The gratext texture's words (its texels, the same in every language: each word centred in it).
+GRATEXT_SIZE = 1024  # the size GRATEXT's places are measured on: DDD's own picture, 1024 x 1024
 GRATEXT = {
     "heading_save": (16, 16, 896, 176),
     "heading_load": (16, 192, 896, 352),
@@ -236,6 +237,8 @@ def guest_label(data: Path, lang: str):
             if index != 0 and pal * per + index < len(colours):
                 out[i // 8, k * 8 + i % 8] = colours[pal * per + index] + (255,)
     ys, xs = np.nonzero(out[..., 3])
+    if len(xs) == 0:
+        raise ValueError(f"cmo_{lang}.p2: the guest's row's words are not where the European ROM has them")
     return out[:, xs.min() : xs.max() + 1]
 
 
@@ -377,10 +380,18 @@ def button_colour(selected: bool):
 
 
 def gratext(layouts, name):
-    """A word of the gratext texture, cut to its ink, in greys."""
+    """A word of the gratext texture, cut to its ink, in greys: its place on DDD's own picture, scaled to
+    the copy's (a mod may have put a smaller one in its place)."""
+    texture = layouts.blocks[1].texture
+    ky, kx = texture.shape[0] / GRATEXT_SIZE, texture.shape[1] / GRATEXT_SIZE
     u0, v0, u1, v1 = GRATEXT[name]
-    px = layouts.blocks[1].texture[v0:v1, u0:u1]
+    px = texture[int(v0 * ky) : int(v1 * ky), int(u0 * kx) : int(u1 * kx)]
     ys, xs = np.nonzero(px[..., 3] > 8)
+    if len(xs) == 0:
+        raise ValueError(
+            f"DDD's save_gratext picture ({texture.shape[1]} x {texture.shape[0]}) has no {name} where DDD's own "
+            "has it: is that picture of your 2.8 copy changed by a mod?"
+        )
     return greys(px[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1])
 
 
@@ -609,7 +620,7 @@ def make(ddd: Path, mare: Path, data: Path, lang: str, out_dir: Path, preview: P
     out_dir.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels, "RGBA").save(out_dir / "save_atlas.png")
     Image.fromarray(font_px, "L").save(out_dir / "save_font.png")
-    (out_dir / "save.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    (out_dir / "save.txt").write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
     print(
         f"{lang}: {len(pieces)} pieces, {len(icons)} icons, {len(glyphs)} glyphs; "
         f"atlas {pixels.shape[1]} x {pixels.shape[0]}, font {font_px.shape[1]} x {font_px.shape[0]}"

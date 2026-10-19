@@ -2,7 +2,9 @@
 // PNG embedded) and as ASCII FBX (centimetres, Z up, its PNG beside it under
 // a stored path that does not exist), imported and compared corner by
 // corner; the .glb and JPEG forms of glTF; a vertex with five weights; a
-// texture that is missing. Every file is made here; nothing of a game.
+// texture that is missing; a room with its own animation, a sky and moving
+// textures written by scene_to_gltf and read back. Every file is made here;
+// nothing of a game.
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -11,12 +13,14 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "khdays/assets/fbx.h"
 #include "khdays/assets/gltf.h"
+#include "khdays/assets/gltf_export.h"
 
 namespace {
 
@@ -360,6 +364,30 @@ int main() {
         check(gltf.model.meshes[0].alpha_mode == AlphaMode::opaque, "glTF: no alphaMode is opaque");
         check(fbx.model.meshes[0].alpha_mode == AlphaMode::unknown, "FBX: alpha mode unknown");
         {
+            // written back as glTF, a mesh that does not say is cut out at half unless its texture's texels
+            // or its vertex colours have an alpha of their own; one that says keeps it
+            auto mode_of = [&](const khdays::assets::NeutralModel& model, bool translucent) {
+                std::map<std::string, khdays::assets::GltfTextureRef> refs;
+                for (const auto& mesh : model.meshes)
+                    refs[mesh.texture_name] = {"tex.png", 2, 2, translucent};
+                const std::string text = khdays::assets::to_gltf(model, refs);
+                const auto at = text.find("\"alphaMode\":\"");
+                return at == std::string::npos ? std::string()
+                                               : text.substr(at + 13, text.find('"', at + 13) - at - 13);
+            };
+            check(mode_of(fbx.model, false) == "MASK", "export: an FBX mesh with an opaque texture cut out");
+            check(mode_of(fbx.model, true) == "BLEND", "export: an FBX mesh with a translucent texture blended");
+            khdays::assets::NeutralModel faded = fbx.model;
+            faded.meshes[0].vertices[0].color[3] = 13;  // a vertex colour at alpha 0.05
+            check(mode_of(faded, false) == "BLEND", "export: an FBX mesh with vertex alpha blended");
+            khdays::assets::NeutralModel said = faded;
+            said.meshes[0].alpha_mode = AlphaMode::mask;
+            check(mode_of(said, true) == "MASK", "export: a mesh that says MASK keeps it");
+            const std::uint8_t solid[8] = {9, 9, 9, 255, 9, 9, 9, 0}, soft[8] = {9, 9, 9, 255, 9, 9, 9, 128};
+            check(!khdays::assets::texels_translucent(solid, 2), "texels: opaque and transparent only");
+            check(khdays::assets::texels_translucent(soft, 2), "texels: one at half");
+        }
+        {
             std::string masked = gltf_json(R"({"name":"tex","uri":")" + png_uri + R"("})",
                                            R"(,"uri":"data:application/octet-stream;base64,)" + base64(buffer) + "\"",
                                            buffer.size(), false);
@@ -478,6 +506,113 @@ int main() {
             }
         } catch (const std::exception& e) {
             check(false, std::string("five-weight import threw: ") + e.what());
+        }
+    }
+
+    // A room's own animation and moving textures, written and read back
+    {
+        using namespace khdays::assets;
+        for (const char* name : {"a.png", "b.png"})
+            write_file(dir / name, kPng, sizeof(kPng));
+        Scene scene;
+        scene.name = "room";
+        scene.nodes = {{"room"}, {"sky", 0}, {"piece", 0, {1.0F, 2.0F, 3.0F}}, {"piece_j0", 2}};
+        scene.nodes[1].sky = true;
+        SceneMaterial still{"still", "a.png"};
+        SceneMaterial scrolling{"scrolling", "a.png"};
+        scrolling.scroll = {0.25F, -0.5F};
+        SceneMaterial framed{"framed", "a.png"};
+        framed.alpha_mode = NeutralMesh::AlphaMode::mask;
+        framed.double_sided = true;
+        framed.frame_pictures = {"a.png", "b.png"};
+        framed.frames = {{1, 10}, {0, 20}};
+        framed.frames_loop_from = 1;
+        scene.materials = {still, scrolling, framed};
+        ScenePrimitive tri;
+        tri.positions = {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}};
+        tri.uvs = {{0, 0}, {1, 0}, {0, 1}};
+        tri.colors = {{255, 255, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 128}};
+        tri.indices = {0, 1, 2};
+        auto with = [&](int material) {
+            ScenePrimitive p = tri;
+            p.material = material;
+            return p;
+        };
+        SceneMesh sky_mesh{"sky", 1, {}, {with(0)}};
+        SceneMesh ground{"ground", 0, {}, {with(1), with(2)}};
+        ScenePrimitive skinned = with(0);
+        skinned.joint_of = {0, 0, 0};
+        SceneMesh piece{"piece", 2, {3}, {skinned}};
+        scene.meshes = {sky_mesh, ground, piece};
+        SceneAnimation move{"piece", true, 0.5F};
+        move.tracks.push_back({3, SceneTrack::Path::translation, {0.0F, 1.0F}, {0, 0, 0, 10, 0, 0}});
+        move.tracks.push_back(
+            {3, SceneTrack::Path::rotation, {0.0F, 1.0F}, {0, 0, 0, 1, 0, 0.7071068F, 0, 0.7071068F}});
+        scene.animations = {move};
+        write_text(dir / "room.gltf", scene_to_gltf(scene));
+        try {
+            const ImportedModel m = import_gltf(dir / "room.gltf");
+            check(m.missing_textures.empty(), "room: every picture found");
+            check(m.nodes.size() == 7 && m.nodes[2].name == "piece" && near(m.nodes[2].translation[1], 2.0F) &&
+                      m.nodes[3].parent == 2,
+                  "room: nodes and their rest");
+            check(m.joints.size() == 1 && m.joints[0].node == 3, "room: the piece's joint is its node");
+            check(m.animations.size() == 1, "room: one animation");
+            if (m.animations.size() == 1) {
+                const auto& a = m.animations[0];
+                check(a.name == "piece" && a.loop && near(a.loop_from, 0.5F) && near(a.duration, 1.0F),
+                      "room: the animation's loop");
+                check(a.tracks.size() == 2 && a.tracks[0].node == 3 &&
+                          a.tracks[0].path == ImportedTrack::Path::translation && near(a.tracks[0].values[3], 10.0F) &&
+                          a.tracks[1].path == ImportedTrack::Path::rotation && near(a.tracks[1].values[5], 0.7071068F),
+                      "room: the keys");
+            }
+            check(m.model.meshes.size() == 4, "room: a mesh per primitive");
+            if (m.model.meshes.size() == 4) {
+                const auto& meshes = m.model.meshes;
+                check(meshes[0].sky && !meshes[1].sky && !meshes[3].sky, "room: the sky's mesh");
+                check(near(meshes[1].scroll[0], 0.5F) && near(meshes[1].scroll[1], -1.0F), "room: scroll in texels");
+                const std::vector<std::pair<std::string, int>> frames{{"b.png", 10}, {"a.png", 20}};
+                check(meshes[2].texture_frames == frames && meshes[2].texture_frames_loop &&
+                          meshes[2].texture_frames_loop_from == 1U && meshes[2].double_sided &&
+                          meshes[2].alpha_mode == NeutralMesh::AlphaMode::mask,
+                      "room: framed texture");
+                check(meshes[3].vertices.size() == 3 && meshes[3].vertices[0].joints[0] == m.joints[0].palette_index,
+                      "room: the piece skinned to its bone");
+            }
+            bool second = false;
+            for (const auto& [name, texture] : m.textures)
+                second = second || name == "b.png";
+            check(second, "room: a frame's own picture loaded");
+
+            // written again as a room change writes a model that moves by itself, and read back the same
+            check(moves_by_itself(m), "room: moves by itself");
+            std::map<std::string, GltfTextureRef> refs;
+            for (const auto& [name, texture] : m.textures)
+                refs[name] = {name, texture.width, texture.height, false};
+            write_text(dir / "again.gltf", scene_to_gltf(scene_of(m, refs)));
+            const ImportedModel again = import_gltf(dir / "again.gltf");
+            check(again.animations.size() == 1 && again.animations[0].loop &&
+                      near(again.animations[0].loop_from, 0.5F) && again.animations[0].tracks.size() == 2,
+                  "again: the animation");
+            check(again.joints.size() == 1 && again.joints[0].node >= 0 &&
+                      again.nodes[static_cast<std::size_t>(again.joints[0].node)].name == "piece_j0",
+                  "again: the piece's joint");
+            check(again.model.meshes.size() == 4, "again: the meshes");
+            if (again.model.meshes.size() == 4 && m.model.meshes.size() == 4) {
+                const auto& meshes = again.model.meshes;
+                const std::vector<std::pair<std::string, int>> frames{{"b.png", 10}, {"a.png", 20}};
+                check(meshes[0].sky && near(meshes[1].scroll[0], 0.5F) && meshes[2].texture_frames == frames &&
+                          meshes[2].texture_frames_loop_from == 1U,
+                      "again: sky, scroll and frames");
+                const auto& v = meshes[3].vertices[1];
+                const auto& was = m.model.meshes[3].vertices[1];
+                check(near(v.position[0], was.position[0]) && near(v.position[2], was.position[2]) &&
+                          v.joints[0] == again.joints[0].palette_index,
+                      "again: the piece's vertex on its joint");
+            }
+        } catch (const std::exception& e) {
+            check(false, std::string("room import threw: ") + e.what());
         }
     }
 

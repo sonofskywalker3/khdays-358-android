@@ -165,7 +165,9 @@ Seen with `KHDAYS_TRACE_UPDATES`, which prints every change:
 Seen with `KHDAYS_TRACE_CONTROLS`, `KHDAYS_TRACE_PAD` and `KHDAYS_TRACE_INPUT`
 on 2026-09-30: a Mission Mode mission from the start of its field (the
 `play` regression walk's route), where Config option 0 (`0x37c4`) was 0 and
-option 6 (`0x37c6`) 1 (Mission Mode's own start sets 1: `Ov008_SetupWorkArea`),
+option 6 (`0x37c6`) 1 (the guest game's state, which `Ov000_HandleLoadConfirm`
+copies whole from `/ttl/ttl.p2`, holds 1; the port now starts every new game at 0,
+X with the D-pad, the guest's included: `port/tools/prepare.py`),
 and challenge 07's field from the player's day-357 Story Mode save, where
 both were 0. What only the decompilation's C says, not a trace, is marked
 *(C, not traced)*.
@@ -327,6 +329,24 @@ pressing X". The route there is `port/tools/regress_walks/config.input`
 The save file is a 64 KB raw backup that starts with `KH358DAY` (a player's
 day-357 save, which the game loads, and writes to a new slot and reads back).
 
+**The mission worlds' rooms are KINGDOM HEARTS II's maps** (spec 030, seen
+2026-10-18 in the graphics dump, the player's KH2 copy and each room drawn beside
+its map). Days kept KH2's coordinates: a room lies on its KH2 map at KH2's units
+x 0.01 with the same axes and no move (the Usual Spot: 67% of its floor on the
+map's). Twilight Town, Beast's Castle, The World That Never Was and Olympus
+Coliseum also kept KH2's numbering: a room's model is named after its map
+(`mi/wd/wd_tt#2/mdl/tt_02` from `map/tt02.map`), often its textures too
+(`tt02_000` ...), and its id is mostly the map's number (ids from 84 up are
+variants and Days's own). Agrabah's and Halloween Town's did not: Days's
+`al_02*` streets are KH2's `al00`, its `al_01` (the Cave of Wonders' ring of
+rocks) `al07`, its `nm_02`, `nm_03` and `nm_06` graveyard rooms `nm02`; its
+palace rooms and water caves, the Coliseum's arenas with blocks and Halloween
+Town's crater were remade, and Agrabah's ruins and Halloween Town's square sit
+elsewhere than their maps. The 53 pairs, each with its evidence, are
+`studio/data/kh2_rooms.txt`; aw, pp, tw and zz are worlds KH2 lacks, and
+`dp_00`, `zz_46*`, `zz_53`, `eh_90/91`, `tt_95`, `al_16b` and `eh_3x` are Days's
+own rooms.
+
 ## 5. How to see it
 
 The native build prints these to stderr when the variable is set:
@@ -354,6 +374,25 @@ The native build prints these to stderr when the variable is set:
   VBlank, the game's frame count and the pad reads so far.
 - `KHDAYS_TRACE_PLAYER` -- the field players' positions every 30 frames.
 - `KHDAYS_TRACE_SCRIPT` -- each step of the action-script interpreter.
+- `KHDAYS_TRACE_SCENES` -- the field's event scenes (section 21): the field's record and script,
+  the scene controller's pending scene, the event's status, each skip target set and cleared, the
+  game's movies (`port/runtime/movies/scene_trace.c`).
+- `KHDAYS_TEST_DAY=<day>` -- the story's day set at the first field's construction (game-state
+  field 0): a new game's first field runs that day's script of mission 10000 (section 21).
+- `KHDAYS_TEST_EVENT=<mission>/<script>` -- the first field built from that mission and script.
+- `KHDAYS_TEST_SKIP_AT=<frames>` -- that many frames after a scene's stretch begins, the port asks
+  the game's own skip, as the event pause's Skip does (section 21).
+- `KHDAYS_TEST_SCENE=<slot>:<entry>` -- the event's first scene path (`4:3` on day 8) written over
+  with this one (`4:6`: EV_S#6), so that scene plays in its own place; the port leaves 30 frames after
+  the event closes (section 21).
+- `KHDAYS_SCENE_SHOTS=<dir>` -- while a scene of the field's event runs, both screens every 30 frames
+  as `<dir>/<scene>_<frame>.bmp` (EV_S_4_02400.bmp), headless only (the window's composition draws
+  without the frames these are made from); a day's monologue as `mnl_<record>_<frame>.bmp`.
+- `KHDAYS_SCENE_STATE=<file>` -- the event machine's state (0x2000 bytes) written at each event's
+  close as `<file>.<n>`, to compare a skip by the HD course with the DS's.
+- `KHDAYS_TEST_SCENE_START=<ms>` -- START pressed that many milliseconds into each HD scene's videos
+  (the scripted input cannot: the game, held for them, reads none); the game's pause then opens over
+  the paused video and the script's presses choose in it.
 - `KHDAYS_TRACE_PAD` -- every game frame's buttons: what the port gave
   `Pad_Sample` and what it made of them (held, pressed).
 - `KHDAYS_TRACE_CONTROLS` -- what the field does with its controls, when it
@@ -525,9 +564,18 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   meshes are drawn translucent: a glTF mesh by its material's alphaMode
   (OPAQUE: alpha ignored; MASK: each texel drawn whole or not by
   alphaCutoff; BLEND: translucent), an FBX mesh when any texel of its
-  texture is part way. (Taking a whole MASK body as translucent because of
+  texture or any vertex colour's alpha is part way. (Taking a whole MASK body as translucent because of
   its soft cut-out edges drew mods/HD Xion Boss's Final Xion seen through
-  itself, in shards: 2026-10-09.)
+  itself, in shards: 2026-10-09.) The vertex colours' alpha counts as glTF
+  has it, per triangle by its corners' mean (the DS's alpha is a
+  polygon's): under a MASK's cutoff the triangle is left out, a BLEND
+  triangle's polygon alpha is lowered by it, OPAQUE ignores it (an FBX
+  whose vertex alphas are all 0 or all 255 is taken as painted without
+  alpha). A remade Usual Spot shaded its floor in vertex colours black at
+  alpha 0.05: drawn opaque, it was a black hexagon before the curtain
+  (2026-10-18). The graphics dump and the studio write a mesh that does
+  not say (a DS model's, an FBX's) as BLEND when its texture's texels (A3I5,
+  A5I3) or its vertex colours have an alpha of their own, else MASK.
 
 - `KHDAYS_SHOTS=FRAME FRAME ...` -- both screens of those VBlanks as the 2D
   and 3D engines drew them, 256x192 each, as `KHDAYS_SHOT_DIR/frame_NNNNN.bmp`
@@ -575,8 +623,9 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   route through it would be: the game stops naming the address, the read
   and the function (exit code 6, section 13).
 - `SDL_GPU_DRIVER=vulkan` (or `direct3d12`) -- SDL's choice of graphics
-  backend overridden when the Video page's Graphics API is Automatic; the
-  port carries the shaders for both.
+  backend overridden when the Video page's Graphics API is Automatic (which
+  is otherwise Vulkan under Wine or Proton); the port carries the shaders
+  for both.
 - `KHDAYS_TEST_GPU_LOST=FRAME` -- at that frame the graphics card is taken as
   lost, as when Windows resets its driver (a `DXGI_ERROR_DEVICE_HUNG`): the
   port says so with the last 3D it sent the card (frame, internal resolution,
@@ -1181,6 +1230,24 @@ engine A shows bank D (DISPCNT `002e0f3c`); its frames 11084-11108 and
 11312, black before (an empty bank shown), are now the cross-fade from the
 shot before to the new one -- what the testers' black screens in cutscenes
 were.
+
+**A capture into a bank not mapped to the LCDC** (2026-10-17): the DS writes a
+capture only into a bank mapped to the LCDC (GBATEK, DISPCAPCNT's write block);
+the port wrote it whatever the bank's mapping. After a multiplayer mission won,
+the field asks for the mission review (scene 3, ov003: `Ov002_StepSessionMenu`'s
+case 0 -> `Ov002_SendSeatTally`, in a session and without the give-up flag),
+whose VBlank callback (`Ov003_DisplaySetup` -> `Gfx_ToggleCaptureMode`) arms a
+capture every VBlank, into bank C or D in turn, until `Ov003_Teardown`
+unregisters it. The last one armed is taken by the port at the next VBlank,
+after the results (scene 6) have mapped bank C to their BG (VRAMCNT 0x84) and
+loaded their characters there: the results' upper screen showed the captured
+pixels as vertical stripes (the players' reports, always after a mission won in
+multiplayer). Seen with `KHDAYS_TEST_REVIEW` (a give-up in a session goes on to
+the review as a won mission does: `runtime/menus/retry.c`) on two copies of the
+multiplayer walk: the review's captures all into banks in the LCDC (VRAMCNT 0x80),
+one at the scene change into bank C at 0x84, the results striped; now that
+capture is not written, the results whole, the review and the story's screen
+blends (f11082, bank D) as before.
 
 **The screen blends at the port's resolution** (2026-10-16, `gfx_render.c`
 `take_capture`): shown from the DS's bank, each cut was a 256x192 picture,
@@ -1983,6 +2050,23 @@ starts as from the camp (`Ov002_EnterSceneIfValidated` ->
 `Ov002_BeginMissionRun`, the event scripts loaded again), Roxas at the
 mission's start with his full HP.
 
+**The story's challenges** (2026-10-17, challenge 07 from the story camp's
+Holo-Missions with the player's save, `KHDAYS_TRACE_RETRY`): a challenge sets
+`data_0204c240`'s first byte to 3 (`Ov025_MissionList_StartMission`: bit 0 a
+Holo-Mission, bit 1 a challenge; Mission Mode's is bit 2) and copies the
+challenge's targets to `data_0204c254`. Its opening words are a scene's: the pause
+then is a scene's (the mode word 4, two entries, Continue and Skip). In play the
+pause is Mission Mode's (the mode word's bit 1, three entries, Continue and Give
+Up), and Give Up's yes goes straight to the results (scene 6, from
+`Ov002_StepSessionMenu`'s case 0, no game over), so the port's Retry runs there as
+in Mission Mode. One thing differs: with bit 1 and not bit 2, the field's
+construction multiplies the three targets at `data_0204c254 + 0x10` by 100 when
+its u16 at +0xe is 0 (`Ov002_ConstructGameplayScene`), and only the challenge's
+start copies them in, so a Retry would leave them 100 times larger each time; the
+port divides them back by 100 when it takes the Retry. Seen: targets 105 and 140,
+10500 and 14000 in play, the same after a Retry; the field again, without the
+results.
+
 What the pause draws is in its panel's draw entries
 (`SubObject_SetDrawParams`: the context's +0xc, then +0x18 a slot, 0x18
 bytes each -- source cell x, source row twice, destination x and y, width,
@@ -2460,6 +2544,13 @@ the five walks every 300 frames (Release, 2026-10-04):
   The port draws the badges in the three cells left of the chest icon, as
   in the list, lit by the saved bits or by the field context's byte at
   +0x8d4e + 4 x the bit (`Ov002_RequestMode`, set when one is picked up);
+  a mission with no chests (11 with badges: 10, 33, 37, 53, 58, 71, 77, 78,
+  80, 92, 93, their room keys not in `mi/mi/trbox`) has no chest icon nor
+  counter, the panel's cells there as its layout has them (mission 58, Day
+  194-197, seen 2026-10-18: row 19 the panel's upper edge, characters 0x090,
+  0x091, then 0x092 across; row 20 the name, columns 27-30 blank characters
+  0xce-0xd1, palette 10), so the badges take the icon's and the counter's
+  place, columns 27-29 of the row under the edge;
   none in Mission Mode (`data_0204c240` bit 1), nor for a number the list
   does not give the room key's mission (a challenge's). The panel's text is
   the list's name of the mission with a full stop in missions 17 and 18
@@ -2631,6 +2722,20 @@ maintainer's picture).
   127.5, short of the middle where the portal's countdown ends its digits.
   `hide3d` hid nothing until then (its rectangle was empty): the pause's and
   a tutorial's lines now hide the HUD's 3D, as their comments say.
+- **The label of a mission played again** (2026-10-17, the maintainer's
+  pictures; mission 11 in multiplayer with the player's save, and challenge
+  07): in the events of a mission played again the upper screen shows a label
+  at its top left, rows 0-13 -- "HOLOMEMORIA" in Mission Mode, a challenge's
+  "RELOJ PARADO" -- with "Todos pueden pulsar START y omitir" at its bottom in
+  multiplayer. An event is the state `dialog`, which shows the upper screen
+  whole at the picture's size, so the label was shown large (at 16:9 towards
+  the middle). The port's state `holo` (`data_0204c240`'s bits 0-2: the story
+  camp's Holo-Missions 1, a challenge 3, Mission Mode bit 2, 7 on the
+  multiplayer walk's host; 0 in a story's own mission and the Grey Area) puts
+  the label at the picture's top left against its edges, at the HUD's size,
+  and the rows under it whole as before; a challenge's label in play goes there
+  too. Seen in windows on both copies of mission 11: the label in the corner,
+  the line to skip at the bottom.
 
 ### 15.1 The title as the HD collection's theater menu (2026-10-09)
 
@@ -3089,6 +3194,67 @@ DS's three), drawn and run by the game: game slot g is file top + g
   file 99: UP from file 1, or Y from anywhere (as on the HD list); the walks reach
   it with UP, which the DS's own list also wraps to.
 
+**The autosave (2026-10-17).** Asked for by the maintainer (2026-10-15): after each
+cleared mission the game saves itself, by default into file 99
+(`runtime/menus/autosave.c`; `[save] autosave = file99 | played | off`).
+
+- **What owes one.** `Ov005_CommitMissionResults` records the results (a join as it
+  starts, the mods' `mission_end`). The autosave is owed when the routine records the
+  mission cleared, by its own branches on the results' configuration
+  (`data_ov005_0205b85c`): reward mode 255 (the story's) with flag 0x2086 and its +0x64
+  clear (else it only marks the mission seen), mode 8 ranked 0-3, the others ranked
+  0-2; never with flag 0x2087 (the give-up, `Ov002_RetireSubFlow`). A give-up from
+  Mission Mode's pause records rank -1.
+- **Where the game lets the player save next.** `Ov005_UpdateMenuExitTransition`:
+  with the transition's flag 4 the results go to Mission Mode's camp (scene 19,
+  ov008); with flag 1 or 2 it sets flag 0x18bd or 0x18c9 ("back from a mission") and
+  goes to the field (transition 10000, 10001 on day 357), whose phase 11 loads the
+  story's camp (ov025, `Ov002_LoadSubFlowOverlay`, kinds 8, 11 and 13) with the
+  prompt -4 or -6 for those flags (`Ov002_SetPhasePromptSelector`); when that camp
+  closes `Ov002_RetireSubFlow` clears both flags. The camps' save code is overlay
+  code: the card context each copy keeps (12 bytes: `data_ov008_02090fb4`,
+  `data_ov025_020b5760`) lies in the field's overlays' memory (ov025's in ov030's,
+  Roxas's), so it runs only while its camp is loaded. The autosave is written the
+  first time a camp's menu waits for the player: its running screen 0 (the words at
+  0x02090f0c, 0x020b574c), an option or an answer under its cursor (entry 1-9 or
+  101-107, the menu's state at the context's +0x959c, +0x88), the card idle
+  (`CARDi_TryWaitAsync`). Back on the title, nothing is owed any more.
+- **The write.** The camp's own save, as its save screen runs it
+  (`SaveMenuConfirm`, `SaveMenuTick`): a 0x1f00-byte block of the game's heap stands
+  for the screen's state (its faces at +0x28, card operation +0x238, save counter
+  +0x1ef8 given the highest of all the files, the two kept flags +0x1efc);
+  `Sleep_Block`; `BeginSaveToSlot(block, slot)` into the game slot the page view
+  puts the file in (on the row of field 0xc98, where the files allow); then
+  `CARDi_WaitAsync` and `PollSaveCardOp` until it is no longer -1 (0 written, 3
+  failed); `LatchTick` when written; `Sleep_Unblock`. It is all done at one
+  Pad_Sample, waiting for the card as the game's own synchronous reads do, so nothing
+  of the game runs between the state's signing and its two copies. The view is put
+  back as it was; with file 99, field 0xc98 too (the camps' save screens start their
+  cursor on it: the manual Save starts where it did). A failed write leaves the file
+  as it was (`khdays_slots_commit` writes whole files atomically); the player is told
+  either way, three seconds at the upper screen's top left in the game's 8-dot font
+  (`ui/autosave_notice.cpp`). A port file whose write fails is read again from the
+  disk (`khdays_slots_commit`): before, its new bytes stayed waiting and every later
+  save, the chip's too, failed with it. Mission Mode's guest game has no file and is never
+  saved; "the file being played" is the one the title loaded or a camp's Save wrote
+  last (`khdays_savelist_played_file`), a game never saved the first empty file.
+- **Seen** (`KHDAYS_AUTOSAVE_TEST` owes one when the game leaves the title and at
+  every result, for scripted runs that cannot clear a mission;
+  `KHDAYS_TRACE_AUTOSAVE` traces it): the save walk, at the story's camp opened in
+  the Grey Area (ov025, screen 0, entry 1), wrote `slot99.sav`, both copies signed,
+  counter 188 over the files' 187; the walk's own Save into file 2 in the same camp
+  26 seconds later differs from it in four bytes: the play time, the counter and
+  field 0xc98, and the walk's Save still went to file 2 as without the autosave.
+  With "the file being played" the same walk wrote file 1 (the one loaded), file 99
+  untouched; switched off, only the walk's own file 2 changed. Mission Mode with the
+  player's file loaded: at its camp after the results (ov008, screen 0, entry 101)
+  `slot99.sav` written (the chip untouched), and loaded again from CONTINUE's list
+  (the day's calendar, then the field). The mission walk and both copies of the
+  multiplayer walk (guest games) reached the camp and wrote nothing. File 99
+  read-only: "failed", the file byte for byte as it was. Not seen yet: a mission
+  cleared in play, the story's camp that opens by itself after one, the notice on
+  screen.
+
 **Not the port's yet:** the save after the story's ending (scene 9, ov009,
 which ov011's end asks for: `Ov011_DestroyScene`, `Scene_RequestPending(9)`)
 shows the game's own three slots, the chip's own view.
@@ -3173,6 +3339,28 @@ the same save): the list, DOWN, RIGHT (the second page, rows 10-19), A on
 "La captura de Xion" (825: the fade, the HD video with its subtitles), START
 (the video skipped, the list again), B (the title's menu again).
 
+**The theater's chapters (2026-10-17).** THEATER MODE shows on the title only
+when the save's story is complete (`Ov000_HandoffState`: game-state field
+0x44e, 3 bits, equal to 6), and the game then lists all its 28 movies: no
+chapter of the port's needs a lock of its own. A chapter record's u16s at 24
+and 26 name it, `<lang dir>/ctd/ct00100.ctd`'s message (id, group 50): 67 of
+the 109 have one; each of the others (35 with videos) is on the day of the
+named one before it, as its continuation (the opening's has none: the game's
+word for it). `theater_cine.py` writes the named chapters with videos, 53,
+each with its videos and its unnamed followers' in a row (`chapter` lines,
+DOP and DED as hd802 and hd843, CED left out). With Video `hd`, the port's
+list takes the game's: `cine_screen.c` keeps the chapters whose videos are
+there (each one's length from its MP4's `mvhd`), its own cursor (a row with
+UP and DOWN, round at the ends as the game's; a page with LEFT and RIGHT;
+held directions repeat), the game's sound for a move; A plays the chapter's
+videos as a scene's course with no event (`khdays_movie_hd_chapter`, the
+game's list held under them, START or their end back to it); the game gets B
+and START alone (`khdays_cinelist_buttons`), its closing. The buttons it
+reads are those the game's list would have got (`khdays_cinelist_seen`: the
+player's and a script's). Seen (Spanish, the maintainer's full save, one
+screen): the 53 chapters, DOWN to "Sin corazón" (day 9), A (hd007a with its
+subtitles, 565 pictures, none late), the list again on the same chapter.
+
 ### 15.6 The port's own situations (2026-10-14)
 
 `port/ui/situation_decide.c` tells the screen from what the game runs, measured on the
@@ -3203,10 +3391,11 @@ beside it and logs every frame where they differ.
 | field-3d-both | engine A changes screens at two VBlanks in a row (POWCNT1 bit 15; the game shows its 3D on both screens so, with the display capture) | -- |
 | field | scene 2 otherwise | -- |
 | info-upper | the panel of a mission's start (`data_ov002_0207f614`, its state +0x18c, 1-8 from f4207 to f4582 on the play walk) in 3-6: the mission's information on the upper screen, no deck | play walk f4229-4562 |
-| dialog | the field's event (ov023: `data_ov023_0208a784[1]`) has its status halfword's (+0x8758c) bit 1 set (`Ov023_SceneRun`); or a person talks in the field: the panel of a mission's start in state 10, its box across the upper screen's lower half (9-11 the talk: in 9 the HUD is still drawn, `Ov002_LeavePanelForMap` clearing BG1 and BG3 as it moves to 10; in 11 the HUD comes back) (no ov023 then; the story walk's input, then A through day 7's event, START on the tutorial's page, and UP and A towards Saix in the Grey Area) | story walk f10155-11926; Saix's words: state 10 f12954-13067, the box to f13064, the HUD again from f13082 in state 11 |
+| dialog | the field's event (ov023: `data_ov023_0208a784[1]`) has its status halfword's (+0x8758c) bit 1 set and bit 3 (closing, `Ov023_BeginClose`) clear while `Ov023_SceneRun` runs (an event over leaves 0xa there while ov023 stays loaded: mission 56 f6672-7997 runs, then 0xa); or a person talks in the field: the panel of a mission's start in state 10, its box across the upper screen's lower half (9-11 the talk: in 9 the HUD is still drawn, `Ov002_LeavePanelForMap` clearing BG1 and BG3 as it moves to 10; in 11 the HUD comes back) (no ov023 then; the story walk's input, then A through day 7's event, START on the tutorial's page, and UP and A towards Saix in the Grey Area) | story walk f10155-11926; Saix's words: state 10 f12954-13067, the box to f13064, the HUD again from f13082 in state 11 |
 | hud | the field, tutorial or field-3d-both otherwise | -- |
 | challenge | the story's camp started the mission as a challenge: `data_0204c240` bit 1 (`Ov025_MissionList_StartMission`: 3 with the challenge's thresholds copied, 1 otherwise); after Mission Mode's camp the byte is its session's (`Ov008SessionInfo`: 3 a wireless host), so not a challenge | run07 walk from f5359; the multiplayer walk (host, 3) not one |
 | lower-3d | engine A on the lower screen (POWCNT1 bit 15 clear) and not changing screens | story walk f11933-11943 |
+| lower-shown | field-3d-both and the lower screen shows a picture: a quarter of its dots or more lit and its brightness not faded past 12 of 16, kept until 8 decisions dark (`host/render/onescreen.c`) | Holo-Missions 61 (mission 304), the Guard Armor in area 71: Sora's memories under the game's noise |
 | party-4 | ov022's member count (`func_ov022_020882f8`'s root +0x34) >= 4 | -- |
 | event | the pause opened while an event of the field runs (ov023's scene there: `data_ov023_0208a784[1]` set): a cutscene's pause, "Continue" and "Skip", the lower screen without the field's HUD | story walk with START in its dialog, f10737-11034; none in the mission walk's battle pause (f5029-5529) |
 
@@ -3246,6 +3435,19 @@ DS's 256 columns at 4:3, which the port does only for wider pictures). `repeat x
 along its own rows only (before, it claimed every row as well, and its black strip covered the
 world's band). The 3D on the lower screen alone (lower-3d) was seen only in a fade to black
 (story walk f11929-11953): no layout of its own.
+Then Sora's memories (2026-10-19, Holo-Missions 61 = mission 304 from the player's 100% save: the
+Coliseum's games, areas 21-61 a round each, the Guard Armor in area 71): with the 3D on both screens
+the lower screen shows Sora's own fight with the Guard Armor in Traverse Town under the game's noise,
+in step with Roxas's -- before the battle in its event, and a few seconds into it. On one screen the
+event shows the lower screen in the picture's place while they last (as KH Melon Mix does), and the
+battle the two screens as one, joined in the middle (`halves`: Roxas's left half and Sora's right
+half, the fights in step, each at its own brightness), the HUD over them. The route: the door north of the exterior's start
+(x 0, z -19.6) to the first event, Phil's "¿Todo listo?" answered Sí (UP then A), then A all along.
+The two fights take turns, a frame each: `Ov023_Dual3DUpdate` publishes the screen it draws in
+`data_0204be04`, and `Ov022_ReadSelectionInput` drops L and R on the memory's frames (not 0), so a
+lock-on press made then was lost (the testers: "it does not let me lock on"). The port keeps such a
+press for the player's next frame, and reads the lock-on's state on the player's frames alone
+(`port/tools/prepare.py`, `runtime/input/controls_hooks.c`).
 Then the credits (2026-10-15, through the Theater's last entry, "El lugar de siempre", with a copy
 of the maintainer's save and `movies = ds`): after the movie, ov011's staff roll runs up both
 screens as one -- the names, the characters' pictures at the left, the game's logo, last the END
@@ -4192,3 +4394,129 @@ Read from the decompilation and measured in the port (specs/022 research.md).
 - **A room's collision has a format limit of its own**: a node of the collision tree names its
   first face in 16 bits, so a room holds at most 32,767 faces of each kind (khdays-studio refuses
   more); the largest such room made from nm room 9 is 8,081,760 bytes.
+
+## 20. What gameplay mods hear and change (spec 028)
+
+The mods' interface (`runtime/scripts`, `docs/SCRIPTING.md`) joins the game at these points, each a
+documented build-time edit (`port/tools/prepare.py` `HOOKS`); read in the running game 2026-10-16
+with `KHDAYS_TRACE_MODS=1`, the example mods (`port/mods_examples`) and the walks.
+
+- **The frame point**: `main`'s frame loop (0x02000cac), right after `SoundMgr_Update`: the game's
+  logic of the frame is done, before its pacing. Every scene the walks pass (1 title, 7 character
+  select, 19 Mission Mode's camp, 5 the story's camp, 2 the field, 6 the results) reaches it once
+  per logic frame: 974 frame points over 1,948 VBlanks in the title, 1,214 over 2,432 in the field.
+  The pause reaches it too (`gPauseMode` 1: the objects stand still).
+- **The field begins**: `Ov002_ConstructGameplayScene`, again after Retry. `Ov002_BeginMissionRun`
+  starts a run of it more than once a mission (its gameplay state 2 entered again: mission 94 started
+  two runs 32 frames apart), so the mission's start is the first run after the field is made. In
+  Story Mode the Grey Area is a field too: walking into it raised a start with `data_0204c23c` 0.
+- **The results**: `Ov005_CommitMissionResults` runs after a give-up as well (mission 94 given up
+  from the pause: rank -1, `rewardMode` not 255), with flag 0x2087 (`Ov002_RetireSubFlow`) set from
+  the game over on. A cleared or lost mission is not traced yet.
+- **The game's state** made anew or loaded from a save happens in the title (scene 1): loading the
+  walks' save changed 20 item counts and the munny (300) there, before the character select.
+- **The local player's battle actor** is `GetEntryField20ByIndex(Session_GetLocalPlayerIndex())`:
+  the field players' table at `*(data_ov022_020b2e78 + 4)`, read with the battle (ov022) loaded; HP
+  at +0x12, maximum +0x16, position +0x48c. In mission 94 (Mission Mode's tutorial) the D-pad moved
+  it from (0, 0.01, 0) to (5.11, 1.83, -34.99); a mod's `player.set_hp` through `Ov022_ActorSetHp`
+  took Roxas from 62 to 55 of 62 and raised the `hp` event for that actor. Every HP change of a
+  battle actor goes through `Ov022_ActorSetHp` (`Ov022_ReceiveHit`, `Ov022_ApplyDamageAndFlagHit`,
+  items, the party's network state).
+
+## 21. Event scenes and their skip (spec 029)
+
+Read in the decompilation and the shipped data, then traced with `KHDAYS_TRACE_SCENES` (2026-10-17,
+the story walk and `KHDAYS_TEST_DAY`).
+
+- **The scenes are the event archives' entries.** `ev/EV_S.p2` (206 entries, the story's shared
+  scenes) and the worlds' `EV_TT`, `EV_NM`, `EV_BB`, `EV_AL`, `EV_AW`, `EV_HE`, `EV_PP` and
+  `EV_DP` hold scripts of the game's one script machine (section 18): a word, the offset of the
+  script's data, the steps from 4, then the data -- its UTF-8 texts and, for each text a step
+  names (operand mode 0x40), a record of seven words: the Japanese, English, French, German,
+  Italian and Spanish texts' offsets in the data, -1 for one the ROM lacks (the scenes have no
+  Japanese), then -1. `Ov023_LoadScripts` opens `ev/EV_S.p2` and the world's archive when the field's
+  event begins; the field's script (mission 10000's day script, a mission's area) calls the scene's
+  script one level down (depth 1 of the event's machine).
+- **A scene's skip.** Step 0.10 (`Game_ActionSetBranchTarget`) keeps a jump for later: the target
+  (`state + 0x584`, the entry's script start + the operand) and its depth (`+0x580`); -1 forgets it;
+  either way it clears the skip request (`+0x588`). 675 of the archives' entries set one target,
+  +0x1c, in their first steps (the step at 0x50 of the entry) and clear it at their end; 74 set
+  none. Skip in an event's pause (`PauseMenu_Frame`, entry 1 when the mode word lacks bit 1) stops
+  the sound effects (`SoundMgr_StopAllSePlayers`) and sets the request through
+  `Ov023_FlushTextBox` (`SetWordAt0x588To1` on the event's state at root + 0x4b88); the machine's
+  next step (`Game_UnwindActionStack`) lets the stretch's waits and callbacks go, pops to the
+  target's depth and goes on at the target, and `PauseMenu_OpenIfAllowed` runs the event until the
+  main screen's master brightness reaches -16. What follows the target is the scene's end: it runs
+  whether the player watched or skipped. Traced: a skip the port asked 60 frames into day 8's first
+  scene (EV_S#3) jumped to +0x1c on the next step, the scene cleared its target at +0x16ec and the
+  event closed (status 0xa, then 0) 17 frames later.
+- **Which scene runs.** The running script, read from memory when its target is set (the depth's
+  entry +0xc is the start of its steps, 4 bytes after the entry's first word), is its ROM entry byte
+  for byte: day 7's morning runs EV_S#196 (the castle at night), then EV_S#0 (Roxas in his room);
+  day 8's starts with EV_S#3 (Saïx sends Roxas on missions). The movies' subtitle schedules set
+  targets too, from their `_m` sections (the prologue's movie 818: mission 10000's script 400,
+  section `_m`; group 3 is the movie player's, ov024 / ov012).
+- **The day's script.** `Ov002_ConstructGameplayScene` copies its record (its argument, else
+  `data_0204c240`: the mission at +2, the script at +4) to the field's root +0x8ba8 / +0x8baa and
+  opens `mi/mi/%04d`; `Ov023_LoadScripts` names the script `Ov002_FormatResultLine(0)` ("%d" of
+  +0x8baa). In the story both fields of the walk were built from mission 10000, script 0, and the
+  script number became the story's day in the same frame (400 the prologue, 7 on day 7): the day is
+  the game state's field 0 (9 bits, the save's day). Setting it to 8 at the first field's construction
+  (`KHDAYS_TEST_DAY=8`) made that field run 10000's script 8 and its first scene.
+- **Where a scene is played.** The field's scripts load a scene with step 0.2
+  (`Game_ActionLoadArenaResource`) naming it by a text of their data, `<slot>:<entry>`: slot 4 the
+  shared archive EV_S, slot 5 the mission's world's (`EV_TT`...), slot 3 a path built from the event
+  code (`Ov023_BuildEventTextPath`), 0 a mission script's own section (`0:sys`, `0:lbcmn`). Day 7's
+  `_e` loads `4:196`, `4:0` and `4:2`, day 8's `4:3` and `4:4`; over the missions' scripts 285 such
+  loads name slot 4 and 487 slot 5, 302 different scenes (EV_S#6, the clock tower on day 8, from the
+  end of mission 0001, `mi/0001/99:_e`). Written over in memory (`KHDAYS_TEST_SCENE=4:6` on day 8's
+  `4:3`), the event played EV_S#6 whole in its own place, the clock tower of Twilight Town: a scene
+  loads its stage and characters itself (its data names them, `/mi/wd/wd_tt`, `mi/ch/07.z`).
+- **The day's monologue.** Scene 10 (ov007) is Roxas's words over black before the calendar, no
+  script: `Ov007_SceneInit` picks a record of `ui/mnl/mnl_&.s` (a count at +4, then eight texts,
+  each a length word and UTF-16) from the story's day, the game state's field 0: days 7 to 13 give
+  records 1 to 7, any other day record 0 (the prologue's, after the clock tower: day 255). A
+  (`gPadPressed & 1`) shows the next lines; START (`& 8`) goes to the fade-out from any of its
+  steps; `Ov007_RequestSceneChange` then asks for the calendar. The theater's voice-only clips tell
+  the same texts in their own words: hd000 record 0, hd003 record 1, hd007a to hd007e records 3 to
+  7; record 2 (day 8, his first day of work) has none. Their pictures are black and their sound is
+  the voice alone (digital silence between the lines, no music), so the port plays only their sound
+  over the game's page (`mnl#<record>` in the scene map), from `Ov007_SceneInit` to
+  `Ov007_RequestSceneChange`, at the voices' volume.
+- **How the map was made, and checked.** `tools/hd/scene_match.py` pairs scenes by their lines (the
+  theater's subtitles against the scripts' texts, in story order); the theater retranslated its
+  lines, so short scenes were paired by meaning, read side by side. `tools/hd/scene_census.py` plays
+  every shared scene in place (`KHDAYS_TEST_SCENE`) and keeps its pictures; `tools/hd/scene_compare.py`
+  sets them over the video's at the same fractions, one sheet per entry, and every pair was looked
+  at (scenes without lines were paired by them alone). `tools/hd/scene_report.py` says where each of
+  the collection's 142 videos plays (a scene, a monologue, a movie, or not played and why) and fails
+  on an entry whose video the collection or whose script the game lacks.
+- **START over an HD scene.** The video and its sound pause and the game is let go with START,
+  pressed every other frame until its pause opens: `PauseMenu_PollInput` refuses one while the
+  screen's brightness moves, and a scene held at its start is in its fade-in (seen: the first START
+  refused, the pause open 35 frames later). The pause's panel is engine A's BG3 over the scene's 3D,
+  which the DS darkens (BLDCNT 0xc1, BLDY 8); on one screen the port draws the situation's shapes
+  with the video's picture behind them and no 3D, on two the game's screens as they are. Skip
+  (`Ov023_FlushTextBox`, +0x588) unwinds the event and clears its target, which ends the course;
+  Continue (`PauseMenu_GetMode` back to 0, the request clear) holds the game again and the video
+  goes on. Seen on day 7's castle (hd002), both ways.
+- **The theater's music over its videos.** Most of the theater's videos carry the voices and effects
+  alone (hd848, Xion's end: near silence up to 2.9 s between lines, the DS movie 848's sound the same
+  to a tenth of a decibel); the theater plays music over them from each event file's
+  `SCHEDULE_CATEGORY_BGM`: `BGM1` cues (`FrameStart`, `FrameEnd`, `SoundName` bgm_NNN, 30 frames a
+  second), `VOLUME1` ramps (to `Param` percent between two frames, from the level before; all of
+  curve 0), and `BgmStartSet` / `BgmEndSet` (FIELD: the music comes from the video before or goes
+  on into the next; STOP). 129 of the 214 event files have cues, the same in every language; one
+  track each at a time; hd848 plays bgm_222 from frame 390 to 5080 at 50 %, faded out over its last
+  80 frames. The tracks are `sound/bgm_NNN.win32.scd` (SEDBSSCF, version 3: the tables at the
+  header's size, u16 at 0x0e; the sounds' offsets at the tables' +0x0c; a sound's 0x20-byte header:
+  its stream's size, channels, rate, codec 6 = Ogg Vorbis, its loop's start and end in bytes into
+  the stream, always a page's start, and the size of what precedes the stream: a 0x20-byte Ogg
+  header whose third byte the Vorbis header pages are XORed with, the seek table's size and the
+  Vorbis header's at +0x10, the seek table, the pages). A loop's end of 0 means the track plays
+  once; 21 of the tracks the port's videos use, 48,000 Hz stereo, some shorter than their cues
+  (hd063's 204.8 s on a track of 52.7 s), so the loop matters. The DS plays music under those
+  scenes from its own sequences, which the port silences while a video plays; the theater's
+  schedule is followed instead (`tools/hd/theater_movies.py --music`, `host/movies/theater_music.c`).
+  Seen: hd004 (day 8) played bgm_213 50.4 s from its first frame, the video 1,513 frames; hd818 (the
+  prologue's movie) bgm_219 from frame 1038 for 64.6 s, both as their schedules say.

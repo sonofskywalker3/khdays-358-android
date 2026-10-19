@@ -18,6 +18,9 @@ struct Settings {
     int cache_mb = 512;        // the previews' memory budget (grows with use up to it)
     bool browser_tree = true;  // the catalog as folders (else one list)
     std::string theme;         // the colour palette: kh1, kh2, kh3, days, mom; empty: MoM's
+    // KINGDOM HEARTS HD 1.5+2.5 ReMIX's folder, KH2's rooms come from; empty: the one the install made
+    // its HD pieces from (setup/state.json)
+    std::string collection_1525;
 };
 
 // The settings file of a port folder.

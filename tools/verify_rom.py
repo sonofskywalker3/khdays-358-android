@@ -15,6 +15,12 @@ CAPACITY_OFFSET = 0x14  # the cartridge's capacity: 128 KiB shifted left by this
 USED_SIZE_OFFSET = 0x80  # the ROM's used size: a trimmed dump ends here
 LARGEST_CAPACITY_SHIFT = 12  # 512 MiB, the largest DS cartridge
 
+# The header's area past its 0x200 bytes, up to 0x1000: the console loads none of it and the game never
+# reads it (the port keeps the first 0x200, system/header.bin), and dumpers fill it differently -- a
+# No-Intro dump keeps 187 bytes of the cartridge there, others zeroes. A second hash leaves it out.
+HEADER_FREE_START = 0x200
+HEADER_FREE_END = 0x1000
+
 REGION_BY_CODE = {
     "E": "USA",
     "J": "Japan",
@@ -36,15 +42,17 @@ class RomInfo:
     file_size: int
     sha256: str
     region: str
+    header_free_sha256: str = ""
 
 
 def decode_ascii(raw: bytes) -> str:
     return raw.split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
 
 
-def whole_dump_sha256(path: Path) -> str:
+def whole_dump_sha256(path: Path, header_free: bool = False) -> str:
     """The ROM's SHA-256 as a whole dump of its cartridge. A trimmed dump (cut after the ROM's used
-    size) is hashed with the cartridge's 0xFF padding put back, so it matches the whole dump."""
+    size) is hashed with the cartridge's 0xFF padding put back, so it matches the whole dump. With
+    `header_free`, the header's area 0x200-0xFFF counts as zeroes."""
     size = path.stat().st_size
     with path.open("rb") as stream:
         header = stream.read(HEADER_MIN_SIZE)
@@ -56,6 +64,10 @@ def whole_dump_sha256(path: Path) -> str:
             padding = capacity - size
     digest = hashlib.sha256()
     with path.open("rb") as stream:
+        if header_free:
+            first = bytearray(stream.read(HEADER_FREE_END))
+            first[HEADER_FREE_START:] = bytes(max(0, len(first) - HEADER_FREE_START))
+            digest.update(first)
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     fill = b"\xff" * (1024 * 1024)
@@ -95,6 +107,7 @@ def read_rom_info(path: Path) -> RomInfo:
         file_size=path.stat().st_size,
         sha256=whole_dump_sha256(path),
         region=region,
+        header_free_sha256=whole_dump_sha256(path, header_free=True),
     )
 
 
@@ -115,11 +128,17 @@ def load_database(path: Path) -> list[dict[str, Any]]:
 
 
 def find_supported_rom(info: RomInfo, roms: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The entry the ROM is: its whole hash, or its hash without the header's unused area (another
+    dumper's copy of the same cartridge)."""
     actual_hash = info.sha256.lower()
+    header_free = info.header_free_sha256.lower()
 
     for entry in roms:
         expected_hash = str(entry.get("sha256", "")).lower().strip()
         if expected_hash and expected_hash == actual_hash:
+            return entry
+        expected_free = str(entry.get("sha256_header_free", "")).lower().strip()
+        if expected_free and expected_free == header_free:
             return entry
 
     return None

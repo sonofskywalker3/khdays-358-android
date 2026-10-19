@@ -69,8 +69,6 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_ENHANCEMENTS] = {"Enhancements", "Améliorations", "Verbesserungen", "Miglioramenti", "Mejoras"},
     [TXT_STICKS_AND_CAMERA] = {"Sticks and camera", "Sticks et caméra", "Sticks und Kamera", "Levette e telecamera",
                                "Palancas y cámara"},
-    [TXT_RESTORE_DEFAULTS] = {"Restore defaults", "Valeurs par défaut", "Standard wiederherstellen",
-                              "Ripristina predefiniti", "Restablecer valores"},
     [TXT_LANGUAGE] = {"Language", "Langue", "Sprache", "Lingua", "Idioma"},
     /* a scene keeps the language it was built in */
     [TXT_LANGUAGE_NOTE] = {"This menu changes at once; the game's own text when the screen you are on ends (a "
@@ -103,9 +101,6 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_SYSTEM] = {"System", "Système", "System", "Sistema", "Sistema"},
     [TXT_CLOSE] = {"Close", "Fermer", "Schließen", "Chiudi", "Cerrar"},
     [TXT_BACK] = {"Back", "Retour", "Zurück", "Indietro", "Volver"},
-    [TXT_TITLE_SETTINGS] = {"Settings - %s", "Réglages - %s", "Einstellungen - %s", "Impostazioni - %s",
-                            "Ajustes - %s"},
-    [TXT_TITLE_CONTROLS] = {"Controls - %s", "Commandes - %s", "Steuerung - %s", "Comandi - %s", "Controles - %s"},
     [TXT_NO_GAMEPAD] = {"No gamepad connected", "Aucune manette connectée", "Kein Controller verbunden",
                         "Nessun controller collegato", "Ningún mando conectado"},
     [TXT_NOTHING] = {"Nothing", "Rien", "Nichts", "Niente", "Nada"},
@@ -337,6 +332,16 @@ static const char *const texts[TXT_COUNT][5] = {
                             "¿Cerrar de todos modos?"},
     [TXT_CLOSE_ANYWAY] = {"Close anyway", "Fermer quand même", "Trotzdem schließen", "Chiudi comunque",
                           "Cerrar igualmente"},
+    [TXT_QUIT_GAME] = {"Quit the game", "Quitter le jeu", "Spiel beenden", "Esci dal gioco", "Salir del juego"},
+    [TXT_QUIT_GAME_Q] = {"Quit the game?", "Quitter le jeu ?", "Spiel beenden?", "Uscire dal gioco?",
+                         "¿Salir del juego?"},
+    [TXT_QUIT_GAME_DETAIL] = {"What has not been saved in the game is lost. The settings changed are kept.",
+                              "Ce qui n'a pas été sauvegardé dans le jeu est perdu. Les réglages modifiés sont gardés.",
+                              "Was im Spiel nicht gespeichert wurde, geht verloren. Geänderte Einstellungen bleiben.",
+                              "Ciò che non è stato salvato nel gioco va perso. Le impostazioni cambiate restano.",
+                              "Lo que no hayas guardado en la partida se pierde. Los ajustes cambiados se conservan."},
+    /* %s: the port's version (the VERSION file's). */
+    [TXT_VERSION] = {"Version %s", "Version %s", "Version %s", "Versione %s", "Versión %s"},
     /* %s: the controller's name. */
     [TXT_NOT_A_GAMEPAD] = {"%s is not recognized as a standard gamepad, so it is not used",
                            "%s n'est pas reconnue comme une manette standard : elle n'est pas utilisée",
@@ -437,11 +442,6 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "Der DS zeichnet Texturen ohne Glättung.", "Il DS disegna le texture senza filtro.",
                                  "La DS dibuja las texturas sin suavizado."},
     [TXT_VIDEO_HD] = {"HD graphics", "Graphismes HD", "HD-Grafiken", "Grafica HD", "Gráficos HD"},
-    [TXT_VIDEO_HD_NOTE] = {"Uses the replacements in your mods' folders.",
-                           "Utilise les remplacements des dossiers de vos mods.",
-                           "Verwendet die Ersatzgrafiken in den Ordnern deiner Mods.",
-                           "Usa le sostituzioni nelle cartelle delle tue mod.",
-                           "Usa los reemplazos de las carpetas de tus mods."},
     [TXT_VIDEO_DUMP] = {"Dump graphics", "Extraire les graphismes", "Grafiken ausgeben", "Esporta grafica",
                         "Volcar gráficos"},
     [TXT_VIDEO_DUMP_NOTE] = {"Writes every texture and graphic shown to saves/dump, and the colours each 2D sheet is "
@@ -531,16 +531,17 @@ static const char *const texts[TXT_COUNT][5] = {
                                   "Los subtítulos de las películas del juego. También lo pregunta una partida nueva."},
     [TXT_VIDEO_BACKEND] = {"Graphics API", "API graphique", "Grafik-API", "API grafica", "API gráfica"},
     [TXT_VIDEO_BACKEND_AUTO] = {"Automatic", "Automatique", "Automatisch", "Automatica", "Automática"},
-    [TXT_VIDEO_BACKEND_NOTE] = {"What draws the picture: Automatic lets the system choose (Direct3D 12 on Windows). If "
-                                "the graphics card stops answering, try Vulkan.",
-                                "Ce qui dessine l'image : Automatique laisse le système choisir (Direct3D 12 sous "
-                                "Windows). Si la carte graphique ne répond plus, essayez Vulkan.",
-                                "Was das Bild zeichnet: Automatisch lässt das System wählen (unter Windows Direct3D "
-                                "12). Wenn die Grafikkarte nicht mehr antwortet, Vulkan versuchen.",
-                                "Cosa disegna l'immagine: Automatica lascia scegliere al sistema (Direct3D 12 su "
-                                "Windows). Se la scheda grafica smette di rispondere, prova Vulkan.",
-                                "Lo que dibuja la imagen: Automática deja elegir al sistema (Direct3D 12 en Windows). "
-                                "Si la tarjeta gráfica deja de responder, prueba Vulkan."},
+    [TXT_VIDEO_BACKEND_NOTE] = {"What draws the picture: Automatic is Direct3D 12 on Windows, Vulkan on a Steam Deck "
+                                "or under Proton. If the graphics card stops answering, try Vulkan.",
+                                "Ce qui dessine l'image : Automatique est Direct3D 12 sous Windows, Vulkan sur un "
+                                "Steam Deck ou sous Proton. Si la carte graphique ne répond plus, essayez Vulkan.",
+                                "Was das Bild zeichnet: Automatisch ist unter Windows Direct3D 12, auf einem Steam "
+                                "Deck oder unter Proton Vulkan. Wenn die Grafikkarte nicht mehr antwortet, Vulkan "
+                                "versuchen.",
+                                "Cosa disegna l'immagine: Automatica è Direct3D 12 su Windows, Vulkan su uno Steam "
+                                "Deck o con Proton. Se la scheda grafica smette di rispondere, prova Vulkan.",
+                                "Lo que dibuja la imagen: Automática es Direct3D 12 en Windows y Vulkan en una Steam "
+                                "Deck o con Proton. Si la tarjeta gráfica deja de responder, prueba Vulkan."},
     [TXT_BACKEND_REFUSED] = {"the graphics API %s cannot run here (%s); the system's choice is used",
                              "l'API graphique %s ne peut pas fonctionner ici (%s) ; le choix du système est utilisé",
                              "die Grafik-API %s läuft hier nicht (%s); die Wahl des Systems wird verwendet",
@@ -724,6 +725,8 @@ static const char *const texts[TXT_COUNT][5] = {
     /* a group's places as the game's own bars label them (UI/mlt/res_&.p2) */
     [TXT_ROOM_PLACE] = {"%dP", "J%d", "S%d", "G%d", "J%d"},
     [TXT_ROOM_YOU] = {"You", "Vous", "Du", "Tu", "Tú"},
+    [TXT_ROOM_LEVEL] = {"Lv. %d", "Niv. %d", "Lv. %d", "Liv. %d", "Nv. %d"},
+    [TXT_SELECT_RANDOM] = {"Random", "Aléatoire", "Zufällig", "Casuale", "Aleatorio"},
     [TXT_NEEDS_GAME_DATA] =
         {"The game's data is not here. The port looks for it in:\n%s\n\nExtract it from your own copy of "
          "the game with tools/extract_data.py (the README's \"Getting started\"), and start the "
@@ -793,6 +796,83 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_TEST_PRESS] = {"Press a key or a button: %s", "Appuyez sur une touche ou un bouton : %s",
                         "Taste oder Knopf drücken: %s", "Premi un tasto o un pulsante: %s",
                         "Pulsa una tecla o un botón: %s"},
+    [TXT_MODS] = {"Mods", "Mods", "Mods", "Mod", "Mods"},
+    [TXT_MOD_ENABLED] = {"Enabled", "Activé", "Aktiviert", "Attivo", "Activado"},
+    [TXT_MOD_EARLIER] = {"Load earlier", "Charger avant", "Früher laden", "Carica prima", "Cargar antes"},
+    [TXT_MOD_LATER] = {"Load later", "Charger après", "Später laden", "Carica dopo", "Cargar después"},
+    [TXT_MOD_RESUME] = {"Resume", "Reprendre", "Fortsetzen", "Riprendi", "Reanudar"},
+    [TXT_MOD_RUNNING] = {"Running", "En cours", "Läuft", "In esecuzione", "En marcha"},
+    [TXT_MOD_OFF] = {"Off", "Désactivé", "Aus", "Disattivato", "Desactivado"},
+    [TXT_MOD_STOPPED] = {"Stopped by an error: %s", "Arrêté par une erreur : %s", "Durch einen Fehler gestoppt: %s",
+                         "Fermato da un errore: %s", "Detenido por un error: %s"},
+    [TXT_MOD_PAUSED] = {"Paused: %s", "En pause : %s", "Pausiert: %s", "In pausa: %s", "En pausa: %s"},
+    [TXT_MOD_REFUSED] = {"Not loaded: %s", "Non chargé : %s", "Nicht geladen: %s", "Non caricato: %s",
+                         "No cargado: %s"},
+    [TXT_MOD_ORDER_NOTE] = {"Mods later in the list run after the earlier ones: their changes stand.",
+                            "Les mods plus bas dans la liste passent après les autres : leurs changements l'emportent.",
+                            "Spätere Mods der Liste laufen nach den früheren: ihre Änderungen gelten.",
+                            "I mod più in basso nell'elenco vengono dopo gli altri: valgono le loro modifiche.",
+                            "Los mods más abajo en la lista van después de los demás: sus cambios prevalecen."},
+    [TXT_ROOM_NEEDS_MODS] = {"This room plays with these mods: %s", "Ce salon joue avec ces mods : %s",
+                             "Dieser Raum spielt mit diesen Mods: %s", "Questa stanza gioca con questi mod: %s",
+                             "Esta sala juega con estos mods: %s"},
+    [TXT_MOD_HOST_SETS] = {"In a room, the host's options are the ones that count.",
+                           "Dans un salon, ce sont les options de l'hôte qui comptent.",
+                           "In einem Raum gelten die Optionen des Hosts.",
+                           "In una stanza contano le opzioni dell'host.",
+                           "En una sala cuentan las opciones del anfitrión."},
+    [TXT_AUTOSAVE] = {"Autosave", "Sauvegarde auto", "Automatisch speichern", "Salvataggio automatico", "Autoguardado"},
+    [TXT_AUTOSAVE_FILE99] = {"In file 99", "Dans le fichier 99", "In Datei 99", "Nel file 99", "En el archivo 99"},
+    [TXT_AUTOSAVE_PLAYED] = {"In the file being played", "Dans le fichier en cours", "In der gespielten Datei",
+                             "Nel file in gioco", "En el archivo en juego"},
+    [TXT_AUTOSAVE_NOTE] = {"After each completed mission, once the game is back where it lets you save: into file 99 "
+                           "(AUTO in the lists), or into the file you are playing (a game never saved: the first "
+                           "empty file).",
+                           "Après chaque mission réussie, quand le jeu est de retour là où il laisse sauvegarder : "
+                           "dans le fichier 99 (AUTO dans les listes), ou dans le fichier en cours (une partie jamais "
+                           "sauvegardée : le premier fichier vide).",
+                           "Nach jeder geschafften Mission, sobald das Spiel wieder dort ist, wo es speichern lässt: "
+                           "in Datei 99 (AUTO in den Listen) oder in die gespielte Datei (ein nie gespeichertes "
+                           "Spiel: die erste leere Datei).",
+                           "Dopo ogni missione completata, quando il gioco torna dove lascia salvare: nel file 99 "
+                           "(AUTO negli elenchi) o nel file in gioco (una partita mai salvata: il primo file vuoto).",
+                           "Tras cada misión completada, cuando el juego vuelve a donde deja guardar: en el archivo 99 "
+                           "(AUTO en las listas) o en el archivo en juego (una partida nunca guardada: el primer "
+                           "archivo vacío)."},
+    [TXT_SAVE_FILES] = {"Files in the game's lists", "Fichiers dans les listes du jeu",
+                        "Dateien in den Listen des Spiels", "File negli elenchi del gioco",
+                        "Archivos en las listas del juego"},
+    [TXT_SAVE_FILES_ALL] = {"All 99", "Les 99", "Alle 99", "Tutti i 99", "Los 99"},
+    [TXT_SAVE_FILES_DS] = {"3, as on the DS", "3, comme sur DS", "3, wie auf dem DS", "3, come su DS", "3, como en DS"},
+    [TXT_SAVE_FILES_NOTE] = {"The game's own save and load lists (without the HD save screens): the port's 99 files in "
+                             "pages of three, or the DS's three files.",
+                             "Les listes de sauvegarde du jeu (sans les écrans HD) : les 99 fichiers du port par pages "
+                             "de trois, ou les trois fichiers de la DS.",
+                             "Die Speicherlisten des Spiels (ohne die HD-Bildschirme): die 99 Dateien des Ports in "
+                             "Seiten zu drei, oder die drei Dateien des DS.",
+                             "Gli elenchi di salvataggio del gioco (senza le schermate HD): i 99 file del port in "
+                             "pagine da tre, o i tre file del DS.",
+                             "Las listas de guardado del propio juego (sin las pantallas HD): los 99 archivos del port "
+                             "en páginas de tres, o los tres archivos de la DS."},
+    [TXT_AUTOSAVE_DONE] = {"Autosaved: file %d", "Sauvegarde auto : fichier %d", "Automatisch gespeichert: Datei %d",
+                           "Salvataggio automatico: file %d", "Autoguardado: archivo %d"},
+    [TXT_AUTOSAVE_FAILED] = {"Autosave failed: file %d", "Échec de la sauvegarde auto : fichier %d",
+                             "Autospeichern fehlgeschlagen: Datei %d", "Salvataggio automatico non riuscito: file %d",
+                             "Error al autoguardar: archivo %d"},
+    [TXT_ENH_MOUSE] = {"Mouse camera", "Caméra à la souris", "Kamera mit der Maus", "Telecamera con il mouse",
+                       "Cámara con el ratón"},
+    [TXT_ENH_MOUSE_NOTE] = {"Moving the mouse turns the camera, up and down too. The window holds the mouse while "
+                            "you play; Esc frees it with the settings.",
+                            "Bouger la souris tourne la caméra, aussi vers le haut et le bas. La fenêtre garde la "
+                            "souris pendant le jeu ; Échap la libère avec les réglages.",
+                            "Die Maus bewegen dreht die Kamera, auch hoch und runter. Das Fenster hält die Maus beim "
+                            "Spielen; Esc gibt sie mit den Einstellungen frei.",
+                            "Muovere il mouse gira la telecamera, anche su e giù. La finestra trattiene il mouse "
+                            "mentre giochi; Esc lo libera con le impostazioni.",
+                            "Mover el ratón gira la cámara, también arriba y abajo. La ventana retiene el ratón "
+                            "mientras juegas; Esc lo suelta con los ajustes."},
+    [TXT_MOUSE_SPEED] = {"Mouse camera speed (%)", "Vitesse caméra souris (%)", "Maus-Kameratempo (%)",
+                         "Velocità telecamera mouse (%)", "Velocidad cámara ratón (%)"},
 };
 
 static int current = KHDAYS_LANGUAGE_ENGLISH;

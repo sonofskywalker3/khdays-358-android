@@ -229,7 +229,7 @@ class Screen:
         out_dir.mkdir(parents=True, exist_ok=True)
         Image.fromarray(pixels, "RGBA").save(out_dir / f"{stem}_atlas.png")
         Image.fromarray(font_px, "RGBA").save(out_dir / f"{stem}_font.png")
-        (out_dir / f"{stem}.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+        (out_dir / f"{stem}.txt").write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
         return (
             f"{len(self.pieces)} pieces, {len(self.icons)} icons, {len(codes)} glyphs, atlas "
             f"{pixels.shape[1]} x {pixels.shape[0]}"

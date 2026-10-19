@@ -106,3 +106,8 @@ void khdays_settings_ping_draw(SDL_Renderer *renderer, const char *line, int und
 {
     corner_line(renderer, line, under_fps ? 1 : 0);
 }
+
+void khdays_settings_corner_draw(SDL_Renderer *renderer, const char *line, int row)
+{
+    corner_line(renderer, line, row);
+}

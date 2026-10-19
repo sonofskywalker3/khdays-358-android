@@ -23,6 +23,38 @@ struct ImportedJoint final {
     // the same skin, as an index into ImportedModel::joints, or -1.
     std::array<float, 16> world{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     int parent = -1;
+    int node = -1;  // its node, an index into ImportedModel::nodes
+};
+
+// A node of the file at rest under its parent: what a model's own animations
+// (a room's moving pieces) move.
+struct ImportedNode final {
+    std::string name;
+    int parent = -1;  // an index into ImportedModel::nodes
+    std::array<float, 3> translation{0.0F, 0.0F, 0.0F};
+    std::array<float, 4> rotation{0.0F, 0.0F, 0.0F, 1.0F};  // quaternion x y z w
+    std::array<float, 3> scale{1.0F, 1.0F, 1.0F};
+    std::array<float, 16> local{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};  // column-major
+};
+
+// One of a model's own animations (glTF's): keys of its nodes' translations,
+// rotations (quaternions x y z w) and scales; looped when the file says so
+// (the port's extras khdays_loop and khdays_loop_from).
+struct ImportedTrack final {
+    enum class Path { translation, rotation, scale };
+    int node = 0;
+    Path path = Path::translation;
+    bool step = false;          // held to the next key, else linear
+    std::vector<float> times;   // seconds
+    std::vector<float> values;  // 3 per key, 4 for rotations
+};
+
+struct ImportedAnimation final {
+    std::string name;
+    float duration = 0.0F;
+    bool loop = false;
+    float loop_from = 0.0F;
+    std::vector<ImportedTrack> tracks;
 };
 
 // A model imported from a mod's file (glTF, FBX) in glTF's frame (Y up, metres), with the textures it
@@ -38,6 +70,9 @@ struct ImportedModel final {
     // Textures the model uses that were not found or could not be read (each
     // drawn white), with the reason, for the caller to report.
     std::vector<std::pair<std::string, std::string>> missing_textures;
+    // The file's nodes and its own animations of them (a room's moving pieces).
+    std::vector<ImportedNode> nodes;
+    std::vector<ImportedAnimation> animations;
 };
 
 }  // namespace khdays::assets

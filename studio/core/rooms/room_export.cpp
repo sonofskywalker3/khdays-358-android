@@ -128,10 +128,12 @@ bool export_room(const fs::path& nitrofs, const fs::path& graphics_dump, const W
                 const char* error = nullptr;
                 std::uint8_t* px = khdays_png_read(u8(t->second).c_str(), &tw, &th, &error);
                 if (px != nullptr) {
+                    const bool translucent =
+                        assets::texels_translucent(px, static_cast<std::size_t>(tw) * static_cast<std::size_t>(th));
                     khdays_png_free(px);
                     const fs::path copy = out.parent_path() / t->second.filename();
                     fs::copy_file(t->second, copy, fs::copy_options::overwrite_existing, ec);
-                    textures[mesh.texture_name] = {u8(t->second.filename()), tw, th};
+                    textures[mesh.texture_name] = {u8(t->second.filename()), tw, th, translucent};
                 }
             }
         }

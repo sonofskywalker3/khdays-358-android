@@ -26,12 +26,13 @@ void apply_language(App& app) {
 }
 
 void take_dialog_files(App& app) {
-    std::vector<std::string> files, clips, exports, rooms, models, sheet_folders;
+    std::vector<std::string> files, clips, exports, grids, rooms, models, sheet_folders;
     {
         std::lock_guard lock(app.dialog_mutex);
         files.swap(app.dialog_files);
         clips.swap(app.dialog_clips);
         exports.swap(app.dialog_exports);
+        grids.swap(app.dialog_grids);
         rooms.swap(app.dialog_room_exports);
         models.swap(app.dialog_model_exports);
         sheet_folders.swap(app.dialog_sheet_folders);
@@ -48,11 +49,13 @@ void take_dialog_files(App& app) {
         clip_offer(app, path_u8(clips.front()));
     if (!exports.empty())
         sheet_export_to(app, path_u8(exports.front()));
+    if (!grids.empty())
+        sheet_grid_export_to(app, path_u8(grids.front()));
 }
 
 void draw_notices(App& app);  // below
 
-void draw_frame(App& app, bool* settings_open, bool* themes_open) {
+void draw_frame(App& app, bool* settings_open, bool* themes_open, bool* console_open) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -64,13 +67,16 @@ void draw_frame(App& app, bool* settings_open, bool* themes_open) {
     draw_mod_bar(app);
     // the themes and the settings at the right end of the same row
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float buttons = ImGui::CalcTextSize(tr(app.language, S::themes)).x +
-                          ImGui::CalcTextSize(tr(app.language, S::settings)).x + style.FramePadding.x * 4 +
-                          style.ItemSpacing.x;
+    const float buttons =
+        ImGui::CalcTextSize(tr(app.language, S::console)).x + ImGui::CalcTextSize(tr(app.language, S::themes)).x +
+        ImGui::CalcTextSize(tr(app.language, S::settings)).x + style.FramePadding.x * 6 + style.ItemSpacing.x * 2;
     ImGui::SameLine();
     const float room = ImGui::GetContentRegionAvail().x;
     if (room > buttons)
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + room - buttons);
+    if (ImGui::Button(tr(app.language, S::console)))
+        *console_open = true;
+    ImGui::SameLine();
     if (ImGui::Button(tr(app.language, S::themes)))
         *themes_open = true;
     ImGui::SameLine();
@@ -98,6 +104,8 @@ void draw_frame(App& app, bool* settings_open, bool* themes_open) {
         draw_settings(app, settings_open);
     if (*themes_open)
         draw_themes(app, themes_open);
+    if (*console_open)
+        draw_mods_console(app, console_open);
 }
 
 // The results a person must see (App::tell), over the window: a success in
@@ -192,6 +200,7 @@ int run_window(App& app) {
 
     bool settings_open = false;
     bool themes_open = false;
+    bool console_open = false;
     bool done = false;
     while (!done) {
         SDL_Event event;
@@ -215,7 +224,7 @@ int run_window(App& app) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-        draw_frame(app, &settings_open, &themes_open);
+        draw_frame(app, &settings_open, &themes_open, &console_open);
         ImGui::Render();
 
         ImDrawData* draw = ImGui::GetDrawData();

@@ -5,8 +5,12 @@
 #include "../app/host.h"
 #include "../app/instance.h"
 #include "../screens/ui_text.h"
+#include "../../runtime/scripts/queue.h"
+#include "../../runtime/scripts/view.h"
 
 #include <SDL3/SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 _Static_assert(KHDAYS_AVAILABLE_ENHANCEMENTS == (KHDAYS_ENH_ANALOG_CAMERA | KHDAYS_ENH_SEPARATE_LOCK_ON |
@@ -26,6 +30,10 @@ static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT
     *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2], *backends[KHDAYS_BACKEND_COUNT],
     *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
 static const int antialiasing_values[4] = {1, 2, 3, 4};
+static const char *autosaves[3], *save_files[2];
+/* the choices' order on screen: file 99 (the default) first */
+static const int autosave_values[3] = {KHDAYS_AUTOSAVE_FILE99, KHDAYS_AUTOSAVE_PLAYED, KHDAYS_AUTOSAVE_OFF};
+static const int save_files_values[2] = {1, 0};
 static const int resolution_values[RESOLUTION_CHOICES] = {
     1, KHDAYS_RESOLUTION_WINDOW, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 /* texts put together from several parts */
@@ -74,13 +82,18 @@ void khdays_model_refresh(const KhdaysProfile *work)
     backends[KHDAYS_BACKEND_AUTO] = khdays_text(TXT_VIDEO_BACKEND_AUTO);
     backends[KHDAYS_BACKEND_D3D12] = "Direct3D 12";
     backends[KHDAYS_BACKEND_VULKAN] = "Vulkan";
+    autosaves[0] = khdays_text(TXT_AUTOSAVE_FILE99);
+    autosaves[1] = khdays_text(TXT_AUTOSAVE_PLAYED);
+    autosaves[2] = khdays_text(TXT_MOD_OFF);
+    save_files[0] = khdays_text(TXT_SAVE_FILES_ALL);
+    save_files[1] = khdays_text(TXT_SAVE_FILES_DS);
 }
 
 const char *khdays_model_section_title(int section)
 {
     static const int ids[KHDAYS_SECTION_COUNT] = {
-        TXT_CONTROLS, TXT_ENHANCEMENTS, TXT_STICKS_AND_CAMERA, TXT_VIDEO,
-        TXT_SOUND,    TXT_MULTIPLAYER,  TXT_LANGUAGE,          TXT_GENERAL,
+        TXT_CONTROLS,    TXT_ENHANCEMENTS, TXT_STICKS_AND_CAMERA, TXT_VIDEO, TXT_SOUND,
+        TXT_MULTIPLAYER, TXT_LANGUAGE,     TXT_GENERAL,           TXT_MODS,
     };
     return section >= 0 && section < KHDAYS_SECTION_COUNT ? khdays_text(ids[section]) : "?";
 }
@@ -118,13 +131,15 @@ const char *khdays_model_action_label(int action)
 
 typedef struct Builder {
     KhdaysRow *rows;
-    int count;
+    int count, room; /* rows past `room` are counted, not kept */
     const KhdaysModelContext *context;
 } Builder;
 
 static KhdaysRow *add(Builder *b, int kind, int id, const char *label)
 {
-    KhdaysRow *r = &b->rows[b->count < KHDAYS_MODEL_ROWS_MAX ? b->count++ : KHDAYS_MODEL_ROWS_MAX - 1];
+    static KhdaysRow beyond;
+    KhdaysRow *r = b->count < b->room ? &b->rows[b->count] : &beyond;
+    ++b->count;
     memset(r, 0, sizeof(*r));
     r->kind = kind;
     r->id = id;
@@ -278,6 +293,9 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                menu_note);
     add_switch(b, KHDAYS_SET_ENH_MOVEMENT, TXT_ENH_MOVEMENT, &e->analog_movement, built(KHDAYS_ENH_ANALOG_MOVEMENT),
                khdays_text(TXT_ENH_MOVEMENT_NOTE));
+    /* the mouse turns the camera where the analog camera does (runtime/input/controls_hooks.c) */
+    add_switch(b, KHDAYS_SET_ENH_MOUSE, TXT_ENH_MOUSE, &e->mouse_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
+               khdays_text(TXT_ENH_MOUSE_NOTE));
 }
 
 static void build_sticks(Builder *b, KhdaysProfile *w)
@@ -293,6 +311,7 @@ static void build_sticks(Builder *b, KhdaysProfile *w)
         add_number(b, KHDAYS_SET_CAMERA_SPEED, TXT_CAMERA_SPEED, &e->camera_speed, 10, 300, 10);
         add_choice(b, KHDAYS_SET_CAMERA_X, TXT_CAMERA_X, &e->camera_invert_x, normal_inverted, 2);
         add_choice(b, KHDAYS_SET_CAMERA_Y, TXT_CAMERA_Y, &e->camera_invert_y, normal_inverted, 2);
+        add_number(b, KHDAYS_SET_MOUSE_SPEED, TXT_MOUSE_SPEED, &e->mouse_speed, 10, 300, 10);
     }
     if (built(KHDAYS_ENH_ANALOG_MOVEMENT)) {
         add_number(b, KHDAYS_SET_RUN_FROM, TXT_RUN_FROM, &e->run_threshold, 50, 95, 5);
@@ -427,13 +446,226 @@ static void build_language(Builder *b, KhdaysProfile *w)
 
 static void build_general(Builder *b, KhdaysProfile *w)
 {
+    KhdaysRow *r;
+    /* both read by the game's save lists when the game goes on (runtime/menus/savelist.h) */
+    r = add_choice(b, KHDAYS_SET_AUTOSAVE, TXT_AUTOSAVE, &w->save.autosave, autosaves, 3);
+    r->values = autosave_values;
+    r->note = khdays_text(TXT_AUTOSAVE_NOTE);
+    r->apply = KHDAYS_APPLY_RESUME;
+    r->takes = TXT_TAKES_RESUME;
+    r = add_choice(b, KHDAYS_SET_SAVE_FILES, TXT_SAVE_FILES, &w->save.all_files, save_files, 2);
+    r->values = save_files_values;
+    r->note = khdays_text(TXT_SAVE_FILES_NOTE);
+    r->apply = KHDAYS_APPLY_RESUME;
+    r->takes = TXT_TAKES_RESUME;
     add_switch(b, KHDAYS_SET_SESSION_LOG, TXT_SESSION_LOG, &w->session_log, 1, khdays_text(TXT_SESSION_LOG_NOTE));
     add_command(b, KHDAYS_SET_RESTORE_BOTH, TXT_RESTORE_BOTH, KHDAYS_CMD_RESTORE_BOTH);
 }
 
+/* ---- The Mods section ---------------------------------------------------- */
+
+/* The mods as the game's thread last showed them (runtime/scripts/view.h), and the rows' values: each
+ * mod's enabled flag, and its options' values (a choice's as the row's 0-based index) from its first. */
+static KhdaysModsView mods_view;
+static int *mod_enabled, *mod_first, *mod_values;
+static char (*mod_heads)[160], (*mod_lines)[400];
+
+static void mods_rebuild(void)
+{
+    const int n = mods_view.count;
+    int options = 0;
+    free(mod_enabled);
+    free(mod_first);
+    free(mod_values);
+    free(mod_heads);
+    free(mod_lines);
+    for (int i = 0; i < n; ++i) {
+        options += mods_view.mods[i].option_count;
+    }
+    mod_enabled = calloc((size_t)n + 1, sizeof(*mod_enabled));
+    mod_first = calloc((size_t)n + 1, sizeof(*mod_first));
+    mod_values = calloc((size_t)options + 1, sizeof(*mod_values));
+    mod_heads = calloc((size_t)n + 1, sizeof(*mod_heads));
+    mod_lines = calloc((size_t)n + 1, sizeof(*mod_lines));
+    if (mod_enabled == NULL || mod_first == NULL || mod_values == NULL || mod_heads == NULL || mod_lines == NULL) {
+        khdays_scripts_view_free(&mods_view);
+        return;
+    }
+    options = 0;
+    for (int i = 0; i < n; ++i) {
+        const KhdaysModView *v = &mods_view.mods[i];
+        const char *name = v->name != NULL ? v->name : v->folder;
+        mod_enabled[i] = v->enabled;
+        mod_first[i] = options;
+        for (int o = 0; o < v->option_count; ++o) {
+            const KhdaysOptionView *ov = &v->options[o];
+            mod_values[options++] = (int)(ov->kind == KHDAYS_OPTION_CHOICE ? ov->value - 1 : ov->value);
+        }
+        if (v->author != NULL && v->version != NULL) {
+            snprintf(mod_heads[i], sizeof(mod_heads[i]), "%s %s -- %s", name, v->version, v->author);
+        } else {
+            snprintf(mod_heads[i], sizeof(mod_heads[i]), "%s %s", name, v->version != NULL ? v->version : "");
+        }
+        switch (v->state) {
+        case KHDAYS_MOD_LOADED: snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_RUNNING)); break;
+        case KHDAYS_MOD_OFF: snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_OFF)); break;
+        default:
+            snprintf(mod_lines[i], sizeof(mod_lines[i]),
+                     khdays_text(v->state == KHDAYS_MOD_STOPPED  ? TXT_MOD_STOPPED
+                                 : v->state == KHDAYS_MOD_PAUSED ? TXT_MOD_PAUSED
+                                                                 : TXT_MOD_REFUSED),
+                     v->reason != NULL ? v->reason : "");
+            break;
+        }
+    }
+}
+
+/* The newest view of the mods, when there is one. */
+static void mods_take(void)
+{
+    if (khdays_scripts_view(&mods_view)) {
+        mods_rebuild();
+    }
+}
+
+int khdays_model_section_shown(int section)
+{
+    if (section != KHDAYS_SECTION_MODS) {
+        return section >= 0 && section < KHDAYS_SECTION_COUNT;
+    }
+    mods_take();
+    return mods_view.count > 0;
+}
+
+static void build_mods(Builder *b)
+{
+    const int language = khdays_ui_language();
+    mods_take();
+    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_NOTE, khdays_text(TXT_MOD_ORDER_NOTE));
+    for (int i = 0; i < mods_view.count && mod_enabled != NULL; ++i) {
+        const KhdaysModView *v = &mods_view.mods[i];
+        KhdaysRow *r = add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_MOD_HEADING, mod_heads[i]);
+        r->layer = i;
+        r = add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_STATE, mod_lines[i]);
+        r->layer = i;
+        r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_MOD_ENABLED, khdays_text(TXT_MOD_ENABLED));
+        r->value = &mod_enabled[i];
+        r->high = 1;
+        r->layer = i;
+        r->note = v->description;
+        r->apply = KHDAYS_APPLY_RESUME;
+        r->takes = TXT_TAKES_RESUME;
+        if (i > 0) {
+            r = add(b, KHDAYS_ROW_COMMAND, KHDAYS_SET_MOD_EARLIER, khdays_text(TXT_MOD_EARLIER));
+            r->layer = i;
+        }
+        if (i < mods_view.count - 1) {
+            r = add(b, KHDAYS_ROW_COMMAND, KHDAYS_SET_MOD_LATER, khdays_text(TXT_MOD_LATER));
+            r->layer = i;
+        }
+        if (v->state == KHDAYS_MOD_PAUSED) {
+            r = add(b, KHDAYS_ROW_COMMAND, KHDAYS_SET_MOD_RESUME, khdays_text(TXT_MOD_RESUME));
+            r->layer = i;
+        }
+        if (v->state != KHDAYS_MOD_LOADED) {
+            continue; /* its options are its scripts': they show while it runs */
+        }
+        for (int o = 0; o < v->option_count; ++o) {
+            const KhdaysOptionView *ov = &v->options[o];
+            const char *label = khdays_scripts_text(ov->label, language);
+            static const int kinds[] = {KHDAYS_ROW_SWITCH, KHDAYS_ROW_CHOICE, KHDAYS_ROW_NUMBER, KHDAYS_ROW_COMMAND};
+            r = add(b, kinds[ov->kind], KHDAYS_SET_MOD_OPTION, label != NULL ? label : ov->key);
+            r->layer = i;
+            r->action = o;
+            r->note = khdays_scripts_text(ov->description, language);
+            if (b->context->guest && v->kind == KHDAYS_MOD_GAMEPLAY) {
+                r->available = 0; /* a guest's gameplay mods change nothing: the host's do */
+                r->note = khdays_text(TXT_MOD_HOST_SETS);
+            }
+            if (ov->kind != KHDAYS_OPTION_BUTTON) {
+                r->value = &mod_values[mod_first[i] + o];
+            }
+            switch (ov->kind) {
+            case KHDAYS_OPTION_TOGGLE: r->high = 1; break;
+            case KHDAYS_OPTION_CHOICE:
+                r->choices = (const char *const *)ov->values;
+                r->high = ov->value_count - 1;
+                break;
+            case KHDAYS_OPTION_NUMBER:
+                r->low = (int)ov->low;
+                r->high = (int)ov->high;
+                r->step = (int)ov->step;
+                break;
+            default: break;
+            }
+        }
+    }
+}
+
+/* A Mods row changed by the player: kept in the view (so the rows built again show it) and asked of the
+ * game's thread, which applies it when the game runs again. */
+static void mods_changed(const KhdaysRow *row)
+{
+    KhdaysModView *v;
+    if ((row->id != KHDAYS_SET_MOD_ENABLED && row->id != KHDAYS_SET_MOD_OPTION) || row->layer < 0 ||
+        row->layer >= mods_view.count) {
+        return;
+    }
+    v = &mods_view.mods[row->layer];
+    if (row->id == KHDAYS_SET_MOD_ENABLED) {
+        v->enabled = *row->value;
+        khdays_scripts_ask(KHDAYS_ASK_ENABLE, v->folder, NULL, *row->value);
+    } else if (row->action >= 0 && row->action < v->option_count && v->id != NULL) {
+        KhdaysOptionView *ov = &v->options[row->action];
+        ov->value = ov->kind == KHDAYS_OPTION_CHOICE ? *row->value + 1 : *row->value;
+        khdays_scripts_ask(KHDAYS_ASK_OPTION, v->id, ov->key, ov->value);
+    }
+}
+
+/* A mod one place earlier or later, in the view at once (the game's own list follows when it runs). */
+static void mods_move(int index, int by)
+{
+    const int other = index + by;
+    KhdaysModView t;
+    if (index < 0 || other < 0 || index >= mods_view.count || other >= mods_view.count) {
+        return;
+    }
+    khdays_scripts_ask(KHDAYS_ASK_MOVE, mods_view.mods[index].folder, NULL, by);
+    t = mods_view.mods[index];
+    mods_view.mods[index] = mods_view.mods[other];
+    mods_view.mods[other] = t;
+    mods_rebuild();
+}
+
+void khdays_model_row_command(KhdaysProfile *work, const KhdaysRow *row)
+{
+    const KhdaysModView *v = row->layer >= 0 && row->layer < mods_view.count ? &mods_view.mods[row->layer] : NULL;
+    switch (row->id) {
+    case KHDAYS_SET_MOD_EARLIER: mods_move(row->layer, -1); break;
+    case KHDAYS_SET_MOD_LATER: mods_move(row->layer, 1); break;
+    case KHDAYS_SET_MOD_RESUME:
+        if (v != NULL && v->id != NULL) {
+            khdays_scripts_ask(KHDAYS_ASK_RESUME, v->id, NULL, 0);
+        }
+        break;
+    case KHDAYS_SET_MOD_OPTION:
+        if (v != NULL && v->id != NULL && row->action >= 0 && row->action < v->option_count) {
+            khdays_scripts_ask(KHDAYS_ASK_BUTTON, v->id, v->options[row->action].key, 0);
+        }
+        break;
+    default: khdays_model_command(work, row->command); break;
+    }
+}
+
 int khdays_model_rows(int section, KhdaysProfile *work, const KhdaysModelContext *context, KhdaysRow *rows)
 {
-    Builder b = {rows, 0, context};
+    return khdays_model_rows_into(section, work, context, rows, KHDAYS_MODEL_ROWS_MAX);
+}
+
+int khdays_model_rows_into(int section, KhdaysProfile *work, const KhdaysModelContext *context, KhdaysRow *rows,
+                           int room)
+{
+    Builder b = {rows, 0, room, context};
     switch (section) {
     case KHDAYS_SECTION_CONTROLS: build_controls(&b, work); break;
     case KHDAYS_SECTION_ENHANCEMENTS: build_enhancements(&b, work); break;
@@ -443,6 +675,7 @@ int khdays_model_rows(int section, KhdaysProfile *work, const KhdaysModelContext
     case KHDAYS_SECTION_MULTIPLAYER: build_multiplayer(&b, work); break;
     case KHDAYS_SECTION_LANGUAGE: build_language(&b, work); break;
     case KHDAYS_SECTION_GENERAL: build_general(&b, work); break;
+    case KHDAYS_SECTION_MODS: build_mods(&b); break;
     default: break;
     }
     return b.count;
@@ -466,6 +699,7 @@ int khdays_model_choice_of(const KhdaysRow *row)
 void khdays_model_set_choice(KhdaysProfile *work, const KhdaysRow *row, int choice)
 {
     *row->value = row->values != NULL ? row->values[choice] : choice;
+    mods_changed(row);
     if (row->value == &work->video.one_screen && work->video.one_screen && work->video.aspect == KHDAYS_ASPECT_4_3) {
         work->video.aspect = KHDAYS_ASPECT_16_9; /* the default for one screen */
     }
@@ -480,11 +714,15 @@ int khdays_model_adjust(KhdaysProfile *work, const KhdaysRow *row, int dir)
     case KHDAYS_ROW_NUMBER:
         *row->value += dir * row->step;
         *row->value = *row->value < row->low ? row->low : *row->value > row->high ? row->high : *row->value;
+        mods_changed(row);
         return 1;
     case KHDAYS_ROW_CHOICE:
         khdays_model_set_choice(work, row, (khdays_model_choice_of(row) + dir + row->high + 1) % (row->high + 1));
         return 1;
-    case KHDAYS_ROW_SWITCH: *row->value = dir > 0; return 1;
+    case KHDAYS_ROW_SWITCH:
+        *row->value = dir > 0;
+        mods_changed(row);
+        return 1;
     default: return 0;
     }
 }
@@ -496,6 +734,7 @@ void khdays_model_activate(KhdaysProfile *work, const KhdaysRow *row)
     }
     if (row->kind == KHDAYS_ROW_SWITCH) {
         *row->value = !*row->value;
+        mods_changed(row);
     } else if (row->kind == KHDAYS_ROW_CHOICE) {
         const int c = khdays_model_choice_of(row);
         khdays_model_set_choice(work, row, c >= row->high ? 0 : c + 1);

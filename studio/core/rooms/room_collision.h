@@ -82,6 +82,7 @@ struct RoomWarning {
         collision_shared,  // room {0} uses the same collision
         model_shared,      // room {0} draws model {1} too
         passable,          // {0} triangles of translucent materials left out
+        marker_in_wall,    // marker {0} stands in a wall ({1} {2} {3})
     } kind;
     std::vector<std::string> args;
 };

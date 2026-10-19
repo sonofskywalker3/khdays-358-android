@@ -88,6 +88,26 @@ const char *khdays_pad_input_name(int input)
     return input >= 0 && input < KHDAYS_PAD_COUNT ? pad_names[input] : NULL;
 }
 
+static const char *const mouse_names[KHDAYS_MOUSE_COUNT] = {
+    "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse X1", "Mouse X2", "Mouse Wheel Up", "Mouse Wheel Down",
+};
+
+const char *khdays_mouse_input_name(int input)
+{
+    return input >= KHDAYS_MOUSE_INPUT && input < KHDAYS_KEYBOARD_INPUTS ? mouse_names[input - KHDAYS_MOUSE_INPUT]
+                                                                         : NULL;
+}
+
+int khdays_mouse_input_from_name(const char *name)
+{
+    for (int i = 0; i < KHDAYS_MOUSE_COUNT; ++i) {
+        if (SDL_strcasecmp(name, mouse_names[i]) == 0) {
+            return KHDAYS_MOUSE_INPUT + i;
+        }
+    }
+    return -1;
+}
+
 int khdays_pad_input_from_name(const char *name)
 {
     for (int i = 0; i < KHDAYS_PAD_COUNT; ++i) {
@@ -131,20 +151,25 @@ void khdays_profile_default(KhdaysProfile *p)
     p->preset = KHDAYS_PRESET_DS;
     empty(p);
 
-    /* The keyboard: the layout the port has always had. Keys are scancodes,
-     * so they are the same physical keys on every keyboard layout. */
-    bind(p, K, BASE, KHDAYS_ACT_UP, SDL_SCANCODE_UP, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_DOWN, SDL_SCANCODE_DOWN, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_LEFT, SDL_SCANCODE_LEFT, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_RIGHT, SDL_SCANCODE_RIGHT, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_A, SDL_SCANCODE_Z, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_B, SDL_SCANCODE_X, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_X, SDL_SCANCODE_S, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_Y, SDL_SCANCODE_A, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_L, SDL_SCANCODE_Q, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_R, SDL_SCANCODE_E, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_START, SDL_SCANCODE_RETURN, NONE);
-    bind(p, K, BASE, KHDAYS_ACT_SELECT, SDL_SCANCODE_RSHIFT, NONE);
+    /* The keyboard and mouse, as in PC games: WASD for the D-pad, the left mouse button A, the right
+     * one Y, Space B; in a field the wheel and Q/E move the command menu (when it is on the D-pad).
+     * Keys are scancodes: the same physical keys on every keyboard layout. */
+    bind(p, K, BASE, KHDAYS_ACT_UP, SDL_SCANCODE_W, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_DOWN, SDL_SCANCODE_S, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_LEFT, SDL_SCANCODE_A, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_RIGHT, SDL_SCANCODE_D, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_A, KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_LEFT, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_B, SDL_SCANCODE_SPACE, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_X, SDL_SCANCODE_C, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_Y, KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_RIGHT, NONE);
+    bind(p, K, BASE, KHDAYS_ACT_L, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_LEFT);
+    bind(p, K, BASE, KHDAYS_ACT_R, KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_MIDDLE, SDL_SCANCODE_RIGHT);
+    bind(p, K, BASE, KHDAYS_ACT_START, SDL_SCANCODE_M, SDL_SCANCODE_RETURN);
+    bind(p, K, BASE, KHDAYS_ACT_SELECT, SDL_SCANCODE_N, NONE);
+    bind(p, K, FIELD, KHDAYS_ACT_MENU_UP, KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_WHEEL_UP, NONE);
+    bind(p, K, FIELD, KHDAYS_ACT_MENU_DOWN, KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_WHEEL_DOWN, NONE);
+    bind(p, K, FIELD, KHDAYS_ACT_MENU_LEFT, SDL_SCANCODE_Q, NONE);
+    bind(p, K, FIELD, KHDAYS_ACT_MENU_RIGHT, SDL_SCANCODE_E, NONE);
 
     /* The gamepad: the DS's own layout, by position (the right-hand face
      * button is DS A on every controller, as on the DS and the Switch Pro). */
@@ -178,6 +203,7 @@ void khdays_profile_default(KhdaysProfile *p)
     p->stick[0] = (KhdaysStick){KHDAYS_STICK_DPAD, 30, 5};
     p->stick[1] = (KhdaysStick){KHDAYS_STICK_CAMERA, 30, 5};
     p->enh.camera_speed = 100;
+    p->enh.mouse_speed = 100;
     p->enh.run_threshold = 75;
     p->enh.walk_speed = 50;
     khdays_video_default(&p->video);
@@ -265,7 +291,7 @@ static int valid_resolution(int n)
 
 static int input_count(int device)
 {
-    return device == KHDAYS_DEVICE_KEYBOARD ? SDL_SCANCODE_COUNT : KHDAYS_PAD_COUNT;
+    return device == KHDAYS_DEVICE_KEYBOARD ? KHDAYS_KEYBOARD_INPUTS : KHDAYS_PAD_COUNT;
 }
 
 int khdays_profile_owner(const KhdaysProfile *p, int device, int layer, int input)
@@ -320,7 +346,7 @@ int khdays_profile_repair(KhdaysProfile *p)
     int changed = 0;
     for (int d = 0; d < KHDAYS_DEVICE_COUNT; ++d) {
         for (int l = 0; l < KHDAYS_LAYER_COUNT; ++l) {
-            uint8_t seen[SDL_SCANCODE_COUNT] = {0}; /* 1 once an action has taken the input */
+            uint8_t seen[KHDAYS_KEYBOARD_INPUTS] = {0}; /* 1 once an action has taken the input */
             for (int a = 0; a < KHDAYS_ACT_COUNT; ++a) {
                 for (int s = 0; s < KHDAYS_INPUTS_PER_ACTION; ++s) {
                     int16_t *slot = &p->input[d][l][a][s];
@@ -359,6 +385,7 @@ int khdays_profile_repair(KhdaysProfile *p)
         changed += clamp(&p->stick[i].hysteresis, 0, 20);
     }
     changed += clamp(&p->enh.camera_speed, 10, 300);
+    changed += clamp(&p->enh.mouse_speed, 10, 300);
     changed += clamp(&p->enh.run_threshold, 50, 95);
     changed += clamp(&p->enh.walk_speed, 20, 90);
     if (p->preset != KHDAYS_PRESET_DS && p->preset != KHDAYS_PRESET_KH2) {
@@ -637,7 +664,7 @@ typedef struct Reader {
     char section_name[40];
     /* Which action this file gave each input to (action + 1), to catch a
      * later line giving the same input to another action. */
-    uint8_t owner[KHDAYS_DEVICE_COUNT][KHDAYS_LAYER_COUNT][SDL_SCANCODE_COUNT];
+    uint8_t owner[KHDAYS_DEVICE_COUNT][KHDAYS_LAYER_COUNT][KHDAYS_KEYBOARD_INPUTS];
     uint8_t action_seen[KHDAYS_DEVICE_COUNT][KHDAYS_LAYER_COUNT][KHDAYS_ACT_COUNT];
     int version_seen;
     int aspect_seen; /* the file gave [video] aspect (else it follows the screens) */
@@ -685,8 +712,9 @@ static void enter_section(Reader *r, const char *name)
 static int input_named(int device, const char *name)
 {
     if (device == KHDAYS_DEVICE_KEYBOARD) {
-        const SDL_Scancode code = SDL_GetScancodeFromName(name);
-        return code == SDL_SCANCODE_UNKNOWN ? -1 : (int)code;
+        const int mouse = khdays_mouse_input_from_name(name);
+        const SDL_Scancode code = mouse < 0 ? SDL_GetScancodeFromName(name) : SDL_SCANCODE_UNKNOWN;
+        return mouse >= 0 ? mouse : code == SDL_SCANCODE_UNKNOWN ? -1 : (int)code;
     }
     return khdays_pad_input_from_name(name);
 }
@@ -825,6 +853,8 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"camera_speed", offsetof(KhdaysEnhancements, camera_speed), 10, 300},
         {"camera_invert_x", offsetof(KhdaysEnhancements, camera_invert_x), 0, 0},
         {"camera_invert_y", offsetof(KhdaysEnhancements, camera_invert_y), 0, 0},
+        {"mouse_camera", offsetof(KhdaysEnhancements, mouse_camera), 0, 0},
+        {"mouse_speed", offsetof(KhdaysEnhancements, mouse_speed), 10, 300},
         {"separate_lock_on", offsetof(KhdaysEnhancements, separate_lock_on), 0, 0},
         {"dpad_command_menu", offsetof(KhdaysEnhancements, dpad_command_menu), 0, 0},
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
@@ -1361,8 +1391,9 @@ static void add_bindings(Text *t, const KhdaysProfile *p, int device, int layer,
                 continue;
             }
             add(t, "%s %s", written++ ? "," : "",
-                device == KHDAYS_DEVICE_KEYBOARD ? SDL_GetScancodeName((SDL_Scancode)input)
-                                                 : khdays_pad_input_name(input));
+                device != KHDAYS_DEVICE_KEYBOARD ? khdays_pad_input_name(input)
+                : input >= KHDAYS_MOUSE_INPUT    ? khdays_mouse_input_name(input)
+                                                 : SDL_GetScancodeName((SDL_Scancode)input));
         }
         add(t, "\n");
     }
@@ -1412,6 +1443,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add(&t, "analog_camera = %s\ncamera_speed = %d\n", e->analog_camera ? "on" : "off", e->camera_speed);
     add(&t, "camera_invert_x = %s\ncamera_invert_y = %s\n", e->camera_invert_x ? "on" : "off",
         e->camera_invert_y ? "on" : "off");
+    add(&t, "mouse_camera = %s\nmouse_speed = %d\n", e->mouse_camera ? "on" : "off", e->mouse_speed);
     add(&t, "separate_lock_on = %s\n", e->separate_lock_on ? "on" : "off");
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
@@ -1458,7 +1490,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "picture_pace = %s\n"
             "# show_fps: the pictures and the game's frames a second, in a corner\n"
             "show_fps = %s\n"
-            "# backend: the graphics API -- auto (SDL's choice), direct3d12 or vulkan\n"
+            "# backend: the graphics API -- auto (Direct3D 12 on Windows, Vulkan under Wine or Proton),\n"
+            "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
             v->one_screen ? "one" : "two", v->hud_size,

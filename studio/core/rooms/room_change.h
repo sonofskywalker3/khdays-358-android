@@ -35,11 +35,15 @@ struct RoomReplacement {
     std::string world;      // its code: tt, aw ...
     int room = -1;          // its index in the world's table
     std::string model;      // the visible model's file, in the change's folder
+    std::string kh2;        // the KH2 map it was made from (tt02); empty: a model of the modder's
     std::string collision;  // a separate collision model's, or empty: the visible one
     // the game's own grounds, walls and ceilings kept: only what is seen is
     // replaced (a room remade in the same place needs no collision of its own)
     bool keep_collision = false;
     RoomPlacement place;
+    // the model cut to the room: only what lies within this many units (from above) of the game's grounds
+    // and walls, or between them, is kept; below 0, all of it
+    float zone = -1;
     float ground_limit = 0x333 / 4096.0f;  // the unit normal's y above which a face is a ground
     // per object (archive member): unset, the room's first model takes the
     // modder's and the others are hidden
@@ -66,6 +70,11 @@ std::vector<RoomReplacement> changes_of(const std::filesystem::path& mod_dir, co
                                         std::vector<std::string>* problems);
 std::vector<std::string> changed_worlds(const std::filesystem::path& mod_dir);
 
+// A point of the model where `place` puts it, and a placed point back where the model has it.
+std::array<float, 3> placed_point(const RoomPlacement& place, const std::array<float, 3>& v);
+std::array<float, 3> unplaced_point(const RoomPlacement& place, const std::array<float, 3>& v);
+bool same_place(const RoomPlacement& a, const RoomPlacement& b);
+
 // A model (read as the port reads it) with every vertex posed as the file
 // places it and then placed; its bones, if any, left (a room's model stands still).
 void place_model(khdays::assets::ImportedModel* model, const RoomPlacement& place);
@@ -81,12 +90,53 @@ struct RoomAlignment {
     // points, twice as many as it has as it is); `in_place` -- it lines up as
     // it is (3% or more: a room remade in the same place keeps some of the
     // game's points); `unrelated` -- it shares nothing worth saying
-    enum Verdict { turned, in_place, unrelated } verdict = unrelated;
+    // `kh2_units` (a KH2 room sharing no points with the room): KH2's units as the game's, its floor under its
+    // middle at the height of the room's ground under the room's middle, the two middles together
+    enum Verdict { turned, in_place, unrelated, kh2_units } verdict = unrelated;
 };
 RoomAlignment align_with_room(const std::vector<std::array<float, 3>>& room_points,
                               const khdays::assets::ImportedModel& model);
+// A KH2 room's first place over a game room (`room` its collision): lined up by its points when it shares
+// them (the Usual Spot is the same place in both games), else by `kh2_units`.
+RoomAlignment kh2_alignment(const std::vector<std::array<float, 3>>& room_points, const RoomCollision& room,
+                            const khdays::assets::ImportedModel& kh2);
 bool placed_model(const std::filesystem::path& model, const RoomPlacement& place, khdays::assets::ImportedModel* out,
                   std::string* why);
+
+// A room from above, in cells of a quarter unit: those its grounds and walls cover, those they close in,
+// and those within `margin` units of either.
+struct RoomZone {
+    float cell = 0.25f;
+    std::int64_t x0 = 0, z0 = 0;  // the first cell's indices
+    int width = 0, depth = 0;
+    std::vector<char> in;  // width * depth, row by row along x
+    bool holds(float x, float z) const;
+};
+RoomZone room_zone(const RoomCollision& room, float margin);
+// how far past the room's floor and walls a cut model is kept, at first (the game's units)
+constexpr float kZoneMargin = 6.0f;
+
+// A model's surfaces that are not walls (their normal's y past 0.3 either way), found from above.
+struct SurfaceMap {
+    std::vector<std::array<std::array<float, 3>, 3>> triangles;
+    std::vector<char> up;  // per triangle: it faces up (a floor), else down
+    std::map<std::pair<std::int64_t, std::int64_t>, std::vector<std::size_t>> cells;  // a unit from above
+    std::vector<std::size_t> wide;  // those over more than 64 by 64 cells, asked every time
+    struct Height {
+        float y;
+        bool up;
+    };
+    std::vector<Height> heights_at(float x, float z) const;
+};
+SurfaceMap surface_map(const khdays::assets::ImportedModel& placed);
+
+// How far to raise the model so that most of `markers` stand on one of its floors, a tenth above it as the
+// game's do (at most 50 units either way); 0 when none can. `on`: how many markers then do.
+float raise_to_markers(const SurfaceMap& surfaces, const std::vector<std::array<float, 3>>& markers, std::size_t* on);
+
+// `placed` cut to `zone`: each triangle with no corner and no middle over it left out (skies kept), the
+// meshes and pictures left unused removed. The triangles left out.
+std::size_t cut_to_zone(khdays::assets::ImportedModel* placed, const RoomZone& zone);
 
 // The model's triangles, placed, as the collision builder takes them: a two-sided mesh's steep faces
 // doubled the other way; with `visible`, a translucent material's triangles passable.

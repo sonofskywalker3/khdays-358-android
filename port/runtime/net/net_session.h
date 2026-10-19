@@ -20,7 +20,8 @@ enum {
     KHDAYS_NET_REFUSE_JUDGE,    /* the host's game said no */
     KHDAYS_NET_REFUSE_BUILD,    /* another build of the port */
     KHDAYS_NET_REFUSE_SILENT,   /* no answer */
-    KHDAYS_NET_REFUSE_PASSWORD  /* the room's password not proven */
+    KHDAYS_NET_REFUSE_PASSWORD, /* the room's password not proven */
+    KHDAYS_NET_REFUSE_MODS      /* other gameplay mods than the host's (khdays_net_last_refusal_mods) */
 };
 
 typedef struct KhdaysNetEvent {
@@ -80,6 +81,25 @@ int khdays_net_link_level(void);
  * shown in the window: up to `room` aids and round trips in milliseconds (-1 until measured). Returns
  * how many members there are. */
 int khdays_net_round_trips(unsigned int *aids, int *ms, int room);
+
+/* A player's movement stick for analog movement, which the DS's control packet has no room for: its
+ * position (-32767..32767, y up, 0 0 at rest), the player's run threshold and walk speed (percent)
+ * and whether analog movement is on in its settings. */
+typedef struct KhdaysNetStick {
+    short x, y;
+    unsigned char run_threshold, walk_speed, on;
+} KhdaysNetStick;
+/* The game's thread, on a guest: this copy's stick now, sent to the host with its controls. */
+void khdays_net_set_stick(const KhdaysNetStick *stick);
+/* On the host: member `aid`'s stick as it last sent it (a second at most ago); 0 when none. */
+int khdays_net_stick(unsigned int aid, KhdaysNetStick *out);
+
+/* The game's thread: this copy's level (the game's own, 0 not known), which its pings carry to the
+ * room for the members' screen. */
+void khdays_net_set_level(int level);
+/* The members' levels known, this copy's too (the host's pings give a guest everyone's): up to `room`
+ * aids and levels. Returns how many are known. */
+int khdays_net_levels(unsigned int *aids, int *levels, int room);
 
 /* Whether we are in a room or joining one (the settings menu does not pause the game then). */
 int khdays_net_in_session(void);
@@ -161,6 +181,16 @@ int khdays_net_own_aid(void);
 
 /* Why the last join was refused (KHDAYS_NET_REFUSE_*), 0 when it was not. */
 int khdays_net_last_refusal(void);
+
+/* The gameplay mods this copy plays with (runtime/scripts): their fingerprint, sent when joining and
+ * compared by a host (0: none), and their names and versions, each a u8 size and its UTF-8 bytes,
+ * name then version, `count` of them, told to a guest the host refuses. Any thread; the strings are
+ * copied. */
+void khdays_net_set_mods(unsigned int fingerprint, const unsigned char *list, unsigned int size, unsigned int count);
+
+/* After a KHDAYS_NET_REFUSE_MODS: the host's gameplay mods as "name version, name version" (cut to
+ * `room` bytes, ended), and how many of them the host's answer could not hold. */
+void khdays_net_last_refusal_mods(char *text, int room, int *more);
 
 /* How many rooms of the group being scanned are known now. */
 int khdays_net_room_count(void);

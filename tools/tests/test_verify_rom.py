@@ -51,5 +51,46 @@ class WholeDumpTests(unittest.TestCase):
                 self.assertEqual(tool.whole_dump_sha256(path), hashlib.sha256(data).hexdigest())
 
 
+class HeaderFreeTests(unittest.TestCase):
+    """Two dumps of one cartridge that differ in the header's area 0x200-0xFFF (which nothing loads) are
+    the same ROM: the second hash leaves that area out, and the supported entry's matches either."""
+
+    def test_dumpers_header_area(self) -> None:
+        rom = bytearray(0x20000)
+        rom[0x0C:0x10] = b"TSTP"
+        rom[0x14] = 0  # a 128 KiB cartridge, whole
+        rom[0x4000:0x4010] = b"the game's data!"
+        other = bytearray(rom)
+        rom[0x33C:0x350] = bytes(range(1, 21))  # what one dumper keeps there; the other zeroes
+        with tempfile.TemporaryDirectory() as temporary:
+            kept, zeroed = Path(temporary) / "kept.nds", Path(temporary) / "zeroed.nds"
+            kept.write_bytes(rom)
+            zeroed.write_bytes(other)
+            entry = {
+                "name": "test",
+                "sha256": hashlib.sha256(rom).hexdigest(),
+                "sha256_header_free": hashlib.sha256(other).hexdigest(),
+            }
+            for tool in (verify_rom, extract_data):
+                self.assertNotEqual(tool.whole_dump_sha256(kept), tool.whole_dump_sha256(zeroed))
+                self.assertEqual(
+                    tool.whole_dump_sha256(kept, header_free=True), tool.whole_dump_sha256(zeroed, header_free=True)
+                )
+            for path in (kept, zeroed):
+                self.assertIs(verify_rom.find_supported_rom(verify_rom.read_rom_info(path), [entry]), entry)
+                self.assertIs(
+                    extract_data.find_supported_rom(
+                        extract_data.whole_dump_sha256(path),
+                        [entry],
+                        extract_data.whole_dump_sha256(path, header_free=True),
+                    ),
+                    entry,
+                )
+            # the game's own bytes are never left out
+            other[0x4000] ^= 1
+            zeroed.write_bytes(other)
+            self.assertIsNone(verify_rom.find_supported_rom(verify_rom.read_rom_info(zeroed), [entry]))
+
+
 if __name__ == "__main__":
     unittest.main()

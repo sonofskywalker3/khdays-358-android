@@ -13,6 +13,7 @@
 #include "core/models/clip_import.h"
 #include "core/models/model_export.h"
 #include "core/models/model_files.h"
+#include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/room_export.h"
@@ -20,6 +21,7 @@
 #include "core/texts/texts.h"
 #include "core/rooms/worlds.h"
 
+#include "khdays/assets/kh2_map.h"
 #include "khdays/vfs/filesystem.h"
 
 extern "C" {
@@ -31,6 +33,8 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -323,6 +327,99 @@ int room_model(const fs::path& root, const std::vector<std::string>& args) {
     return 0;
 }
 
+// What a KH2 map made into a model holds, and what of it was left out.
+void print_kh2_made(const std::string& name, const Kh2Made& made) {
+    std::printf("%s: %zu triangles, %zu pictures, %zu pieces (%zu moving), %zu scrolling and %zu changing textures\n",
+                name.c_str(), made.triangles, made.pictures, made.pieces, made.animations, made.scrolling, made.framed);
+    for (const auto& line : made.report)
+        std::printf("note: %s\n", line.c_str());
+    std::printf("made from the player's own copy: Square Enix's work, not to be shared\n");
+}
+
+// --kh2-room <map> <out.gltf> [<folder>]: a KH2 map (tt02) of the player's collection made into a model
+// to replace a room with, its pictures beside it; the folder the collection's archives gave it to
+// (saves/collection/kh2 when not given).
+int kh2_room(const fs::path& root, const std::vector<std::string>& args) {
+    const fs::path folder = args.size() > 3 ? path_u8(args[3]) : kh2_folder(root);
+    Kh2Made made;
+    std::string why;
+    if (!make_kh2_room(folder, args[1], path_u8(args[2]), &made, &why)) {
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return 1;
+    }
+    print_kh2_made(args[2], made);
+    return 0;
+}
+
+// --kh2-maps [<world>]: the KH2 maps of the player's copy (of the worlds Days shares, or one), each with
+// the Days rooms made from it and, once taken out, its pieces and moving textures.
+int kh2_maps(const fs::path& root, const std::vector<std::string>& args) {
+    std::string note, why;
+    const Settings settings = load_settings(root, &note);
+    std::vector<std::string> notes;
+    const auto pairs = kh2_pairs({}, &notes);
+    for (const auto& n : notes)
+        std::fprintf(stderr, "khdays-studio: %s\n", n.c_str());
+    const std::vector<std::string> worlds =
+        args.size() > 1 ? std::vector<std::string>{args[1]}
+                        : std::vector<std::string>(std::begin(kKh2Worlds), std::end(kKh2Worlds));
+    int status = 0;
+    for (const auto& world : worlds) {
+        std::vector<std::string> maps;
+        if (!kh2_world_maps(settings, world, &maps, &why)) {
+            std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+            return 1;
+        }
+        std::printf("%s: %zu maps\n", world.c_str(), maps.size());
+        for (const auto& map : maps) {
+            std::string rooms;
+            for (const auto& pair : pairs) {
+                if (pair.map == map)
+                    rooms += (rooms.empty() ? " Days " : ", ") + pair.world + " " + std::to_string(pair.room);
+            }
+            std::string what = "  (not taken out)";
+            std::ifstream in(kh2_folder(root) / "original" / "map" / path_u8(map + ".map"), std::ios::binary);
+            const std::vector<std::uint8_t> data((std::istreambuf_iterator<char>(in)),
+                                                 std::istreambuf_iterator<char>());
+            if (!data.empty()) {
+                namespace kh2 = khdays::assets::kh2;
+                try {
+                    const auto m = kh2::read_map(data.data(), data.size());
+                    std::size_t pieces = 0, moving = 0, scrolls = 0, frames = 0, skies = 0;
+                    for (const auto& part : m.parts) {
+                        pieces += part.name == "BOB" ? 1 : 0;
+                        moving += part.motion_entry ? 1 : 0;
+                        skies += part.name.rfind("SK", 0) == 0 ? 1 : 0;
+                        const auto t =
+                            kh2::read_textures(data.data(), data.size(), m.entries[part.texture_entry].offset);
+                        scrolls += t.scrolls.size();
+                        frames += t.animations.size();
+                    }
+                    char text[160];
+                    std::snprintf(text, sizeof(text),
+                                  "  %zu pieces (%zu moving), %zu skies, %zu scrolls, %zu texture animations", pieces,
+                                  moving, skies, scrolls, frames);
+                    what = text;
+                } catch (const std::exception& e) {
+                    what = std::string("  (cannot be read: ") + e.what() + ")";
+                    status = 1;
+                }
+            }
+            std::printf("  %s%s%s\n", map.c_str(), rooms.c_str(), what.c_str());
+        }
+    }
+    return status;
+}
+
+// The game's own collision of the world's room `room`; false when it has none that can be read.
+bool room_collision_of(const World& w, int room, RoomCollision* out) {
+    if (room < 0 || static_cast<std::size_t>(room) >= w.rooms.size())
+        return false;
+    const auto member = static_cast<std::size_t>(w.rooms[static_cast<std::size_t>(room)].collision_member);
+    std::string unused;
+    return member < w.archive.entries.size() && parse_collision(w.archive.entries[member].data, out, &unused);
+}
+
 // The mod a room command works in, and the game files it reads; false (said) when either is missing.
 bool room_command_paths(const fs::path& root, const std::string& mod, fs::path* nitrofs, fs::path* dump,
                         fs::path* mod_dir) {
@@ -366,6 +463,27 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
     RoomReplacement r;
     std::string why;
     std::error_code ec;
+    // kh2:<map>: a KH2 map of the player's collection, taken out and made into the model
+    std::vector<std::string> given = args;
+    std::string kh2;
+    if (args.size() >= 5 && args[4].rfind("kh2:", 0) == 0) {
+        kh2 = args[4].substr(4);
+        std::string note;
+        const Settings settings = load_settings(root, &note);
+        Kh2Made made;
+        const fs::path model = kh2_made_model(root, kh2);
+        if (!take_out_kh2_map(settings, kh2, &why) || !make_kh2_room(kh2_folder(root), kh2, model, &made, &why))
+            return print_outcome(false, {}, why);
+        print_kh2_made(kh2, made);
+        given[4] = u8(model);
+        // kh2-collision: the map's own floors and walls, placed like its model
+        if (args.size() >= 6 && args[5] == "kh2-collision") {
+            fs::path collision;
+            if (!make_kh2_collision(root, kh2, &collision, &why))
+                return print_outcome(false, {}, why);
+            given[5] = u8(collision);
+        }
+    }
     const fs::path file = change_file(mod_dir, code, room);
     if (fs::exists(file, ec)) {
         if (!read_change(file, &r, &why))
@@ -379,9 +497,28 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
         // a new model made from the room (its dump or export, edited): lined up with it again
         World w;
         khdays::assets::ImportedModel model;
-        if (load_world(nitrofs, code, &w, &why) && import_model(path_u8(args[4]), &model, &why)) {
-            const RoomAlignment a = align_with_room(room_points(nitrofs, dump, w, room), model);
-            if (a.verdict == RoomAlignment::turned) {
+        if (load_world(nitrofs, code, &w, &why) && import_model(path_u8(given[4]), &model, &why)) {
+            RoomCollision collision;
+            const bool has_collision = room_collision_of(w, room, &collision);
+            const RoomAlignment a = !kh2.empty() && has_collision
+                                        ? kh2_alignment(room_points(nitrofs, dump, w, room), collision, model)
+                                        : align_with_room(room_points(nitrofs, dump, w, room), model);
+            // the KH2 map this room was made from, where Days put it
+            std::vector<std::string> notes;
+            const auto pairs = kh2_pairs(mod_dir, &notes);
+            const Kh2Pair* pair = kh2.empty() ? nullptr : kh2_pair_of(pairs, code, room);
+            if (pair != nullptr && pair->placed && pair->map == kh2) {
+                r.place.scale = 0.01f;
+                r.place.turn = {0, pair->turn_y, 0};
+                r.place.move = pair->move;
+                std::printf("placed where Days put %s: turned %g, moved %.2f %.2f %.2f\n", kh2.c_str(), pair->turn_y,
+                            pair->move[0], pair->move[1], pair->move[2]);
+            } else if (a.verdict == RoomAlignment::kh2_units) {
+                r.place = a.place;
+                std::printf("placed by KH2's units (scale %g), its floor at the room's, the middles together: move "
+                            "%.2f %.2f %.2f\n",
+                            a.place.scale, a.place.move[0], a.place.move[1], a.place.move[2]);
+            } else if (a.verdict == RoomAlignment::turned) {
                 r.place = a.place;
                 std::printf(
                     "lined up with the room: turned %.0f %.0f %.0f, scale %g (%.0f%% of its points on the room's)\n",
@@ -398,9 +535,11 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
     const bool keep = args.size() >= 6 && args[5] == "game";  // the game's own floor and walls kept
     if (keep)
         r.keep_collision = true;
+    if (!kh2.empty())
+        r.kh2 = kh2;
     WorldOutcome o;
-    const bool ok = args.size() >= 5 ? save_change(nitrofs, dump, mod_dir, r, path_u8(args[4]),
-                                                   args.size() >= 6 && !keep ? path_u8(args[5]) : fs::path(), &o, &why)
+    const bool ok = args.size() >= 5 ? save_change(nitrofs, dump, mod_dir, r, path_u8(given[4]),
+                                                   args.size() >= 6 && !keep ? path_u8(given[5]) : fs::path(), &o, &why)
                                      : write_world_outputs(nitrofs, dump, mod_dir, code, &o, &why);
     return print_outcome(ok, o, why);
 }
@@ -1102,6 +1241,10 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         return world_info(root, args);
     if (args.size() == 4 && args[0] == "--room-model")
         return room_model(root, args);
+    if ((args.size() == 3 || args.size() == 4) && args[0] == "--kh2-room")
+        return kh2_room(root, args);
+    if ((args.size() == 1 || args.size() == 2) && args[0] == "--kh2-maps")
+        return kh2_maps(root, args);
     if (args.size() == 1 && args[0] == "--check-missions")
         return check_missions(root);
     if (args.size() == 1 && args[0] == "--check-texts")
@@ -1146,7 +1289,11 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  a mission world's rooms, or one room's collision\n"
         "       khdays-studio [--port <dir>] --room-model <code> <room> <out.gltf>\n"
         "                                                  a room's models and collision, to build on\n"
-        "       khdays-studio [--port <dir>] --replace-room <Mod> <code> <room> [<model> [<collision model> | game]]\n"
+        "       khdays-studio [--port <dir>] --kh2-room <map> <out.gltf> [<folder>]\n"
+        "                                                  a KH2 map of the player's collection as a model\n"
+        "       khdays-studio [--port <dir>] --kh2-maps [<world>]\n"
+        "                                                  the KH2 maps of the player's copy, the Days rooms made from each\n"
+        "       khdays-studio [--port <dir>] --replace-room <Mod> <code> <room> [<model> | kh2:<map> [<collision model> | game | kh2-collision]]\n"
         "                                                  a room made from a model (or again from its change)\n"
         "       khdays-studio [--port <dir>] --revert-room <Mod> <code> <room>\n"
         "                                                  a room's change and what it wrote removed\n"

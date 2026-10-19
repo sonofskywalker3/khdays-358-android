@@ -3,7 +3,9 @@
 written as the collections write them and read back byte for byte. The table here is a made-up
 permutation (the game's own is never in the repository); the encryption is its own inverse (XOR)."""
 
+import contextlib
 import hashlib
+import io
 import random
 import struct
 import sys
@@ -114,6 +116,36 @@ class Reader(unittest.TestCase):
                 exe.write_bytes(bytes(48 + 256 + 32))
                 with self.assertRaises(ca.ArchiveError):
                     ca.load_table(exe)
+            finally:
+                ca.TABLE_SHA256 = saved
+
+
+class CommandLine(unittest.TestCase):
+    def test_paths_held_or_named(self):
+        cipher = ca.Cipher(TABLE)
+        entries = {"map/tt02.map": (bytes(range(200)), "compressed", [("-0.dds", bytes(300), "stored")])}
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d) / "kh2_fifth"
+            write_archive(base, entries, cipher)
+            exe = Path(d) / "game.exe"
+            exe.write_bytes(bytes(16) + TABLE)
+            saved = ca.TABLE_SHA256
+            try:
+                ca.TABLE_SHA256 = hashlib.sha256(TABLE).hexdigest()
+                out = Path(d) / "out"
+                said = io.StringIO()
+                with contextlib.redirect_stdout(said):
+                    status = ca.main(["x", str(base), str(out), str(exe), "map/tt02.map", "map/tt99.map"])
+                self.assertEqual(status, 0)
+                self.assertIn("map/tt99.map is not in", said.getvalue())
+                self.assertEqual((out / "original/map/tt02.map").read_bytes(), bytes(range(200)))
+                self.assertTrue((out / "remastered/map/tt02.map/-0.dds").is_file())
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(ca.main(["x", str(base), str(out), str(exe), "map/tt99.map"]), 3)
+                said = io.StringIO()
+                with contextlib.redirect_stdout(said):
+                    self.assertEqual(ca.main(["x", "--has", str(base), "map/tt01.map", "map/tt02.map"]), 0)
+                self.assertEqual(said.getvalue().split(), ["map/tt02.map"])
             finally:
                 ca.TABLE_SHA256 = saved
 

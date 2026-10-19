@@ -36,6 +36,7 @@ typedef struct KhdaysShape3d {
     float src_x, src_y, src_w, src_h;
     int whole; /* group "all": every polygon placed, not only those with their middle inside, where
                 * the screen over the picture cuts the rest at its frame (the camp's model window) */
+    int world; /* group "all": the world's polygons alone, the HUD's left where the HUD's shapes put them */
 } KhdaysShape3d;
 
 /* A piece of an animated picture as this frame has it, as the one-screen pass reads it

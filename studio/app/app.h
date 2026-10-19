@@ -105,9 +105,11 @@ struct App {
     std::vector<std::string> dialog_files;
     std::vector<std::string> dialog_clips;          // animation clips
     std::vector<std::string> dialog_exports;        // where an assembled sheet is exported
+    std::vector<std::string> dialog_grids;          // where its tile grid is exported
     std::vector<std::string> dialog_room_exports;   // where a room is exported
     std::vector<std::string> dialog_model_exports;  // where a game model is exported
     std::vector<std::string> dialog_sheet_folders;  // where every 2D sheet is exported
+    std::vector<std::string> dialog_collections;    // the 1.5+2.5 collection's folder (KH2's rooms)
 
     std::string status;
 
@@ -146,6 +148,8 @@ void movie_view_leave();
 void room_export_to(App& app, const std::filesystem::path& file);
 // A mission: its scripts, step by step.
 void draw_mission_view(App& app, const Item& item);
+// The mods' console: the running game's mods' log as it grows, and their reloads.
+void draw_mods_console(App& app, bool* open);
 
 // Points a mission puts in a room (its spawners), drawn by the map view
 // over that room when it is shown.
@@ -174,11 +178,13 @@ void clip_offer(App& app, const std::filesystem::path& file);
 void choose_clip(App& app);
 // A 2D sheet assembled: the mode switch (true: assembled), the view,
 // an edited picture offered while it is shown (false: not taken -- the
-// sheet is replaced as tiles), its export and the dialog choosing where.
+// sheet is replaced as tiles), its export, its tile grid's and the dialog
+// choosing where.
 bool draw_sheet_mode(App& app);
 void draw_sheet_assembled(App& app, const Item& item);
 bool sheet_offer(App& app, const std::filesystem::path& file);
 void sheet_export_to(App& app, const std::filesystem::path& file);
+void sheet_grid_export_to(App& app, const std::filesystem::path& file);
 void choose_export(App& app);
 // Lets go of the model view's pictures before the graphics device goes.
 void model_view_shutdown();

@@ -21,6 +21,7 @@ order while their conditions hold. Their lines:
 | `shape3d <hud\|all> [<x> <y>] [<w> <h>] at <corner> [margin ...] [scale <s>]` | the HUD's screen-space 3D (or all the 3D) in a rectangle, moved |
 | `hide3d <hud\|all>` | not drawn |
 | `menu` | the common rule: the screens that show something, whole, as large as the picture allows (a situation no section names takes it too) |
+| `halves` | the two screens as one, joined in the middle: the upper's left half and the lower's right half where the DS has them, the DS's 256 columns enlarged to the picture's width (top and bottom cut when wider than 4:3); the upper's world's 3D enlarged with it (the HUD's left to its shapes), the lower's half under the section's shapes (Sora's memories in a battle) |
 | `stop` | no later section |
 | `backdrop <file> [at <corner>] [fit]` | a picture of the mod's `layouts/` folder (PNG) behind everything, covering the picture (with `fit`, inside it: all of it shows at any aspect ratio), its aspect kept, held at the corner |
 | `preload <file>` | a picture named as a backdrop's is (and an animated one's atlas) read ahead on a thread of its own while its section holds, so showing it later holds nothing up |

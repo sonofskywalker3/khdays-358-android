@@ -294,6 +294,14 @@ the DS's main RAM (the port's specs/022, 2026-10-11):
   that read it, would say that it is one format, and where the 16 MB bound of
   the DS's main RAM window lives.
 
+- `Ov023_FlushTextBox` sets the event script's skip request (`SetWordAt0x588To1` on the event's
+  state at the scene root + 0x4b88: `Game_RunActionScript` unwinds to the kept target when +0x584 and
+  +0x588 are both set); the pause's Skip is what calls it. `Ov002_FormatResultLine(0, ...)` formats
+  the field's event script's name ("%d" of the field root's +0x8baa, the struct's `wScore`): it is
+  the script number, not a score. Group 3 of the script machine's tables is the movie player's
+  (`Ov024_MobiClip_OpenPlayer`, ov012's opening): the missions' `_m` sections are the movies'
+  subtitle schedules. Found for the port's spec 029, 2026-10-17 (`docs/RUNTIME_MAP.md` 21).
+
 ## 2. Known, and kept as they are
 
 What remains cannot be written in C without changing the ROM's code, as the

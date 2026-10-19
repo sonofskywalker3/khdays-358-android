@@ -11,6 +11,7 @@
 #include "window.h"
 #include "../sound/sound_bridge.h"
 #include "../menus/saveslots.h"
+#include "../scripts/scripts.h"
 #include "../../host/app/files.h"
 #include "../../host/app/instance.h"
 
@@ -343,10 +344,14 @@ int khdays_backup_commit(void)
 {
     u64 start;
     int ok;
+    const int slots = khdays_slots_changed();
     if (!khdays_slots_commit()) {
         return 0;
     }
     if (!backup_changed || backup == NULL) {
+        if (slots) {
+            khdays_scripts_saved();
+        }
         return 1;
     }
     start = khdays_clock_cycles();
@@ -360,6 +365,7 @@ int khdays_backup_commit(void)
     backup_changed = 0;
     khdays_log("backup: %s written whole, %u bytes, in %.1f ms", SAVE_FILE, backup_extent,
                (double)(khdays_clock_cycles() - start) * 1000.0 / KHDAYS_CLOCK_HZ);
+    khdays_scripts_saved();
     return 1;
 }
 

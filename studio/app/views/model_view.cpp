@@ -3,6 +3,7 @@
 // game's animations -- saved where the port reads them; and an animation replaced by a glTF clip,
 // saved as the whole game file in the mod's files/ (docs/STUDIO.md).
 #include "../app.h"
+#include "../save_dialog.h"
 
 #include "core/models/anim_replace.h"
 #include "core/models/bones.h"
@@ -820,17 +821,8 @@ void draw_model_view(App& app, const Item& item) {
     ImGui::Checkbox(tr(app.language, S::show_bones), &s.bones);
     ImGui::SameLine();
     // asked first whether its animations go with it, when it has some
-    const auto choose_export_file = [&app]() {
-        static const SDL_DialogFileFilter gltf[] = {{"glTF", "gltf"}};
-        SDL_ShowSaveFileDialog(
-            [](void* user, const char* const* files, int) {
-                if (files == nullptr || files[0] == nullptr)
-                    return;
-                App* a = static_cast<App*>(user);
-                std::lock_guard lock(a->dialog_mutex);
-                a->dialog_model_exports.emplace_back(files[0]);
-            },
-            &app, app.window, gltf, 1, nullptr);
+    const auto choose_export_file = [&app, &item]() {
+        choose_save_file(app, export_name(item), "glTF", "gltf", app.dialog_model_exports);
     };
     const int animations = exported_animation_count(s.game);
     if (ImGui::Button(tr(app.language, S::model_export))) {

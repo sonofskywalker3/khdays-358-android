@@ -34,6 +34,7 @@ enum {
 #define CARD_ROUND 24.0f
 #define NOBODY_ALPHA 0.25f /* an empty place's figure */
 #define RING 3.0f          /* the white ring around a place's circle */
+#define LEVEL_SIZE 1.5f    /* a member's level's text */
 static const Uint8 BLACK[3] = {0, 0, 0}, WHITE[3] = {255, 255, 255}, NOBODY[3] = {90, 90, 90};
 
 static struct {
@@ -424,6 +425,21 @@ static void draw_members(const KhdaysLayoutFrame *fr, const KhdaysRoomView *v)
             snprintf(line, sizeof(line), "%d ms", r->room.ping_ms);
             text(fr, "card_ping", line, x, y, 1.0f);
         }
+        if (r->level > 0) {
+            /* the player's level in the card's upper right corner, as far in as its place's circle */
+            const unsigned short *level;
+            snprintf(line, sizeof(line), khdays_text(TXT_ROOM_LEVEL), r->level);
+            level = wide(line);
+            if (level != NULL) {
+                const float w = khdays_layout_line_width(&s.layout, level, LEVEL_SIZE);
+                const float h = (s.layout.ink_bottom - s.layout.ink_top) * LEVEL_SIZE;
+                const float lx = x + card[2] - (tag[0] - tag[2]) - w, ly = y + tag[1] - h / 2;
+                if (!s.layout.font_colours) {
+                    khdays_layout_draw_line(&s.layout, fr, level, lx, ly, LEVEL_SIZE, 255.0f, 1.0f, 1); /* its shadow */
+                }
+                khdays_layout_draw_line(&s.layout, fr, level, lx, ly, LEVEL_SIZE, 255.0f, 1.0f, 0);
+            }
+        }
     }
     if (v->host) {
         const float *b = place("proceed");
@@ -503,7 +519,14 @@ int khdays_room_screen_draw(SDL_Renderer *renderer)
         break;
     case KHDAYS_ROOMS_LIST:
         words(&fr, "heading", MLT_HEADING, 0, 0, 1.0f);
-        if (v->wrong_password) {
+        if (v->mods_needed[0] != 0) {
+            char needs[1200];
+            const int n = SDL_snprintf(needs, sizeof(needs), khdays_text(TXT_ROOM_NEEDS_MODS), v->mods_needed);
+            if (v->mods_more > 0 && n > 0 && n < (int)sizeof(needs)) {
+                SDL_snprintf(needs + n, sizeof(needs) - (size_t)n, " (+%d)", v->mods_more);
+            }
+            text(&fr, "notice", needs, 0, 0, 1.0f);
+        } else if (v->wrong_password) {
             text(&fr, "notice", khdays_text(TXT_ROOM_WRONG_PASSWORD), 0, 0, 1.0f);
         }
         draw_list(&fr, v);

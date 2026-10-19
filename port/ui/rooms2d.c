@@ -5,6 +5,7 @@
 #include "rooms2d.h"
 
 #include "../host/screens/ui_text.h"
+#include "../runtime/core/utf8.h"
 #include "../runtime/net/roomlist.h"
 
 #include <stdio.h>
@@ -52,13 +53,7 @@ static void clear(Wide *w)
 static void from_utf8(Wide *w, const char *s)
 {
     for (const unsigned char *p = (const unsigned char *)(s != NULL ? s : ""); *p != 0;) {
-        unsigned c = *p++;
-        int more = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc0 ? 1 : 0;
-        c &= more == 3 ? 0x07u : more == 2 ? 0x0fu : more == 1 ? 0x1fu : 0x7fu;
-        for (; more > 0 && (*p & 0xc0) == 0x80; --more) {
-            c = (c << 6) | (*p++ & 0x3fu);
-        }
-        put(w, c > 0xffffu ? (unsigned short)'?' : (unsigned short)c);
+        put(w, khdays_utf8_next(&p));
     }
 }
 
@@ -272,11 +267,21 @@ void *khdays_rooms2d_text(int id, void *game, void *out_buffer, int units)
     void *out = game;
     if (v != NULL && id == 0x3d) {
         /* the note: why the last join failed, else what the step asks */
-        const int said = v->screen == KHDAYS_ROOMS_LIST && v->wrong_password ? TXT_ROOM_WRONG_PASSWORD
-                         : v->screen == KHDAYS_ROOMS_CREATE                  ? TXT_ROOM_PASSWORD_NOTE
-                         : v->screen == KHDAYS_ROOMS_PASSWORD                ? TXT_ROOM_PASSWORD_ASK
-                                                                             : -1;
-        if (said >= 0) {
+        const int said = v->screen == KHDAYS_ROOMS_LIST && v->mods_needed[0] != 0 ? TXT_ROOM_NEEDS_MODS
+                         : v->screen == KHDAYS_ROOMS_LIST && v->wrong_password    ? TXT_ROOM_WRONG_PASSWORD
+                         : v->screen == KHDAYS_ROOMS_CREATE                       ? TXT_ROOM_PASSWORD_NOTE
+                         : v->screen == KHDAYS_ROOMS_PASSWORD                     ? TXT_ROOM_PASSWORD_ASK
+                                                                                  : -1;
+        if (said == TXT_ROOM_NEEDS_MODS) {
+            char line[1200];
+            const int n = snprintf(line, sizeof(line), word(said, v->language), v->mods_needed);
+            if (v->mods_more > 0 && n > 0 && n < (int)sizeof(line)) {
+                snprintf(line + n, sizeof(line) - (size_t)n, " (+%d)", v->mods_more);
+            }
+            clear(&built);
+            wrapped(&built, line);
+            out = give(&built, out_buffer, units);
+        } else if (said >= 0) {
             clear(&built);
             wrapped(&built, word(said, v->language));
             out = give(&built, out_buffer, units);
@@ -326,13 +331,23 @@ void *khdays_rooms2d_member_detail(int row, void *out_buffer, int units)
                 continue;
             }
             clear(&built);
+            if (r->level > 0) {
+                /* the player's level first, then the rest */
+                char line[32];
+                snprintf(line, sizeof(line), word(TXT_ROOM_LEVEL, v->language), r->level);
+                from_utf8(&built, line);
+                if (r->which == v->self || r->room.ping_ms >= 0) {
+                    from_ascii(&built, "  ");
+                }
+            }
             if (r->which == v->self) {
                 from_utf8(&built, word(TXT_ROOM_YOU, v->language));
-                out = give(&built, out_buffer, units);
             } else if (r->room.ping_ms >= 0) {
                 char line[32];
                 snprintf(line, sizeof(line), "%d ms", r->room.ping_ms);
                 from_ascii(&built, line);
+            }
+            if (built.n > 0) {
                 out = give(&built, out_buffer, units);
             }
             break;

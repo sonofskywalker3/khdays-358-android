@@ -8,6 +8,7 @@
 #include "../core/io.h"
 #include "../core/rom.h"
 #include "../core/window.h"
+#include "../menus/savelist.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,7 +45,10 @@ u32 khdays_events_vblank_count(void);
 #define MEMBERS_PRESENT 0x434u
 #define MEMBERS_NAMES 0x436u
 #define MEMBER_NAME 11u /* UTF-16 characters a name takes (the game's) */
-#define PLACES 4        /* the game's group: its host and three guests */
+/* this copy's player in gPartyMembers: +2 its level less one (Ov008_RefreshEquipPanel shows it plus
+ * one), +6 a figure its level gives (PartyMember_Reset), 0 until the game made the record */
+#define PARTY_MEMBER 0x0204c678u
+#define PLACES 4 /* the game's group: its host and three guests */
 #define JOIN_WAIT                                                                                                      \
     300u                     /* VBlanks a chosen room may take to reach the game's list (it is told
                              * of it at once on the local network, within a second online) */
@@ -87,6 +91,8 @@ static u32 members_seen;
 static Text session_name; /* the room's name, as chosen or joined here */
 static int host_view, self_view, proceed_view;
 static int mode = KHDAYS_ROOMS_NONE, cursor, editing, wrong_password;
+static char mods_needed[1024]; /* the host's gameplay mods when the last join was refused for them */
+static int mods_more;
 /* Without the HD screens' pieces the game's own screens draw the list (ui/rooms2d.c): its rows in
  * the game's order, the action last on the game's button, the others on its four plates from `top` */
 static int look_game, top;
@@ -404,13 +410,23 @@ static void build_rows(void)
     }
 }
 
-/* The members' screen's rows: the group's four places, each its player's name (the game's) and
+/* This copy's level: the game's record of its player once made (in Mission Mode's camp), else the
+ * level the title's list counted for the file loaded (a group made from the title, before the camp). */
+static int own_level(void)
+{
+    if (*(const volatile u16 *)KHDAYS_W(PARTY_MEMBER + 6u) != 0) {
+        return *(const volatile u8 *)KHDAYS_W(PARTY_MEMBER + 2u) + 1;
+    }
+    return khdays_savelist_played_level();
+}
+
+/* The members' screen's rows: the group's four places, each its player's name (the game's), level and
  * the ping to it as the session measures it (the host's guests; a guest's host). */
 static void build_members(void)
 {
     const u32 session = rd32(screens[members_on].session), menu = rd32(screens[members_on].menu);
-    unsigned int aids[PLACES * 2];
-    int ms[PLACES * 2], measured, present, count = 0;
+    unsigned int aids[PLACES * 2], level_aids[PLACES * 2];
+    int ms[PLACES * 2], levels[PLACES * 2], measured, leveled, present, count = 0;
     row_count = 0;
     text_clear(&names);
     host_view = self_view = proceed_view = 0;
@@ -418,6 +434,9 @@ static void build_members(void)
         return;
     }
     present = *(const volatile u16 *)KHDAYS_W(session + MEMBERS_PRESENT);
+    /* this copy's level goes to the room with its pings; everyone's come back */
+    khdays_net_set_level(own_level());
+    leveled = khdays_net_levels(level_aids, levels, PLACES * 2);
     measured = khdays_net_round_trips(aids, ms, PLACES * 2);
     for (int place = 0; place < PLACES; ++place) {
         unsigned short name[MEMBER_NAME];
@@ -428,6 +447,12 @@ static void build_members(void)
         }
         r->room.players = (present >> place) & 1;
         r->room.ping_ms = -1;
+        r->level = 0;
+        for (int i = 0; i < leveled && i < PLACES * 2; ++i) {
+            if ((int)level_aids[i] == place) {
+                r->level = levels[i];
+            }
+        }
         for (int i = 0; i < measured && i < PLACES * 2; ++i) {
             if ((int)aids[i] == place) {
                 r->room.ping_ms = ms[i];
@@ -619,7 +644,7 @@ void khdays_roomlist_edit(int key)
 static void publish(int screen, int master)
 {
     KhdaysRoomView *v, *old;
-    size_t texts = names.n + session_name.n + 1, at;
+    size_t texts = names.n + session_name.n + 1 + strlen(mods_needed) + 1, at;
     const int fields[3] = {KHDAYS_ROOMFIELD_SEARCH, KHDAYS_ROOMFIELD_NAME, KHDAYS_ROOMFIELD_PASSWORD};
     char *pool;
     for (int f = 0; f < 3; ++f) {
@@ -658,6 +683,10 @@ static void publish(int screen, int master)
     }
     memcpy(pool + at, text_of(&session_name), session_name.n + 1);
     v->title = pool + at;
+    at += session_name.n + 1;
+    memcpy(pool + at, mods_needed, strlen(mods_needed) + 1);
+    v->mods_needed = pool + at;
+    v->mods_more = mods_more;
     AcquireSRWLockExclusive(&view_lock);
     old = shown;
     shown = v;
@@ -703,6 +732,8 @@ static void start_join(const unsigned char *id)
     join_pending = 1;
     join_since = khdays_events_vblank_count();
     wrong_password = 0;
+    mods_needed[0] = 0;
+    mods_more = 0;
     khdays_net_scan_only(target);
 }
 
@@ -766,6 +797,12 @@ uint16_t khdays_roomlist_buttons(uint16_t buttons)
         selected_room = 0;
         editing = 0;
         wrong_password = khdays_net_last_refusal() == KHDAYS_NET_REFUSE_PASSWORD;
+        if (khdays_net_last_refusal() == KHDAYS_NET_REFUSE_MODS) {
+            khdays_net_last_refusal_mods(mods_needed, sizeof(mods_needed), &mods_more);
+        } else {
+            mods_needed[0] = 0;
+            mods_more = 0;
+        }
         opened = 1;
     }
     if (create_pending) {

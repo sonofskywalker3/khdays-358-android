@@ -9,6 +9,8 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "khdays/assets/image.h"
 
@@ -33,6 +35,10 @@
 
 namespace {
 
+using khdays::assets::ImportedAnimation;
+using khdays::assets::ImportedTrack;
+using khdays::assets::NeutralMesh;
+
 const cgltf_accessor* find_attribute(const cgltf_primitive& primitive, const cgltf_attribute_type type) {
     for (cgltf_size i = 0; i < primitive.attributes_count; ++i) {
         const auto& attr = primitive.attributes[i];
@@ -54,6 +60,230 @@ const cgltf_image* base_color_image(const cgltf_primitive& primitive) {
         return nullptr;
     }
     return texture->image;
+}
+
+// A small JSON reader for the port's own extras (khdays_sky, khdays_scroll,
+// khdays_frames, khdays_loop): cgltf keeps an object's extras as JSON text.
+struct Json final {
+    enum class Kind { null, boolean, number, string, array, object };
+    Kind kind = Kind::null;
+    bool boolean = false;
+    double number = 0.0;
+    std::string text;
+    std::vector<Json> items;
+    std::vector<std::pair<std::string, Json>> members;
+
+    const Json* get(const char* key) const {
+        for (const auto& [name, value] : members) {
+            if (name == key) {
+                return &value;
+            }
+        }
+        return nullptr;
+    }
+    bool is_true() const {
+        return kind == Kind::boolean && boolean;
+    }
+};
+
+class JsonReader final {
+public:
+    explicit JsonReader(const char* text) : p_(text) {}
+
+    Json value() {
+        space();
+        Json v;
+        if (*p_ == '{') {
+            v.kind = Json::Kind::object;
+            ++p_;
+            space();
+            if (*p_ == '}') {
+                ++p_;
+                return v;
+            }
+            for (;;) {
+                space();
+                std::string key = string();
+                space();
+                expect(':');
+                v.members.emplace_back(std::move(key), value());
+                space();
+                if (*p_ == ',') {
+                    ++p_;
+                    continue;
+                }
+                expect('}');
+                return v;
+            }
+        }
+        if (*p_ == '[') {
+            v.kind = Json::Kind::array;
+            ++p_;
+            space();
+            if (*p_ == ']') {
+                ++p_;
+                return v;
+            }
+            for (;;) {
+                v.items.push_back(value());
+                space();
+                if (*p_ == ',') {
+                    ++p_;
+                    continue;
+                }
+                expect(']');
+                return v;
+            }
+        }
+        if (*p_ == '"') {
+            v.kind = Json::Kind::string;
+            v.text = string();
+            return v;
+        }
+        for (const char* word : {"true", "false", "null"}) {
+            const std::size_t n = std::strlen(word);
+            if (std::strncmp(p_, word, n) == 0) {
+                p_ += n;
+                v.kind = word[0] == 'n' ? Json::Kind::null : Json::Kind::boolean;
+                v.boolean = word[0] == 't';
+                return v;
+            }
+        }
+        char* end = nullptr;
+        v.number = std::strtod(p_, &end);
+        if (end == p_) {
+            throw std::runtime_error("extras: not JSON");
+        }
+        v.kind = Json::Kind::number;
+        p_ = end;
+        return v;
+    }
+
+private:
+    void space() {
+        while (*p_ == ' ' || *p_ == '\t' || *p_ == '\n' || *p_ == '\r') {
+            ++p_;
+        }
+    }
+    void expect(const char c) {
+        if (*p_ != c) {
+            throw std::runtime_error("extras: not JSON");
+        }
+        ++p_;
+    }
+    std::string string() {
+        expect('"');
+        std::string s;
+        while (*p_ != '\0' && *p_ != '"') {
+            if (*p_ == '\\' && p_[1] != '\0') {
+                ++p_;
+            }
+            s += *p_++;
+        }
+        expect('"');
+        return s;
+    }
+
+    const char* p_;
+};
+
+// An object's extras, or null when it has none (or they are not JSON).
+Json extras(const cgltf_extras& e) {
+    if (e.data == nullptr) {
+        return {};
+    }
+    try {
+        return JsonReader(e.data).value();
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+
+// A material's moving textures (the port's extras khdays_scroll and khdays_frames) into `mesh`: a
+// scroll in 0..1 a game frame, kept as texels of its `w` x `h` texture, and pictures shown in turn.
+// `picture` loads a picture the frames name; one it cannot is drawn as the mesh's own texture.
+template <typename LoadPicture>
+void read_moving_textures(const Json& e, float w, float h, const std::string& own, const LoadPicture& picture,
+                          NeutralMesh& mesh) {
+    const Json* scroll = e.get("khdays_scroll");
+    if (scroll != nullptr && scroll->items.size() == 2) {
+        mesh.scroll = {static_cast<float>(scroll->items[0].number) * w,
+                       static_cast<float>(scroll->items[1].number) * h};
+    }
+    const Json* frames = e.get("khdays_frames");
+    const Json* pictures = frames != nullptr ? frames->get("pictures") : nullptr;
+    const Json* steps = frames != nullptr ? frames->get("frames") : nullptr;
+    if (pictures == nullptr || steps == nullptr) {
+        return;
+    }
+    std::vector<std::string> names;
+    for (const Json& name : pictures->items) {
+        names.push_back(picture(name.text) ? name.text : own);
+    }
+    for (const Json& step : steps->items) {
+        if (step.items.size() != 2) {
+            continue;
+        }
+        const auto shown = static_cast<std::size_t>(step.items[0].number);
+        mesh.texture_frames.emplace_back(shown < names.size() ? names[shown] : own,
+                                         static_cast<int>(step.items[1].number));
+    }
+    const Json* loop = frames->get("loop");
+    mesh.texture_frames_loop = loop == nullptr || loop->is_true();
+    const Json* from = frames->get("loop_from");
+    mesh.texture_frames_loop_from = from != nullptr ? static_cast<std::size_t>(from->number) : 0U;
+}
+
+// The file's own animations of its nodes (the port's extras khdays_loop and khdays_loop_from say how
+// they loop; morph weights are not read).
+std::vector<ImportedAnimation> read_animations(const cgltf_data* data) {
+    std::vector<ImportedAnimation> animations;
+    for (cgltf_size a = 0; a < data->animations_count; ++a) {
+        const cgltf_animation& animation = data->animations[a];
+        ImportedAnimation out;
+        out.name = animation.name != nullptr ? animation.name : "animation_" + std::to_string(a);
+        const Json e = extras(animation.extras);
+        const Json* loop = e.get("khdays_loop");
+        out.loop = loop != nullptr && loop->is_true();
+        const Json* from = e.get("khdays_loop_from");
+        out.loop_from = from != nullptr ? static_cast<float>(from->number) : 0.0F;
+        for (cgltf_size c = 0; c < animation.channels_count; ++c) {
+            const cgltf_animation_channel& channel = animation.channels[c];
+            const cgltf_animation_sampler* sampler = channel.sampler;
+            if (sampler == nullptr || channel.target_node == nullptr || sampler->input == nullptr ||
+                sampler->output == nullptr) {
+                continue;
+            }
+            ImportedTrack track;
+            track.node = static_cast<int>(channel.target_node - data->nodes);
+            cgltf_size n = 3;
+            switch (channel.target_path) {
+            case cgltf_animation_path_type_translation: track.path = ImportedTrack::Path::translation; break;
+            case cgltf_animation_path_type_rotation:
+                track.path = ImportedTrack::Path::rotation;
+                n = 4;
+                break;
+            case cgltf_animation_path_type_scale: track.path = ImportedTrack::Path::scale; break;
+            default: continue;
+            }
+            track.step = sampler->interpolation == cgltf_interpolation_type_step;
+            // a cubic spline's keys hold (in tangent, value, out tangent): its values, drawn linear
+            const bool cubic = sampler->interpolation == cgltf_interpolation_type_cubic_spline;
+            const cgltf_size keys = sampler->input->count;
+            track.times.resize(keys);
+            track.values.resize(keys * n);
+            for (cgltf_size k = 0; k < keys; ++k) {
+                cgltf_accessor_read_float(sampler->input, k, &track.times[k], 1);
+                cgltf_accessor_read_float(sampler->output, cubic ? k * 3 + 1 : k, &track.values[k * n], n);
+                out.duration = std::max(out.duration, track.times[k]);
+            }
+            out.tracks.push_back(std::move(track));
+        }
+        if (!out.tracks.empty()) {
+            animations.push_back(std::move(out));
+        }
+    }
+    return animations;
 }
 
 std::string image_key(const cgltf_image* image, std::size_t fallback_index) {
@@ -170,6 +400,34 @@ ImportedModel import_gltf(const std::filesystem::path& input_path) {
         }
     }
 
+    // The nodes at rest, and which are in a sky (a node marked khdays_sky, or under one).
+    const auto node_index = [&](const cgltf_node* node) {
+        return node != nullptr ? static_cast<int>(node - data->nodes) : -1;
+    };
+    std::vector<char> sky(data->nodes_count, 0);
+    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+        const cgltf_node& node = data->nodes[n];
+        ImportedNode out;
+        out.name = node.name != nullptr ? node.name : "";
+        out.parent = node_index(node.parent);
+        if (node.has_translation != 0) {
+            std::copy(node.translation, node.translation + 3, out.translation.begin());
+        }
+        if (node.has_rotation != 0) {
+            std::copy(node.rotation, node.rotation + 4, out.rotation.begin());
+        }
+        if (node.has_scale != 0) {
+            std::copy(node.scale, node.scale + 3, out.scale.begin());
+        }
+        cgltf_node_transform_local(&node, out.local.data());
+        result.nodes.push_back(std::move(out));
+        for (const cgltf_node* up = &node; up != nullptr && sky[n] == 0; up = up->parent) {
+            const Json e = extras(up->extras);
+            const Json* flag = e.get("khdays_sky");
+            sky[n] = flag != nullptr && flag->is_true() ? 1 : 0;
+        }
+    }
+
     // One palette block per skin, joint j's jointGlobalTransform[j] * inverseBind[j]: the identity in
     // the authored pose, re-posed by animated joints. A skinned mesh's node transform is ignored, as
     // glTF says.
@@ -191,6 +449,7 @@ ImportedModel import_gltf(const std::filesystem::path& input_path) {
                 joint.name = joint_node->name;
             }
             joint.inverse_bind = inverse_bind;
+            joint.node = node_index(joint_node);
             std::copy(world, world + 16, joint.world.begin());
             result.joints.push_back(std::move(joint));
             result.model.palette.push_back(matrix_multiply(world, inverse_bind.data()));
@@ -209,6 +468,26 @@ ImportedModel import_gltf(const std::filesystem::path& input_path) {
             }
         }
     }
+
+    // A picture a material's frames name (not one of the file's images): loaded beside it once.
+    const auto picture = [&](const std::string& uri) {
+        if (loaded.count(uri) != 0U) {
+            return true;
+        }
+        try {
+            const auto file = find_texture(base_dir, uri);
+            if (!file) {
+                throw std::runtime_error("not found");
+            }
+            DecodedTexture texture = read_image(*file);
+            texture.name = uri;
+            loaded.emplace(uri, std::move(texture));
+            return true;
+        } catch (const std::exception& error) {
+            result.missing_textures.emplace_back(uri, error.what());
+            return false;
+        }
+    };
 
     std::array<float, 4> position{};
     std::array<float, 2> uv{};
@@ -274,6 +553,10 @@ ImportedModel import_gltf(const std::filesystem::path& input_path) {
                 }
             } else {
                 out_mesh.alpha_mode = NeutralMesh::AlphaMode::opaque;  // glTF's default material
+            }
+            out_mesh.sky = sky[n] != 0;
+            if (primitive.material != nullptr) {
+                read_moving_textures(extras(primitive.material->extras), tex_w, tex_h, texture_key, picture, out_mesh);
             }
 
             const auto vertex_count = positions->count;
@@ -347,6 +630,8 @@ ImportedModel import_gltf(const std::filesystem::path& input_path) {
             result.model.meshes.push_back(std::move(out_mesh));
         }
     }
+
+    result.animations = read_animations(data);
 
     for (auto& [key, texture] : loaded) {
         result.textures.emplace_back(key, std::move(texture));

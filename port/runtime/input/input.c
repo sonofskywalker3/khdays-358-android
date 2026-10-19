@@ -3,10 +3,13 @@
  * enhancements taking their part. */
 #include "../core/language.h"
 #include "input.h"
+#include "../../host/app/press_edges.h"
+#include "../menus/autosave.h"
 #include "../menus/camp.h"
 #include "../menus/charselect.h"
 #include "../menus/cinelist.h"
 #include "../net/roomlist.h"
+#include "../net/net_session.h"
 #include "controls_hooks.h"
 #include "../movies/movie_hd.h"
 #include "../menus/newgame.h"
@@ -42,7 +45,8 @@ static Step *script;
 static int script_len;
 static int script_next;
 static u16 script_keys;
-static u32 script_actions; /* the port's own controls the script holds */
+static KhdaysPressEdges script_edges; /* the script's presses between two of the game's reads */
+static u32 script_actions;            /* the port's own controls the script holds */
 static int script_touch_x = -1, script_touch_y;
 static int script_move[2], script_camera[2]; /* the sticks' positions, y up */
 
@@ -259,6 +263,7 @@ void khdays_input_frame(u32 frame)
                     s->kind, s->keys);
         }
         if (s->kind == '+') {
+            khdays_press_edges_note(&script_edges, script_keys, (u16)(script_keys | s->keys));
             script_keys |= s->keys;
             script_actions |= s->actions;
             for (int b = 0; b < 16; ++b) {
@@ -267,6 +272,7 @@ void khdays_input_frame(u32 frame)
                 }
             }
         } else if (s->kind == '-') {
+            khdays_press_edges_note(&script_edges, script_keys, (u16)(script_keys & ~s->keys));
             script_keys &= (u16)~s->keys;
             script_actions &= ~s->actions;
         } else if (s->kind == '~') {
@@ -308,8 +314,9 @@ static u16 player_buttons(void)
     /* Lock-on on its own buttons: while the game's lock-on logic takes the buttons (it did last frame),
      * their presses become the DS's R presses for them; anywhere else they are the DS's R and L. */
     const int lock_on = (snapshot.enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) != 0;
-    const int lock_field =
-        lock_on && pad_samples > 0 && game->selection_frame == pad_samples && game->selection_live_frame == pad_samples;
+    /* (with the 3D on both screens it runs on every other frame: the frame before counts too) */
+    const int lock_field = lock_on && pad_samples > 0 && pad_samples - game->selection_frame <= 1u &&
+                           pad_samples - game->selection_live_frame <= 1u;
     const uint32_t lock_actions = ((snapshot.actions & KHDAYS_ACTION_LOCK_ON) ? 1u << KHDAYS_LOCK_ON : 0) |
                                   ((snapshot.actions & KHDAYS_ACTION_TARGET_NEXT) ? 1u << KHDAYS_LOCK_NEXT : 0) |
                                   ((snapshot.actions & KHDAYS_ACTION_TARGET_PREV) ? 1u << KHDAYS_LOCK_PREV : 0);
@@ -332,8 +339,22 @@ static u16 xy_word(u16 buttons)
     return (u16)(0x2c00 & ~(buttons & (KHDAYS_KEY_X | KHDAYS_KEY_Y)));
 }
 
+/* The movement stick, for a guest to send with its controls: the host moves the guest's actor with it,
+ * as the DS's control packet holds only the D-pad. */
+static void share_stick(const KhdaysInputSnapshot *s)
+{
+    KhdaysNetStick stick;
+    stick.x = s->move_x;
+    stick.y = s->move_y;
+    stick.run_threshold = s->run_threshold;
+    stick.walk_speed = s->walk_speed;
+    stick.on = (s->enhancements & KHDAYS_ENH_ANALOG_MOVEMENT) != 0;
+    khdays_net_set_stick(&stick);
+}
+
 void khdays_input_pad_sample(void)
 {
+    khdays_autosave_frame(); /* an owed autosave, before the save list maps the game's slots */
     khdays_language_frame(); /* a language the settings menu chose */
     if (trace_pad && pad_samples > 0) {
         /* what the game made of the previous frame's buttons */
@@ -341,7 +362,7 @@ void khdays_input_pad_sample(void)
                 FRAME_RATE_MODE, latched, PAD_HELD, PAD_PRESSED);
     }
     previous = snapshot;
-    khdays_host_input(&snapshot);
+    khdays_host_input_take(&snapshot); /* a press let go since the last game frame counts too */
     /* The script's sticks and controls, for the enhancements' runs without
      * a gamepad. */
     snapshot.actions |= script_actions;
@@ -353,12 +374,15 @@ void khdays_input_pad_sample(void)
         snapshot.camera_x = (int16_t)script_camera[0];
         snapshot.camera_y = (int16_t)script_camera[1];
     }
+    share_stick(&snapshot);
     /* While the settings menu is open the player's input is not the
      * game's (the script's still is: headless runs have no screen). */
-    latched = khdays_movie_hd_game_buttons((u16)(script_keys | (snapshot.ui_open ? 0 : player_buttons())));
+    latched = khdays_movie_hd_game_buttons(
+        (u16)(khdays_press_edges_take(&script_edges, script_keys) | (snapshot.ui_open ? 0 : player_buttons())));
     latched = khdays_newgame_buttons(latched);    /* the port's question in the new game takes them */
     latched = khdays_savelist_buttons(latched);   /* the port's save list takes the files' rows */
-    khdays_cinelist_frame();                      /* MODO CINE's list, for the port to draw (it takes no buttons) */
+    khdays_cinelist_frame();                      /* MODO CINE's list, for the port to draw */
+    latched = khdays_cinelist_buttons(latched);   /* the port's list of chapters takes all but B and START */
     latched = khdays_roomlist_buttons(latched);   /* the port's list of rooms takes the group list's */
     latched = khdays_charselect_buttons(latched); /* the port's character select takes the directions */
     latched = khdays_camp_buttons(latched);       /* the port's Preferences page joins the game's tabs */

@@ -69,9 +69,16 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def whole_dump_sha256(path: Path) -> str:
+# The header's area past its 0x200 bytes, up to 0x1000: nothing loads it and dumpers fill it differently
+# (tools/verify_rom.py HEADER_FREE_START)
+HEADER_FREE_START = 0x200
+HEADER_FREE_END = 0x1000
+
+
+def whole_dump_sha256(path: Path, header_free: bool = False) -> str:
     """The ROM's SHA-256 as a whole dump of its cartridge. A trimmed dump (cut after the ROM's used
-    size) is hashed with the cartridge's 0xFF padding put back, so it matches the whole dump."""
+    size) is hashed with the cartridge's 0xFF padding put back, so it matches the whole dump. With
+    `header_free`, the header's area 0x200-0xFFF counts as zeroes."""
     size = path.stat().st_size
     with path.open("rb") as stream:
         header = stream.read(HEADER_MIN_SIZE)
@@ -83,6 +90,10 @@ def whole_dump_sha256(path: Path) -> str:
             padding = capacity - size
     digest = hashlib.sha256()
     with path.open("rb") as stream:
+        if header_free:
+            first = bytearray(stream.read(HEADER_FREE_END))
+            first[HEADER_FREE_START:] = bytes(max(0, len(first) - HEADER_FREE_START))
+            digest.update(first)
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     fill = b"\xff" * (1024 * 1024)
@@ -178,11 +189,15 @@ def load_supported_database(path: Path) -> list[dict[str, Any]]:
 def find_supported_rom(
     sha256: str,
     database: list[dict[str, Any]],
+    header_free: str = "",
 ) -> dict[str, Any] | None:
     wanted = sha256.lower()
     for entry in database:
         candidate = str(entry.get("sha256", "")).strip().lower()
         if candidate and candidate == wanted:
+            return entry
+        free = str(entry.get("sha256_header_free", "")).strip().lower()
+        if free and header_free and free == header_free.lower():
             return entry
     return None
 
@@ -365,7 +380,7 @@ def extract_rom(
     rom_size = rom_path.stat().st_size
     rom_sha256 = whole_dump_sha256(rom_path)
     database = load_supported_database(database_path)
-    matched = find_supported_rom(rom_sha256, database)
+    matched = find_supported_rom(rom_sha256, database, whole_dump_sha256(rom_path, header_free=True))
 
     if database and matched is None and not allow_unknown:
         raise PermissionError(

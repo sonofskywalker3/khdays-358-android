@@ -26,6 +26,8 @@ extern int GetLanguage(void);
 #define FIRST_ICON 0x80
 
 #define COUNTER_CHARACTER 0xd3
+#define PANEL_EDGE 0x090         /* the mission panel's upper-left corner tile, then +1 and +2 along its edge */
+#define COUNTER_COLUMN 28        /* the counter's first cell, counted from that corner */
 #define COUNTER_PAGE 0x0207f634u /* the counter's state (Ov002_DrawPageCounter) */
 
 #define MODE_FLAGS 0x0204c240u /* +2: the mission's room key */
@@ -69,24 +71,45 @@ static int read_graphics(void)
 
 /* --- On the panel ------------------------------------------------------------------------ */
 
-/* The chests' counter's first cell on the lower screen (DS dots) and its map
- * entry, looked for where the mission panel is (y 152-192, hud.c). */
-static int find_counter(const KhdaysBgLayer *l, int *x, int *y, uint32_t *entry)
+/* Text layer l's map entry at the screen's cell (i, j). */
+static uint32_t cell(const KhdaysBgLayer *l, int i, int j)
+{
+    return khdays_bg_map_entry(1, l, (l->hofs >> 3) + i, (l->vofs >> 3) + j);
+}
+
+/* The chests' counter's first cell on the lower screen (DS dots) and its map entry, looked for where
+ * the mission panel is (y 152-192, hud.c), with *chests 1. A mission without chests (58, 10, ...) has
+ * no counter: then the cell where it would be, a row under the panel's corner, with *chests 0. */
+static int find_counter(const KhdaysBgLayer *l, int *x, int *y, uint32_t *entry, int *chests)
 {
     const int fx = l->hofs & 7, fy = l->vofs & 7;
+    int edge_i = -1, edge_j = -1;
     for (int j = 0; j < 25; ++j) {
         for (int i = 0; i < 33; ++i) {
             const int my = j * 8 - fy + 4;
-            const uint32_t e = khdays_bg_map_entry(1, l, (l->hofs >> 3) + i, (l->vofs >> 3) + j);
+            const uint32_t e = cell(l, i, j);
             if (my >= 152 && my < 192 && (e & 0x3ffu) == COUNTER_CHARACTER) {
                 *x = i * 8 - fx;
                 *y = j * 8 - fy;
                 *entry = e;
+                *chests = 1;
                 return 1;
+            }
+            if (edge_i < 0 && my >= 144 && my < 168 && (e & 0x3ffu) == PANEL_EDGE &&
+                (cell(l, i + 1, j) & 0x3ffu) == PANEL_EDGE + 1 && (cell(l, i + 2, j) & 0x3ffu) == PANEL_EDGE + 2) {
+                edge_i = i;
+                edge_j = j;
             }
         }
     }
-    return 0;
+    if (edge_i < 0) {
+        return 0;
+    }
+    *x = (edge_i + COUNTER_COLUMN) * 8 - fx;
+    *y = (edge_j + 1) * 8 - fy;
+    *entry = cell(l, edge_i + COUNTER_COLUMN, edge_j + 1);
+    *chests = 0;
+    return 1;
 }
 
 /* The counter's 4 x 8 glyph `k` (0-9, 10 the slash), as
@@ -177,7 +200,7 @@ void khdays_ui_badges_emit(void)
     uint16_t room, mission;
     uint32_t context, entry;
     unsigned kinds, found, ranks;
-    int language, x, y, changed = 0;
+    int language, x, y, chests, changed = 0;
     /* the check compares the game's own drawing, which has none of this */
     if (khdays_ui_mode(KHDAYS_UI_HUD) != KHDAYS_UI_ON || (mode & 2u))
         return;
@@ -189,7 +212,7 @@ void khdays_ui_badges_emit(void)
     room = *(const volatile uint16_t *)KHDAYS_W(MODE_FLAGS + 2u);
     mission = *(const volatile uint16_t *)KHDAYS_W(MISSION);
     kinds = khdays_mission_badges(language, room, mission);
-    if (kinds == 0 || !khdays_bg_text_layer(1, 2, &l) || !find_counter(&l, &x, &y, &entry))
+    if (kinds == 0 || !khdays_bg_text_layer(1, 2, &l) || !find_counter(&l, &x, &y, &entry, &chests))
         return;
     found = (unsigned)GameState_GetField(FOUND_FIELD + 4 * mission, 4);
     context = *(const volatile uint32_t *)KHDAYS_W(FIELD_CONTEXT);
@@ -239,8 +262,10 @@ void khdays_ui_badges_emit(void)
     }
     e.id = "hud.badges";
     e.screen = 1;
-    e.slot = KES_DIRECT | 2u;               /* above the panel, in its layer (BG2) */
-    e.x = (float)(x - (now.one ? 36 : 32)); /* on one screen 4 dots from the chest, as its counter is */
+    e.slot = KES_DIRECT | 2u; /* above the panel, in its layer (BG2) */
+    /* left of the chest icon (4 dots from it on one screen, as its counter is); with no chests, where
+     * the icon would be */
+    e.x = (float)(x - (!chests ? 8 : now.one ? 36 : 32));
     e.y = (float)y;
     e.w = 24.0f;
     e.h = 8.0f;

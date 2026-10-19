@@ -7,7 +7,7 @@
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> screen : register(u2, space1);
 
-StructuredBuffer<uint2> records : register(t0, space0); // record_columns x 192
+ByteAddressBuffer records : register(t0, space0); // record_columns x 192, two words each, read by their bytes (raster3d.hlsl says why)
 
 cbuffer Params : register(b0, space2) {
     uint scale;         // N
@@ -240,7 +240,7 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     {
         const uint c555 = ((c >> 1) & 31u) | (((c >> 9) & 31u) << 5) | (((c >> 17) & 31u) << 10);
         const int at = column - record_origin;
-        const uint2 rec = at >= 0 && at < (int)record_columns ? records[(id.y / scale) * record_columns + (uint)at]
+        const uint2 rec = at >= 0 && at < (int)record_columns ? records.Load2(((id.y / scale) * record_columns + (uint)at) * 8u)
                                                               : beside();
         screen[id.xy] = finish(recompose(rec, c555, (c >> 24) & 31u));
     }

@@ -1,0 +1,8 @@
+// studio/data/kh2_rooms.txt as the studio is built with it (CMake writes this file from that one).
+#pragma once
+
+namespace studio {
+
+inline constexpr const char* kKh2RoomsText = R"KH2ROOMS(@KH2_ROOMS_TEXT@)KH2ROOMS";
+
+}  // namespace studio

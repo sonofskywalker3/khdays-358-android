@@ -58,6 +58,10 @@ void khdays_settings_renderer_gone(void);
  * whether the HD videos are installed. Set when the menu opens. */
 void khdays_settings_set_situation(int in_session, int hd_videos);
 
+/* Whether this copy is a guest in a multiplayer session (its gameplay mods' options are shown locked:
+ * the host's count). */
+void khdays_settings_set_guest(int guest);
+
 /* A line for the notice area (a problem in the settings file, a controller
  * that could not be used), shown while the menu is open (settings_corner.c). */
 void khdays_settings_add_notice(const char *text);
@@ -71,6 +75,10 @@ void khdays_settings_fps_draw(SDL_Renderer *renderer, int pictures, int frames);
 /* The ping display ([network] show_ping): `line` in the top-left corner,
  * below the FPS display when `under_fps`. */
 void khdays_settings_ping_draw(SDL_Renderer *renderer, const char *line, int under_fps);
+
+/* A line of the mods' notices in the top-left corner, at the row given (0 the first, under the FPS
+ * and ping lines when they show). */
+void khdays_settings_corner_draw(SDL_Renderer *renderer, const char *line, int row);
 
 /* Whether the picture is drawn by the graphics card. Without it, the Video
  * settings that need it are shown as unavailable. */

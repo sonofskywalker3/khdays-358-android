@@ -20,6 +20,10 @@ void khdays_host_tell_no_data(const char *where, const char *broken);
  * reset). */
 void khdays_host_close(void);
 
+/* Wakes the window's loop to look again at what it shows: an HD scene's video begun while the game,
+ * held for it, sends no frames that would. */
+void khdays_host_wake(void);
+
 /* Shows a finished frame: both screens, 256x192 each, 0x00RRGGBB (copied). */
 void khdays_host_present(const uint32_t *upper, const uint32_t *lower);
 
@@ -75,6 +79,7 @@ enum {
     KHDAYS_ENH_SEPARATE_LOCK_ON = 1 << 1,
     KHDAYS_ENH_DPAD_COMMAND_MENU = 1 << 2,
     KHDAYS_ENH_ANALOG_MOVEMENT = 1 << 3,
+    KHDAYS_ENH_MOUSE_CAMERA = 1 << 4, /* the camera turned by the mouse's motion (the analog camera's join) */
 };
 
 /* Everything the game needs to know about the player's input at one moment.
@@ -94,14 +99,18 @@ typedef struct KhdaysInputSnapshot {
     int16_t move_y;            /* y positive is up; both 0 unless analog movement is on */
     uint8_t run_threshold;     /* analog movement: how far (percent) the stick must go to run */
     uint8_t walk_speed;        /* analog movement: percent of the game's speed when walking */
-    uint16_t touch_x, touch_y; /* the stylus on the lower screen, in its pixels */
+    uint16_t touch_x, touch_y; /* the stylus on the lower screen, in its pixels (the input scripts') */
     uint8_t touching;          /* 1 while the stylus is down */
+    int32_t mouse_x, mouse_y;  /* the mouse camera: the mouse's motion summed since the start, in its counts,
+                                  right and up positive (the camera's inversions taken) */
+    uint16_t mouse_speed;      /* the mouse camera: percent of MOUSE_COUNTS_A_FRAME (controls_hooks.c) */
     uint8_t ui_open;           /* 1 while the settings menu is open: no input reaches the game */
     uint16_t enhancements;     /* KHDAYS_ENH_* switched on */
 } KhdaysInputSnapshot;
 
-/* Copies the latest snapshot. Headless (no window), everything is 0. */
-void khdays_host_input(KhdaysInputSnapshot *out);
+/* The latest snapshot, for the game's own read of the pad once a game frame: a button pressed and let
+ * go since the last read still counts as held this once (press_edges.h). Headless, everything is 0. */
+void khdays_host_input_take(KhdaysInputSnapshot *out);
 
 /* The DS buttons held (KHDAYS_KEY_* bits, runtime/input/input.h), from the latest
  * snapshot. */

@@ -140,6 +140,20 @@ void khdays_ui_register(int part, void (*emit)(void))
     }
 }
 
+static int changed; /* a part's own state changed since the display last asked (the game's thread) */
+
+void khdays_ui_changed(void)
+{
+    changed = 1;
+}
+
+int khdays_ui_take_changed(void)
+{
+    const int was = changed;
+    changed = 0;
+    return was;
+}
+
 void khdays_ui_emit(int part, const KhdaysUiElement *element)
 {
     if (part < 0 || part >= KHDAYS_UI_PARTS || element->screen < 0 || element->screen > 1 || element->image < 0 ||

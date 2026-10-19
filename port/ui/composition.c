@@ -69,7 +69,7 @@ typedef struct Shape3dDef {
     int fixed; /* `scale fixed(N)`: its scale and margins do not follow the HUD's */
 } Shape3dDef;
 
-enum { D_SCREENS, D_BRIGHTNESS, D_SHAPE, D_SHAPE3D, D_BACKDROP, D_PRELOAD, D_HIDE3D_ALL, D_MENU, D_STOP };
+enum { D_SCREENS, D_BRIGHTNESS, D_SHAPE, D_SHAPE3D, D_BACKDROP, D_PRELOAD, D_HIDE3D_ALL, D_MENU, D_HALVES, D_STOP };
 typedef struct Directive {
     int kind;
     int value; /* D_SCREENS, D_BRIGHTNESS: the choice; D_SHAPE, D_SHAPE3D: its index; D_BACKDROP,
@@ -751,6 +751,10 @@ static void read_text(const char *file, char *text)
         } else if (strcmp(line_words[0], "menu") == 0) {
             if (n != 1 || !add_directive(D_MENU, 0)) {
                 why = "menu takes nothing";
+            }
+        } else if (strcmp(line_words[0], "halves") == 0) {
+            if (n != 1 || !add_directive(D_HALVES, 0)) {
+                why = "halves takes nothing";
             }
         } else if (strcmp(line_words[0], "stop") == 0) {
             if (n != 1 || !add_directive(D_STOP, 0)) {
@@ -1579,11 +1583,51 @@ static void build_shape3d(const Shape3dDef *d, int columns, KhdaysShape3d *out)
     out->src_w = d->w;
     out->src_h = d->h;
     out->whole = 0;
+    out->world = 0;
+}
+
+/* `halves`: the two screens as one, joined in the middle -- the upper's left half and the lower's right
+ * half, each where the DS has it -- the DS's 256 columns enlarged to the picture's width (its top and
+ * bottom cut), at most as much as at 16:9 (a wider window keeps it in the middle). The upper's world's 3D
+ * is enlarged as its screen (the HUD's left to its shapes); the lower's half comes after the section's
+ * shapes, which show over it. */
+#define HALVES_MOST (342.0f / 256.0f)
+
+static void add_halves(int columns, int key_count, int *shape_count, int *shape3d_count)
+{
+    const float c = (float)columns, k = c / 256.0f < HALVES_MOST ? c / 256.0f : HALVES_MOST;
+    const float top = (192.0f - 192.0f * k) / 2.0f;
+    if (grow((void **)&shapes3d, &shape3d_room, *shape3d_count, sizeof(KhdaysShape3d))) {
+        /* the 3D's x is the DS's (0 its left edge), the place's the picture's */
+        KhdaysShape3d *s = &shapes3d[(*shape3d_count)++];
+        memset(s, 0, sizeof(*s));
+        s->group = KHDAYS_SHAPE3D_ALL;
+        s->src_w = 256.0f;
+        s->src_h = 192.0f;
+        s->scale = k;
+        s->x = (c - 256.0f * k) / 2.0f;
+        s->y = top;
+        s->whole = s->world = 1;
+    }
+    if (grow((void **)&shapes, &shape_room, *shape_count, sizeof(KhdaysShape))) {
+        ShapeDef lower;
+        memset(&lower, 0, sizeof(lower));
+        lower.lower = 1;
+        lower.x = 128.0f;
+        lower.w = 128.0f;
+        lower.h = 192.0f;
+        lower.corner = CORNER_CENTRE;
+        lower.margin_fixed[0] = 64.0f * k; /* its left edge in the picture's middle */
+        lower.sx_fixed = lower.sy_fixed = k;
+        lower.flags = KOF_FORCE;
+        lower.opacity = 1.0f;
+        build_shape(&lower, columns, &shapes[(*shape_count)++], key_count);
+    }
 }
 
 void khdays_composition_for(const KhdaysSituation *situation, int columns, KhdaysComposition *out)
 {
-    int shape_count = 0, key_count = 0, shape3d_count = 0, stopped = 0, matched = 0, shown = -1, menu = 0;
+    int shape_count = 0, key_count = 0, shape3d_count = 0, stopped = 0, matched = 0, shown = -1, menu = 0, halves = 0;
     out->screens = -1;
     out->brightness = -1;
     out->backdrop = NULL;
@@ -1684,6 +1728,7 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             }
             case D_HIDE3D_ALL: out->hide3d_all = 1; break;
             case D_MENU: menu = 1; break;
+            case D_HALVES: halves = 1; break;
             default: stopped = 1; break;
             }
         }
@@ -1708,6 +1753,10 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             whole.opacity = 1.0f;
             build_shape(&whole, columns, &shapes[shape_count++], key_count);
         }
+    }
+    if (halves) {
+        out->screens = KHDAYS_SCREENS_UPPER;
+        add_halves(columns, key_count, &shape_count, &shape3d_count);
     }
     out->screens = out->screens < 0 ? KHDAYS_SCREENS_UPPER : out->screens;
     out->brightness = out->brightness < 0 ? (int)KOB_DEFAULT : out->brightness;

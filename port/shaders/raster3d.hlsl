@@ -18,11 +18,13 @@ struct Vertex {
 
 static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's polygon
 
-StructuredBuffer<Polygon> polys : register(t0, space0);
-StructuredBuffer<Vertex> verts : register(t1, space0);
-StructuredBuffer<uint> tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, then polygon indices
+// Every storage buffer is read by its bytes: SDL's Direct3D 12 views them raw (no stride), and AMD's
+// cards (vkd3d too) read a StructuredBuffer by the view's stride, so all its elements were the first.
+ByteAddressBuffer polys : register(t0, space0);
+ByteAddressBuffer verts : register(t1, space0);
+ByteAddressBuffer tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, then polygon indices
 ByteAddressBuffer vram : register(t3, space0);         // the texture slots (512 KB), then the palette slots (96 KB)
-StructuredBuffer<uint> hd : register(t4, space0); // the replacements (host/render/gpu_hd.h): 4 words each, then their texels (RGBA8, red low)
+ByteAddressBuffer hd : register(t4, space0); // the replacements (host/render/gpu_hd.h): 4 words each, then their texels (RGBA8, red low)
 
 [[vk::image_format("r32ui")]] RWTexture2D<uint> out_color : register(u0, space1);
 [[vk::image_format("r32ui")]] RWTexture2D<uint> out_attr : register(u1, space1);
@@ -48,6 +50,42 @@ cbuffer Params : register(b0, space2) {
 };
 
 #define TEX_PAL 0x80000u
+
+// gfx/g3d.h's KhdaysG3dPolygon (40 bytes) and KhdaysG3dVertex (36 bytes), word by word
+Polygon polygon_at(uint i)
+{
+    const uint4 a = polys.Load4(i * 40u), b = polys.Load4(i * 40u + 16u);
+    const uint2 c = polys.Load2(i * 40u + 32u);
+    Polygon p;
+    p.attr = a.x;
+    p.tex = a.y;
+    p.pltt = a.z;
+    p.first = (int)a.w;
+    p.count = (int)b.x;
+    p.ymin = asfloat(b.y);
+    p.ymax = asfloat(b.z);
+    p.translucent = (int)b.w;
+    p.flags = (int)c.x;
+    p.replacement = (int)c.y;
+    return p;
+}
+
+Vertex vertex_at(int i)
+{
+    const uint at = (uint)i * 36u;
+    const float4 a = asfloat(verts.Load4(at)), b = asfloat(verts.Load4(at + 16u));
+    Vertex v;
+    v.x = a.x;
+    v.y = a.y;
+    v.z = a.z;
+    v.w = a.w;
+    v.r = b.x;
+    v.g = b.y;
+    v.b = b.z;
+    v.s = b.w;
+    v.t = asfloat(verts.Load(at + 32u));
+    return v;
+}
 
 // ---- VRAM (texdecode.h) ----
 
@@ -158,7 +196,7 @@ int4 polygon_texels(Polygon p)
 {
     float s0 = 1e30f, s1 = -1e30f, t0 = 1e30f, t1 = -1e30f;
     for (int i = 0; i < p.count; ++i) {
-        const Vertex v = verts[p.first + i];
+        const Vertex v = vertex_at(p.first + i);
         s0 = min(s0, v.s);
         s1 = max(s1, v.s);
         t0 = min(t0, v.t);
@@ -178,7 +216,7 @@ bool pixel_art(Polygon p)
 {
     float screen = 0.0f, texels = 0.0f;
     for (int i = 0; i < p.count; ++i) {
-        const Vertex a = verts[p.first + i], b = verts[p.first + (i + 1) % p.count];
+        const Vertex a = vertex_at(p.first + i), b = vertex_at(p.first + (i + 1) % p.count);
         if (a.w != 4096.0f) {
             return false;
         }
@@ -240,7 +278,7 @@ float wrapf(float c, float size, uint repeat, uint flip)
 // One of the replacement's texels: 6-bit RGB in xyz, alpha 0-31 in w.
 int4 hd_at(uint4 e, int x, int y)
 {
-    const uint c = hd[e.x + (uint)y * e.y + (uint)x];
+    const uint c = hd.Load((e.x + (uint)y * e.y + (uint)x) * 4u);
     const uint cut = fine != 0u ? 0u : 2u;
     return int4((int)((c & 255u) >> cut), (int)(((c >> 8) & 255u) >> cut), (int)(((c >> 16) & 255u) >> cut),
                 (int)((c >> 24) >> 3));
@@ -306,7 +344,7 @@ float4 hd_blend(Polygon p, uint4 l, float u, float v, float ss, float ts)
 int4 hd_texel(Polygon p, float s, float t, float footprint)
 {
     const uint r4 = (uint)p.replacement * 4u;
-    const uint4 e = uint4(hd[r4], hd[r4 + 1u], hd[r4 + 2u], hd[r4 + 3u]);
+    const uint4 e = hd.Load4(r4 * 4u);
     const float ss = (float)(8 << ((p.tex >> 20) & 7u)), ts = (float)(8 << ((p.tex >> 23) & 7u));
     const uint rs = (p.tex >> 16) & 1u, rt = (p.tex >> 17) & 1u, fs = (p.tex >> 18) & 1u, ft = (p.tex >> 19) & 1u;
     const float ws = wrapf(s, ss, rs, fs), wt = wrapf(t, ts, rt, ft);
@@ -436,7 +474,7 @@ float texel_footprint(Polygon p, Attrs at)
         return 0.0f;
     }
     for (int i = 0; i < 3; ++i) {
-        const Vertex v = verts[p.first + i];
+        const Vertex v = vertex_at(p.first + i);
         const Attrs va = attrs_of(v);
         q[i] = float2((v.x - (float)origin_x) * n, v.y * n);
         a[i] = float3(va.s, va.t, va.iw);
@@ -647,8 +685,8 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
     {
         precise float cy = (float)y + 0.5f;
         for (int i = 0; i < p.count; ++i) {
-            const Vertex va = verts[p.first + i];
-            const Vertex vb = verts[p.first + (i + 1) % p.count];
+            const Vertex va = vertex_at(p.first + i);
+            const Vertex vb = vertex_at(p.first + (i + 1) % p.count);
             precise float ay = va.y * n;
             precise float by = vb.y * n;
             precise float ax = (va.x - (float)origin_x) * n;
@@ -745,14 +783,14 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     }
     px = rear_plane(x, y);
     tile = min(id.y / scale / 8u, tiles_y - 1u) * tiles_x + min(id.x / scale / 8u, tiles_x - 1u);
-    first = tiles[tile];
-    last = min(tiles[tile + 1u], entries);
+    first = tiles.Load(tile * 4u);
+    last = min(tiles.Load((tile + 1u) * 4u), entries);
     for (uint k = first; k < last; ++k) {
-        const uint index = tiles[k];
+        const uint index = tiles.Load(k * 4u);
         if (index >= npolys) {
             continue;
         }
-        const Polygon p = polys[index];
+        const Polygon p = polygon_at(index);
         Attrs at;
         uint edge;
         if (cover(p, x, y, at, edge)) {

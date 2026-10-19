@@ -44,9 +44,30 @@ static u8 *file_bytes(int file)
     return files[file - KHDAYS_GAME_SLOTS];
 }
 
-void khdays_slots_attach(u8 *bytes, u32 size, const char *where)
+/* Port file `f` (counted after the chip's) as it is on the disk: NULL when it is not there. */
+static void read_file(int f)
 {
     char path[320];
+    long read;
+    free(files[f]);
+    files[f] = NULL;
+    changed[f] = 0;
+    file_path(f + KHDAYS_GAME_SLOTS, path, sizeof(path));
+    files[f] = (u8 *)malloc(KHDAYS_SLOT_BYTES);
+    if (files[f] == NULL) {
+        return;
+    }
+    read = khdays_host_read_file(path, files[f], KHDAYS_SLOT_BYTES);
+    if (read <= 0) {
+        free(files[f]);
+        files[f] = NULL;
+    } else if ((u32)read < KHDAYS_SLOT_BYTES) {
+        memcpy(files[f] + read, blank + read, KHDAYS_SLOT_BYTES - (u32)read);
+    }
+}
+
+void khdays_slots_attach(u8 *bytes, u32 size, const char *where)
+{
     chip = bytes;
     chip_size = size;
     snprintf(folder, sizeof(folder), "%s", where);
@@ -58,22 +79,7 @@ void khdays_slots_attach(u8 *bytes, u32 size, const char *where)
     memset(blank, 0, 0x20);
     memset(blank + KHDAYS_SLOT_COPY, 0, 0x20);
     for (int f = 0; f < PORT_FILES; ++f) {
-        long read;
-        free(files[f]);
-        files[f] = NULL;
-        changed[f] = 0;
-        file_path(f + KHDAYS_GAME_SLOTS, path, sizeof(path));
-        files[f] = (u8 *)malloc(KHDAYS_SLOT_BYTES);
-        if (files[f] == NULL) {
-            continue;
-        }
-        read = khdays_host_read_file(path, files[f], KHDAYS_SLOT_BYTES);
-        if (read <= 0) {
-            free(files[f]);
-            files[f] = NULL;
-        } else if ((u32)read < KHDAYS_SLOT_BYTES) {
-            memcpy(files[f] + read, blank + read, KHDAYS_SLOT_BYTES - (u32)read);
-        }
+        read_file(f);
     }
     for (int g = 0; g < KHDAYS_GAME_SLOTS; ++g) {
         view[g] = g;
@@ -164,9 +170,20 @@ int khdays_slots_commit(void)
         } else {
             ok = 0;
             khdays_log("save files: %s could not be written; the game is told its save failed", path);
+            read_file(f); /* the file as it was, here too: nothing of it left for the next save to write */
         }
     }
     return ok;
+}
+
+int khdays_slots_changed(void)
+{
+    for (int f = 0; f < PORT_FILES; ++f) {
+        if (changed[f] && files[f] != NULL) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int khdays_slots_port_view(void)
@@ -295,4 +312,39 @@ int khdays_slots_latest(void)
         }
     }
     return best;
+}
+
+u32 khdays_slots_highest_counter(void)
+{
+    const int latest = khdays_slots_latest();
+    const u8 *state;
+    if (latest < 0 || khdays_slots_state(latest, &state) != KHDAYS_SLOT_SAVED) {
+        return 0;
+    }
+    return khdays_slots_field(state, 0xc77, 16) << 16 | khdays_slots_field(state, 0xc87, 16);
+}
+
+int khdays_slots_file_of(int slot)
+{
+    return slot >= 0 && slot < KHDAYS_GAME_SLOTS && view[slot] != BLANK ? view[slot] : -1;
+}
+
+void khdays_slots_keep_view(KhdaysSlotsView *kept)
+{
+    kept->port_view = port_view;
+    kept->chosen = chosen;
+    kept->page = page;
+    for (int g = 0; g < KHDAYS_GAME_SLOTS; ++g) {
+        kept->view[g] = view[g];
+    }
+}
+
+void khdays_slots_put_view(const KhdaysSlotsView *kept)
+{
+    port_view = kept->port_view;
+    chosen = kept->chosen;
+    page = kept->page;
+    for (int g = 0; g < KHDAYS_GAME_SLOTS; ++g) {
+        view[g] = kept->view[g];
+    }
 }

@@ -85,6 +85,7 @@ add_library(
         src/animation.cpp
         src/audio.cpp
         src/cell.cpp
+        src/dds.cpp
         src/fbx.cpp
         src/filesystem.cpp
         src/font.cpp
@@ -92,6 +93,8 @@ add_library(
         src/gltf_export.cpp
         src/graphics2d.cpp
         src/image.cpp
+        src/kh2_map.cpp
+        src/kh2_room.cpp
         src/mesh.cpp
         src/message.cpp
 )
@@ -108,7 +111,7 @@ if(BUILD_TESTING)
     # khdays-<name>. khdays-asset-tests builds them all: CI builds that target
     # instead of naming each test, so adding a test here is the only place it
     # has to be added.
-    set(KHDAYS_TESTS audio cell font graphics2d mesh message model_import vfs)
+    set(KHDAYS_TESTS audio cell font graphics2d kh2_map mesh message model_import vfs)
     set(KHDAYS_TEST_TARGETS)
     foreach(name IN LISTS KHDAYS_TESTS)
         string(REPLACE "_" "-" dashed "${name}")

@@ -443,6 +443,7 @@ int dump_models(const std::vector<u8> &d, std::size_t at, const FileNames &names
                     ref.uri = "../tex/" + t.name + (p != nullptr && known ? "@" + p->name : std::string()) + ".png";
                     ref.width = 8 << ((t.param >> 20) & 7);
                     ref.height = 8 << ((t.param >> 23) & 7);
+                    ref.translucent = t.format == 1 || t.format == 6; // A3I5, A5I3: texels the DS blends
                     refs[mesh.texture_name] = ref;
                     break;
                 }

@@ -175,6 +175,8 @@ bool export_game_model(const fs::path& nitrofs, const fs::path& graphics_dump, c
         std::uint8_t* px = khdays_png_read(u8(picture).c_str(), &w, &h, &error);
         if (px == nullptr)
             continue;
+        const bool translucent =
+            assets::texels_translucent(px, static_cast<std::size_t>(w) * static_cast<std::size_t>(h));
         khdays_png_free(px);
         const fs::path copy = out.parent_path() / picture.filename();
         if (!(fs::exists(copy, ec) && fs::equivalent(copy, picture, ec))) {
@@ -183,7 +185,7 @@ bool export_game_model(const fs::path& nitrofs, const fs::path& graphics_dump, c
                 return fail("could not write " + u8(copy) + ": " + ec.message());
         }
         ++done.files;
-        refs[mesh.texture_name] = {u8(picture.filename()), w, h};
+        refs[mesh.texture_name] = {u8(picture.filename()), w, h, translucent};
     }
 
     // the animations made for its skeleton, each file's data read once

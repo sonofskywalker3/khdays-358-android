@@ -19,12 +19,11 @@ void khdays_devices_init(const KhdaysProfile *profile, KhdaysPublish publish);
 void khdays_devices_set_profile(const KhdaysProfile *profile);
 const KhdaysProfile *khdays_devices_profile(void);
 
-/* Where the lower screen's top-left corner is drawn, in the renderer's
- * logical coordinates (0, 192 by default): the mouse touches it there. */
-void khdays_devices_set_touch_area(float left, float top);
-
 /* One SDL event. `renderer` maps the mouse onto the DS screens. */
 void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer);
+
+/* Each time the window's loop wakes: a wheel's notch let go once its moment has passed. */
+void khdays_devices_frame(void);
 
 /* While off, the snapshots say `ui_open` and hold nothing, whatever is
  * pressed (the settings menu is using the input). When turned back on,

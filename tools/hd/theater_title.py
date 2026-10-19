@@ -670,7 +670,7 @@ def write_clips(path: Path, group: str, clips, atlas: Atlas, icons=(), button=No
                 lines.append(
                     f"key {f} " + " ".join(f"{x:.2f}" for x in vals[:4]) + " " + " ".join(f"{x:.4f}" for x in vals[4:])
                 )
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    path.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
 
 
 # --- The menu font ------------------------------------------------------------------------------

@@ -36,6 +36,9 @@ u8 *khdays_slots_byte(u32 offset, int writing, u32 *chip_at);
  * it wrote, written whole and atomically. 0 if one could not be. */
 int khdays_slots_commit(void);
 
+/* Whether a save action wrote to one of the port's files not committed yet. */
+int khdays_slots_changed(void);
+
 /* The port's view on or off (the chip's own), and whether it is on. On, game
  * slot 0 is the file shown last if it holds a save, else the file saved
  * last. */
@@ -64,6 +67,20 @@ u32 khdays_slots_field(const u8 *state, int bit, int bits);
 /* The file saved last: the highest save counter (fields 0xc77 and 0xc87, the
  * camp's BeginSaveToSlot), the first of equals; -1 when none is a save. */
 int khdays_slots_latest(void);
+
+/* The highest save counter of all the files (as khdays_slots_latest reads it), 0 when none is a save. */
+u32 khdays_slots_highest_counter(void);
+
+/* The file game slot `slot` (0-2) is in the view now, -1 for a blank one. */
+int khdays_slots_file_of(int slot);
+
+/* The view as it is, kept to be put back after a write of the port's own through the game's code
+ * (runtime/menus/autosave.c). */
+typedef struct KhdaysSlotsView {
+    int port_view, chosen, page, view[KHDAYS_GAME_SLOTS];
+} KhdaysSlotsView;
+void khdays_slots_keep_view(KhdaysSlotsView *kept);
+void khdays_slots_put_view(const KhdaysSlotsView *kept);
 
 /* A count that changes whenever the game writes one of its slots (a file's bytes may have
  * changed since it was last read). */

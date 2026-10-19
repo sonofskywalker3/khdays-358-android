@@ -58,8 +58,7 @@ from its start, the game's pointers kept as references into it -- the DS's own
 addresses hold nothing. The HUD, the menus and the game's text are drawn
 anew by the port, each element placeable. Underneath, the game still sees a
 DS -- two screens one above the other, and the ARM7's services, which the port
-answers on the PC: the clock from the PC's, the touch screen from the mouse,
-the save from its files.
+answers on the PC: the clock from the PC's, the save from its files.
 
 On top of the game, a new edition from content the user provides: HD
 textures, models and 2D graphics, new rooms, sounds and videos, a
@@ -139,10 +138,14 @@ To build the port from source instead:
 
 By default the game is played as on the DS.
 
-- **Keyboard:** arrows = D-pad, Z = A, X = B, S = X, A = Y, Q = L, E = R,
-  Enter = START, right Shift = SELECT.
-- **Mouse:** hold the left button on the lower screen to touch it with the
-  stylus.
+- **Keyboard and mouse:** W A S D = D-pad, left button = A, Space = B,
+  C = X, right button = Y, left Shift or Left = L, middle button or Right =
+  R, M or Enter = START, N = SELECT; in a field, with the command menu on the
+  D-pad, the wheel moves the command menu up and down and Q and E left and
+  right. Any key or mouse button (left, middle, right, the side buttons X1 and
+  X2, the wheel) can be bound to any action in Settings -> Controls; a notch of
+  the wheel is a short press. The pointer hides over the game while its window
+  has the focus (the touch screen is not used).
 - **Gamepad** (Xbox, PlayStation, Switch Pro, Steam Deck, or any controller
   your system recognises as a gamepad): connect it whenever you like, even in
   the middle of a battle. The buttons follow the DS's layout by *position*,
@@ -193,6 +196,11 @@ own controls can do, through the same parts of the game:
   (adjustable, and invertible, under Sticks and camera). On the DS the camera
   is turned by dragging on the touch screen, by Select's look view, or with
   L/R when the game's Config sets them to the camera.
+- **Mouse camera:** moving the mouse turns and tilts the field camera, through
+  the same part of the game as the analog camera, at a speed of its own
+  (Sticks and camera -> Mouse camera speed) and with the camera's inversions.
+  While you play the window holds the mouse; Esc frees it with the settings
+  menu.
 - **Command menu on the D-pad:** in a field, the gamepad's D-pad moves
   through the command deck instead of moving Roxas, by making the presses the
   DS itself uses (X, or X held with a direction); menus, dialogs and open
@@ -263,8 +271,8 @@ once:
   wider picture as it does on the DS -- the command deck bottom left, the
   portrait and gauge bottom right, the hearts counter top left. What the game
   centres (dialogs, menus) and what follows the 3D (markers over targets)
-  stays where it was, and the lower screen stays 4:3 in the middle, where the
-  mouse still touches it. The game sees nothing different: it still computes
+  stays where it was, and the lower screen stays 4:3 in the middle. The game
+  sees nothing different: it still computes
   its 4:3 view.
 - **Screen scaling**: sharp (the DS's pixels as squares) or smooth.
 - **3D texture smoothing**: off as on the DS, or blended between texels.
@@ -283,8 +291,9 @@ once:
   (HUD, menus, text) and the movies change when the game changes them.
 - **Show FPS**: a counter in the window's corner -- the pictures drawn a
   second and the game's own frames a second.
-- **Graphics API**: what draws the picture -- automatic (the system's
-  choice: Direct3D 12 on Windows), Direct3D 12 or Vulkan, changed at once. If
+- **Graphics API**: what draws the picture -- automatic (Direct3D 12 on
+  Windows, Vulkan on a Steam Deck or under Proton), Direct3D 12 or Vulkan,
+  changed at once. If
   the graphics card stops answering on Direct3D 12, try Vulkan. Should the
   card stop answering anyway (Windows resets its driver), the game carries on:
   the picture is made again, and an internal resolution lost twice drops to
@@ -411,6 +420,17 @@ of three: past the first or last row the list moves on, each row numbered, file
 99 tagged AUTO (the autosave's), the game's questions naming the file. In
 `saves/settings.ini`, `[save] files = 3` keeps the DS's three.
 
+**Autosave.** After each cleared mission -- in the story, in Mission Mode alone
+or with friends -- the game saves itself the first time it is back at a camp's
+menu (Mission Mode's after the results, the story's that opens after a
+mission), with the camp's own Save, into file 99 by default; a corner line in
+the game's font says it was saved, or that it could not be. In the settings
+menu's General page, "Autosave" chooses file 99, the file being played (a game
+never saved: the first empty file) or off (`[save] autosave = file99 | played
+| off`), and "Files in the game's lists" the 99 or the DS's three. A mission
+given up or lost writes nothing, and Mission Mode's guest game, which has no
+file, is never saved.
+
 **THEATER MODE as the HD collection's theater.** `tools/hd/theater_cine.py`
 makes, from the same copy of the collection and the port's extracted game
 data, the theater's chapter list -- its heading, its rows (the selected one
@@ -422,11 +442,15 @@ python tools/hd/theater_cine.py "<collection>/Image/Mare.hed_out/original"
 ```
 
 They go to `mods/Theater title/layouts/cine/` (`<lang>/` and `art/`). With
-them THEATER MODE's list is drawn as the theater draws its chapters: the
-game's 28 scenes, ten to a page as in the game, each with its name and length,
-its day when it is a day's first, and behind the list the artwork of the
-selected scene's chapter. The game's own list runs underneath (its keys,
-pages and movies).
+them THEATER MODE's list is drawn as the theater draws its chapters. With
+the Movies setting on HD and the theater's videos made (*HD scenes* above)
+the list is the theater's own: its 53 chapters with videos, each with its
+name, its length and its day when it is a day's first, the artwork of the
+selected one behind; UP and DOWN move a row, LEFT and RIGHT a page, A plays
+the chapter's videos in a row with their subtitles (START stops them), B
+leaves as the game's list does. Otherwise the list is the game's 28 movies,
+ten to a page, its own list running underneath (its keys, pages and
+movies).
 
 **Mission Mode's rooms and character select on one screen.**
 `tools/hd/theater_mission.py` makes, from the same copy, the faces of the
@@ -472,7 +496,7 @@ the menu, or ready -- ringed in its colour -- once it accepted the mission).
 The game's menu runs underneath (its cursor, sounds and pages); its other pages
 (the holo-missions, the panels, the shop, ...) are still the game's screens.
 
-**Retry.** In a Mission Mode mission played alone, the pause has a third line
+**Retry.** In a Mission Mode mission or a story challenge played alone, the pause has a third line
 between Continue and Give Up: Retry, drawn like the game's lines in its own
 font. After the game's "Are you sure?", the mission starts again from its
 beginning, without the results screen (`KHDAYS_UI=pause=off` gives the game's
@@ -507,7 +531,10 @@ python tools/hd/theater_movies.py "<collection>/Image/Mare.hed_out/original"
 The videos go to `data/cutscenes/cinematics/hd<id>.mp4` (the opening's from
 the theater's `DOP.mp4`; the ending's, 843, is not among them), the subtitles
 to `data/cutscenes/cinematics/subtitles/<lang>/hd<id>.png` and `.txt`; a mod's
-`movies/subtitles/<lang>/hd<id>.txt` comes first.
+`movies/subtitles/<lang>/hd<id>.txt` comes first. The music the theater plays
+over them goes to `data/cutscenes/cinematics/music/` (each video's schedule,
+`hd<id>.txt`, and its tracks, `bgm_<n>.ogg`); a video of a mod has music only
+from a `music/` folder beside it.
 
 **HD graphics from mods.** A mod replaces any of the game's graphics, at
 any resolution, with a file named after it:
@@ -606,7 +633,32 @@ its own movie behind it, unseen, and waits at its end until the video ends.
 START stops the video where the DS lets you skip the movie. Windows decodes
 the videos (Media Foundation); a file it cannot play, or a movie without an
 HD video, plays the game's movie, and the log says why. A mod's movie for the
-same movie comes first. Subtitles are not shown over the HD videos.
+same movie comes first. The theater's subtitles show over them (see
+*Subtitles*), and its music where the theater plays some (see *HD scenes*).
+
+**HD scenes.** The theater also holds the game's event scenes the DS draws in
+real time, made again in HD, and Roxas's monologues as a voice. The same tool
+makes the ones the port plays: the scene map, `port/movies/hd_scenes.txt`
+(86 scenes and 7 monologues, each paired by its lines or its pictures, every
+pair checked side by side; `tools/hd/scene_report.py` says where each video
+of your collection plays). With the Movies setting on HD, when the game
+reaches a scene of the map its videos play over the whole window with their
+sound and subtitles while the game waits; then the game takes its own skip,
+so it goes on exactly as after the DS's Skip. A day's monologue keeps the
+game's page, and the theater's voice reads it. Without the video, or with
+Movies on PC or DS, the DS's scene plays. START pauses the video and opens
+the game's own pause over it, as on the DS: Continue goes on with the video,
+Skip ends the scene (on two screens the pause shows over the game's screens).
+A mod's `cutscenes/scenes.txt` adds or replaces entries (`<script> <videos>
+; <evidence>`, or `off` for the DS's scene), and its
+`cutscenes/cinematics/<video>.mp4` comes before your own.
+
+Most of the theater's videos, scenes and movies alike, hold the voices and
+effects alone: the theater plays its music over them, each video with its own
+cues and volume (hd848, Xion's end, among them). The same tool takes the music
+and those schedules from your copy, and the port plays them with the video,
+at the Music volume, paused with it and on from one video into the next where
+the theater goes on.
 
 **Replacing movies.** A mod replaces any of the game's 46 movies with an
 MPEG-1 file of any size, with or without MPEG-1 Layer II sound:
@@ -621,6 +673,17 @@ and the log says why. Made from a copy you own, for example:
 ```text
 ffmpeg -i source.mp4 -c:v mpeg1video -q:v 2 -c:a mp2 -b:a 256k -f mpeg mods/MyMod/movies/802.mpg
 ```
+
+## Mods that change the game
+
+Besides content, a mod can carry Lua scripts that change how the game plays: they hear what
+happens (each frame, scenes, missions, HP, items, munny, the menus, saving), read and change the
+game's state by name (munny, items, flags, the player's HP and position), add their own options
+to the settings menu's Mods page, and ask the game to act (items, sounds, the field's notice). Each
+runs in its own sandbox: an error or an endless loop stops that mod only, and scripts reach no file
+outside their own folder. `docs/SCRIPTING.md` describes it all; `port/mods_examples/` (installed
+as `mods-examples/`) has examples to copy into `mods/`; khdays-studio's Console shows what the
+mods print and reloads them while the game runs.
 
 ## Multiplayer
 
@@ -713,7 +776,7 @@ the connection error -- the port boots it again in the same window.
 | Path | What it is |
 |---|---|
 | `port/` | The port. `build.py` builds it; `tools/prepare.py` turns the decompilation's C into the game's PC sources |
-| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace |
+| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
 | `port/host/` | The PC's side. `app/` window, devices, profile, audio out; `render/` the graphics card and the one-screen picture; `screens/` the port's own screens; `settings/` the settings menu; `net/` sockets; `movies/` video decoding |
 | `port/hal/` | The NitroSDK's hardware layer, in C |
 | `port/gfx/`, `port/gpu/` | The 2D's description and composition and the 3D's geometry; the DS's graphics engines in software, the reference the picture is checked against |

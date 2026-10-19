@@ -749,6 +749,7 @@ static void on_event(const KhdaysNetEvent *e)
             break;
         case KHDAYS_NET_REFUSE_CLOSED:
         case KHDAYS_NET_REFUSE_PASSWORD: /* the game's own way back to its list (the port's says why) */
+        case KHDAYS_NET_REFUSE_MODS:
             WH_SetError(WM_ERRCODE_NO_ENTRY);
             sSysState = WH_SYSSTATE_CONNECT_FAIL;
             break;

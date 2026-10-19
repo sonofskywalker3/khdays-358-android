@@ -53,8 +53,9 @@ shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
 # them (ui/badges.c), as the maintainer's sketch has them (2026-10-08). Its
 # lower edge, cut by the DS's screen, is its upper edge turned over. Shown
 # whenever the lower screen has it (mission-panel), with the HUD and at a
-# mission's start, before the game draws the rest of its HUD.
-[field if mission-panel !dialog !challenge]
+# mission's start, before the game draws the rest of its HUD; in a story's
+# challenge too, whose lower screen is a mission's.
+[field if mission-panel !dialog]
 shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
 shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
 
@@ -69,7 +70,7 @@ shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
 # floor (8-bit 239 239 247) seen through, its walls and markers as they are
 # -- with the panel's black, stretched, half seen through behind it, 3 larger
 # on each side, both fading out at their edges.
-[field if mission-panel !dialog !challenge]
+[field if mission-panel !dialog]
 shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 see-through 232 232 240 0.55 fade 4 4 4 4
 shape lower 186 156 2 12 at top-right margin 0 3 3 0 scale 33.2 3.533333 see-through 0 0 0 0.5 fade 6 6 6 6
 
@@ -104,6 +105,25 @@ shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667
 shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
 
 # ----------------------------------------------------------------------------
+# Sora's memories: the 3D on both screens, the lower screen showing a picture
+# under the game's noise (mission 61's Guard Armor). In an event the lower
+# screen takes the picture's place while they show, at the DS's size, an event's
+# dialog over it; in a battle (the HUD) the two screens as one, joined in the
+# middle -- Roxas's left half and Sora's right half, the fights in step -- each
+# at its own brightness, the HUD over them.
+[field-3d-both if lower-shown !hud dialog]
+shape upper at bottom scale 1 at-most fixed(1)
+[field-3d-both if lower-shown !hud]
+screens lower
+brightness own
+hide3d all
+shape lower at centre scale fixed(1) force
+stop
+[field-3d-both if lower-shown hud]
+halves
+brightness halves
+
+# ----------------------------------------------------------------------------
 # The field with the 3D on both screens: the field's upper HUD and its
 # INFORMATION banner, in the same places (the lower screen's panels are not
 # there).
@@ -132,19 +152,32 @@ shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
 # ----------------------------------------------------------------------------
 # The field's dialogs (an event's text, a person's words): the upper screen
 # whole over the 3D, at the HUD's size but never larger than the DS's, at the
-# bottom where the dialog box is (the maintainer's choices). A challenge in
-# play: its label (the upper screen's top left, rows 0-13) at the top under the
-# countdown, as small as the HUD's pieces.
+# bottom where the dialog box is (the maintainer's choices). The label the
+# events of a mission played again show at the upper screen's top left (rows
+# 0-13: "HOLOMEMORIA" in Mission Mode, a challenge's "RELOJ PARADO"), and a
+# challenge's in play, at the picture's top left corner against its edges, as
+# small as the HUD's pieces (the maintainer, 2026-10-17: it showed at the
+# picture's size in the cutscenes); in an event the rows under it whole. In play
+# the mission's panel takes that corner when the lower screen has one (a
+# challenge's too), and the label then stays in the upper screen's HUD.
+[field if dialog holo]
+shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
+shape upper 0 14 256 178 at bottom scale 1 at-most fixed(1)
+stop
+[field-3d-both if dialog holo]
+shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
+shape upper 0 14 256 178 at bottom scale 1 at-most fixed(1)
+stop
 [field if dialog]
 shape upper at bottom scale 1 at-most fixed(1)
 stop
 [field-3d-both if dialog]
 shape upper at bottom scale 1 at-most fixed(1)
 stop
-[field if hud challenge]
-shape upper 0 0 132 14 at top margin 0 22 0 0 scale 0.666667
+[field if hud challenge !mission-panel]
+shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
 [field-3d-both if hud challenge]
-shape upper 0 0 132 14 at top margin 0 22 0 0 scale 0.666667
+shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
 
 # ----------------------------------------------------------------------------
 # The pause: its menu (the upper screen's 72,64-184,140: PAUSA, its lines, the
@@ -172,10 +205,11 @@ stop
 # ----------------------------------------------------------------------------
 # A tutorial's page (the lower screen) at the DS's size in the middle, the
 # field behind it dimmed -- its 2D and its 3D (`3d`) -- and the HUD's 3D not
-# drawn (the maintainer's choice from the pictures, 2026-10-14).
+# drawn. Each piece keeps its own screen's brightness: the game darkens the
+# upper screen behind a tutorial, which must not darken the page.
 [tutorial]
 screens upper
-brightness upper
+brightness own
 hide3d hud
 shape lower at centre scale fixed(1)
 shape upper at centre scale fixed(1) dim 0.35

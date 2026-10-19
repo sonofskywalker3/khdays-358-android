@@ -1,0 +1,65 @@
+# KINGDOM HEARTS II FINAL MIX's map each 358/2 Days room was made from: <days world> <days room> <kh2 map>
+# [turn <degrees>] [move <x> <y> <z>] ; <evidence>. Names only (the maps stay in the player's copy). Days kept KH2's
+# units (x 0.01) and axes and mostly its numbering: a room's model is named after its map (tt_02 from tt02), often its
+# textures too (tt02_000 ...). Where Days moved a map, the move is the one most of the room model's corners agree on
+# with the map's (turned about y, then moved, the game's units). Rooms Days rebuilt share no corners with their map:
+# they stand where KH2 has them, for the player to line up by eye (their floors are often at another height).
+# Agrabah's and Halloween Town's models do not follow KH2's numbers: their pairs are by sight, and their layouts are
+# Days's own. Each pair was seen side by side with its map (two by name only, as said). Rooms Days remade (Agrabah's
+# palace and water caves, the Coliseum's arenas with blocks, Halloween Town's crater) are left out, and two whose KH2
+# map Days moved out of reach (Agrabah's ruins, Halloween Town's square). A mod's studio/kh2_rooms.txt adds pairs or
+# replaces these, line by line.
+
+al 0 al00 ; model al_02a (not KH2's number), seen alike: the city's streets, floor 73% on the map's
+al 2 al00 ; model al_02b (not KH2's number), seen alike: the city's streets, floor 71% on the map's
+al 3 al07 ; model al_01 (not KH2's number), seen alike: the Cave of Wonders' ring of rocks, floor 22% on the map's
+al 7 al00 ; model al_02c (not KH2's number), seen alike: the city's streets, floor 62% on the map's
+al 14 al07 ; model al_01 (not KH2's number), seen alike: the Cave of Wonders' ring of rocks, floor 23% on the map's
+bb 0 bb06 ; model bb_06, floor 55% on the map's, seen alike
+bb 1 bb13 ; model bb_13a, floor 84% on the map's, seen alike
+bb 2 bb08 move 14.927 0.001 -0.002 ; moved by Days: 7% of its model's corners on the map's once moved; model bb_08_a, floor 79% on the map's, seen alike
+bb 3 bb08 move 14.927 0.001 -0.002 ; moved by Days: 7% of its model's corners on the map's once moved; model bb_08_a, floor 92% on the map's, seen alike
+bb 4 bb00 ; model bb_00, floor 89% on the map's, seen alike
+bb 5 bb04 ; model bb_04, textures bb04_*, floor 62% on the map's, seen alike
+bb 6 bb09 move 3.232 -0.002 -10.681 ; moved by Days: 0.4% of its model's corners on the map's once moved; model bb_09_a, floor 24% on the map's, seen alike
+bb 7 bb07 ; model bb_07, textures bb07_*, floor 50% on the map's, seen alike
+bb 8 bb12 move 8.673 -0.002 12.758 ; moved by Days: 15% of its model's corners on the map's once moved; model bb_12, floor 3% on the map's, seen alike
+bb 9 bb11 move 1.795 0 2.647 ; moved by Days: 5% of its model's corners on the map's once moved; model bb_11, floor 54% on the map's, seen alike
+bb 10 bb01 ; model bb_01, floor 0% on the map's, named only (its picture not compared)
+bb 11 bb02 ; model bb_02, floor 76% on the map's, seen alike
+bb 12 bb03 ; model bb_03_1, floor 68% on the map's, named only (its picture not compared)
+eh 0 eh00 ; model eh_00, textures eh00_*, floor 100% on the map's, seen alike
+eh 1 eh03 ; model eh_03a, floor 96% on the map's, seen alike
+eh 2 eh10 ; model eh_10_1, textures eh10_*, floor 23% on the map's, seen alike
+eh 3 eh12 move 15.001 0 16.498 ; moved by Days: 18% of its model's corners on the map's once moved; model eh_12, textures eh12_*, floor 0% on the map's, seen alike
+eh 6 eh06 move 5.099 -0.001 -27.024 ; moved by Days: 16% of its model's corners on the map's once moved; model eh_06, textures eh06_*, floor 9% on the map's, seen alike
+eh 7 eh02 move -13.116 0.002 -26.673 ; moved by Days: 18% of its model's corners on the map's once moved; model eh_02, floor 50% on the map's, seen alike
+eh 8 eh09 ; model eh_09, textures eh09_*, floor 100% on the map's, seen alike
+eh 9 eh07 ; model eh_07_up, textures eh07_*, floor 37% on the map's, seen alike
+eh 10 eh07 ; model eh_07_down, textures eh07_*, floor 37% on the map's, seen alike
+eh 16 eh18 ; model eh_18, floor 76% on the map's, seen alike
+eh 22 eh03 ; model eh_03a, floor 95% on the map's, seen alike
+he 0 he00 ; model he_00, floor 86% on the map's, seen alike
+he 1 he02 ; model he_02, floor 91% on the map's, seen alike
+he 2 he04 ; model he_04, floor 39% on the map's, seen alike
+he 5 he00 ; model he_00, floor 100% on the map's, seen alike
+he 11 he00 ; model he_00, floor 100% on the map's, seen alike
+nm 1 nm02 ; model nm_02, seen alike: the graveyard's hill, floor 47% on the map's
+nm 2 nm02 ; model nm_02_2, seen alike: the graveyard, floor 61% on the map's
+nm 3 nm02 ; model nm_06 (not KH2's number), seen alike: the graveyard, floor 38% on the map's
+nm 5 nm02 ; model nm_03 (not KH2's number), seen alike: the graveyard's gate, floor 40% on the map's
+tt 0 tt02 ; model tt_02, textures tt02_*, floor 67% on the map's, seen alike
+tt 1 tt03 ; model tt_03, textures tt03_*, floor 13% on the map's, seen alike
+tt 2 tt04 ; model tt_04_1, floor 39% on the map's, seen alike
+tt 3 tt04 ; model tt_04_boss_1, floor 83% on the map's, seen alike
+tt 4 tt06 ; model tt_06_1, textures tt06_*, floor 13% on the map's, seen alike
+tt 5 tt07 ; model tt_07_1, textures tt07_*, floor 57% on the map's, seen alike
+tt 6 tt08 ; model tt_08_1, textures tt08_*, floor 48% on the map's, seen alike
+tt 7 tt08 ; model tt_08_D_1, textures tt08_*, floor 49% on the map's, seen alike
+tt 8 tt13 ; model tt_13, textures tt13_*, floor 18% on the map's, seen alike
+tt 9 tt14 ; model tt_14, textures tt14_*, floor 100% on the map's, seen alike
+tt 10 tt36 move 12.655 -8.6 9.107 ; moved by Days: 24% of its model's corners on the map's once moved; model tt_36, floor 0% on the map's, seen alike
+tt 11 tt37 move 1.35 -4.361 13.907 ; moved by Days: 4% of its model's corners on the map's once moved; model tt_37, floor 6% on the map's, seen alike
+tt 12 tt23 ; model tt_23, floor 100% on the map's, seen alike
+tt 13 tt18 ; model tt_18, textures tt18_*, floor 44% on the map's, seen alike
+tt 14 tt08 ; model tt_08_event1, textures tt08_*, floor 0% on the map's, seen alike

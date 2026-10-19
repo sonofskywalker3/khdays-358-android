@@ -83,6 +83,27 @@ std::string any_palette_key(const Item& item) {
     return item.key.substr(0, at);
 }
 
+std::string export_name(const Item& item) {
+    const auto last = [](std::string_view path) {
+        const auto slash = path.find_last_of('/');
+        return std::string(slash == std::string_view::npos ? path : path.substr(slash + 1));
+    };
+    if (item.kind == Kind::sheet) {
+        // `<file>/chr/<n>`: two languages' sheets of one name kept apart
+        std::string name = last(item.group);
+        const std::string language = text_language(item.group);
+        if (!language.empty() && name.find("_" + language + ".") == std::string::npos)
+            name += "_" + language;
+        const std::string n = last(item.key);
+        if (n != "0")
+            name += "_" + n;
+        return name + ".png";
+    }
+    if (item.kind == Kind::room)  // `<world file>/room/<index>`
+        return last(item.group) + "_room" + last(item.key) + ".gltf";
+    return last(item.key) + ".gltf";  // a model: `<file>/mdl/<name>`
+}
+
 std::vector<std::uint8_t> read_all_bytes(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     return std::vector<std::uint8_t>((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

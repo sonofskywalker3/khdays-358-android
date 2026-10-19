@@ -13,6 +13,9 @@
 #endif
 
 #define AppName "KH 358/2 Days Port"
+; the Start menu shortcut's name: a "/" there makes a folder "KH 358" with "2 Days Port" in it, so a
+; fraction slash (U+2044), which looks the same
+#define ShortcutName "KH 358⁄2 Days Port"
 #define AppExe "khdays-native.exe"
 
 [Setup]
@@ -21,7 +24,7 @@ AppName={#AppName}
 AppVersion={#Version}
 AppVerName={#AppName} {#Version}
 DefaultDirName={commonpf}\Kingdom Hearts 3582 Days
-DefaultGroupName={#AppName}
+DefaultGroupName={#ShortcutName}
 DisableProgramGroupPage=yes
 ; in Program Files, so administrator once to install; the install folder is then made writable by
 ; the player (the [Run] icacls below) so the port keeps its saves and data beside itself.
@@ -67,8 +70,13 @@ Source: "{#Stage}\studio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 Name: "studio"; Description: "{cm:StudioTask}"; Flags: unchecked
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#ShortcutName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 Name: "{autoprograms}\KH Studio"; Filename: "{app}\khdays-studio.exe"; WorkingDir: "{app}"; Tasks: studio
+
+[InstallDelete]
+; the shortcut earlier versions made, its name cut at the "/" into a folder of its own
+Type: files; Name: "{autoprograms}\KH 358\2 Days Port.lnk"
+Type: dirifempty; Name: "{autoprograms}\KH 358"
 
 [Run]
 ; make the install folder writable by the player (the SID is the Users group, name-independent),
@@ -292,12 +300,17 @@ begin
     Result := Result + '.';
 end;
 
-{ The Browse button beside a folder (its Tag says which) }
+{ The Browse button beside a folder (its Tag says which): an empty one starts beside the other
+  collection (Steam's and the Epic Games Store's keep both in one library), else in Program Files }
 procedure HdBrowse(Sender: TObject);
 var
   Folder: String;
 begin
   Folder := HdFolder(TNewButton(Sender).Tag);
+  if Folder = '' then
+    Folder := ExtractFileDir(HdFolder(1 - TNewButton(Sender).Tag));
+  if Folder = '' then
+    Folder := ExpandConstant('{commonpf}');
   if BrowseForFolder(SetupMessage(msgBrowseDialogLabel), Folder, False) then
     HdPage.Values[TNewButton(Sender).Tag] := Folder;
 end;
@@ -393,11 +406,18 @@ end;
 
 { ---- Add to Steam (optional) ---- }
 
+function GetModuleHandle(lpModuleName: String): THandle;
+  external 'GetModuleHandleW@kernel32.dll stdcall';
+function GetProcAddress(hModule: THandle; lpProcName: AnsiString): THandle;
+  external 'GetProcAddress@kernel32.dll stdcall';
+
 { Whether the installer runs under Proton or Wine (a Steam Deck, Linux): it is then in a Wine
-  prefix whose Steam is not the computer's, so the Steam steps and the folder grant are left out. }
+  prefix whose Steam is not the computer's, so the Steam steps and the folder grant are left out.
+  Told as steam_shortcut.py tells it: Wine's ntdll.dll has wine_get_version, Windows's has not (a
+  Software\Wine key is no sign: Windows programs leave one too). }
 function UnderWine: Boolean;
 begin
-  Result := RegKeyExists(HKEY_CURRENT_USER, 'Software\Wine') or RegKeyExists(HKEY_LOCAL_MACHINE, 'Software\Wine');
+  Result := GetProcAddress(GetModuleHandle('ntdll.dll'), 'wine_get_version') <> 0;
 end;
 
 { The port as a non-Steam game: a page with one checkbox (off), shown only when Steam is found.
@@ -624,7 +644,10 @@ begin
       if HdFolder(0) <> '' then Args := Args + ' --1525 "' + HdFolder(0) + '"';
       if HdMenus.Checked then Args := Args + ' --28 "' + HdFolder(1) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
-        SuppressibleMsgBox(CustomMessage('HdFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
+        SuppressibleMsgBox(CustomMessage('HdFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK)
+      else if JsonValue(Json, 'missing') <> '' then
+        { made but for some screens (a tool that failed): said, with where its error was kept }
+        SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
     end;
     { the starting settings, when the install has none yet (a player's own are kept on an update);
       if it does not run, the port writes its own defaults on first start, so no error is shown }

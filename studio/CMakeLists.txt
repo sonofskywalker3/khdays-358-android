@@ -93,10 +93,16 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/font.cpp"               # the game's font: which characters it draws
     "${ROOT}/assets/src/graphics2d.cpp"         # 2D: palettes, tile sheets, screens
     "${ROOT}/assets/src/cell.cpp"               # and sprite cells
+    "${ROOT}/assets/src/kh2_map.cpp"            # KH2's maps, from the player's 1.5+2.5 copy
+    "${ROOT}/assets/src/kh2_room.cpp"           # made into a scene for glTF
+    "${ROOT}/assets/src/dds.cpp"                # and their HD pictures
     "${ROOT}/port/sound/replace.c"            # a mod's sound read as the port reads it
     "${ROOT}/port/sound/third_party_decoders.c"
     "${ROOT}/port/host/render/png_io.c"              # PNG in and out, indexed included
-    "${ROOT}/port/host/movies/movie_hd_win.c")       # videos played as the port plays them (Media Foundation)
+    "${ROOT}/port/host/movies/movie_hd_win.c"        # videos played as the port plays them (Media Foundation)
+    "${ROOT}/port/host/movies/theater_music.c"       # ... with the theater's music
+    "${ROOT}/port/host/movies/music_schedule.c"
+    "${ROOT}/port/runtime/mods/room_animation.cpp")  # a room that moves by itself, as the port moves it
 target_include_directories(khdays-studio-port PUBLIC "${ROOT}/assets/include")
 target_include_directories(khdays-studio-port PUBLIC "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}")
 target_include_directories(khdays-studio-port PRIVATE "${stb_SOURCE_DIR}" "${dr_libs_SOURCE_DIR}")
@@ -112,7 +118,7 @@ set_source_files_properties("${ROOT}/port/sound/third_party_decoders.c" PROPERTI
 # are the port's to decide on, not this build's.
 target_compile_definitions(khdays-studio-port PRIVATE _CRT_SECURE_NO_WARNINGS)
 # The tool's own code reaches these by their directories.
-set(KHDAYS_STUDIO_PORT_HEADERS "${ROOT}/port/sound" "${ROOT}/port/host")
+set(KHDAYS_STUDIO_PORT_HEADERS "${ROOT}/port/sound" "${ROOT}/port/host" "${ROOT}/port/runtime")
 
 # --- The tool -------------------------------------------------------------------------
 set(KHDAYS_STUDIO_FLAGS /W4 /std:c++20 /EHsc /utf-8 /permissive-)
@@ -139,8 +145,10 @@ add_library(khdays-studio-core STATIC
     core/models/model_export.cpp
     core/models/model_files.cpp
     core/mods/mods.cpp
+    core/mods/mods_log.cpp
     core/files/paths.cpp
     core/mods/process.cpp
+    core/rooms/kh2_source.cpp
     core/rooms/room_change.cpp
     core/rooms/room_collision.cpp
     core/rooms/room_export.cpp
@@ -148,6 +156,11 @@ add_library(khdays-studio-core STATIC
     core/sheets/sheets.cpp
     core/rooms/worlds.cpp)
 target_include_directories(khdays-studio-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" ${KHDAYS_STUDIO_PORT_HEADERS})
+# The KH2 rooms' pairs (data/kh2_rooms.txt, names only) built into the studio.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/kh2_rooms.txt")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/kh2_rooms.txt" KH2_ROOMS_TEXT)
+configure_file(core/rooms/kh2_rooms_data.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/kh2_rooms_data.h" @ONLY)
+target_include_directories(khdays-studio-core PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(khdays-studio-core PUBLIC khdays-studio-port SDL3::SDL3)
 target_compile_options(khdays-studio-core PRIVATE ${KHDAYS_STUDIO_FLAGS})
 
@@ -165,8 +178,10 @@ add_executable(khdays-studio
     app/views/movie_view.cpp
     app/views/text_view.cpp
     app/views/mod_panel.cpp
+    app/views/mods_console.cpp
     app/views/model_view.cpp
     app/preview3d.cpp
+    app/save_dialog.cpp
     app/views/sheet_view.cpp
     app/views/sound_view.cpp
     app/strings.cpp
@@ -190,6 +205,8 @@ add_executable(khdays-studio-tests
     tests/test_sheets.cpp
     tests/test_missions.cpp
     tests/test_worlds.cpp
+    tests/test_kh2.cpp
+    tests/test_mods_log.cpp
     app/strings.cpp
     tests/test_strings.cpp)
 target_include_directories(khdays-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app")

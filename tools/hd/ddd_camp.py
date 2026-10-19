@@ -651,7 +651,7 @@ def write(
     out_dir.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels, "RGBA").save(out_dir / "camp_atlas.png")
     Image.fromarray(sheet, "RGBA").save(out_dir / "camp_font.png")
-    (out_dir / "camp.txt").write_text("\n".join(text) + "\n", encoding="utf-8", newline="\n")
+    (out_dir / "camp.txt").write_bytes(("\n".join(text) + "\n").encode("utf-8"))
     return f"{len(pieces)} pieces, {len(icons)} icons, {len(codes)} glyphs, atlas {pixels.shape[1]} x {pixels.shape[0]}"
 
 

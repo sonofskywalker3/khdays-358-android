@@ -4,15 +4,15 @@
 
 #include "../gfx/frame.h"
 
-// Eight buffers, the most SDL's GPU API binds to a pass:
-StructuredBuffer<uint> desc : register(t0, space0);       // KHDAYS_DESC_WORDS, then the palette: the layers' 256 colours, the sprites'
-StructuredBuffer<uint> bg_mem : register(t1, space0);     // the layers' memory, then its map of tiles drawn instead (runtime/mods/tiles2d.h)
-StructuredBuffer<uint> obj_mem : register(t2, space0);    // the sprites', then theirs
-StructuredBuffer<uint> bgext_mem : register(t3, space0);  // the extended palettes
-StructuredBuffer<uint> objext_mem : register(t4, space0);
-StructuredBuffer<uint> vram_mem : register(t5, space0);   // the bank a VRAM display shows
-StructuredBuffer<uint> layer3d_mem : register(t6, space0); // the 3D at 1x (256x192), for source3d 1
-StructuredBuffer<uint> hd : register(t7, space0);         // the replacements (host/render/gpu_hd.h)
+// Eight buffers, the most SDL's GPU API binds to a pass, read by their bytes (raster3d.hlsl says why):
+ByteAddressBuffer desc : register(t0, space0);       // KHDAYS_DESC_WORDS, then the palette: the layers' 256 colours, the sprites'
+ByteAddressBuffer bg_mem : register(t1, space0);     // the layers' memory, then its map of tiles drawn instead (runtime/mods/tiles2d.h)
+ByteAddressBuffer obj_mem : register(t2, space0);    // the sprites', then theirs
+ByteAddressBuffer bgext_mem : register(t3, space0);  // the extended palettes
+ByteAddressBuffer objext_mem : register(t4, space0);
+ByteAddressBuffer vram_mem : register(t5, space0);   // the bank a VRAM display shows
+ByteAddressBuffer layer3d_mem : register(t6, space0); // the 3D at 1x (256x192), for source3d 1
+ByteAddressBuffer hd : register(t7, space0);         // the replacements (host/render/gpu_hd.h)
 
 [[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, for source3d 2
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
@@ -42,7 +42,7 @@ static uint g_fx, g_fy; // the output pixel's place inside its DS pixel
 uint layer3d_at(uint x, int row)
 {
     if (source3d == 1u) {
-        return layer3d_mem[(uint)row * 256u + x];
+        return layer3d_mem.Load(((uint)row * 256u + x) * 4u);
     }
     if (source3d == 2u) {
         return finished3d((int)((x + offset3d) * scale + g_fx), (int)((uint)row * scale + g_fy));
@@ -52,35 +52,36 @@ uint layer3d_at(uint x, int row)
 
 #define KD_FN
 #define KD_VOID
-#define KD_DESC(i) desc[(i)]
-#define KD_BG8(a) ((bg_mem[(a) >> 2] >> (((a) & 3u) * 8u)) & 0xffu)
-#define KD_BG16(a) ((bg_mem[(a) >> 2] >> (((a) & 2u) * 8u)) & 0xffffu)
-#define KD_OBJ8(a) ((obj_mem[(a) >> 2] >> (((a) & 3u) * 8u)) & 0xffu)
-#define KD_OBJ16(a) ((obj_mem[(a) >> 2] >> (((a) & 2u) * 8u)) & 0xffffu)
-#define KD_BGEXT16(a) ((bgext_mem[(a) >> 2] >> (((a) & 2u) * 8u)) & 0xffffu)
-#define KD_OBJEXT16(a) ((objext_mem[(a) >> 2] >> (((a) & 2u) * 8u)) & 0xffffu)
-#define KD_PAL16(i) ((desc[KHDAYS_DESC_WORDS + ((i) >> 1)] >> (((i) & 1u) * 16u)) & 0xffffu)
-#define KD_VRAM16(a) ((vram_mem[(a) >> 2] >> (((a) & 2u) * 8u)) & 0xffffu)
+#define KD_DESC(i) desc.Load((i) * 4u)
+#define KD_BG8(a) ((bg_mem.Load(((a) >> 2) * 4u) >> (((a) & 3u) * 8u)) & 0xffu)
+#define KD_BG16(a) ((bg_mem.Load(((a) >> 2) * 4u) >> (((a) & 2u) * 8u)) & 0xffffu)
+#define KD_OBJ8(a) ((obj_mem.Load(((a) >> 2) * 4u) >> (((a) & 3u) * 8u)) & 0xffu)
+#define KD_OBJ16(a) ((obj_mem.Load(((a) >> 2) * 4u) >> (((a) & 2u) * 8u)) & 0xffffu)
+#define KD_BGEXT16(a) ((bgext_mem.Load(((a) >> 2) * 4u) >> (((a) & 2u) * 8u)) & 0xffffu)
+#define KD_OBJEXT16(a) ((objext_mem.Load(((a) >> 2) * 4u) >> (((a) & 2u) * 8u)) & 0xffffu)
+#define KD_PAL16(i) ((desc.Load((KHDAYS_DESC_WORDS + ((i) >> 1)) * 4u) >> (((i) & 1u) * 16u)) & 0xffffu)
+#define KD_VRAM16(a) ((vram_mem.Load(((a) >> 2) * 4u) >> (((a) & 2u) * 8u)) & 0xffffu)
 #define KD_3D(x, row) layer3d_at((x), (row))
 #define KD_3D_KNOWN (source3d != 0u)
 // the maps after the memories: engine A's layers' 512 KB and sprites' 256 KB, engine B's 128 KB each
-#define KD_HD_BG(u) bg_mem[((KD_DESC(KD_FLAGS) & KDF_ENGINE_B) != 0u ? 0x8000u : 0x20000u) + (u)]
-#define KD_HD_OBJ(u) obj_mem[((KD_DESC(KD_FLAGS) & KDF_ENGINE_B) != 0u ? 0x8000u : 0x10000u) + (u)]
-#define KD_HD_FIRST(id) hd[(id) * 4u]
-#define KD_HD_WIDTH(id) hd[(id) * 4u + 1u]
-#define KD_HD_HEIGHT(id) hd[(id) * 4u + 2u]
-#define KD_HD_INFO(id) hd[(id) * 4u + 3u]
-#define KD_HD_TEXEL(i) hd[(i)]
+#define KD_HD_BG(u) bg_mem.Load((((KD_DESC(KD_FLAGS) & KDF_ENGINE_B) != 0u ? 0x8000u : 0x20000u) + (u)) * 4u)
+#define KD_HD_OBJ(u) obj_mem.Load((((KD_DESC(KD_FLAGS) & KDF_ENGINE_B) != 0u ? 0x8000u : 0x10000u) + (u)) * 4u)
+#define KD_HD_FIRST(id) hd.Load((id) * 16u)
+#define KD_HD_WIDTH(id) hd.Load(((id) * 4u + 1u) * 4u)
+#define KD_HD_HEIGHT(id) hd.Load(((id) * 4u + 2u) * 4u)
+#define KD_HD_INFO(id) hd.Load(((id) * 4u + 3u) * 4u)
+#define KD_HD_TEXEL(i) hd.Load((i) * 4u)
 #define KD_SUB_X (((float)g_fx + 0.5f) / (float)scale)
 #define KD_SUB_Y (((float)g_fy + 0.5f) / (float)scale)
+#define KD_PIXEL (1.0f / (float)scale) // an output pixel's size, in DS pixels
 // the port's elements (gfx/elements.h): after the description and its palettes; their images are
 // replacements (host/render/gpu_hd.h), their texels where the replacement's table puts them
-#define KD_ELEMENT(i) desc[KHDAYS_DESC_WORDS + 256u + (i)]
-#define KD_EL_TEXEL(image, i) hd[hd[(image) * 4u] + (i)]
+#define KD_ELEMENT(i) desc.Load((KHDAYS_DESC_WORDS + 256u + (i)) * 4u)
+#define KD_EL_TEXEL(image, i) hd.Load((hd.Load((image) * 16u) + (i)) * 4u)
 #define KD_ASFLOAT(u) asfloat(u)
 #define KD_LEFT_AT (KHDAYS_DESC_WORDS + 256u + KD_DESC(KD_ELEMENTS) * KE_WORDS)
-#define KD_LEFT_OUT_CELL(c) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc[KD_LEFT_AT + ((c) >> 5)] >> ((c) & 31u)) & 1u : 0u)
-#define KD_LEFT_OUT_OBJ(i) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc[KD_LEFT_AT + KE_LEFT_CELL_WORDS + ((i) >> 5)] >> ((i) & 31u)) & 1u : 0u)
+#define KD_LEFT_OUT_CELL(c) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc.Load((KD_LEFT_AT + ((c) >> 5)) * 4u) >> ((c) & 31u)) & 1u : 0u)
+#define KD_LEFT_OUT_OBJ(i) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc.Load((KD_LEFT_AT + KE_LEFT_CELL_WORDS + ((i) >> 5)) * 4u) >> ((i) & 31u)) & 1u : 0u)
 
 #include "../gfx/compose.h"
 

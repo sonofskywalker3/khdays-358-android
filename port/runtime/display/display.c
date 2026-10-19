@@ -11,6 +11,7 @@
 #include "../mods/sheet_colours.h"
 #include "../mods/tiles2d.h"
 #include "../movies/video.h"
+#include "../movies/scene_trace.h"
 #include "../mods/textures.h"
 #include "../core/window.h"
 #include "../../ui/elements.h"
@@ -264,10 +265,19 @@ static int marked(u32 frame)
     return mark_frame != ~0u && (frame == mark_frame || frame + 1u == mark_frame);
 }
 
+/* KHDAYS_SCENE_SHOTS=<dir>: while a scene of the field's event runs (runtime/movies/scene_trace.h),
+ * both screens every 30 frames as <dir>/<scene>_<frame>.bmp. */
+static const char *scene_shot_dir;
+
+static int scene_shot_at(u32 frame)
+{
+    return scene_shot_dir != NULL && frame % 30u == 0u && khdays_scene_current()[0] != '\0';
+}
+
 /* Whether KHDAYS_SHOTS (or F12) saves this frame. */
 static int shot_at(u32 frame)
 {
-    if (marked(frame)) {
+    if (marked(frame) || scene_shot_at(frame)) {
         return 1;
     }
     for (int n = 0; n < shot_count; ++n) {
@@ -290,6 +300,9 @@ static int drawn(u32 frame)
             return 1;
         }
     }
+    if (scene_shot_dir != NULL && khdays_scene_current()[0] != '\0' && (frame % 30u == 0u || frame % 30u >= 28u)) {
+        return 1;
+    }
     return 0;
 }
 
@@ -297,6 +310,10 @@ void khdays_display_init(void)
 {
     const char *text = getenv("KHDAYS_SHOTS");
     shot_dir = getenv("KHDAYS_SHOT_DIR");
+    scene_shot_dir = getenv("KHDAYS_SCENE_SHOTS");
+    if (scene_shot_dir != NULL) {
+        CreateDirectoryA(scene_shot_dir, NULL);
+    }
     profile = getenv("KHDAYS_PROFILE") != NULL;
     headless = getenv("KHDAYS_HEADLESS") != NULL;
     record_dir = getenv("KHDAYS_RECORD_FRAMES");
@@ -1200,6 +1217,17 @@ static void draw_frame(u32 frame, int want, int capture, KhdaysGpuInput *in, LAR
             save_shot(frame, upper, lower);
         }
     }
+    if (scene_shot_at(frame)) {
+        /* the scene's key as a file's name: EV_S#4 -> EV_S_4 */
+        char name[64], path[MAX_PATH];
+        int n = 0;
+        for (const char *k = khdays_scene_current(); *k != '\0' && n + 1 < (int)sizeof(name); ++k) {
+            name[n++] = (*k == '#' || *k == '/' || *k == ':') ? '_' : *k;
+        }
+        name[n] = '\0';
+        snprintf(path, sizeof(path), "%s/%s_%05u.bmp", scene_shot_dir, name, frame);
+        write_bmp(path, upper, lower);
+    }
     if (frame == mark_frame) {
         save_mark(frame, upper, lower);
         mark_frame = ~0u;
@@ -1379,6 +1407,22 @@ static void display_capture(const KhdaysGpuInput *in, const KhdaysGpu2dState *wi
     IO32(0x64) = cnt & ~0x80000000u;
     memcpy(last_drawn.io_a + 0x64, khdays_io_host + 0x64, 4); /* the register alone changes no picture */
     log_capture(cnt);
+    {
+        /* the DS writes a capture only into a bank mapped to the LCDC (GBATEK, DISPCAPCNT's write block): the
+         * mission review's last capture (ov003, armed every VBlank until its teardown) is taken after the
+         * results have mapped that bank to their BG and loaded their characters there */
+        const u8 bank_cnt = IO8(khdays_vram_cnt_reg[dest]);
+        if (!(bank_cnt & 0x80) || (bank_cnt & 7) != 0) {
+            static int said;
+            if (!said) {
+                said = 1;
+                khdays_log(
+                    "display: a capture into bank %c, its VRAMCNT %02x not the LCDC's: not written, as on the DS",
+                    'A' + dest, bank_cnt);
+            }
+            return;
+        }
+    }
     if (mode != 1) {
         capture_source_a(cnt, in, window_a);
     }
@@ -1456,8 +1500,9 @@ void khdays_display_vblank(u32 frame)
         return;
     }
     /* The same frame again: nothing to swap in, nothing new to draw (the parts' elements follow VRAM and
-     * the registers, so they are the same too). */
-    if (only_shown(frame) && unchanged()) {
+     * the registers, so they are the same too, unless a part said its own state changed). */
+    const int parts_changed = khdays_ui_take_changed();
+    if (only_shown(frame) && !parts_changed && unchanged()) {
         gpu_input(&in);
         display_capture(&in, &window_a);
         show_list();

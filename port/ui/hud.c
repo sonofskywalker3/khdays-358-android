@@ -5,6 +5,7 @@
 #include "hud.h"
 #include "badges.h"
 #include "crowns.h"
+#include "autosave_notice.h"
 #include "save_numbers.h"
 #include "room_icons.h"
 #include "player_names.h"
@@ -490,6 +491,7 @@ static void emit(void)
     khdays_ui_player_names_emit(party_there); /* the port's: the players' names in multiplayer */
     khdays_ui_crowns_emit();                  /* the port's: the crowns on the story's day list */
     khdays_ui_save_numbers_emit();            /* the port's: the files' numbers on the game's save lists */
+    khdays_ui_autosave_notice_emit();         /* the port's: an autosave written or failed */
     khdays_ui_room_icons_emit();              /* the port's: the rooms' signal and lock on the game's list */
 }
 

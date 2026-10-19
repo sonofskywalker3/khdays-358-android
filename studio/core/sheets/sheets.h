@@ -192,6 +192,18 @@ khdays::assets::Palette2D arrangement_palette(const SheetSource& s, const Arrang
 std::vector<std::uint8_t> render_assembly(const SheetSource& s, const Assembly& a, const SheetPixels& p,
                                           const khdays::assets::Palette2D& palette);
 
+// Sheet tiles drawn in one colour (0xAABBGGRR: red first in memory).
+struct TileMark {
+    std::vector<int> tiles;
+    std::uint32_t rgba = 0;
+};
+
+// The assembly's 8x8 places at `scale` on a transparent RGBA picture, to lay
+// over its export: each place's border in `grid`, the places of `marks`'
+// tiles in their colours (later marks over earlier ones).
+std::vector<std::uint8_t> render_tile_grid(const Assembly& a, int scale, std::uint32_t grid,
+                                           const std::vector<TileMark>& marks);
+
 // How much a picture (RGBA, at its first scale) changes across the 8-pixel
 // tile borders against inside its tiles: about 1 where the tiles join up as
 // one picture, well above where they are out of place (an arrangement that

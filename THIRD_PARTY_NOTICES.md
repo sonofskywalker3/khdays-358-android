@@ -211,6 +211,22 @@ Xbox Series, PlayStation 5, 4 and 3, Switch Pro), embedded unmodified in
 License: **Creative Commons Zero (CC0 1.0)**, public domain (<http://creativecommons.org/publicdomain/zero/1.0/>),
 as the archive's `License.txt` states; crediting Kenney is not required, and is done here.
 
+## Lua
+
+Project: Lua, the programming language, by R. Ierusalimschy, L. H. de Figueiredo and W. Celes
+(<https://www.lua.org>)
+
+Pinned release: **5.4.9** (2026-08-10), fetched by CMake as `https://www.lua.org/ftp/lua-5.4.9.tar.gz`,
+373,429 bytes, checked by its SHA-256 `2335b6c582a52654f94612bf10d2f4672805d05329aa6568b1d8cd9e5c6fb8e6`
+(`port/CMakeLists.txt`).
+
+Usage: compiled unmodified as a static library (`khdays-lua`) into `khdays-native.exe`, to run the
+scripts of gameplay mods (`port/runtime/scripts/`); its stand-alone interpreter and compiler
+(`lua.c`, `luac.c`) and the libraries the mods are not given (`liolib.c`, `ldblib.c`, `loadlib.c`,
+`linit.c`) are left out.
+
+License: **MIT**, copyright (C) 1994-2026 Lua.org, PUC-Rio.
+
 ## Windows Media Foundation (system library)
 
 Component: Microsoft Media Foundation, part of Windows (`mfplat.dll`, `mfreadwrite.dll`), with

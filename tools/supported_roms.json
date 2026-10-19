@@ -5,7 +5,8 @@
 	  "name": "358/2 DAYS (Europe)",
 	  "game_code": "YKGP",
 	  "rom_version": 0,
-	  "sha256": "1ecf5e7a41a2ae48e7c5fd3f678e5a79e854d843f1a1fa3a952a41b14e51ec4f"
+	  "sha256": "1ecf5e7a41a2ae48e7c5fd3f678e5a79e854d843f1a1fa3a952a41b14e51ec4f",
+	  "sha256_header_free": "d9e103c6ccd39d5b91e44d865983badc5e2af1674db404b3768557712038a373"
 	}
   ]
 }

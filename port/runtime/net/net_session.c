@@ -32,6 +32,10 @@ typedef unsigned long long u64;
 enum { ANNOUNCE = 1, GONE, JOIN, WELCOME, REFUSE, RECORD, ACK, PING, PONG, LEAVE };
 /* the kinds khdays-server uses */
 enum { REGISTER = 11, REGISTERED, LIST, ROOMS, CONNECT, PEER, PUNCH, RELAY, UNREGISTER };
+/* a guest's movement stick, beside its controls (khdays_net_set_stick): x i16, y i16, the run
+ * threshold u8, the walk speed u8, analog movement on u8. Not acknowledged: the next one replaces it. */
+enum { STICK = 20 };
+#define STICK_BODY 7
 
 /* The server players meet through online: the player's settings name it (host/app/profile.c),
  * KHDAYS_NET_SERVER overrides it (empty: no server). This is the port used when the address gives
@@ -130,9 +134,12 @@ typedef struct Peer {
     unsigned int aid; /* its player number (0 is the host) */
     unsigned char id[ID_SIZE];
     Route address;
-    u64 heard, pinged; /* when it was last heard from, and last pinged */
-    double rtt_ms;     /* round trip; < 0 until measured */
-    double loss;       /* share of pings unanswered in the last report period */
+    u64 heard, pinged;    /* when it was last heard from, and last pinged */
+    double rtt_ms;        /* round trip; < 0 until measured */
+    double loss;          /* share of pings unanswered in the last report period */
+    int level;            /* host: this guest's level as its pings give it (0 not known) */
+    KhdaysNetStick stick; /* host: this guest's movement stick as it last sent it, */
+    u64 stick_at;         /* and when (0 never) */
     unsigned int pings, pongs;
     /* For the session log's report (every REPORT_EVERY): records resent, and
      * the most records that waited for the game, and for an acknowledgement. */
@@ -244,6 +251,14 @@ static struct {
     unsigned int ssid_size;
     u64 join_started, join_sent;
     unsigned int own_aid;
+    /* the players' levels (the game's own, 0 not known): this copy's, set by the game's thread; on a
+     * guest, the members' as the host's pings list them, by aid */
+    volatile int own_level;
+    int *levels;
+    int level_room;
+    /* guest: this copy's movement stick (the game's thread sets it), the one sent last and when */
+    KhdaysNetStick own_stick, sent_stick;
+    u64 stick_sent;
     /* to the game */
     Queued *events;
     int event_count, event_room;
@@ -286,8 +301,11 @@ static struct {
     /* host: the pings of non-members answered in this second */
     u64 probes_since;
     unsigned int probes_answered;
-    /* guest: why the last join was refused (0: it was not) */
+    /* guest: why the last join was refused (0: it was not), and with KHDAYS_NET_REFUSE_MODS the host's
+     * mods as its answer listed them */
     unsigned int last_refusal;
+    char *refusal_mods;
+    int refusal_more;
     /* host only: guests the server introduced, to punch toward until they join */
     struct Introduced {
         unsigned int token;
@@ -325,6 +343,9 @@ static u64 since(u64 now, u64 then)
 {
     return now > then ? now - then : 0;
 }
+
+static void ping_levels(Peer *p, const unsigned char *body, unsigned int size);
+static void send_stick(void);
 
 /* Makes room for `need` items, doubling, the new part zeroed. Out of memory,
  * the process stops. */
@@ -433,6 +454,47 @@ static void transmit(const KhdaysNetAddress *to, const unsigned char *bytes, uns
 /* Sends a datagram of `kind` with a `size`-byte body along route `to`:
  * straight to its address, or, for a relayed pair, wrapped in a RELAY
  * datagram to the server (the pair's token, then the whole datagram). */
+/* This copy's gameplay mods (khdays_net_set_mods), under their own lock: the scripts set them on the
+ * game's thread, the session's thread reads them. */
+static SDL_Mutex *mods_lock;
+static SDL_InitState mods_once;
+static unsigned int mods_fingerprint, mods_count, mods_size;
+static unsigned char *mods_list;
+
+static void mods_ready(void)
+{
+    if (SDL_ShouldInit(&mods_once)) {
+        mods_lock = SDL_CreateMutex();
+        SDL_SetInitialized(&mods_once, mods_lock != NULL);
+    }
+}
+
+void khdays_net_set_mods(unsigned int fingerprint, const unsigned char *list, unsigned int size, unsigned int count)
+{
+    unsigned char *copy = size > 0 ? (unsigned char *)malloc(size) : NULL;
+    if (copy != NULL) {
+        memcpy(copy, list, size);
+    }
+    mods_ready();
+    SDL_LockMutex(mods_lock);
+    free(mods_list);
+    mods_list = copy;
+    mods_size = copy != NULL ? size : 0;
+    mods_count = copy != NULL ? count : 0;
+    mods_fingerprint = fingerprint;
+    SDL_UnlockMutex(mods_lock);
+}
+
+static unsigned int own_mods_fingerprint(void)
+{
+    unsigned int fingerprint;
+    mods_ready();
+    SDL_LockMutex(mods_lock);
+    fingerprint = mods_fingerprint;
+    SDL_UnlockMutex(mods_lock);
+    return fingerprint;
+}
+
 static void send_kind(const Route *to, int kind, const unsigned char *body, unsigned int size)
 {
     const unsigned int wrap = to->relay != 0 ? HEADER + 4 : 0;
@@ -1123,6 +1185,68 @@ static int password_proven(const unsigned char *sender, const unsigned char *bod
     return memcmp(body + at, expected, DIGEST_SIZE) == 0;
 }
 
+/* The refusal for other gameplay mods: the reason, how many the host plays with (u16), then as many of
+ * them as one datagram holds, each its name and version as a u8 size and the bytes. */
+static void refuse_for_mods(const Route *to)
+{
+    unsigned char body[DATAGRAM_RECORDS];
+    unsigned int at = 3, read = 0, listed = 0;
+    body[0] = KHDAYS_NET_REFUSE_MODS;
+    mods_ready();
+    SDL_LockMutex(mods_lock);
+    while (listed < mods_count && read < mods_size) {
+        unsigned int entry = 0;
+        for (int part = 0; part < 2 && read + entry < mods_size; ++part) {
+            entry += 1u + mods_list[read + entry];
+        }
+        if (read + entry > mods_size || at + entry > sizeof(body)) {
+            break;
+        }
+        memcpy(body + at, mods_list + read, entry);
+        at += entry;
+        read += entry;
+        ++listed;
+    }
+    put16(body + 1, (unsigned short)mods_count);
+    SDL_UnlockMutex(mods_lock);
+    send_kind(to, REFUSE, body, at);
+}
+
+/* A guest's reading of that refusal: "name version, ..." and how many were left out. */
+static void take_refusal_mods(const unsigned char *body, unsigned int size)
+{
+    const unsigned int count = size >= 3 ? get16(body + 1) : 0;
+    unsigned int at = 3, shown = 0, length = 0;
+    char *text = (char *)malloc(size * 2 + 1);
+    free(net.refusal_mods);
+    net.refusal_mods = text;
+    net.refusal_more = 0;
+    if (text == NULL) {
+        return;
+    }
+    while (at < size && shown < count) {
+        for (int part = 0; part < 2; ++part) {
+            const unsigned int n = at < size ? body[at] : 0;
+            if (at + 1 + n > size) {
+                at = size;
+                break;
+            }
+            if (part == 0 && shown > 0) {
+                text[length++] = ',';
+                text[length++] = ' ';
+            } else if (part == 1) {
+                text[length++] = ' ';
+            }
+            memcpy(text + length, body + at + 1, n);
+            length += n;
+            at += 1 + n;
+        }
+        ++shown;
+    }
+    text[length] = 0;
+    net.refusal_more = (int)(count - shown);
+}
+
 static void on_datagram(const Route *from, const unsigned char *d, long got, u64 now)
 {
     const unsigned char *sender, *body;
@@ -1152,7 +1276,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         }
         return;
     }
-    if (kind >= REGISTER) {
+    if (kind >= REGISTER && kind <= UNREGISTER) {
         return; /* server kinds from anyone but the server are ignored; a PUNCH only opens the routers */
     }
     if (memcmp(sender, net.id, ID_SIZE) == 0) {
@@ -1198,10 +1322,16 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
             return;
         }
         refuse = get32(body) != net.build                     ? KHDAYS_NET_REFUSE_BUILD
+                 : get32(body + 4) != own_mods_fingerprint()  ? KHDAYS_NET_REFUSE_MODS
                  : !net.open                                  ? KHDAYS_NET_REFUSE_CLOSED
                  : (unsigned int)members() >= net.max_members ? KHDAYS_NET_REFUSE_FULL
                  : !password_proven(sender, body, size)       ? KHDAYS_NET_REFUSE_PASSWORD
                                                               : 0;
+        if (refuse == KHDAYS_NET_REFUSE_MODS) {
+            refuse_for_mods(from);
+            khdays_log("net: a join refused: other gameplay mods");
+            return;
+        }
         if (refuse != 0) {
             send_kind(from, REFUSE, &refuse, 1);
             khdays_log("net: a join refused (reason %u)", refuse);
@@ -1238,6 +1368,9 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         net.joining = 0;
         net.role = GUEST;
         net.own_aid = body[0];
+        for (int i = 0; i < net.level_room; ++i) {
+            net.levels[i] = 0; /* this room's come with the host's pings */
+        }
         /* from now on, reach the host the way its welcome came: directly or
          * through the server */
         new_peer(peer_slot(0), 0, sender, from);
@@ -1251,6 +1384,9 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         }
         net.joining = 0;
         net.last_refusal = body[0];
+        if (body[0] == KHDAYS_NET_REFUSE_MODS) {
+            take_refusal_mods(body, size);
+        }
         push(KHDAYS_NET_REFUSED, 0, NULL, 0)->event.reason = body[0];
         khdays_log("net: the join was refused (reason %u)", body[0]);
         return;
@@ -1288,6 +1424,9 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
     case PING:
         if (p != NULL && size >= 8) {
             send_kind(&p->address, PONG, body, 8);
+            if (p->state == MEMBER) {
+                ping_levels(p, body, size);
+            }
         } else if (p == NULL && net.role == HOST && from->relay == 0 && size >= 8) {
             /* a guest looking at our room (its list's ping) */
             if (since(now, net.probes_since) >= 1000 * MS) {
@@ -1316,6 +1455,16 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
     case LEAVE:
         if (p != NULL) {
             left(p, "said goodbye");
+        }
+        return;
+    case STICK:
+        if (net.role == HOST && p != NULL && p->state == MEMBER && size >= STICK_BODY) {
+            p->stick.x = (short)get16(body);
+            p->stick.y = (short)get16(body + 2);
+            p->stick.run_threshold = body[4];
+            p->stick.walk_speed = body[5];
+            p->stick.on = body[6];
+            p->stick_at = now;
         }
         return;
     default: return;
@@ -1525,6 +1674,7 @@ static void join_step(u64 now)
             unsigned int size = 10 + net.ssid_size;
             memset(body, 0, sizeof(body));
             put32(body, net.build);
+            put32(body + 4, own_mods_fingerprint()); /* the gameplay mods this copy plays with */
             body[8] = (unsigned char)net.ssid_size;
             memcpy(body + 10, net.ssid, net.ssid_size);
             if (net.join_locked && net.join_password) {
@@ -1533,6 +1683,61 @@ static void join_step(u64 now)
             }
             send_kind(&net.join_address, JOIN, body, size);
             net.join_sent = now;
+        }
+    }
+}
+
+/* A ping's body, and its size: when it was sent (the pong gives it back), then the players' levels
+ * for the members' screen. A guest sends its own (u16); the host a count (u8), then an aid (u8) and a
+ * level (u16) for each member whose level it knows, itself included. */
+static unsigned int ping_body(u64 now, unsigned char **body, int *room)
+{
+    const int own = net.own_level;
+    unsigned int size, count = 0;
+    if (net.role == HOST) {
+        for (int i = 0; i < net.peer_room; ++i) {
+            count += net.peers[i].used && net.peers[i].state == MEMBER && net.peers[i].level > 0;
+        }
+        count += own > 0;
+    }
+    *body = (unsigned char *)grow(*body, room, (int)(8 + 3 + 3 * count), 1);
+    put64(*body, now);
+    if (net.role == GUEST) {
+        put16(*body + 8, (unsigned int)(own > 0 ? own : 0));
+        return 10;
+    }
+    (*body)[8] = (unsigned char)count;
+    size = 9;
+    if (own > 0) {
+        (*body)[size] = 0;
+        put16(*body + size + 1, (unsigned int)own);
+        size += 3;
+    }
+    for (int i = 0; i < net.peer_room; ++i) {
+        const Peer *q = &net.peers[i];
+        if (q->used && q->state == MEMBER && q->level > 0) {
+            (*body)[size] = (unsigned char)q->aid;
+            put16(*body + size + 1, (unsigned int)q->level);
+            size += 3;
+        }
+    }
+    return size;
+}
+
+/* A member's ping: on the host a guest's level, on a guest the members' levels (ping_body). */
+static void ping_levels(Peer *p, const unsigned char *body, unsigned int size)
+{
+    if (net.role == HOST && size >= 10) {
+        p->level = (int)get16(body + 8);
+    } else if (net.role == GUEST && size >= 9) {
+        const unsigned int count = body[8];
+        for (int i = 0; i < net.level_room; ++i) {
+            net.levels[i] = 0;
+        }
+        for (unsigned int k = 0; k < count && 9 + 3 * k + 3 <= size; ++k) {
+            const unsigned int aid = body[9 + 3 * k];
+            net.levels = (int *)grow(net.levels, &net.level_room, (int)aid + 1, sizeof(*net.levels));
+            net.levels[aid] = (int)get16(body + 9 + 3 * k + 1);
         }
     }
 }
@@ -1547,9 +1752,10 @@ static void peer_step(Peer *p, u64 now)
         return;
     }
     if (since(now, p->pinged) >= PING_EVERY) {
-        unsigned char body[8];
-        put64(body, now);
-        send_kind(&p->address, PING, body, sizeof(body));
+        static unsigned char *body;
+        static int body_room;
+        const unsigned int size = ping_body(now, &body, &body_room);
+        send_kind(&p->address, PING, body, size);
         p->pinged = now;
         ++p->pings;
     }
@@ -1773,6 +1979,9 @@ static void leave_locked(void)
         }
     }
     drop_peers();
+    for (int i = 0; i < net.level_room; ++i) {
+        net.levels[i] = 0;
+    }
     net.role = NONE;
     net.joining = 0;
     net.join_online = net.join_relayed = 0;
@@ -1968,6 +2177,7 @@ int khdays_net_send(unsigned int destinations, unsigned int port, const void *da
                 length <= sizeof(net.own_control)) {
                 memcpy(net.own_control, control, length);
                 net.own_control_size = length;
+                send_stick();
             }
         }
         if (trace_messages()) {
@@ -2031,6 +2241,104 @@ int khdays_net_link_level(void)
     }
     SDL_UnlockMutex(net.lock);
     return level;
+}
+
+/* A guest's stick to the host, with a control packet: when it changed, or a fifth of a second after
+ * the last (the caller holds net.lock). */
+static void send_stick(void)
+{
+    const KhdaysNetStick *s = &net.own_stick;
+    const u64 now = now_ns();
+    unsigned char body[STICK_BODY];
+    if (net.role != GUEST || net.peers == NULL || !net.peers[0].used ||
+        (memcmp(s, &net.sent_stick, sizeof(*s)) == 0 && since(now, net.stick_sent) < 200 * MS)) {
+        return;
+    }
+    put16(body, (unsigned int)(unsigned short)s->x);
+    put16(body + 2, (unsigned int)(unsigned short)s->y);
+    body[4] = s->run_threshold;
+    body[5] = s->walk_speed;
+    body[6] = s->on;
+    send_kind(&net.peers[0].address, STICK, body, sizeof(body));
+    net.sent_stick = *s;
+    net.stick_sent = now;
+}
+
+void khdays_net_set_stick(const KhdaysNetStick *stick)
+{
+    if (!net.started) {
+        return;
+    }
+    SDL_LockMutex(net.lock);
+    net.own_stick = *stick;
+    SDL_UnlockMutex(net.lock);
+}
+
+int khdays_net_stick(unsigned int aid, KhdaysNetStick *out)
+{
+    int known = 0;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    if (net.role == HOST) {
+        const Peer *p = peer_by_aid(aid);
+        if (p != NULL && p->state == MEMBER && p->stick_at != 0 && since(now_ns(), p->stick_at) < 1000 * MS) {
+            *out = p->stick;
+            known = 1;
+        }
+    }
+    SDL_UnlockMutex(net.lock);
+    return known;
+}
+
+void khdays_net_set_level(int level)
+{
+    net.own_level = level > 0 && level <= 0xffff ? level : 0;
+}
+
+/* One more known level for khdays_net_levels. */
+static void add_level(unsigned int *aids, int *levels, int room, int *count, unsigned int aid, int level)
+{
+    if (level <= 0) {
+        return;
+    }
+    if (*count < room) {
+        aids[*count] = aid;
+        levels[*count] = level;
+    }
+    ++*count;
+}
+
+int khdays_net_levels(unsigned int *aids, int *levels, int room)
+{
+    int count = 0;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    if (net.role == HOST) {
+        add_level(aids, levels, room, &count, 0, net.own_level);
+        for (int i = 0; i < net.peer_room; ++i) {
+            const Peer *p = &net.peers[i];
+            if (p->used && p->state == MEMBER) {
+                add_level(aids, levels, room, &count, p->aid, p->level);
+            }
+        }
+    } else if (net.role == GUEST) {
+        /* its own as it knows it, else as the host's pings give it back */
+        const int own = net.own_level > 0                   ? net.own_level
+                        : (int)net.own_aid < net.level_room ? net.levels[net.own_aid]
+                                                            : 0;
+        add_level(aids, levels, room, &count, net.own_aid, own);
+        for (int aid = 0; aid < net.level_room; ++aid) {
+            if (aid != (int)net.own_aid) {
+                add_level(aids, levels, room, &count, (unsigned int)aid, net.levels[aid]);
+            }
+        }
+    }
+    SDL_UnlockMutex(net.lock);
+    return count;
 }
 
 int khdays_net_round_trips(unsigned int *aids, int *ms, int room)
@@ -2627,6 +2935,21 @@ int khdays_net_room_at(int index, KhdaysNetRoomView *out, char *name, unsigned i
 int khdays_net_last_refusal(void)
 {
     return (int)net.last_refusal;
+}
+
+void khdays_net_last_refusal_mods(char *text, int room, int *more)
+{
+    text[0] = 0;
+    *more = 0;
+    if (!net.started) {
+        return;
+    }
+    SDL_LockMutex(net.lock);
+    if (net.refusal_mods != NULL) {
+        SDL_strlcpy(text, net.refusal_mods, (size_t)room);
+        *more = net.refusal_more;
+    }
+    SDL_UnlockMutex(net.lock);
 }
 
 int khdays_net_own_aid(void)

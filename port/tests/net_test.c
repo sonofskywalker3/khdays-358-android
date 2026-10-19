@@ -510,6 +510,121 @@ static int guest_locked(void)
     return 6;
 }
 
+/* --- gameplay mods (runtime/scripts): a room takes only the host's ---------- */
+
+#define MODS_FINGERPRINT 0x1234u
+#define MODS_LISTED 200 /* more than one datagram holds: the refusal says how many it left out */
+
+/* The host's 200 gameplay mods: two named, then fillers of 40-letter names. */
+static void host_mods(void)
+{
+    static unsigned char list[MODS_LISTED * 48];
+    unsigned int at = 0;
+    const char *names[2][2] = {{"Double munny", "1.0"}, {"Infinite HP", "2"}};
+    for (int m = 0; m < MODS_LISTED; ++m) {
+        char filler[48];
+        const char *name = m < 2 ? names[m][0] : filler, *version = m < 2 ? names[m][1] : "1";
+        SDL_snprintf(filler, sizeof(filler), "A mod with a long name for filling %05d", m);
+        list[at++] = (unsigned char)SDL_strlen(name);
+        SDL_memcpy(list + at, name, SDL_strlen(name));
+        at += (unsigned int)SDL_strlen(name);
+        list[at++] = (unsigned char)SDL_strlen(version);
+        SDL_memcpy(list + at, version, SDL_strlen(version));
+        at += (unsigned int)SDL_strlen(version);
+    }
+    khdays_net_set_mods(MODS_FINGERPRINT, list, at, MODS_LISTED);
+}
+
+static int host_modded(void)
+{
+    const unsigned char info[16 + 10] = {[16] = 'm'};
+    KhdaysNetEvent e;
+    unsigned int frame = 0;
+    int joined = 0;
+    const Uint64 until = SDL_GetTicks() + 60000;
+    host_mods();
+    if (!khdays_net_begin() || !khdays_net_host(GGID, info, sizeof(info), 3)) {
+        fprintf(stderr, "host: no room\n");
+        return 2;
+    }
+    while (SDL_GetTicks() < until) {
+        ++frame;
+        while (khdays_net_next(&e, data, sizeof(data), frame)) {
+            if (e.kind == KHDAYS_NET_JOINING) {
+                khdays_net_accept(e.aid, 1);
+            } else if (e.kind == KHDAYS_NET_JOINED) {
+                joined = 1;
+            } else if (e.kind == KHDAYS_NET_LEFT && joined) {
+                khdays_net_end();
+                return 0;
+            }
+        }
+        SDL_Delay(5);
+    }
+    fprintf(stderr, "host: %s\n", joined ? "the guest never left" : "nobody joined");
+    return 5;
+}
+
+/* The guest: with other gameplay mods refused, told the host's; with the same, taken. */
+static int guest_modded(void)
+{
+    KhdaysNetEvent e;
+    KhdaysNetRoomView room = {0};
+    char name[64], told[2048];
+    unsigned int frame = 0;
+    int stage = 0, more = 0; /* 0 looking, 1 sent with other mods, 2 sent with the host's */
+    const Uint64 until = SDL_GetTicks() + 60000;
+    khdays_net_set_mods(0x5678u, (const unsigned char *)"\x01x\x01y", 4, 1);
+    if (!khdays_net_begin()) {
+        fprintf(stderr, "guest: no network\n");
+        return 2;
+    }
+    khdays_net_scan(GGID, 1);
+    while (SDL_GetTicks() < until) {
+        ++frame;
+        while (khdays_net_next(&e, data, sizeof(data), frame)) {
+            if (e.kind == KHDAYS_NET_REFUSED) {
+                int shown = 1;
+                if (stage != 1 || e.reason != KHDAYS_NET_REFUSE_MODS) {
+                    fprintf(stderr, "guest: refused (reason %u) at stage %d\n", e.reason, stage);
+                    return 3;
+                }
+                khdays_net_last_refusal_mods(told, sizeof(told), &more);
+                for (const char *c = told; *c; ++c) {
+                    shown += *c == ',';
+                }
+                if (SDL_strncmp(told, "Double munny 1.0, Infinite HP 2, A mod", 38) != 0 || more <= 0 ||
+                    shown + more != MODS_LISTED) {
+                    fprintf(stderr, "guest: told \"%.80s\", %d shown, %d more\n", told, shown, more);
+                    return 7;
+                }
+                host_mods(); /* the same mods now */
+                khdays_net_scan(GGID, 1);
+                stage = 2;
+                khdays_net_join(room.id, "ssid", 4);
+            } else if (e.kind == KHDAYS_NET_JOINED) {
+                if (stage != 2) {
+                    fprintf(stderr, "guest: joined with other gameplay mods\n");
+                    return 4;
+                }
+                printf("net: a guest with other gameplay mods refused and told the host's (%d of them left "
+                       "out of one answer), one with the same taken\n",
+                       more);
+                khdays_net_end();
+                return 0;
+            }
+        }
+        if (stage == 0 && khdays_net_room_count() == 1 && khdays_net_room_at(0, &room, name, sizeof(name)) >= 0) {
+            khdays_net_scan(GGID, 0);
+            khdays_net_join(room.id, "ssid", 4);
+            stage = 1;
+        }
+        SDL_Delay(2);
+    }
+    fprintf(stderr, "guest: stage %d, then nothing\n", stage);
+    return 6;
+}
+
 /* The guest here, the host started again as `argument`. */
 static int pair(const char *exe, const char *argument, int (*guest_side)(void))
 {
@@ -550,9 +665,15 @@ int main(int argc, char **argv)
     if (argc > 1 && strcmp(argv[1], "--host-locked") == 0) {
         return host_locked();
     }
+    if (argc > 1 && strcmp(argv[1], "--host-modded") == 0) {
+        return host_modded();
+    }
     if (pair(argv[0], "--host", guest) != 0 || pair(argv[0], "--host-controls", guest_controls) != 0 ||
         pair(argv[0], "--host-paced", guest_paced) != 0) {
         return 1;
     }
-    return pair(argv[0], "--host-locked", guest_locked);
+    if (pair(argv[0], "--host-locked", guest_locked) != 0) {
+        return 1;
+    }
+    return pair(argv[0], "--host-modded", guest_modded);
 }

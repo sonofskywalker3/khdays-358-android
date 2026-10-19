@@ -232,6 +232,35 @@ int main(int argc, char **argv)
     khdays_slots_set_port_view(0);
     CHECK(khdays_slots_page() == -1 && !khdays_slots_port_view() && khdays_slots_shown() == 0);
 
+    /* the view kept and put back around a write of the port's own (the autosave): the page with file
+     * 99 in game slot 3, then the chip's own view again */
+    {
+        KhdaysSlotsView kept;
+        khdays_slots_keep_view(&kept);
+        khdays_slots_show_page(KHDAYS_SLOT_COUNT - KHDAYS_GAME_SLOTS);
+        CHECK(khdays_slots_file_of(2) == KHDAYS_SLOT_COUNT - 1);
+        khdays_slots_put_view(&kept);
+        CHECK(khdays_slots_page() == -1 && !khdays_slots_port_view() && khdays_slots_file_of(0) == 0);
+        khdays_slots_set_port_view(1);
+        CHECK(khdays_slots_file_of(1) == -1); /* blank in the port's view */
+        khdays_slots_set_port_view(0);
+    }
+    CHECK(khdays_slots_highest_counter() == 13); /* file 50's */
+
+    /* a commit that fails (file 50 read-only): the game told so, and file 50 as it is on the disk,
+     * nothing of it left for the next commit */
+    SetFileAttributesA(path, FILE_ATTRIBUTE_READONLY);
+    khdays_slots_show_page(47);
+    make_copy(copy, 52, 14);
+    game_write(slot_at(2, 0), copy, KHDAYS_SLOT_COPY);
+    CHECK(khdays_slots_changed());
+    CHECK(!khdays_slots_commit());
+    CHECK(!khdays_slots_changed());
+    CHECK(khdays_slots_state(49, &state) == KHDAYS_SLOT_SAVED && khdays_slots_field(state, 0, 9) == 51);
+    CHECK(khdays_slots_commit());
+    SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+    khdays_slots_set_port_view(0);
+
     DeleteFileA(path);
     snprintf(path, sizeof(path), "%s/slots", folder);
     RemoveDirectoryA(path);

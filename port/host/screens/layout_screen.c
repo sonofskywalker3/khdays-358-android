@@ -469,23 +469,13 @@ static SDL_Texture *switch_icon(SDL_Renderer *renderer, const char *name)
     return texture;
 }
 
-/* The icon of the input the player has for DS button `action` (KHDAYS_ACT_*) on the device played. */
-static int input_icon(const KhdaysLayout *l, int action, Icon *out)
+/* The icon of one input (a pad's `on_pad`, else a key), or its name in `label` when it has none; 0
+ * when it has neither. */
+static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, int input, Icon *out)
 {
-    const KhdaysProfile *profile = khdays_devices_profile();
-    SDL_Gamepad *pad = khdays_devices_gamepad();
-    const int on_pad = pad != NULL && khdays_devices_pad_in_use();
-    const int device = on_pad ? KHDAYS_DEVICE_GAMEPAD : KHDAYS_DEVICE_KEYBOARD;
-    int input = profile->input[device][KHDAYS_LAYER_BASE][action][0];
     char name[KHDAYS_LAYOUT_NAME + 8];
     const KhdaysLayoutPiece *p;
     memset(out, 0, sizeof(*out));
-    if (input == KHDAYS_NO_INPUT) {
-        input = profile->input[device][KHDAYS_LAYER_BASE][action][1];
-    }
-    if (input == KHDAYS_NO_INPUT) {
-        return 0;
-    }
     if (on_pad) {
         const SDL_GamepadType type = SDL_GetGamepadType(pad);
         const char *input_name = khdays_pad_input_name(input);
@@ -551,8 +541,34 @@ static int input_icon(const KhdaysLayout *l, int action, Icon *out)
     return out->label[0] != 0;
 }
 
-/* The DS button a line's characters at `t` write (KHDAYS_ACT_*), -1 none; `length` the characters
- * it takes. */
+/* The icon of the input the player has for DS button `action` (KHDAYS_ACT_*) on the device played: of
+ * its first input with one (the pad's Guide has none, its L3 does), else the first's name. */
+static int input_icon(const KhdaysLayout *l, int action, Icon *out)
+{
+    const KhdaysProfile *profile = khdays_devices_profile();
+    SDL_Gamepad *pad = khdays_devices_gamepad();
+    const int on_pad = pad != NULL && khdays_devices_pad_in_use();
+    const int16_t *inputs =
+        profile->input[on_pad ? KHDAYS_DEVICE_GAMEPAD : KHDAYS_DEVICE_KEYBOARD][KHDAYS_LAYER_BASE][action];
+    int named = 0;
+    memset(out, 0, sizeof(*out));
+    for (int k = 0; k < KHDAYS_INPUTS_PER_ACTION; ++k) {
+        Icon icon;
+        if (inputs[k] == KHDAYS_NO_INPUT || !icon_of_input(l, pad, on_pad, inputs[k], &icon)) {
+            continue;
+        }
+        if (icon.texture != NULL) {
+            *out = icon;
+            return 1;
+        }
+        if (!named) {
+            *out = icon;
+            named = 1;
+        }
+    }
+    return named;
+}
+
 /* The DS's button the text has here: its actions (one or two) and its glyphs' count; 0 none. */
 static int buttons_at(const unsigned short *t, int *length, int action[2])
 {

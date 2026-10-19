@@ -67,4 +67,19 @@ void khdays_savelist_set_settings(int files, int autosave);
  * game's own (slot + 1) otherwise. Called from the game's text (port/tools/prepare.py HOOKS). */
 int khdays_savelist_file_number(int slot);
 
+/* The file being played (0 on): the one the title loaded or a camp's save screen wrote last;
+ * KHDAYS_PLAYED_NONE on the title and in a game never saved, KHDAYS_PLAYED_GUEST in Mission Mode's guest
+ * game (no file). Set by the autosave when it writes the file being played. */
+enum { KHDAYS_PLAYED_NONE = -1, KHDAYS_PLAYED_GUEST = -2 };
+int khdays_savelist_played_file(void);
+void khdays_savelist_set_played_file(int file);
+/* The level of the file the title loaded, as its list counted it (the game's own count of its panels;
+ * 1 for Mission Mode's guest game); 0 when not known. */
+int khdays_savelist_played_level(void);
+
+/* The camp whose menu waits for the player now (8 Mission Mode's, ov008; 25 the story's, ov025): its
+ * screen 0 with an option or a question's answer under its cursor. 0 when none. `*screen` and `*entry`
+ * what was read (-1 nothing), for traces. */
+int khdays_savelist_camp_menu(int *screen, int *entry);
+
 #endif

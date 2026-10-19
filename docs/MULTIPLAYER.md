@@ -24,7 +24,12 @@ in `RUNTIME_MAP.md` section 16. Running a server: `port/server/README.md`.
 
 A control packet (gate 3, `Ov022_SendControlPacket`) holds a halfword, then the
 slot and the buttons held, the command chosen (its kind in the low 4 bits of
-the second word; 7 means none) and the target.
+the second word; 7 means none) and the target. It has only the D-pad, so a guest
+also sends its movement stick (a STICK datagram, not acknowledged: x and y,
+its run threshold and walk speed, and whether analog movement is on) with its
+controls, when the stick changed or a fifth of a second after the last; the
+host moves that guest's actor with it (its exact angle, and its walk when the
+stick is pushed less than the run threshold), as it does its own.
 
 ### The playout store
 
@@ -101,6 +106,17 @@ the port tells it only of the room under its cursor (`khdays_net_scan_only`),
 and to join or create one it takes the game's cursor there and hands it A. The
 game's joining, its members' screen and its errors are its own
 (`RUNTIME_MAP.md` section 16.2).
+
+The members' screen shows each player's level, which the game does not send:
+the port's pings carry it. A guest's ping gives its own level after the time it
+was sent (u16); the host's gives every level it knows (a count u8, then an aid
+u8 and a level u16 for each, its own too), so a guest that joins late learns the
+others' within a ping. A copy's level is the game's record of its player once
+the game made it (the Mission Mode camp makes it from the panels), else the
+level the title's list counted for the file loaded (`savelist.c`, the game's own
+count of the file's panels; 1 for the guest game, which starts anew). On the HD
+screens it is in the card's upper right corner, on the game's own screens before
+the player's detail.
 
 ## khdays-server
 

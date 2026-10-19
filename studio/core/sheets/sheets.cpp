@@ -1235,6 +1235,46 @@ std::vector<std::uint8_t> render_assembly(const SheetSource& s, const Assembly& 
     return out;
 }
 
+std::vector<std::uint8_t> render_tile_grid(const Assembly& a, int scale, std::uint32_t grid,
+                                           const std::vector<TileMark>& marks) {
+    const int w = a.width * scale, h = a.height * scale, side = 8 * scale;
+    const int line = std::max(1, scale / 4);  // thin, but seen at every size
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4, 0);
+    const auto outline = [&](const Assembly::Spot& spot, std::uint32_t rgba) {
+        for (int y = 0; y < side; ++y) {
+            for (int x = 0; x < side; ++x) {
+                if (x >= line && x < side - line && y >= line && y < side - line)
+                    continue;
+                const int X = spot.x * scale + x, Y = spot.y * scale + y;
+                if (X >= w || Y >= h)
+                    continue;
+                std::uint8_t* o =
+                    &out[(static_cast<std::size_t>(Y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(X)) * 4];
+                for (int c = 0; c < 4; ++c)
+                    o[c] = static_cast<std::uint8_t>(rgba >> (8 * c));
+            }
+        }
+    };
+    for (const auto& spot : a.spots)
+        outline(spot, grid);
+    for (const auto& m : marks) {
+        std::vector<bool> wanted;
+        for (const int t : m.tiles) {
+            if (t < 0)
+                continue;
+            if (static_cast<std::size_t>(t) >= wanted.size())
+                wanted.resize(static_cast<std::size_t>(t) + 1);
+            wanted[static_cast<std::size_t>(t)] = true;
+        }
+        for (const auto& spot : a.spots) {
+            if (spot.tile >= 0 && static_cast<std::size_t>(spot.tile) < wanted.size() &&
+                wanted[static_cast<std::size_t>(spot.tile)])
+                outline(spot, m.rgba);
+        }
+    }
+    return out;
+}
+
 bool take_back(const SheetSource& s, const Assembly& a, const SheetPixels& current, const assets::Palette2D& chosen,
                const std::vector<std::uint8_t>& edited, int w, int h, Colours colours, bool all_changed, TakeBack* out,
                std::string* why) {

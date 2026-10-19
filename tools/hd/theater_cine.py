@@ -20,6 +20,7 @@ import save_screen as ss  # noqa: E402
 import theater_movies as tm  # noqa: E402
 import theater_title as tt  # noqa: E402
 import decompress_data as dd  # noqa: E402
+from newgame_dialog import ctd, plain  # noqa: E402
 
 LAYOUT = 118
 ROWS = (903, 904)  # the theater's first two rows (groups): the rows' place and pitch
@@ -86,8 +87,37 @@ def theater_chapters(mare: Path):
     out = []
     for i in range(n):
         r = struct.unpack_from("<48H", b, 8 + 96 * i)
-        out.append({"day": r[1], "art": strings_at(b, base, r[4]), "scenes": list(r[18 : 18 + r[16]])})
+        out.append(
+            {
+                "day": r[1],
+                "art": strings_at(b, base, r[4]),
+                "scenes": list(r[18 : 18 + r[16]]),
+                "title": (r[13], r[12]),  # its name: <lang dir>/ctd/ct00100.ctd's (group, id)
+            }
+        )
     return out
+
+
+# The collection's names of the game's opening and ending: the port's videos are hd802 and hd843
+# (theater_movies.py); Re:coded's ending is not Days's.
+VIDEO_STEMS = {"DOP.mp4": "hd802", "DED.mp4": "hd843"}
+NOT_DAYS = {"CED.mp4"}
+
+
+def chapter_stems(chapter, scenes):
+    """The chapter's videos in order, as the port names them (its scenes without a video left out)."""
+    out = []
+    for s in chapter["scenes"]:
+        video = scenes[s]["video"]
+        if video and video not in NOT_DAYS:
+            out.append(VIDEO_STEMS.get(video, Path(video).stem))
+    return out
+
+
+def chapter_titles(folder: Path):
+    """The chapters' names in a language: its ct00100.ctd, without its control codes."""
+    table = ctd(folder / "ctd" / "ct00100.ctd")
+    return {key: " ".join(plain(text).split()) for key, text in table.items()}
 
 
 def ds_movies(data: Path):
@@ -378,11 +408,22 @@ def make(mare: Path, data: Path, lang: str, mod: Path, preview: Path | None):
     for name, px in icons.items():
         atlas.add(("icon", name), px)
 
-    # each scene's artwork, once for every language
+    # A chapter without a name of its own goes on the named one before it (seen: always the same
+    # day); the opening's has none: the game's name for it.
+    titles = chapter_titles(folder)
+    opening = game_strings(data, lang)[1]
+    named = []
+    for c in chapters:
+        name = titles.get(c["title"], "")
+        if name or not named:
+            named.append({"day": c["day"], "art": c["art"], "stems": [], "name": name or opening})
+        named[-1]["stems"] += chapter_stems(c, scenes)
+    named = [c for c in named if c["stems"]]
+
+    # the artworks the list shows (its movies' chapters', the named chapters'), once for every language
     art_dir = mod / "art"
     art_dir.mkdir(parents=True, exist_ok=True)
-    for chapter in sorted(set(chapter_of)):
-        name = chapters[chapter]["art"]
+    for name in sorted({chapters[i]["art"] for i in chapter_of} | {c["art"] for c in named}):
         out = art_dir / (Path(name).stem + ".png")
         if not out.exists():
             px = tt.tim2_picture((mare / "bg" / "artwork" / name).read_bytes(), 0)
@@ -408,6 +449,9 @@ def make(mare: Path, data: Path, lang: str, mod: Path, preview: Path | None):
         "#                              its height, the digits' pitch, their colour",
         "#   scene MOVIE DAY ART        each of the game's movies: its chapter's day, its artwork",
         "#                              (layouts/cine/art/ART)",
+        "#   chapter DAY ART VIDEO... | NAME   each of the theater's named chapters with videos, in its",
+        "#                              order: its day, its artwork, its videos and those of the",
+        "#                              unnamed chapters after it, in a row, its name",
         "#   icon NAME U V W H          an input's icon: xbox:<input>, playstation:<input>, pad:<input>,",
         "#                              key:<SDL scancode>",
         "#   font FILE CELL TOP BOTTOM rgba   the font's picture (its own colours: white outlined",
@@ -433,6 +477,8 @@ def make(mare: Path, data: Path, lang: str, mod: Path, preview: Path | None):
     for movie, chapter in zip(movies, chapter_of):
         c = chapters[chapter]
         lines.append(f"scene {movie} {c['day']} {Path(c['art']).stem}.png")
+    for c in named:
+        lines.append(f"chapter {c['day']} {Path(c['art']).stem}.png {' '.join(c['stems'])} | {c['name']}")
     for name, px in icons.items():
         u, v = atlas.at[("icon", name)]
         lines.append(f"icon {name} {u} {v} {px.shape[1]} {px.shape[0]}")
@@ -456,10 +502,10 @@ def make(mare: Path, data: Path, lang: str, mod: Path, preview: Path | None):
     out_dir.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels, "RGBA").save(out_dir / "cine_atlas.png")
     Image.fromarray(font_px, "RGBA").save(out_dir / "cine_font.png")
-    (out_dir / "cine.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    (out_dir / "cine.txt").write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
     print(
-        f"{lang}: {len(pieces)} pieces, {len(icons)} icons, {len(codes)} glyphs, {len(movies)} scenes "
-        f"({len(set(chapter_of))} artworks); tracking {tracking:.2f}, space {space:.2f}"
+        f"{lang}: {len(pieces)} pieces, {len(icons)} icons, {len(codes)} glyphs, {len(movies)} scenes, "
+        f"{len(named)} chapters with videos; tracking {tracking:.2f}, space {space:.2f}"
     )
     if preview is not None:
         preview.mkdir(parents=True, exist_ok=True)

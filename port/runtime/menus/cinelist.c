@@ -5,14 +5,17 @@
 #include "cinelist.h"
 
 #include "../core/io.h"
+#include "../input/input.h"
 #include "../core/window.h"
 
 #include "khdays_ds_symbols.h"
 
 #include <string.h>
 #include <windows.h>
+#undef PlaySound /* windows.h's (winmm's), not the game's */
 
 extern int GetLanguage(void);
+extern int PlaySound(int bank, int sound);
 extern KhdaysRef NNSi_FndGetCurrentRootHeap(void);
 extern void Ov000_EnterListScene(void);
 extern void Ov000_FadeTransitionTick(void);
@@ -100,4 +103,36 @@ void khdays_cinelist_view(KhdaysCineView *out)
     AcquireSRWLockShared(&lock);
     *out = shown;
     ReleaseSRWLockShared(&lock);
+}
+
+/* The port's list of chapters: it takes the buttons; the sound it asks for (+1, 0 none); the buttons
+ * the game's list would get this frame. */
+static volatile LONG taken, sound_wanted, seen;
+
+void khdays_cinelist_take(int on)
+{
+    InterlockedExchange(&taken, on != 0);
+}
+
+void khdays_cinelist_sound(int sound)
+{
+    InterlockedExchange(&sound_wanted, sound + 1);
+}
+
+uint16_t khdays_cinelist_seen(void)
+{
+    return (uint16_t)InterlockedCompareExchange(&seen, 0, 0);
+}
+
+uint16_t khdays_cinelist_buttons(uint16_t buttons)
+{
+    const LONG sound = InterlockedExchange(&sound_wanted, 0);
+    InterlockedExchange(&seen, buttons);
+    if (sound != 0) {
+        PlaySound(0, (int)sound - 1);
+    }
+    if (!InterlockedCompareExchange(&taken, 0, 0)) {
+        return buttons;
+    }
+    return (uint16_t)(buttons & (KHDAYS_KEY_B | KHDAYS_KEY_START)); /* the game's list closes on them */
 }

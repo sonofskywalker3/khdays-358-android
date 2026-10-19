@@ -1,6 +1,7 @@
 /* MODO CINE's list (cinelist.c), drawn as the HD collection's theater draws its chapters
  * (host/screens/cine_screen.c, a mod's layouts/cine/<lang>/cine.txt). The game's own list runs
- * underneath (its buttons, pages, fades, the movie A starts); the port only reads and shows it. */
+ * underneath (its fades, its closing); with the theater's chapters and their HD videos the port's
+ * list of them takes its place and its buttons, else the port shows the game's rows. */
 #ifndef KHDAYS_CINELIST_H
 #define KHDAYS_CINELIST_H
 
@@ -28,6 +29,18 @@ void khdays_cinelist_update_ran(uintptr_t update);
 void khdays_cinelist_frame(void);
 /* Any thread: what the list is, as last published. */
 void khdays_cinelist_view(KhdaysCineView *out);
+
+/* The window's thread: the port's own list of the theater's chapters shows over the game's
+ * (host/screens/cine_screen.c), which then takes the buttons but B and START (the game's closing). */
+void khdays_cinelist_take(int on);
+/* The window's thread: a sound of the game's list's (Ov000's: 0 a move, 1 a choice) for the game's
+ * thread to play. */
+void khdays_cinelist_sound(int sound);
+/* The game's thread, once a frame (input.c): the buttons the game's list gets. */
+uint16_t khdays_cinelist_buttons(uint16_t buttons);
+/* Any thread: the buttons the game's list would have got last frame (the player's and a script's),
+ * for the port's list. */
+uint16_t khdays_cinelist_seen(void);
 
 #ifdef __cplusplus
 }

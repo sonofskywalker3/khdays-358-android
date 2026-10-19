@@ -10,9 +10,12 @@
 #include "../host/screens/ui_text.h"
 #include "../runtime/input/analog.h"
 #include "../runtime/input/sequencers.h"
+#include "../runtime/scripts/queue.h"
+#include "../runtime/scripts/view.h"
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int failures;
@@ -42,24 +45,32 @@ static int first_input(const KhdaysProfile *p, int device, int action)
     return p->input[device][BASE][action][0];
 }
 
-/* The keyboard as it has always been; the gamepad as the
+/* The keyboard and the mouse as PC games have them; the gamepad as the
  * DS, by position. */
 static void test_default_profile(void)
 {
+    const int mouse = KHDAYS_MOUSE_INPUT;
     KhdaysProfile p;
     khdays_profile_default(&p);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_UP) == SDL_SCANCODE_UP);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_DOWN) == SDL_SCANCODE_DOWN);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_LEFT) == SDL_SCANCODE_LEFT);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_RIGHT) == SDL_SCANCODE_RIGHT);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_A) == SDL_SCANCODE_Z);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_B) == SDL_SCANCODE_X);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_X) == SDL_SCANCODE_S);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_Y) == SDL_SCANCODE_A);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_L) == SDL_SCANCODE_Q);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_R) == SDL_SCANCODE_E);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_START) == SDL_SCANCODE_RETURN);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_SELECT) == SDL_SCANCODE_RSHIFT);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_UP) == SDL_SCANCODE_W);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_DOWN) == SDL_SCANCODE_S);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_LEFT) == SDL_SCANCODE_A);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_RIGHT) == SDL_SCANCODE_D);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_A) == mouse + KHDAYS_MOUSE_LEFT);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_B) == SDL_SCANCODE_SPACE);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_X) == SDL_SCANCODE_C);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_Y) == mouse + KHDAYS_MOUSE_RIGHT);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_L) == SDL_SCANCODE_LSHIFT &&
+          p.input[KB][BASE][KHDAYS_ACT_L][1] == SDL_SCANCODE_LEFT);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_R) == mouse + KHDAYS_MOUSE_MIDDLE &&
+          p.input[KB][BASE][KHDAYS_ACT_R][1] == SDL_SCANCODE_RIGHT);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_START) == SDL_SCANCODE_M &&
+          p.input[KB][BASE][KHDAYS_ACT_START][1] == SDL_SCANCODE_RETURN);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_SELECT) == SDL_SCANCODE_N);
+    CHECK(p.input[KB][KHDAYS_LAYER_FIELD][KHDAYS_ACT_MENU_UP][0] == mouse + KHDAYS_MOUSE_WHEEL_UP);
+    CHECK(p.input[KB][KHDAYS_LAYER_FIELD][KHDAYS_ACT_MENU_DOWN][0] == mouse + KHDAYS_MOUSE_WHEEL_DOWN);
+    CHECK(p.input[KB][KHDAYS_LAYER_FIELD][KHDAYS_ACT_MENU_LEFT][0] == SDL_SCANCODE_Q);
+    CHECK(p.input[KB][KHDAYS_LAYER_FIELD][KHDAYS_ACT_MENU_RIGHT][0] == SDL_SCANCODE_E);
 
     CHECK(first_input(&p, PAD, KHDAYS_ACT_A) == KHDAYS_PAD_EAST);
     CHECK(first_input(&p, PAD, KHDAYS_ACT_B) == KHDAYS_PAD_SOUTH);
@@ -92,12 +103,12 @@ static void test_sources_add_up(void)
     KhdaysDeviceState s;
     khdays_profile_default(&p);
     khdays_bindings_reset(&s);
-    s.key[SDL_SCANCODE_Z] = 1;
-    s.pad[KHDAYS_PAD_EAST] = 1;
-    CHECK(resolve(&p, &s).ds_buttons == DS(KHDAYS_ACT_A));
-    s.key[SDL_SCANCODE_Z] = 0;
-    CHECK(resolve(&p, &s).ds_buttons == DS(KHDAYS_ACT_A)); /* still held on the gamepad */
-    s.pad[KHDAYS_PAD_EAST] = 0;
+    s.key[SDL_SCANCODE_SPACE] = 1;
+    s.pad[KHDAYS_PAD_SOUTH] = 1;
+    CHECK(resolve(&p, &s).ds_buttons == DS(KHDAYS_ACT_B));
+    s.key[SDL_SCANCODE_SPACE] = 0;
+    CHECK(resolve(&p, &s).ds_buttons == DS(KHDAYS_ACT_B)); /* still held on the gamepad */
+    s.pad[KHDAYS_PAD_SOUTH] = 0;
     CHECK(resolve(&p, &s).ds_buttons == 0);
     /* Enhancement inputs do nothing while their enhancement is off. */
     s.pad[KHDAYS_PAD_RIGHTSTICK] = 1;
@@ -158,9 +169,9 @@ static void test_binding_rules(void)
     KhdaysProfile p;
     khdays_profile_default(&p);
     /* One input, one action: binding it elsewhere moves it. */
-    CHECK(khdays_profile_set(&p, KB, BASE, KHDAYS_ACT_B, 1, SDL_SCANCODE_Z) == 0);
-    CHECK(khdays_profile_owner(&p, KB, BASE, SDL_SCANCODE_Z) == KHDAYS_ACT_B);
-    CHECK(first_input(&p, KB, KHDAYS_ACT_A) == KHDAYS_NO_INPUT);
+    CHECK(khdays_profile_set(&p, KB, BASE, KHDAYS_ACT_A, 1, SDL_SCANCODE_SPACE) == 0);
+    CHECK(khdays_profile_owner(&p, KB, BASE, SDL_SCANCODE_SPACE) == KHDAYS_ACT_A);
+    CHECK(first_input(&p, KB, KHDAYS_ACT_B) == KHDAYS_NO_INPUT);
     /* Two inputs per action at most. */
     CHECK(khdays_profile_set(&p, KB, BASE, KHDAYS_ACT_B, 2, SDL_SCANCODE_C) == -1);
     /* Esc is the settings key and cannot be bound. */
@@ -397,8 +408,8 @@ static void test_settings_file(void)
     CHECK(load_text("version = 1\nthis is not a setting\n", &q) == 1 && memcmp(&p, &q, sizeof(p)) == 0);
 
     /* CRLF, a byte order mark, comments, spaces, any case. */
-    CHECK(load_text("\xef\xbb\xbf# mine\r\n[Keyboard]\r\n  A =  C  \r\n; also mine\r\n", &q) == 0);
-    CHECK(q.input[KB][BASE][KHDAYS_ACT_A][0] == SDL_SCANCODE_C);
+    CHECK(load_text("\xef\xbb\xbf# mine\r\n[Keyboard]\r\n  A =  V  \r\n; also mine\r\n", &q) == 0);
+    CHECK(q.input[KB][BASE][KHDAYS_ACT_A][0] == SDL_SCANCODE_V);
 
     /* Two inputs, and a comment after a value. */
     CHECK(load_text("[gamepad]\nb = south, north   # jump twice over\n", &q) == 0);
@@ -472,7 +483,7 @@ static void test_settings_file(void)
     CHECK(khdays_profile_owner(&q, KB, BASE, SDL_SCANCODE_Z) == KHDAYS_ACT_A);
 
     /* The same action twice: the last one counts. */
-    CHECK(load_text("[keyboard]\na = C\na = V\n", &q) == 1 && q.input[KB][BASE][KHDAYS_ACT_A][0] == SDL_SCANCODE_V);
+    CHECK(load_text("[keyboard]\na = K\na = V\n", &q) == 1 && q.input[KB][BASE][KHDAYS_ACT_A][0] == SDL_SCANCODE_V);
 
     /* Escape is never bound; the gamepad never loses its way to the settings. */
     CHECK(load_text("[keyboard]\nstart = Escape\n", &q) == 1);
@@ -495,6 +506,46 @@ static void test_settings_file(void)
 /* The [video] section: the DS's
  * picture by default, every value written back as read, a bad value
  * reported in the file's language and replaced by the default. */
+/* The mouse's buttons and wheel, bound in the keyboard's column: read and written by name, held as keys
+ * are, masked as keys are. */
+static void test_mouse_bindings(void)
+{
+    KhdaysProfile p, q;
+    KhdaysDeviceState s;
+    char path[600];
+    CHECK(load_text("[keyboard]\na = Mouse Left, Z\nb = Mouse X2\nl = mouse wheel up\n", &p) == 0);
+    CHECK(p.input[KB][BASE][KHDAYS_ACT_A][0] == KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_LEFT &&
+          p.input[KB][BASE][KHDAYS_ACT_A][1] == SDL_SCANCODE_Z);
+    CHECK(p.input[KB][BASE][KHDAYS_ACT_B][0] == KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_X2);
+    CHECK(p.input[KB][BASE][KHDAYS_ACT_L][0] == KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_WHEEL_UP);
+    CHECK(SDL_strcmp(khdays_mouse_input_name(KHDAYS_MOUSE_INPUT + KHDAYS_MOUSE_WHEEL_DOWN), "Mouse Wheel Down") == 0);
+    CHECK(khdays_mouse_input_name(SDL_SCANCODE_Z) == NULL && khdays_mouse_input_from_name("Mouse 9") < 0);
+    /* written by name and read back the same */
+    path_of("mouse.ini", path, sizeof(path));
+    CHECK(khdays_profile_save(&p, path, count_notice) == 0);
+    notices = 0;
+    khdays_profile_load(&q, path, count_notice);
+    CHECK(notices == 0 && memcmp(&p, &q, sizeof(p)) == 0);
+    /* held as a key is; masked until let go */
+    khdays_bindings_reset(&s);
+    s.mouse[KHDAYS_MOUSE_X2] = 1;
+    CHECK(resolve(&p, &s).ds_buttons == DS(KHDAYS_ACT_B));
+    s.mouse[KHDAYS_MOUSE_X2] = 0;
+    s.mouse[KHDAYS_MOUSE_LEFT] = 1;
+    s.mouse[KHDAYS_MOUSE_WHEEL_UP] = 1;
+    CHECK(resolve(&p, &s).ds_buttons == (DS(KHDAYS_ACT_A) | DS(KHDAYS_ACT_L)));
+    khdays_bindings_mask_held(&s);
+    CHECK(resolve(&p, &s).ds_buttons == 0);
+    s.mouse[KHDAYS_MOUSE_LEFT] = 0;
+    CHECK(resolve(&p, &s).ds_buttons == 0);
+    s.mouse[KHDAYS_MOUSE_LEFT] = 1;
+    CHECK(resolve(&p, &s).ds_buttons == DS(KHDAYS_ACT_A));
+    /* an unbound mouse input does nothing */
+    khdays_bindings_reset(&s);
+    s.mouse[KHDAYS_MOUSE_X1] = 1;
+    CHECK(resolve(&p, &s).ds_buttons == 0);
+}
+
 static void test_video_settings(void)
 {
     KhdaysProfile p, q, r;
@@ -780,7 +831,9 @@ static void to_section(int s)
         key(SDL_SCANCODE_UP);
     }
     for (int i = 0; i < s; ++i) {
-        key(SDL_SCANCODE_DOWN);
+        if (khdays_model_section_shown(i)) {
+            key(SDL_SCANCODE_DOWN);
+        }
     }
     key(SDL_SCANCODE_RETURN);
     khdays_settings_focus(&section, &in_rows, &row, &cell);
@@ -984,6 +1037,10 @@ static void test_settings_layout(void)
         khdays_settings_draw(screen, NULL);
         CHECK(khdays_settings_place(KHDAYS_PLACE_ENTRY, 0, &first));
         for (int e = 0; e <= KHDAYS_SECTION_COUNT; ++e) {
+            if (e < KHDAYS_SECTION_COUNT && !khdays_model_section_shown(e)) {
+                CHECK(!khdays_settings_place(KHDAYS_PLACE_ENTRY, e, &entry)); /* a hidden section has none */
+                continue;
+            }
             if (!khdays_settings_place(KHDAYS_PLACE_ENTRY, e, &entry)) {
                 CHECK(small); /* scrolled out of sight only in a small window */
                 continue;
@@ -1010,6 +1067,110 @@ static void test_settings_layout(void)
     use_screen(1280, 720);
 }
 
+/* The Mods section with two mods the game showed (runtime/scripts/view.h): it appears, a mod turned off,
+ * a toggle, a choice, a number and a button asked of the game's thread, a mod moved later; gone again
+ * with no mod. */
+static void test_settings_mods(void)
+{
+    KhdaysProfile p;
+    KhdaysModsView v;
+    KhdaysModView mods[2];
+    KhdaysOptionView options[4];
+    char *values[3] = {"Slow", "Normal", "Fast"};
+    KhdaysScriptsMessage msg;
+    SDL_zero(v);
+    SDL_zero(mods);
+    SDL_zero(options);
+    options[0].key = "hp";
+    options[0].kind = KHDAYS_OPTION_TOGGLE;
+    options[0].label[0] = "Infinite HP";
+    options[1].key = "speed";
+    options[1].kind = KHDAYS_OPTION_CHOICE;
+    options[1].label[0] = "Speed";
+    options[1].values = values;
+    options[1].value_count = 3;
+    options[1].value = 2;
+    options[2].key = "boost";
+    options[2].kind = KHDAYS_OPTION_NUMBER;
+    options[2].label[0] = "Boost";
+    options[2].low = 0;
+    options[2].high = 10;
+    options[2].step = 2;
+    options[2].value = 4;
+    options[3].key = "potion";
+    options[3].kind = KHDAYS_OPTION_BUTTON;
+    options[3].label[0] = "Give a potion";
+    mods[0].folder = "First";
+    mods[0].id = "test.first";
+    mods[0].name = "First";
+    mods[0].version = "1.0";
+    mods[0].state = KHDAYS_MOD_LOADED;
+    mods[0].enabled = 1;
+    mods[0].options = options;
+    mods[0].option_count = 4;
+    mods[1].folder = "Second";
+    mods[1].id = "test.second";
+    mods[1].name = "Second";
+    mods[1].version = "2";
+    mods[1].state = KHDAYS_MOD_STOPPED;
+    mods[1].reason = "scripts/main.lua:3: attempt to call a nil value";
+    mods[1].enabled = 1;
+    v.mods = mods;
+    v.count = 2;
+    while (khdays_scripts_take(&msg)) {
+        free(msg.mod);
+        free(msg.key);
+    }
+    CHECK(!khdays_model_section_shown(KHDAYS_SECTION_MODS));
+    khdays_scripts_view_set(&v);
+    CHECK(khdays_model_section_shown(KHDAYS_SECTION_MODS));
+    khdays_profile_default(&p);
+    khdays_settings_open(&p);
+    khdays_settings_draw(screen, NULL);
+    to_section(KHDAYS_SECTION_MODS);
+    shot("2-mods");
+    to_row(KHDAYS_SET_MOD_ENABLED, -1); /* the first mod's */
+    key(SDL_SCANCODE_RETURN);
+    CHECK(khdays_scripts_take(&msg) && msg.ask == KHDAYS_ASK_ENABLE && strcmp(msg.mod, "First") == 0 && msg.value == 0);
+    free(msg.mod);
+    key(SDL_SCANCODE_RETURN); /* on again */
+    CHECK(khdays_scripts_take(&msg) && msg.ask == KHDAYS_ASK_ENABLE && msg.value == 1);
+    free(msg.mod);
+    to_row(KHDAYS_SET_MOD_OPTION, 0);
+    key(SDL_SCANCODE_RETURN);
+    CHECK(khdays_scripts_take(&msg) && msg.ask == KHDAYS_ASK_OPTION && strcmp(msg.mod, "test.first") == 0 &&
+          strcmp(msg.key, "hp") == 0 && msg.value == 1);
+    free(msg.mod);
+    free(msg.key);
+    to_row(KHDAYS_SET_MOD_OPTION, 1);
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(khdays_scripts_take(&msg) && strcmp(msg.key, "speed") == 0 && msg.value == 3); /* 1-based */
+    free(msg.mod);
+    free(msg.key);
+    to_row(KHDAYS_SET_MOD_OPTION, 2);
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(khdays_scripts_take(&msg) && strcmp(msg.key, "boost") == 0 && msg.value == 6);
+    free(msg.mod);
+    free(msg.key);
+    to_row(KHDAYS_SET_MOD_OPTION, 3);
+    key(SDL_SCANCODE_RETURN);
+    CHECK(khdays_scripts_take(&msg) && msg.ask == KHDAYS_ASK_BUTTON && strcmp(msg.key, "potion") == 0);
+    free(msg.mod);
+    free(msg.key);
+    to_section(KHDAYS_SECTION_MODS); /* back to the top: the first mod's place */
+    to_row(KHDAYS_SET_MOD_LATER, -1);
+    key(SDL_SCANCODE_RETURN);
+    CHECK(khdays_scripts_take(&msg) && msg.ask == KHDAYS_ASK_MOVE && strcmp(msg.mod, "First") == 0 && msg.value == 1);
+    free(msg.mod);
+    CHECK(!khdays_scripts_take(&msg));
+    khdays_settings_draw(screen, NULL);
+    CHECK(key(SDL_SCANCODE_ESCAPE) == 0 && key(SDL_SCANCODE_ESCAPE) == 1);
+    /* no mod any more: no section */
+    v.count = 0;
+    khdays_scripts_view_set(&v);
+    CHECK(!khdays_model_section_shown(KHDAYS_SECTION_MODS));
+}
+
 static void test_settings_screen(void)
 {
     KhdaysProfile p;
@@ -1029,6 +1190,9 @@ static void test_settings_screen(void)
     CHECK(khdays_settings_is_open());
     for (int s = 0; s < KHDAYS_SECTION_COUNT; ++s) {
         char name[32];
+        if (!khdays_model_section_shown(s)) {
+            continue;
+        }
         to_section(s);
         SDL_snprintf(name, sizeof(name), "1-section-%d", s);
         shot(name);
@@ -1037,37 +1201,37 @@ static void test_settings_screen(void)
         }
     }
 
-    /* Bind D-pad Up on the keyboard to C (free), then its second cell to Z,
-     * which A has: the menu asks, and "Move it here" moves it. */
+    /* Bind D-pad Up on the keyboard to V (free), then its second cell to Space,
+     * which B has: the menu asks, and "Move it here" moves it. */
     to_section(KHDAYS_SECTION_CONTROLS);
     to_row(KHDAYS_SET_BINDING, KHDAYS_ACT_UP);
     to_cell(0);
     key(SDL_SCANCODE_RETURN); /* D-pad Up, first cell: waits for a key */
-    key(SDL_SCANCODE_C);
-    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][0] == SDL_SCANCODE_C);
+    key(SDL_SCANCODE_V);
+    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][0] == SDL_SCANCODE_V);
     key(SDL_SCANCODE_RIGHT); /* second cell */
     key(SDL_SCANCODE_RETURN);
-    key(SDL_SCANCODE_Z); /* A's: a question */
+    key(SDL_SCANCODE_SPACE); /* B's: a question */
     shot("2-conflict");
     CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][1] == KHDAYS_NO_INPUT);
     key(SDL_SCANCODE_RETURN); /* "Move it here" */
-    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][1] == SDL_SCANCODE_Z);
-    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_A][0] == KHDAYS_NO_INPUT);
+    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][1] == SDL_SCANCODE_SPACE);
+    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_B][0] == KHDAYS_NO_INPUT);
     /* Esc while waiting for a key cancels. */
     key(SDL_SCANCODE_RETURN);
     key(SDL_SCANCODE_ESCAPE);
-    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][1] == SDL_SCANCODE_Z);
+    CHECK(khdays_settings_profile()->input[KB][BASE][KHDAYS_ACT_UP][1] == SDL_SCANCODE_SPACE);
     CHECK(khdays_settings_is_open());
 
-    /* A is now on nothing on the keyboard but still on the gamepad: closing
+    /* B is now on nothing on the keyboard but still on the gamepad: closing
      * is fine. Clear the gamepad's too (its first cell), and closing asks
      * first. */
-    to_row(KHDAYS_SET_BINDING, KHDAYS_ACT_A);
+    to_row(KHDAYS_SET_BINDING, KHDAYS_ACT_B);
     to_cell(2);
     key(SDL_SCANCODE_DELETE);
-    CHECK(khdays_settings_profile()->input[PAD][BASE][KHDAYS_ACT_A][0] == KHDAYS_NO_INPUT);
+    CHECK(khdays_settings_profile()->input[PAD][BASE][KHDAYS_ACT_B][0] == KHDAYS_NO_INPUT);
     key(SDL_SCANCODE_ESCAPE);             /* to the column */
-    CHECK(key(SDL_SCANCODE_ESCAPE) == 0); /* "No input would press: A" */
+    CHECK(key(SDL_SCANCODE_ESCAPE) == 0); /* "No input would press: B" */
     shot("3-unbound");
     CHECK(khdays_settings_is_open());
     CHECK(key(SDL_SCANCODE_RETURN) == 0); /* the safe answer, "Back", is chosen */
@@ -1112,6 +1276,7 @@ static void test_settings_screen(void)
     test_settings_changes();
     test_settings_language();
     test_settings_pad();
+    test_settings_mods();
     khdays_settings_renderer_gone();
     SDL_DestroyRenderer(screen);
     SDL_DestroySurface(surface);
@@ -1418,9 +1583,14 @@ static void test_settings_mouse(void)
     click(KHDAYS_PLACE_CELL, up * KHDAYS_CELLS + 0);
     key(SDL_SCANCODE_W);
     CHECK(w->input[KB][BASE][KHDAYS_ACT_UP][0] == SDL_SCANCODE_W);
-    /* the right button: from the rows to the column; Close closes */
+    /* the right button: from the rows to the column; the column's last entry asks whether to quit the
+     * game (Cancel stays in the menu); the right button again leaves the menu */
     click_at(1, 1, SDL_BUTTON_RIGHT);
-    CHECK(click(KHDAYS_PLACE_ENTRY, KHDAYS_SECTION_COUNT) == 1);
+    CHECK(click(KHDAYS_PLACE_ENTRY, KHDAYS_SECTION_COUNT) == 0 && khdays_settings_is_open());
+    khdays_settings_draw(screen, NULL); /* the question, its answers placed */
+    CHECK(click(KHDAYS_PLACE_ANSWER, 1) == 0 && khdays_settings_is_open());
+    khdays_settings_draw(screen, NULL);
+    CHECK(click_at(1, 1, SDL_BUTTON_RIGHT) == 1);
     CHECK(!khdays_settings_is_open() && khdays_settings_changed());
 }
 
@@ -1536,6 +1706,9 @@ static void test_settings_changes(void)
     key(SDL_SCANCODE_RIGHT);
     CHECK(khdays_settings_take_changes() == KHDAYS_CHANGE_LANGUAGE);
     to_section(KHDAYS_SECTION_GENERAL);
+    key(SDL_SCANCODE_RETURN); /* the autosave: read by the save lists when the game goes on, no live change */
+    CHECK(khdays_settings_take_changes() == 0);
+    to_row(KHDAYS_SET_SESSION_LOG, -1);
     key(SDL_SCANCODE_RETURN);
     CHECK(khdays_settings_take_changes() == KHDAYS_CHANGE_LOG);
     to_section(KHDAYS_SECTION_ENHANCEMENTS);
@@ -1885,6 +2058,7 @@ int main(void)
     test_masking();
     test_devices();
     test_settings_file();
+    test_mouse_bindings();
     test_video_settings();
     test_sound_settings();
     test_settings_model();

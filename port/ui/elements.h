@@ -24,6 +24,11 @@ typedef struct KhdaysUiElement {
  * (which is then left out of its slot). */
 void khdays_ui_register(int part, void (*emit)(void));
 void khdays_ui_emit(int part, const KhdaysUiElement *element);
+
+/* For a part drawn from the port's own state (the pause's Retry cursor): when that state changes, the
+ * next VBlank composes the frame again even if the game's picture is the same. */
+void khdays_ui_changed(void);
+int khdays_ui_take_changed(void);
 /* cell (cx, cy) of text layer `layer`'s map (0-63 each, gfx/elements.h
  * KE_CELLS), or sprite `index` of the screen's 128 */
 void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy);

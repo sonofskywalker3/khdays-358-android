@@ -259,6 +259,36 @@ static void test_real_file(void)
             CHECK(comp.screens == KHDAYS_SCREENS_SIDE_BY_SIDE && comp.brightness == (int)KOB_HALVES &&
                   comp.shape_count == 0);
         }
+        {
+            /* Sora's memories: in an event the lower screen alone in the picture's place; in a battle the
+             * two screens as one, joined in the middle -- the upper's world enlarged to the picture's
+             * width as its screen, the lower's right half last (under the HUD's shapes) on the right */
+            static const int widths[] = {256, 308, 342, 512};
+            const uint32_t shown = 1u << KHDAYS_ST_LOWER_SHOWN;
+            KhdaysSituation event = {KHDAYS_SIT_FIELD_3D_BOTH, shown};
+            KhdaysComposition comp;
+            khdays_composition_for(&event, 342, &comp);
+            CHECK(comp.screens == KHDAYS_SCREENS_LOWER && comp.hide3d_all && comp.shape_count == 1);
+            for (size_t w = 0; w < sizeof(widths) / sizeof(widths[0]); ++w) {
+                KhdaysSituation battle = {KHDAYS_SIT_FIELD_3D_BOTH, shown | hud};
+                const float c = (float)widths[w], k = c < 342.0f ? c / 256.0f : 342.0f / 256.0f;
+                const float top = (192.0f - 192.0f * k) / 2.0f;
+                khdays_composition_for(&battle, widths[w], &comp);
+                CHECK(comp.screens == KHDAYS_SCREENS_UPPER && comp.brightness == (int)KOB_HALVES);
+                CHECK(comp.shape_count >= 2 && comp.shape3d_count >= 1);
+                if (comp.shape_count >= 2 && comp.shape3d_count >= 1) {
+                    const uint32_t *last = comp.shapes[comp.shape_count - 1].words;
+                    const KhdaysShape3d *moved = &comp.shapes3d[comp.shape3d_count - 1];
+                    CHECK(fabsf(word_float(last, KO_DST_X1) - c / 2.0f) < 0.01f);
+                    CHECK(fabsf(word_float(last, KO_DST_X2) - (c / 2.0f + 128.0f * k)) < 0.01f);
+                    CHECK(fabsf(word_float(last, KO_DST_Y1) - top) < 0.01f);
+                    CHECK(word_float(last, KO_SRC_X) == 128.0f && word_float(last, KO_SRC_W) == 128.0f);
+                    CHECK(moved->world && moved->whole && fabsf(moved->scale - k) < 0.001f);
+                    CHECK(moved->src_x == 0.0f && fabsf(moved->x - (c - 256.0f * k) / 2.0f) < 0.01f &&
+                          fabsf(moved->y - top) < 0.01f);
+                }
+            }
+        }
         for (int pass = 0; pass < 2; ++pass) {
             KhdaysSituation field = {KHDAYS_SIT_FIELD, pass == 0 ? hud | info : hud};
             KhdaysComposition comp;
