@@ -29,6 +29,11 @@ def copySupportedRoms = tasks.register('copySupportedRoms', Sync) {
 }
 tasks.named('preBuild') { dependsOn copySupportedRoms }
 
+// The setup's tests: the real ROMs and the PC tools' extractions they are compared with are named by
+// -PkhdaysRomEu=, -PkhdaysRomUs=, -PkhdaysReferenceEu=, -PkhdaysReferenceUs= (or the environment's
+// KHDAYS_ROM_EU, ...); the tests that need them are skipped when they are missing.
+def setupTestProperties = ['khdaysRomEu', 'khdaysRomUs', 'khdaysReferenceEu', 'khdaysReferenceUs']
+
 android {
     namespace 'com.sonofskywalker3.khdays358'
     compileSdk 35
@@ -103,6 +108,20 @@ android {
 
     sourceSets.main.assets.srcDir(supportedRomsAssets)
 
+    testOptions {
+        unitTests.all { test ->
+            test.maxHeapSize = '1g'
+            test.systemProperty 'khdays.supportedRoms', supportedRomsJson.absolutePath
+            setupTestProperties.each { name ->
+                if (project.hasProperty(name)) test.systemProperty name, project.property(name)
+            }
+            test.testLogging {
+                events 'passed', 'skipped', 'failed'
+                showStandardStreams = true
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -121,4 +140,8 @@ android {
     lint {
         abortOnError false
     }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
 }
