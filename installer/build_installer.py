@@ -44,6 +44,7 @@ TOOLS = [
     "tools/hd/theater_movies.py",
     "tools/hd/save_screen.py",
     "tools/hd/ddd_camp.py",
+    "tools/hd/smooth_movies.py",  # the HD videos at 60 fps, on the player's graphics card (setup/rife)
     "port/movies/hd_scenes.txt",  # theater_movies.py's scene map: the scene videos it makes
 ]
 # the installer's own (its tests and this script stay in the repository)
@@ -162,6 +163,24 @@ def stage_python(packed: list[str]) -> None:
     pth[0].write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def stage_rife(packed: list[str]) -> None:
+    """The pinned rife-ncnn-vulkan's program and its one model, in setup/rife (smooth_movies.py's)."""
+    item = json.loads((HERE / "pinned.json").read_text(encoding="utf-8"))["rife"]
+    source = CACHE / item["name"]
+    if not source.is_file():
+        sys.exit(f"build_installer: {source} is missing: fetch it (installer/pinned.json gives its URL)")
+    got = sha256(source)
+    if got != item["sha256"]:
+        sys.exit(f"build_installer: {source.name} has SHA-256 {got}, pinned {item['sha256']}")
+    target = STAGE / "setup" / "rife"
+    with zipfile.ZipFile(source) as z:
+        for member in item["members"]:
+            out = target / member
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(z.read(f"{item['folder']}/{member}"))
+    packed.append(f"setup/rife <- {item['name']} ({', '.join(item['members'])})")
+
+
 def find_iscc(given: str | None) -> Path:
     candidates = [
         given,
@@ -228,6 +247,7 @@ def main() -> int:
         if source.is_file() and source.suffix in (".py", ".json", ".txt", ".ini") and source.name not in INSTALLER_KEEP:
             copy(source, STAGE / "installer" / source.name, packed)
     stage_python(packed)
+    stage_rife(packed)
     (STAGE / "setup").mkdir(exist_ok=True)
     (STAGE / "setup" / "version.txt").write_text(ver + "\n", encoding="utf-8")
 

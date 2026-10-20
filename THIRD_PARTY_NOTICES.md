@@ -256,8 +256,19 @@ port, the components below, each unmodified. Their own license files travel with
   Microsoft's Visual Studio license allows for its redistributable code.
 - **Inno Setup 6.7.3** (<https://jrsoftware.org/isinfo.php>, Jordan Russell and Martijn Laan): the
   setup program is built with it and carries its runtime. License: the Inno Setup License.
+- **rife-ncnn-vulkan 20221029** (<https://github.com/nihui/rife-ncnn-vulkan>, nihui), its program and
+  its `rife-v4.6` model only, in `setup/rife/` with its `LICENSE`: `tools/hd/smooth_movies.py` draws
+  the pictures between the HD videos' own with it. License: MIT; the program is built with ncnn
+  (<https://github.com/Tencent/ncnn>, BSD-3-Clause), and the model is RIFE's
+  (<https://github.com/hzwer/Practical-RIFE>, MIT). Its `vcomp140.dll` is Microsoft's OpenMP runtime,
+  a Visual C++ redistributable.
 
 `installer/pinned.json` pins each downloaded file by its SHA-256.
+
+`tools/hd/smooth_movies.py` fetches **ffmpeg 8.0.1** (the "essentials" build by Gyan Doshi,
+<https://github.com/GyanD/codexffmpeg>, GPL-3.0) into `setup/ffmpeg/` itself, only when the player
+runs it, and uses it only when its SHA-256 matches the one the tool names. It runs as a separate
+program; nothing of it is in the installer or the repository.
 
 ## KH Melon Mix (acknowledgement)
 

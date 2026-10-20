@@ -70,6 +70,19 @@ others are made all the same: the installer says which, keeps what each said who
 pictures a tool cuts at known places are taken at their places scaled to the copy's picture, as a
 mod may have put a smaller one there.
 
+## The HD videos at 60 fps
+
+Optional, off by default: the finish page's last choice (shown when the HD videos are there) and a
+Start menu shortcut run `tools/hd/smooth_movies.py` in a window of its own. It makes each video of
+`data/cutscenes/cinematics` again in `data/cutscenes/cinematics60` at twice its rate, a picture drawn
+between each two by RIFE (`setup/rife`, rife-ncnn-vulkan with its `rife-v4.6` model, on the graphics
+card through Vulkan), its sound copied; Video's Movies `HD smooth (60 fps)` plays them, and the HD
+ones where none was made. It takes hours (about four times the videos' 150 minutes on an RTX 3070)
+and keeps a few gigabytes of pictures in `setup/smooth-work` at once; it can be closed at any time,
+a video is put in place only when it is whole, and the next run goes on from the first one not made.
+ffmpeg reads and writes the videos: the tool fetches the pinned build once into `setup/ffmpeg`
+(`THIRD_PARTY_NOTICES.md`). Nothing made leaves the computer: the videos are the player's own.
+
 ## Add to Steam
 
 Optional, off by default, on a page of its own shown only when Steam is found: the port added to

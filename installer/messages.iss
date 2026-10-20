@@ -14,6 +14,16 @@ es.StartPort=Iniciar el port
 fr.StartPort=Lancer le portage
 de.StartPort=Die Portierung starten
 it.StartPort=Avvia il port
+en.SmoothRun=Make the HD videos smooth (60 fps) now: hours on the graphics card, can be stopped and continued
+es.SmoothRun=Hacer ahora los vídeos HD fluidos (60 fps): horas en la tarjeta gráfica, se puede parar y continuar
+fr.SmoothRun=Rendre les vidéos HD fluides (60 i/s) maintenant : des heures sur la carte graphique, interruptible et reprenable
+de.SmoothRun=Die HD-Videos jetzt flüssig machen (60 fps): Stunden auf der Grafikkarte, jederzeit anhalt- und fortsetzbar
+it.SmoothRun=Rendere ora fluidi i video HD (60 fps): ore sulla scheda grafica, si può fermare e riprendere
+en.SmoothShortcut=Smooth the HD videos (60 fps)
+es.SmoothShortcut=Hacer fluidos los vídeos HD (60 fps)
+fr.SmoothShortcut=Rendre les vidéos HD fluides (60 i/s)
+de.SmoothShortcut=HD-Videos flüssig machen (60 fps)
+it.SmoothShortcut=Rendere fluidi i video HD (60 fps)
 
 en.RomPageCaption=Your 358/2 Days ROM
 es.RomPageCaption=Tu ROM de 358/2 Days

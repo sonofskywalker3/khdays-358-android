@@ -22,5 +22,20 @@
       "size": 2676388,
       "sha256": "74ee3d7ecb3f3c05459ba95eed5efa28d6092d751ce9bf20e3e253a4e497e691"
     }
-  ]
+  ],
+  "rife": {
+    "name": "rife-ncnn-vulkan-20221029-windows.zip",
+    "what": "rife-ncnn-vulkan 20221029 (MIT licence): only its program, its OpenMP runtime and the rife-v4.6 model are packed, for smooth_movies.py",
+    "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+    "size": 431540241,
+    "sha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
+    "folder": "rife-ncnn-vulkan-20221029-windows",
+    "members": [
+      "rife-ncnn-vulkan.exe",
+      "vcomp140.dll",
+      "LICENSE",
+      "rife-v4.6/flownet.bin",
+      "rife-v4.6/flownet.param"
+    ]
+  }
 }

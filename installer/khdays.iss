@@ -72,6 +72,8 @@ Name: "studio"; Description: "{cm:StudioTask}"; Flags: unchecked
 [Icons]
 Name: "{autoprograms}\{#ShortcutName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 Name: "{autoprograms}\KH Studio"; Filename: "{app}\khdays-studio.exe"; WorkingDir: "{app}"; Tasks: studio
+; the HD videos at 60 fps (hours, on the graphics card), started again from here to go on
+Name: "{autoprograms}\{cm:SmoothShortcut}"; Filename: "{app}\setup\python\python.exe"; Parameters: "-I ""{app}\tools\hd\smooth_movies.py"" --pause"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExe}"
 
 [InstallDelete]
 ; the shortcut earlier versions made, its name cut at the "/" into a folder of its own
@@ -84,6 +86,8 @@ Type: dirifempty; Name: "{autoprograms}\KH 358"
 Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q"; Flags: runhidden waituntilterminated skipifdoesntexist; Check: NeedsWriteGrant
 ; started as the player (not the administrator that installed it), so its saves are the player's
 Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "{cm:StartPort}"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: DataReady
+; off by default: the HD videos at 60 fps, in a window of its own (hours; it can be closed and started again)
+Filename: "{app}\setup\python\python.exe"; Parameters: "-I ""{app}\tools\hd\smooth_movies.py"" --pause"; WorkingDir: "{app}"; Description: "{cm:SmoothRun}"; Flags: nowait postinstall skipifsilent unchecked runasoriginaluser; Check: HdVideosReady
 
 [UninstallDelete]
 ; what the installer made on this computer (the player's saves and own mods are kept)
@@ -612,6 +616,12 @@ end;
 function DataReady: Boolean;
 begin
   Result := DataOk;
+end;
+
+{ The HD videos are there to make at 60 fps. }
+function HdVideosReady: Boolean;
+begin
+  Result := DirExists(ExpandConstant('{app}\data\cutscenes\cinematics'));
 end;
 
 { Program Files (an administrator install) needs the folder made writable for the player; a
