@@ -100,6 +100,19 @@ static int movie_id(const char *path, char *out, size_t size)
     return 1;
 }
 
+/* The player's video <name>.mp4: with movies = hd-smooth its 60 fps version (data/cutscenes/cinematics60)
+ * where one was made, else the HD collection's (data/cutscenes/cinematics). */
+static void player_video(const char *name, char *file, size_t size)
+{
+    if (khdays_host_graphics_flags() & KHDAYS_HOST_MOVIES_SMOOTH) {
+        snprintf(file, size, "data/cutscenes/cinematics60/%s.mp4", name);
+        if (GetFileAttributesA(file) != INVALID_FILE_ATTRIBUTES) {
+            return;
+        }
+    }
+    snprintf(file, size, "data/cutscenes/cinematics/%s.mp4", name);
+}
+
 static const char *skippable_text(void)
 {
     return skippable > 0 ? "skippable" : skippable == 0 ? "not skippable" : "not said";
@@ -196,10 +209,11 @@ void khdays_movie_hd_stream(int slot, const char *path, int replaced)
     /* a mod's video first (mods/<Mod>/movies/hd<id>.mp4, as khdays-studio
      * saves one), then the player's own HD videos */
     {
-        char relative[64];
+        char relative[64], name[64];
         snprintf(relative, sizeof(relative), "movies/hd%s.mp4", movie);
         if (!khdays_mods_find(relative, file, (int)sizeof(file))) {
-            snprintf(file, sizeof(file), "data/cutscenes/cinematics/hd%s.mp4", movie);
+            snprintf(name, sizeof(name), "hd%s", movie);
+            player_video(name, file, sizeof(file));
         }
     }
     if (GetFileAttributesA(file) == INVALID_FILE_ATTRIBUTES) {
@@ -365,7 +379,7 @@ void khdays_movie_hd_scene_file(const char *stem, char *file, size_t size)
     char relative[128];
     snprintf(relative, sizeof(relative), "cutscenes/cinematics/%s.mp4", stem);
     if (!khdays_mods_find(relative, file, (int)size)) {
-        snprintf(file, size, "data/cutscenes/cinematics/%s.mp4", stem);
+        player_video(stem, file, size);
     }
 }
 

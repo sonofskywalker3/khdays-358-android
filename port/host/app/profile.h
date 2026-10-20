@@ -175,7 +175,13 @@ typedef enum KhdaysDisplay {
 
 /* The movies ([video] movies): the player's HD videos where there is one, the rest at full colour;
  * full colour; or as the DS showed them. */
-typedef enum KhdaysMovies { KHDAYS_MOVIES_HD, KHDAYS_MOVIES_PC, KHDAYS_MOVIES_DS, KHDAYS_MOVIES_COUNT } KhdaysMovies;
+typedef enum KhdaysMovies {
+    KHDAYS_MOVIES_HD,
+    KHDAYS_MOVIES_HD_SMOOTH,
+    KHDAYS_MOVIES_PC,
+    KHDAYS_MOVIES_DS,
+    KHDAYS_MOVIES_COUNT
+} KhdaysMovies;
 
 /* The graphics API ([video] backend): SDL's choice (Direct3D 12 on Windows, Vulkan under Wine or
  * Proton), or one asked for -- Vulkan where Direct3D 12 misbehaves on a card. */

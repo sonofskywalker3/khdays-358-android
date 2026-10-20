@@ -229,6 +229,27 @@ int main(void)
     khdays_movie_hd_game_buttons(0);
     mod_has_843 = 0;
 
+    /* hd-smooth: the 60 fps version where one was made, else the HD one */
+    graphics_flags = KHDAYS_HOST_MOVIES_HD | KHDAYS_HOST_MOVIES_SMOOTH;
+    _mkdir("data/cutscenes/cinematics60");
+    touch("data/cutscenes/cinematics60/hd843.mp4");
+    khdays_movie_hd_stream(1, "843.z", 0);
+    CHECK(strcmp(opened_path, "data/cutscenes/cinematics60/hd843.mp4") == 0);
+    status_now = 1;
+    khdays_movie_hd_poll();
+    khdays_movie_hd_stopped();
+    khdays_movie_hd_game_buttons(0);
+    khdays_movie_hd_stream(1, "/mv/802.mods", 0);
+    CHECK(strcmp(opened_path, "data/cutscenes/cinematics/hd802.mp4") == 0);
+    status_now = 1;
+    khdays_movie_hd_poll();
+    khdays_movie_hd_stopped();
+    CHECK(!khdays_movie_hd_showing() && !held());
+    khdays_movie_hd_game_buttons(0);
+    DeleteFileA("data/cutscenes/cinematics60/hd843.mp4");
+    RemoveDirectoryA("data/cutscenes/cinematics60");
+    graphics_flags = KHDAYS_HOST_MOVIES_HD;
+
     /* START where the DS lets skip: the video stops, START given until the game skips */
     khdays_movie_hd_stream(1, "/mv/802.mods", 0);
     khdays_movie_hd_game_buttons(0);

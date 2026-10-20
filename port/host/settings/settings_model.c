@@ -75,6 +75,7 @@ void khdays_model_refresh(const KhdaysProfile *work)
     scalings[0] = khdays_text(TXT_VIDEO_SHARP);
     scalings[1] = khdays_text(TXT_VIDEO_SMOOTH);
     movies[KHDAYS_MOVIES_HD] = khdays_text(TXT_VIDEO_MOVIES_HD);
+    movies[KHDAYS_MOVIES_HD_SMOOTH] = khdays_text(TXT_VIDEO_MOVIES_HD_SMOOTH);
     movies[KHDAYS_MOVIES_PC] = khdays_text(TXT_VIDEO_MOVIES_PC);
     movies[KHDAYS_MOVIES_DS] = khdays_text(TXT_VIDEO_MOVIES_DS);
     paces[0] = khdays_text(TXT_VIDEO_PACE_SMOOTH);

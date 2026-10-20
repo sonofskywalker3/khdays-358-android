@@ -457,20 +457,28 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO_MOVIES] = {"Movies", "Vidéos", "Filmsequenzen", "Filmati", "Vídeos"},
     [TXT_VIDEO_MOVIES_NOTE] = {"HD plays the HD collection's videos copied to data/cutscenes/cinematics (hd802.mp4 "
                                "and the rest), the other movies at full colour. The DS shows its movies in 15-bit "
-                               "colour, dithered.",
+                               "colour, dithered. HD smooth plays their 60 fps versions from "
+                               "data/cutscenes/cinematics60 where they were made, the others as HD.",
                                "HD lit les vidéos de la collection HD copiées dans data/cutscenes/cinematics "
                                "(hd802.mp4 et les autres), les autres vidéos en couleurs complètes. La DS affiche "
-                               "ses vidéos en couleurs 15 bits, tramées.",
+                               "ses vidéos en couleurs 15 bits, tramées. HD fluide lit leurs versions à 60 i/s de "
+                               "data/cutscenes/cinematics60 là où elles ont été faites, les autres comme HD.",
                                "HD spielt die Videos der HD-Sammlung, die nach data/cutscenes/cinematics kopiert "
                                "wurden (hd802.mp4 und die übrigen), die anderen Filmsequenzen in vollen Farben. "
-                               "Der DS zeigt seine Filmsequenzen in 15-Bit-Farbe, gerastert.",
+                               "Der DS zeigt seine Filmsequenzen in 15-Bit-Farbe, gerastert. HD flüssig spielt ihre "
+                               "60-fps-Fassungen aus data/cutscenes/cinematics60, wo sie erstellt wurden, die "
+                               "übrigen wie HD.",
                                "HD riproduce i video della raccolta HD copiati in data/cutscenes/cinematics "
                                "(hd802.mp4 e gli altri), gli altri filmati a colori pieni. Il DS mostra i filmati "
-                               "a colori a 15 bit, con retinatura.",
+                               "a colori a 15 bit, con retinatura. HD fluido riproduce le loro versioni a 60 fps da "
+                               "data/cutscenes/cinematics60 dove sono state create, le altre come HD.",
                                "HD reproduce los vídeos de la colección HD copiados en data/cutscenes/cinematics "
                                "(hd802.mp4 y los demás), los otros vídeos a color completo. La DS muestra sus "
-                               "vídeos en color de 15 bits, tramado."},
+                               "vídeos en color de 15 bits, tramado. HD fluido reproduce sus versiones a 60 fps de "
+                               "data/cutscenes/cinematics60 donde se hicieron, las demás como HD."},
     [TXT_VIDEO_MOVIES_HD] = {"HD", "HD", "HD", "HD", "HD"},
+    [TXT_VIDEO_MOVIES_HD_SMOOTH] = {"HD smooth (60 fps)", "HD fluide (60 i/s)", "HD flüssig (60 fps)",
+                                    "HD fluido (60 fps)", "HD fluido (60 fps)"},
     [TXT_VIDEO_MOVIES_PC] = {"Full colour", "Couleurs complètes", "Volle Farben", "Colori pieni", "Color completo"},
     [TXT_VIDEO_MOVIES_DS] = {"As on the DS", "Comme sur DS", "Wie auf dem DS", "Come sul DS", "Como en la DS"},
     [TXT_VIDEO_PACE] = {"Picture pace", "Rythme de l'image", "Bildrate", "Ritmo dell'immagine", "Ritmo de imagen"},

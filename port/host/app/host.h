@@ -46,9 +46,10 @@ int khdays_host_frame_scale(void);
  * mods, dumping what is shown, and how movies play. 0 when headless. */
 #define KHDAYS_HOST_HD_GRAPHICS 0x1
 #define KHDAYS_HOST_DUMP_GRAPHICS 0x2
-#define KHDAYS_HOST_MOVIES_DS 0x4   /* [video] movies = ds: the DS's own pictures */
-#define KHDAYS_HOST_MOVIES_HD 0x8   /* [video] movies = hd: the player's HD videos */
-#define KHDAYS_HOST_ONE_SCREEN 0x10 /* [video] screens = one */
+#define KHDAYS_HOST_MOVIES_DS 0x4      /* [video] movies = ds: the DS's own pictures */
+#define KHDAYS_HOST_MOVIES_HD 0x8      /* [video] movies = hd: the player's HD videos */
+#define KHDAYS_HOST_ONE_SCREEN 0x10    /* [video] screens = one */
+#define KHDAYS_HOST_MOVIES_SMOOTH 0x20 /* [video] movies = hd-smooth: the 60 fps ones first (with MOVIES_HD) */
 int khdays_host_graphics_flags(void);
 
 /* The package the game thread fills next (NULL without a window). It belongs

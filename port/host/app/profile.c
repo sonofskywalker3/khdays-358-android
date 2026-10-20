@@ -1009,6 +1009,8 @@ static void read_video(Reader *r, const char *key, const char *value, const char
     if (SDL_strcasecmp(key, "movies") == 0) {
         if (SDL_strcasecmp(value, "hd") == 0) {
             v->movies = KHDAYS_MOVIES_HD;
+        } else if (SDL_strcasecmp(value, "hd-smooth") == 0) {
+            v->movies = KHDAYS_MOVIES_HD_SMOOTH;
         } else if (SDL_strcasecmp(value, "pc") == 0) {
             v->movies = KHDAYS_MOVIES_PC;
         } else if (SDL_strcasecmp(value, "ds") == 0) {
@@ -1482,7 +1484,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "scaling = %s\n"
             "texture_smoothing = %s\nhd_graphics = %s\ndump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
-            "#         else pc), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
+            "#         else pc), hd-smooth (hd, their 60 fps versions in data/cutscenes/cinematics60\n"
+            "#         first), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
             "movies = %s\n"
             "# subtitles: on or off, the movies' subtitles (a new game asks)\n"
             "subtitles = %s\n"
@@ -1498,9 +1501,10 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
             v->dump_graphics ? "on" : "off",
-            v->movies == KHDAYS_MOVIES_DS   ? "ds"
-            : v->movies == KHDAYS_MOVIES_PC ? "pc"
-                                            : "hd",
+            v->movies == KHDAYS_MOVIES_DS          ? "ds"
+            : v->movies == KHDAYS_MOVIES_PC        ? "pc"
+            : v->movies == KHDAYS_MOVIES_HD_SMOOTH ? "hd-smooth"
+                                                   : "hd",
             v->subtitles ? "on" : "off", v->picture_ds ? "ds" : "smooth", v->show_fps ? "on" : "off",
             v->backend == KHDAYS_BACKEND_D3D12    ? "direct3d12"
             : v->backend == KHDAYS_BACKEND_VULKAN ? "vulkan"
