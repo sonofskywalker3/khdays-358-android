@@ -182,6 +182,7 @@ typedef struct KhdaysModelContext {
     const char *gamepad; /* the gamepad's name, or NULL */
     int pad_family;      /* KhdaysPadFamily */
     int guest;           /* a guest in a multiplayer session: the host's gameplay mods' options count */
+    int second_display;  /* the lower screen is on a display of its own (the screens setting has no say) */
 } KhdaysModelContext;
 
 /* The most rows a section can have: one binding per action, plus the

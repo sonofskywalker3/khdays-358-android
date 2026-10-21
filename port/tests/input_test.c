@@ -611,6 +611,11 @@ static void test_video_settings(void)
     CHECK(r.video.hud_size == 6);
     CHECK(load_text("[video]\nhud_size = 9\n", &q) == 1 && q.video.hud_size == 4);
     CHECK(load_text("[video]\nhud_size = big\n", &q) == 1 && q.video.hud_size == 4);
+    /* The menu's text size: 1 to 4, 3 by default; a larger one (the old 5 to 8) the largest, quietly. */
+    CHECK(p.video.menu_size == 3);
+    CHECK(load_text("[video]\nmenu_size = 2\n", &q) == 0 && q.video.menu_size == 2);
+    CHECK(load_text("[video]\nmenu_size = 8\n", &q) == 0 && q.video.menu_size == KHDAYS_MENU_SIZE_MAX);
+    CHECK(load_text("[video]\nmenu_size = 0\n", &q) == 1 && q.video.menu_size == 3);
 
     /* The graphics API: SDL's choice by default; each name, and back through a save. */
     CHECK(p.video.backend == KHDAYS_BACKEND_AUTO);
@@ -902,7 +907,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_ASPECT, KHDAYS_ROW_CHOICE, 0, KHDAYS_ASPECT_COUNT - 1, 0},
         {KHDAYS_SET_SCREENS, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_HUD_SIZE, KHDAYS_ROW_NUMBER, 1, 8, 1},
-        {KHDAYS_SET_MENU_SIZE, KHDAYS_ROW_NUMBER, 1, 8, 1},
+        {KHDAYS_SET_MENU_SIZE, KHDAYS_ROW_NUMBER, 1, KHDAYS_MENU_SIZE_MAX, 1},
         {KHDAYS_SET_SCALING, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_TEXTURES, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_HD_GRAPHICS, KHDAYS_ROW_SWITCH, 0, 1, 0},
@@ -1383,6 +1388,7 @@ static void test_video_page(void)
     key(SDL_SCANCODE_LEFT);
     key(SDL_SCANCODE_LEFT);
     CHECK(v->hud_size == 3);
+    key(SDL_SCANCODE_DOWN); /* past the menu's text size */
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RETURN);
     CHECK(v->smooth_scaling == 1);
@@ -1420,6 +1426,7 @@ static void test_video_page(void)
     key(SDL_SCANCODE_DOWN); /* nor the HUD's size */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->hud_size == 4);
+    key(SDL_SCANCODE_DOWN); /* past the menu's text size */
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RETURN);
     CHECK(v->aspect == KHDAYS_ASPECT_4_3);

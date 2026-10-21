@@ -145,6 +145,7 @@ typedef enum KhdaysAspect {
 } KhdaysAspect;
 
 #define KHDAYS_RESOLUTION_WINDOW 0 /* internal_resolution = window */
+#define KHDAYS_MENU_SIZE_MAX 4     /* menu_size: 1 to this */
 
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
@@ -160,7 +161,7 @@ typedef struct KhdaysVideo {
     int backend;       /* KhdaysBackend: the graphics API the picture goes through */
     int one_screen;    /* screens = one: one picture, else the DS's two */
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
-    int menu_size;     /* the settings menu's text size, 1 to 8 (3: as the window's size sets it) */
+    int menu_size;     /* the settings menu's text size, 1 to 4 (3: as the window's size sets it) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
     int display;       /* KhdaysDisplay: a window, a borderless one over the screen, or full screen */
 } KhdaysVideo;

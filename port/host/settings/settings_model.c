@@ -213,9 +213,17 @@ static void needs_graphics_card(Builder *b, KhdaysRow *r, int note)
     r->note = r->available ? khdays_text(note) : khdays_text(TXT_VIDEO_NEEDS_GPU);
 }
 
+/* On a handheld (Android) the rows for a keyboard, a mouse, a window or a developer are left out. */
+#ifdef __ANDROID__
+#define HANDHELD 1
+#else
+#define HANDHELD 0
+#endif
+
 enum {
-    ALL_CELLS = (1u << KHDAYS_CELLS) - 1,
-    PAD_CELLS = ((1u << KHDAYS_INPUTS_PER_ACTION) - 1) << KHDAYS_INPUTS_PER_ACTION
+    PAD_CELLS = ((1u << KHDAYS_INPUTS_PER_ACTION) - 1) << KHDAYS_INPUTS_PER_ACTION,
+    /* a handheld: its own pad's cells, no keyboard's */
+    ALL_CELLS = HANDHELD ? PAD_CELLS : (1u << KHDAYS_CELLS) - 1
 };
 
 static void build_controls(Builder *b, KhdaysProfile *w)
@@ -252,7 +260,9 @@ static void build_controls(Builder *b, KhdaysProfile *w)
         SDL_strlcat(kh2_note, khdays_text(TXT_KEYBOARD_UNCHANGED), sizeof(kh2_note));
     }
     add_command(b, KHDAYS_SET_PRESET_KH2, TXT_PRESET_KH2, KHDAYS_CMD_PRESET_KH2)->note = kh2_note;
-    add(b, KHDAYS_ROW_PAD, KHDAYS_SET_PAD_VIEW, ""); /* the gamepad's picture */
+    if (!HANDHELD) {
+        add(b, KHDAYS_ROW_PAD, KHDAYS_SET_PAD_VIEW, ""); /* the gamepad's picture (a handheld's own pad: none) */
+    }
     for (size_t i = 0; i < sizeof(ds_order) / sizeof(ds_order[0]); ++i) {
         add_binding(b, KHDAYS_LAYER_BASE, ds_order[i], ALL_CELLS);
     }
@@ -271,7 +281,9 @@ static void build_controls(Builder *b, KhdaysProfile *w)
         }
     }
     add(b, KHDAYS_ROW_TEST, KHDAYS_SET_TEST, "");
-    add_command(b, KHDAYS_SET_RESTORE_KEYBOARD, TXT_RESTORE_KEYBOARD, KHDAYS_CMD_RESTORE_KEYBOARD);
+    if (!HANDHELD) {
+        add_command(b, KHDAYS_SET_RESTORE_KEYBOARD, TXT_RESTORE_KEYBOARD, KHDAYS_CMD_RESTORE_KEYBOARD);
+    }
     add_command(b, KHDAYS_SET_RESTORE_GAMEPAD, TXT_RESTORE_GAMEPAD, KHDAYS_CMD_RESTORE_GAMEPAD);
 }
 
@@ -295,8 +307,10 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
     add_switch(b, KHDAYS_SET_ENH_MOVEMENT, TXT_ENH_MOVEMENT, &e->analog_movement, built(KHDAYS_ENH_ANALOG_MOVEMENT),
                khdays_text(TXT_ENH_MOVEMENT_NOTE));
     /* the mouse turns the camera where the analog camera does (runtime/input/controls_hooks.c) */
-    add_switch(b, KHDAYS_SET_ENH_MOUSE, TXT_ENH_MOUSE, &e->mouse_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
-               khdays_text(TXT_ENH_MOUSE_NOTE));
+    if (!HANDHELD) {
+        add_switch(b, KHDAYS_SET_ENH_MOUSE, TXT_ENH_MOUSE, &e->mouse_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
+                   khdays_text(TXT_ENH_MOUSE_NOTE));
+    }
 }
 
 static void build_sticks(Builder *b, KhdaysProfile *w)
@@ -312,7 +326,9 @@ static void build_sticks(Builder *b, KhdaysProfile *w)
         add_number(b, KHDAYS_SET_CAMERA_SPEED, TXT_CAMERA_SPEED, &e->camera_speed, 10, 300, 10);
         add_choice(b, KHDAYS_SET_CAMERA_X, TXT_CAMERA_X, &e->camera_invert_x, normal_inverted, 2);
         add_choice(b, KHDAYS_SET_CAMERA_Y, TXT_CAMERA_Y, &e->camera_invert_y, normal_inverted, 2);
-        add_number(b, KHDAYS_SET_MOUSE_SPEED, TXT_MOUSE_SPEED, &e->mouse_speed, 10, 300, 10);
+        if (!HANDHELD) {
+            add_number(b, KHDAYS_SET_MOUSE_SPEED, TXT_MOUSE_SPEED, &e->mouse_speed, 10, 300, 10);
+        }
     }
     if (built(KHDAYS_ENH_ANALOG_MOVEMENT)) {
         add_number(b, KHDAYS_SET_RUN_FROM, TXT_RUN_FROM, &e->run_threshold, 50, 95, 5);
@@ -325,9 +341,12 @@ static void build_video(Builder *b, KhdaysProfile *w)
 {
     KhdaysVideo *v = &w->video;
     const int first = v->internal_resolution == 1 ? 0 : 1; /* 1x only when the profile holds it (above) */
-    add_choice(b, KHDAYS_SET_DISPLAY, TXT_VIDEO_DISPLAY, &v->display, displays, KHDAYS_DISPLAY_COUNT)->note =
-        khdays_text(TXT_VIDEO_DISPLAY_NOTE);
-    KhdaysRow *r = add_choice(b, KHDAYS_SET_RESOLUTION, TXT_VIDEO_RESOLUTION, &v->internal_resolution,
+    KhdaysRow *r;
+    if (!HANDHELD) { /* a handheld's picture is always its whole screen */
+        add_choice(b, KHDAYS_SET_DISPLAY, TXT_VIDEO_DISPLAY, &v->display, displays, KHDAYS_DISPLAY_COUNT)->note =
+            khdays_text(TXT_VIDEO_DISPLAY_NOTE);
+    }
+    r = add_choice(b, KHDAYS_SET_RESOLUTION, TXT_VIDEO_RESOLUTION, &v->internal_resolution,
                               resolutions + first, RESOLUTION_CHOICES - first);
     r->values = resolution_values + first;
     needs_graphics_card(b, r, TXT_VIDEO_RESOLUTION_NOTE);
@@ -336,11 +355,13 @@ static void build_video(Builder *b, KhdaysProfile *w)
     needs_graphics_card(b, r, TXT_VIDEO_ANTIALIASING_NOTE);
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_ASPECT, TXT_VIDEO_ASPECT, &v->aspect, aspects, KHDAYS_ASPECT_COUNT),
                         TXT_VIDEO_ASPECT_NOTE);
-    needs_graphics_card(b, add_choice(b, KHDAYS_SET_SCREENS, TXT_VIDEO_SCREENS, &v->one_screen, screens_choices, 2),
-                        TXT_VIDEO_SCREENS_NOTE);
+    if (!b->context->second_display) { /* there each screen has a display of its own */
+        needs_graphics_card(b, add_choice(b, KHDAYS_SET_SCREENS, TXT_VIDEO_SCREENS, &v->one_screen, screens_choices, 2),
+                            TXT_VIDEO_SCREENS_NOTE);
+    }
     needs_graphics_card(b, add_number(b, KHDAYS_SET_HUD_SIZE, TXT_VIDEO_HUD_SIZE, &v->hud_size, 1, 8, 1),
                         TXT_VIDEO_HUD_SIZE_NOTE);
-    add_number(b, KHDAYS_SET_MENU_SIZE, TXT_VIDEO_MENU_SIZE, &v->menu_size, 1, 8, 1)->note =
+    add_number(b, KHDAYS_SET_MENU_SIZE, TXT_VIDEO_MENU_SIZE, &v->menu_size, 1, KHDAYS_MENU_SIZE_MAX, 1)->note =
         khdays_text(TXT_VIDEO_MENU_SIZE_NOTE);
     add_choice(b, KHDAYS_SET_SCALING, TXT_VIDEO_SCALING, &v->smooth_scaling, scalings, 2)->note =
         khdays_text(TXT_VIDEO_SCALING_NOTE);
@@ -350,7 +371,10 @@ static void build_video(Builder *b, KhdaysProfile *w)
     add_switch(b, KHDAYS_SET_HD_GRAPHICS, TXT_VIDEO_HD, &v->hd_graphics, 0, NULL);
     /* the dump is read at each frame (textures.c, tiles2d.c, sheet_colours.c): a 3D texture
      * already shown is written when its room or screen is loaded again */
-    add_switch(b, KHDAYS_SET_DUMP_GRAPHICS, TXT_VIDEO_DUMP, &v->dump_graphics, 1, khdays_text(TXT_VIDEO_DUMP_NOTE));
+    if (!HANDHELD) { /* for making mods, on a computer */
+        add_switch(b, KHDAYS_SET_DUMP_GRAPHICS, TXT_VIDEO_DUMP, &v->dump_graphics, 1,
+                   khdays_text(TXT_VIDEO_DUMP_NOTE));
+    }
     r = add_choice(b, KHDAYS_SET_MOVIES, TXT_VIDEO_MOVIES, &v->movies, movies, KHDAYS_MOVIES_COUNT);
     r->note = khdays_text(TXT_VIDEO_MOVIES_NOTE);
     r->apply = KHDAYS_APPLY_NEXT;
@@ -361,8 +385,10 @@ static void build_video(Builder *b, KhdaysProfile *w)
     r->warning = khdays_text(TXT_VIDEO_PACE_WARNING); /* the pictures between the game's can go wrong */
     r->safe = 1;                                      /* As on the DS */
     add_switch(b, KHDAYS_SET_SHOW_FPS, TXT_VIDEO_SHOW_FPS, &v->show_fps, 1, khdays_text(TXT_VIDEO_SHOW_FPS_NOTE));
-    add_choice(b, KHDAYS_SET_BACKEND, TXT_VIDEO_BACKEND, &v->backend, backends, KHDAYS_BACKEND_COUNT)->note =
-        khdays_text(TXT_VIDEO_BACKEND_NOTE);
+    if (!HANDHELD) { /* Android has Vulkan only */
+        add_choice(b, KHDAYS_SET_BACKEND, TXT_VIDEO_BACKEND, &v->backend, backends, KHDAYS_BACKEND_COUNT)->note =
+            khdays_text(TXT_VIDEO_BACKEND_NOTE);
+    }
     add_command(b, KHDAYS_SET_RESTORE_VIDEO, TXT_RESTORE_VIDEO, KHDAYS_CMD_RESTORE_VIDEO);
 }
 

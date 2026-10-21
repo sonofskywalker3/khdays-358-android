@@ -15,6 +15,9 @@ extern "C" { // the host's C headers that say nothing of C++
 #include "menu_font.h"
 #include "pad_icons.h"
 #include "settings_skin.h"
+#if defined(__ANDROID__)
+#include "../android/bottom_screen.h"
+#endif
 
 #ifndef KHDAYS_VERSION
 #define KHDAYS_VERSION "0.0.0" /* port/CMakeLists.txt gives the VERSION file's */
@@ -163,6 +166,9 @@ void settle()
     context.hd_videos = m.hd_videos;
     context.gamepad = khdays_devices_gamepad_name();
     context.pad_family = pad_family();
+#if defined(__ANDROID__)
+    context.second_display = khdays_bottom_attached();
+#endif
     khdays_model_refresh(&m.work);
     m.count = khdays_model_rows_into(m.section, &m.work, &context, m.rows.data(), (int)m.rows.size());
     if (m.count > (int)m.rows.size()) {
@@ -1601,6 +1607,14 @@ bool draw_skin_value(ImDrawList *dl, const KhdaysRow &r, const std::string &v, I
     return false;
 }
 
+// The bindings' columns shown: on a handheld (Android) its own pad's, no keyboard's.
+#if defined(__ANDROID__)
+constexpr int kFirstDevice = KHDAYS_DEVICE_GAMEPAD;
+#else
+constexpr int kFirstDevice = KHDAYS_DEVICE_KEYBOARD;
+#endif
+constexpr int kFirstCell = kFirstDevice * KHDAYS_INPUTS_PER_ACTION;
+
 void draw_rows(float row_h, float pad)
 {
     const float w = ImGui::GetContentRegionAvail().x;
@@ -1612,7 +1626,7 @@ void draw_rows(float row_h, float pad)
         if (r.kind == KHDAYS_ROW_BINDING) {
             bindings = true;
             label_w = std::max(label_w, width_of(r.label));
-            for (int c = 0; c < KHDAYS_CELLS; ++c) {
+            for (int c = kFirstCell; c < KHDAYS_CELLS; ++c) {
                 cell_w = std::max(cell_w, width_of(cell_text(r, c).c_str()) + cell_icon_room(r, c));
             }
         } else if (selectable(r) && r.kind != KHDAYS_ROW_COMMAND) { // a command's name spans the row
@@ -1620,7 +1634,7 @@ void draw_rows(float row_h, float pad)
         }
     }
     if (bindings) {
-        for (int d = 0; d < KHDAYS_DEVICE_COUNT; ++d) {
+        for (int d = kFirstDevice; d < KHDAYS_DEVICE_COUNT; ++d) {
             char head[64];
             SDL_snprintf(head, sizeof(head), "%s %d", khdays_text(d == 0 ? TXT_KEYBOARD : TXT_GAMEPAD),
                          KHDAYS_INPUTS_PER_ACTION);
@@ -1630,7 +1644,7 @@ void draw_rows(float row_h, float pad)
         // the window is too narrow for the table: the names and the cells share
         // its width, each cut off at its end
         const float room = w - pad - gap;
-        constexpr float cells = KHDAYS_CELLS;
+        constexpr float cells = KHDAYS_CELLS - kFirstCell;
         if (label_w + cells * cell_w > room) {
             label_w = std::min(label_w, room * 0.3f);
             cell_w = (room - label_w) / cells;
@@ -1656,11 +1670,11 @@ void draw_rows(float row_h, float pad)
         if (r.kind == KHDAYS_ROW_BINDING && (i == 0 || m.rows[i - 1].kind != KHDAYS_ROW_BINDING)) {
             // the column headings, above the first binding of each group
             const ImVec2 p = ImGui::GetCursorScreenPos();
-            for (int d = 0; d < KHDAYS_DEVICE_COUNT; ++d) {
+            for (int d = kFirstDevice; d < KHDAYS_DEVICE_COUNT; ++d) {
                 char head[64];
                 for (int s = 0; s < KHDAYS_INPUTS_PER_ACTION; ++s) {
                     SDL_snprintf(head, sizeof(head), "%s %d", khdays_text(d == 0 ? TXT_KEYBOARD : TXT_GAMEPAD), s + 1);
-                    text_at(ImVec2(p.x + value_x + (float)(d * KHDAYS_INPUTS_PER_ACTION + s) * cell_w, p.y),
+                    text_at(ImVec2(p.x + value_x + (float)(d * KHDAYS_INPUTS_PER_ACTION + s - kFirstCell) * cell_w, p.y),
                             heading_colour(), head);
                 }
             }
@@ -1705,8 +1719,8 @@ void draw_rows(float row_h, float pad)
         case KHDAYS_ROW_PAD: draw_pad(p, w, h); break;
         case KHDAYS_ROW_BINDING:
             text_clipped(ImVec2(p.x + pad, ty), colour, r.label, p.x + value_x - gap / 2);
-            for (int c = 0; c < KHDAYS_CELLS; ++c) {
-                const ImVec2 cp(p.x + value_x + (float)c * cell_w - gap / 4, p.y);
+            for (int c = kFirstCell; c < KHDAYS_CELLS; ++c) {
+                const ImVec2 cp(p.x + value_x + (float)(c - kFirstCell) * cell_w - gap / 4, p.y);
                 const ImVec2 cq(cp.x + cell_w - gap / 2, q.y);
                 if (!(r.cells & (1u << c))) {
                     continue;
@@ -2222,8 +2236,8 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
 
     // The text's size follows the window's height; the spacing with it,
     // and by the player's menu text size ([video] menu_size: 3 as the window sets it), followed as it changes
-    static const float kMenuSizes[8] = {0.8f, 0.9f, 1.0f, 1.15f, 1.3f, 1.5f, 1.75f, 2.0f};
-    const int menu_size = std::max(1, std::min(8, m.work.video.menu_size));
+    static const float kMenuSizes[KHDAYS_MENU_SIZE_MAX] = {0.8f, 0.9f, 1.0f, 1.15f};
+    const int menu_size = std::max(1, std::min(KHDAYS_MENU_SIZE_MAX, m.work.video.menu_size));
     const float size =
         std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f)) * kMenuSizes[menu_size - 1];
     if (size != m.styled_size) {
