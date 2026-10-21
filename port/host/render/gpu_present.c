@@ -121,16 +121,6 @@ static int title_screens(const KhdaysFramePackage *p)
            (in->title_shown || in->title_logo || in->title_newgame || in->title_passing);
 }
 
-static void send_black_bottom(void)
-{
-    static uint32_t black[16 * 12];
-    if (black[0] == 0) {
-        for (int i = 0; i < 16 * 12; ++i) {
-            black[i] = 0xff000000u; /* ABGR8888: opaque black */
-        }
-    }
-    khdays_bottom_present((const uint8_t *)black, 16, 12, 16 * 4);
-}
 #endif
 static struct {
     int frames;
@@ -1423,7 +1413,7 @@ void khdays_present_draw(void)
         khdays_present_set_video(&given_video); /* the second display came or went */
     }
     if (two_displays && video.one_screen && one_drawn) {
-        send_black_bottom(); /* the HD title on the upper display (below), the lower one black */
+        khdays_bottom_present_mark(); /* the HD title on the upper display (below), the lower one the crown */
     } else if (two_displays && draw_two_displays()) {
         return;
     }
