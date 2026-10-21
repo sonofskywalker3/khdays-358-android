@@ -1117,7 +1117,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         }
         SDL_EndGPUCopyPass(copy);
     }
-    for (int e = 0; e < 2; ++e) {
+    /* the one-screen picture reads the screens only through its shapes: without any (an HD picture
+     * alone) they are not composed */
+    for (int e = 0; e < (one != NULL && one->shape_count == 0 ? 0 : 2); ++e) {
         Compose2dParams cp;
         SDL_GPUStorageTextureReadWriteBinding io[3];
         SDL_GPUBuffer *in[8];

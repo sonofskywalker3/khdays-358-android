@@ -1026,7 +1026,7 @@ static void present(const KhdaysFramePackage *p, int first)
          * while the window draws it), then composed with the 2D. With
          * KHDAYS_GFX=check at 1x the software 3D is used instead, to compare
          * the 2D with the 2D engines' exactly. */
-        const int n = scale_now();
+        int n = scale_now();
         /* 8 bits per channel when a mod's HD textures are drawn (not when
          * comparing with the old way, which keeps the DS's 6) */
         khdays_raster3d_set_fine(port2d_mode == 1 && khdays_textures_replacements() > 0);
@@ -1076,16 +1076,26 @@ static void present(const KhdaysFramePackage *p, int first)
                 return;
             }
         }
+        /* A picture only (an HD backdrop with `hide3d all` and none of the DS's screens in it: the title):
+         * made at the smallest whole scale that covers the window, then shrunk to its pixels. The
+         * antialiasing is for the 3D's edges, and neither the DS's 3D nor its 2D shows in it: at the
+         * window's 5x times 4x antialiasing the Thor's card took a second a picture. */
+        const int picture_only = picture && one.backdrop != NULL && one.hide3d_all && one.shape_count == 0;
+        if (picture_only) {
+            n = (int)SDL_ceilf(shown_scale() - 0.01f);
+            n = n < 1 ? 1 : n;
+        }
         khdays_raster3d_set_one_screen(picture);
         khdays_raster3d_set_hud_shapes(picture ? composition.shapes3d : NULL, picture ? composition.shape3d_count : 0);
         /* a screen blend's frame: engine A shows a VRAM bank, drawn from its 3D at this resolution too */
         const int blend_frame = khdays_gfx_render_capture_frame(p);
-        const int raster = raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) && n != refused_scale &&
-                           (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame) &&
+        const int raster = !picture_only && raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) &&
+                           n != refused_scale && (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame) &&
                            khdays_raster3d_rasterize(p, n, video.texture_smoothing);
         /* shrunk to the size the window shows it at (smooth scaling: its own pixels), or by the
          * antialiasing (sharp: the DS's pixels kept square, then stretched by whole pixels) */
-        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale() : (float)n / (float)antialiasing_now());
+        khdays_gfx_render_set_shown(video.smooth_scaling || picture_only ? shown_scale()
+                                                                         : (float)n / (float)antialiasing_now());
         if (picture) {
             SDL_GPUTexture *c3d = NULL, *a3d = NULL;
             int raster_columns = one.columns;
