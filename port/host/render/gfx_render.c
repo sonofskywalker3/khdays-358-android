@@ -35,7 +35,8 @@ typedef struct OneScreenParams {
     uint32_t a_upper, backdrop_w, backdrop_h, hide3d;
     float backdrop_scale, backdrop_x, backdrop_y; /* picture texels per its texel, its top-left */
     uint32_t piece_count;                         /* an animated picture's pieces this frame */
-    uint32_t animated, unused[3];                 /* 1: an animated picture (`backdrop` its ground) */
+    uint32_t animated;                            /* 1: an animated picture (`backdrop` its ground) */
+    uint32_t bin_tile, bin_tiles_x, bin_tiles_y;  /* its pieces' tiles (bin_pieces), after the pieces */
 } OneScreenParams;
 
 /* The areas of the package's 2D memory, each in a buffer of its own. */
@@ -84,6 +85,82 @@ static SDL_GPUComputePipeline *onescreen;
 static SDL_GPUBuffer *shape_buffer, *key_buffer, *piece_buffer;
 static uint32_t shape_buffer_bytes, key_buffer_bytes, piece_buffer_bytes;
 #define PIECE_BYTES 128u /* ui/composition.h KhdaysPiece: KHDAYS_PIECE_WORDS words */
+#define BIN_TILE 64u     /* an animated picture's tiles, in its texels (bin_pieces) */
+
+/* An animated picture's pieces sorted into tiles of BIN_TILE x BIN_TILE of its texels, for onescreen.hlsl
+ * to test only the pieces over a texel's tile: each texel testing every piece (some 70 of the title's, at
+ * some 2.4 million texels) held the Thor's card a second a picture. After the pieces in their buffer:
+ * for each tile (rows of bin_tiles_x) the first of its pieces in the list and their count, then the list,
+ * the pieces' numbers in their order (the order they are drawn in). */
+static uint32_t *bins;
+static uint32_t bins_room, bins_words, bin_tiles_x, bin_tiles_y;
+
+/* The tiles piece `r` (its rectangle: x0, y0, x1, y1) lies over; 0 when none of it is in the picture. */
+static int piece_tiles(const float *r, int picture_w, int picture_h, int *tx0, int *ty0, int *tx1, int *ty1)
+{
+    const float x0 = r[0] < r[2] ? r[0] : r[2], x1 = r[0] < r[2] ? r[2] : r[0];
+    const float y0 = r[1] < r[3] ? r[1] : r[3], y1 = r[1] < r[3] ? r[3] : r[1];
+    if (!(x1 > 0.0f && y1 > 0.0f && x0 < (float)picture_w && y0 < (float)picture_h)) {
+        return 0;
+    }
+    *tx0 = x0 > 0.0f ? (int)(x0 / (float)BIN_TILE) : 0;
+    *ty0 = y0 > 0.0f ? (int)(y0 / (float)BIN_TILE) : 0;
+    *tx1 = SDL_min((int)((x1 - 0.001f) / (float)BIN_TILE), (int)bin_tiles_x - 1);
+    *ty1 = SDL_min((int)((y1 - 0.001f) / (float)BIN_TILE), (int)bin_tiles_y - 1);
+    return 1;
+}
+
+static int bin_pieces(const void *pieces, int count, int picture_w, int picture_h)
+{
+    const float *f = (const float *)pieces;
+    uint32_t tiles, listed = 0, start = 0;
+    int tx0, ty0, tx1, ty1;
+    bin_tiles_x = ((uint32_t)SDL_max(picture_w, 1) + BIN_TILE - 1u) / BIN_TILE;
+    bin_tiles_y = ((uint32_t)SDL_max(picture_h, 1) + BIN_TILE - 1u) / BIN_TILE;
+    tiles = bin_tiles_x * bin_tiles_y;
+    for (int i = 0; i < count; ++i) {
+        if (piece_tiles(f + (size_t)i * (PIECE_BYTES / 4u), picture_w, picture_h, &tx0, &ty0, &tx1, &ty1)) {
+            listed += (uint32_t)((tx1 - tx0 + 1) * (ty1 - ty0 + 1));
+        }
+    }
+    bins_words = 2u * tiles + listed;
+    if (bins_words > bins_room) {
+        uint32_t *grown = (uint32_t *)SDL_realloc(bins, bins_words * 4u);
+        if (grown == NULL) {
+            bins_words = 0;
+            return 0;
+        }
+        bins = grown;
+        bins_room = bins_words;
+    }
+    /* each tile's count, then where its list starts, then the lists in the pieces' order */
+    SDL_memset(bins, 0, 2u * tiles * 4u);
+    for (int i = 0; i < count; ++i) {
+        if (piece_tiles(f + (size_t)i * (PIECE_BYTES / 4u), picture_w, picture_h, &tx0, &ty0, &tx1, &ty1)) {
+            for (int ty = ty0; ty <= ty1; ++ty) {
+                for (int tx = tx0; tx <= tx1; ++tx) {
+                    ++bins[2u * ((uint32_t)ty * bin_tiles_x + (uint32_t)tx) + 1u];
+                }
+            }
+        }
+    }
+    for (uint32_t t = 0; t < tiles; ++t) {
+        bins[2u * t] = start;
+        start += bins[2u * t + 1u];
+        bins[2u * t + 1u] = 0;
+    }
+    for (int i = 0; i < count; ++i) {
+        if (piece_tiles(f + (size_t)i * (PIECE_BYTES / 4u), picture_w, picture_h, &tx0, &ty0, &tx1, &ty1)) {
+            for (int ty = ty0; ty <= ty1; ++ty) {
+                for (int tx = tx0; tx <= tx1; ++tx) {
+                    const uint32_t t = (uint32_t)ty * bin_tiles_x + (uint32_t)tx;
+                    bins[2u * tiles + bins[2u * t] + bins[2u * t + 1u]++] = (uint32_t)i;
+                }
+            }
+        }
+    }
+    return 1;
+}
 static SDL_GPUTexture *picture;
 static int picture_w, picture_h, picture_columns;
 static SDL_Texture *picture_wrapped;
@@ -783,13 +860,17 @@ static void hold_capture(const KhdaysFramePackage *p)
 
 static int draw(const KhdaysFramePackage *p, int scale, int raster, const KhdaysOneScreenDraw *one)
 {
+    const int binned = one != NULL && one->animated && one->piece_count > 0 &&
+                       bin_pieces(one->pieces, one->piece_count, one->picture_w > 0 ? one->picture_w : one->backdrop_w,
+                                  one->picture_h > 0 ? one->picture_h : one->backdrop_h);
+    const uint32_t bin_bytes = binned ? bins_words * 4u : 0u;
     int changed[KHDAYS_FRAME_2D_PAGES], nchanged = 0;
     int hd_changed[KHDAYS_FRAME_HD2D_PAGES], nhd = 0;
     const int has3d = (p->wants & KHDAYS_WANT_3D) != 0;
     const uint32_t fixed = 2u * KHDAYS_DESC_WORDS * 4u + 2u * 0x400u + (has3d ? KHDAYS_FRAME_PIXELS * 4u : 0u) +
                            element_bytes(p, 0) + element_bytes(p, 1) +
                            (one != NULL ? (uint32_t)one->shape_count * KO_WORDS * 4u + (uint32_t)one->key_count * 4u +
-                                              (uint32_t)one->piece_count * PIECE_BYTES
+                                              (uint32_t)one->piece_count * PIECE_BYTES + bin_bytes
                                         : 0u);
     uint32_t size, at;
     uint8_t *mapped;
@@ -802,7 +883,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     int columns_a;
     const uint32_t shape_bytes = one != NULL ? (uint32_t)one->shape_count * KO_WORDS * 4u : 0u;
     const uint32_t key_bytes = one != NULL ? (uint32_t)one->key_count * 4u : 0u;
-    const uint32_t piece_bytes = one != NULL ? (uint32_t)one->piece_count * PIECE_BYTES : 0u;
+    const uint32_t piece_bytes = one != NULL ? (uint32_t)one->piece_count * PIECE_BYTES + bin_bytes : 0u; /* and the bins */
     /* a screen blend (take_capture); while engine A shows a bank, it is composed as its layers and 3D,
      * as the capture takes it */
     CapturePlan plan;
@@ -936,7 +1017,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         memcpy(mapped + at, one->keys, key_bytes);
         at += key_bytes;
         if (piece_bytes != 0) {
-            memcpy(mapped + at, one->pieces, piece_bytes);
+            memcpy(mapped + at, one->pieces, piece_bytes - bin_bytes);
+            memcpy(mapped + at + piece_bytes - bin_bytes, bins, bin_bytes);
         }
         at += piece_bytes;
     }
@@ -1145,6 +1227,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
                 op.animated = 1u;
                 op.piece_count = (uint32_t)one->piece_count;
                 op.backdrop = one->ground & 0xffffffu;
+                if (binned) {
+                    op.bin_tile = BIN_TILE;
+                    op.bin_tiles_x = bin_tiles_x;
+                    op.bin_tiles_y = bin_tiles_y;
+                }
             }
         }
         in[0] = shape_buffer;

@@ -48,9 +48,9 @@ cbuffer Params : register(b0, space2) {
     float backdrop_y;
     uint piece_count;     // an animated picture's pieces this frame
     uint is_animated;     // 1: an animated picture: its pieces from the atlas on `backdrop`, its ground
-    uint unused2;
-    uint unused3;
-    uint unused4;
+    uint bin_tile;        // the pieces' tiles, in the picture's texels (0: none, every piece tested)
+    uint bin_tiles_x;     // after the pieces: each tile's first in the list and count, then the list
+    uint bin_tiles_y;
 };
 
 #include "finish3d.hlsli"
@@ -120,11 +120,25 @@ float4 piece_corner(uint at)
 }
 
 // An animated picture at (px, py) of its texels: its ground, then each piece over it whose
-// rectangle holds the point, its atlas texels times its corners' colours blended across it.
+// rectangle holds the point, its atlas texels times its corners' colours blended across it. Only the
+// pieces over the point's tile are tested (bin_tile: gfx_render.c's bin_pieces), in their order.
 float3 animated_at(float px, float py)
 {
     float3 c = float3((float)(backdrop & 255u), (float)((backdrop >> 8) & 255u), (float)((backdrop >> 16) & 255u)) / 255.0f;
-    for (uint i = 0u; i < piece_count; ++i) {
+    uint first = 0u, count = piece_count, list = 0u;
+    if (bin_tile != 0u) {
+        const int tx = (int)floor(px / (float)bin_tile), ty = (int)floor(py / (float)bin_tile);
+        uint tile;
+        if (tx < 0 || ty < 0 || tx >= (int)bin_tiles_x || ty >= (int)bin_tiles_y) {
+            return c;
+        }
+        tile = piece_count * 32u + ((uint)ty * bin_tiles_x + (uint)tx) * 2u;
+        first = pieces.Load(tile * 4u);
+        count = pieces.Load((tile + 1u) * 4u);
+        list = piece_count * 32u + bin_tiles_x * bin_tiles_y * 2u;
+    }
+    for (uint n = 0u; n < count; ++n) {
+        const uint i = bin_tile != 0u ? pieces.Load((list + first + n) * 4u) : n;
         const uint at = i * 32u;
         const float x0 = asfloat(pieces.Load(at * 4u)), y0 = asfloat(pieces.Load((at + 1u) * 4u));
         const float x1 = asfloat(pieces.Load((at + 2u) * 4u)), y1 = asfloat(pieces.Load((at + 3u) * 4u));
