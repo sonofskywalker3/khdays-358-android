@@ -121,14 +121,59 @@ def making(final: Path) -> Iterator[Path]:
     remove(work)
     final.parent.mkdir(parents=True, exist_ok=True)
     yield work
-    if final.exists():
-        old = final.with_name(final.name + ".old")
-        remove(old)
+    put_in_place(work, final)
+
+
+def put_in_place(made: Path, final: Path) -> None:
+    """`made` put at `final`, an older one there replaced: the whole folder at once, or file by file
+    when a window of the File Explorer shows a folder inside the older one (it cannot be renamed then)."""
+    final.parent.mkdir(parents=True, exist_ok=True)
+    old = final.with_name(final.name + ".old")
+    remove(old)
+    if not final.exists():
+        os.replace(made, final)
+        return
+    try:
         os.replace(final, old)
-        os.replace(work, final)
-        remove(old)
-    else:
-        os.replace(work, final)
+    except PermissionError:
+        if not (made.is_dir() and final.is_dir()):
+            raise
+        try:
+            move_into(made, final)
+        except PermissionError as error:
+            raise Refusal("in-use", file=error.filename2 or error.filename) from error
+        return
+    os.replace(made, final)
+    remove(old)
+
+
+def move_into(made: Path, final: Path) -> None:
+    """`final` made the same as `made` by moving its files in one by one."""
+    kept = {p.relative_to(made) for p in made.rglob("*")}
+    for path in sorted(made.rglob("*")):
+        target = final / path.relative_to(made)
+        if path.is_dir():
+            if target.exists() and not target.is_dir():
+                remove(target)
+            target.mkdir(exist_ok=True)
+        else:
+            if target.is_dir():
+                remove(target)
+            os.replace(path, target)
+    # what the older one had and the new one does not, deepest first
+    for path in sorted(final.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if path.relative_to(final) not in kept:
+            remove(path)
+    remove(made)
+
+
+MESSAGES["in-use"] = {
+    "en": "Another program is using {file}: close the game and the studio.",
+    "es": "Otro programa está usando {file}: cierra el juego y el estudio.",
+    "fr": "Un autre programme utilise {file} : fermez le jeu et le studio.",
+    "de": "Ein anderes Programm verwendet {file}: Schließe das Spiel und das Studio.",
+    "it": "Un altro programma sta usando {file}: chiudi il gioco e lo studio.",
+}
 
 
 # ---- The install's state -----------------------------------------------------------------------
@@ -745,17 +790,6 @@ MESSAGES["data-missing"] = {
 }
 
 
-def replace_folder(made: Path, final: Path) -> None:
-    """`made` (whole) put at `final`, an older one there replaced."""
-    final.parent.mkdir(parents=True, exist_ok=True)
-    old = final.with_name(final.name + ".old")
-    remove(old)
-    if final.exists():
-        os.replace(final, old)
-    os.replace(made, final)
-    remove(old)
-
-
 def _build_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path)
     p.add_argument("--menus", action="store_true", help="the HD menus and HUD (mods/HD PACK): both collections")
@@ -844,13 +878,14 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
         # and the step stays undone so the next run tries them again), the videos when all were
         state = load_state(install)
         if menus and any(tool in made for tool in menus):
-            replace_folder(root / "mods" / HD_MOD, install / "mods" / HD_MOD)
+            put_in_place(root / "mods" / HD_MOD, install / "mods" / HD_MOD)
             if all(tool in made for tool in menus):
                 mark_step(
                     state, "hd-menus", {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, made_by=made_by("hd-menus")
                 )
+                save_state(install, state)  # kept even when the videos fail next
         if videos and all(tool in made for tool in videos):
-            replace_folder(root / "data" / "cutscenes", install / "data" / "cutscenes")
+            put_in_place(root / "data" / "cutscenes", install / "data" / "cutscenes")
             mark_step(state, "hd-videos", {"1.5+2.5": str(args.c1525)}, made_by=made_by("hd-videos"))
         save_state(install, state)
     finally:

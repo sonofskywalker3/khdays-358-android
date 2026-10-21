@@ -60,6 +60,57 @@ class Making(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in Path(d).iterdir()), ["out"])
 
 
+def _older_one(d: str) -> tuple[Path, Path]:
+    """An older cutscenes folder and a newly made one: a video replaced, one gone, one added."""
+    final, made = Path(d) / "cutscenes", Path(d) / "made"
+    (final / "cinematics").mkdir(parents=True)
+    (final / "cinematics" / "a.mp4").write_text("old")
+    (final / "cinematics" / "gone.mp4").write_text("old")
+    (made / "cinematics").mkdir(parents=True)
+    (made / "cinematics" / "a.mp4").write_text("new")
+    (made / "cinematics" / "b.mp4").write_text("new")
+    return final, made
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows keeps folders shown in its File Explorer from being renamed")
+class PutInPlace(unittest.TestCase):
+    def test_a_folder_shown_in_the_file_explorer(self):
+        import ctypes
+        from ctypes import wintypes
+
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateFileW.restype = wintypes.HANDLE
+        k.CreateFileW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        with tempfile.TemporaryDirectory() as d:
+            final, made = _older_one(d)
+            # opened the way a File Explorer window watches the folder it shows
+            watched = k.CreateFileW(str(final / "cinematics"), 1, 7, None, 3, 0x02000000, None)
+            try:
+                s.put_in_place(made, final)
+            finally:
+                k.CloseHandle(watched)
+            self.assertEqual(sorted(p.name for p in (final / "cinematics").iterdir()), ["a.mp4", "b.mp4"])
+            self.assertEqual((final / "cinematics" / "a.mp4").read_text(), "new")
+            self.assertEqual(sorted(p.name for p in Path(d).iterdir()), ["cutscenes"])
+
+    def test_a_video_the_game_plays(self):
+        with tempfile.TemporaryDirectory() as d:
+            final, made = _older_one(d)
+            with open(final / "cinematics" / "a.mp4"), self.assertRaises(s.Refusal) as refused:
+                s.put_in_place(made, final)
+            self.assertEqual(refused.exception.key, "in-use")
+            self.assertIn("a.mp4", refused.exception.values["file"])
+
+
 class State(unittest.TestCase):
     def test_rules(self):
         with tempfile.TemporaryDirectory() as d:
