@@ -188,7 +188,13 @@ class BottomScreenHost(private val activity: Activity) {
         override fun onCreate(savedInstanceState: Bundle?) {
             super.onCreate(savedInstanceState)
             requestWindowFeature(Window.FEATURE_NO_TITLE)
-            window?.let { configureBottomWindow(it) }
+            // Back (the pad's B) must not close it, and a touch on it must not take the keys'
+            // focus from the game's window: unfocusable, it still gets its touches.
+            setCancelable(false)
+            window?.let {
+                configureBottomWindow(it)
+                it.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            }
             val view = SurfaceView(context)
             BottomScreenBridge.bind(view)
             setContentView(view)
