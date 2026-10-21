@@ -17,6 +17,7 @@ videos are made from the player's own and stay on this computer.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import shutil
@@ -42,10 +43,20 @@ FFMPEG_MEMBERS = ("bin/ffmpeg.exe", "bin/ffprobe.exe", "LICENSE")
 PIECE = 600  # pictures given to RIFE at once (about 1.5 GB of 1080p PNGs, and twice that made)
 CRF = 16  # x264's quality: the 30 fps videos' look at about their size
 FIRST = "hd802"  # the opening first: the one a player sees first
+RIFE_TRIES = 3  # RIFE (the graphics driver under it) can crash once in a while: a piece is tried again
+# SetThreadExecutionState: the computer kept from sleeping while this runs. The display is kept on
+# too: with Modern Standby, the display going off is what puts the computer to sleep.
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x00000001, 0x00000002
 
 
 def say(text: str) -> None:
     print(text, flush=True)
+
+
+def stay_awake() -> None:
+    """No sleep until this process ends (Windows gives the setting back when it does)."""
+    if sys.platform == "win32":
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
 
 
 def sha256(path: Path) -> str:
@@ -184,24 +195,30 @@ def smooth(tools: dict[str, Path], source: Path, target: Path, done_before: int,
         if got != given:
             sys.exit(f"smooth_movies: {source.name}: {got} pictures read at {first}, not {given}")
         # RIFE's picture i is at time i * given / (2 * given): every half picture
-        subprocess.run(
-            [
-                str(tools["rife"]),
-                "-i",
-                str(pieces_in),
-                "-o",
-                str(pieces_out),
-                "-m",
-                str(tools["model"].parent),
-                "-n",
-                str(2 * given),
-                "-f",
-                "%06d.png",
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        for attempt in range(1, RIFE_TRIES + 1):
+            clear(pieces_out)
+            rife = subprocess.run(
+                [
+                    str(tools["rife"]),
+                    "-i",
+                    str(pieces_in),
+                    "-o",
+                    str(pieces_out),
+                    "-m",
+                    str(tools["model"].parent),
+                    "-n",
+                    str(2 * given),
+                    "-f",
+                    "%06d.png",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if rife.returncode == 0:
+                break
+            say(f"  {source.stem}: RIFE stopped at {first} (code {rife.returncode:#x}); try {attempt} of {RIFE_TRIES}")
+        else:
+            sys.exit(f"smooth_movies: {source.name}: RIFE failed {RIFE_TRIES} times at {first}: run it again to go on")
         made_now = sorted(pieces_out.glob("*.png"))
         if len(made_now) != 2 * given:
             sys.exit(f"smooth_movies: {source.name}: RIFE made {len(made_now)} pictures at {first}, not {2 * given}")
@@ -273,6 +290,7 @@ def main() -> int:
     if not videos:
         sys.exit(f"smooth_movies: no HD videos in {SOURCE}: make them with the installer's HD videos first")
     OUT.mkdir(parents=True, exist_ok=True)
+    stay_awake()
     todo = [v for v in videos if not made(tools["ffprobe"], v, OUT / v.name)]
     say(f"{len(videos) - len(todo)} of {len(videos)} videos already at 60 fps; {len(todo)} to make.")
     if not todo:
@@ -290,6 +308,13 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         code = main()
+    except subprocess.CalledProcessError as failed:
+        print(
+            f"smooth_movies: {Path(failed.cmd[0]).name} failed (code {failed.returncode:#x}): run it again to go on",
+            file=sys.stderr,
+            flush=True,
+        )
+        code = 1
     except SystemExit as stop:
         if isinstance(stop.code, str):
             print(stop.code, file=sys.stderr, flush=True)
