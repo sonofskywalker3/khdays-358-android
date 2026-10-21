@@ -269,12 +269,14 @@ static void take_mod_notices(void)
 }
 
 #if defined(__ANDROID__)
-/* The settings menu on the second display (asked for on 2026-10-21, to be used by touch): while it is
- * open, and on the title while that shows as an HD picture on the upper display alone -- there drawn
- * as it opens, and opened by the first touch on it (bottom_taps). */
+/* The settings menu on the second display (asked for on 2026-10-21): while it is open, and on the
+ * title while that shows as an HD picture on the upper display alone -- there drawn as it opens, the
+ * pad's settings button (L3) moving the pad between the title and the menu. Not touched: its text is
+ * zoomed to be read on the small display, which leaves its rows too narrow for fingers. */
 static int bottom_menu;
 
 #define BOTTOM_MENU_IDLE_MS 500 /* the closed menu's picture, redrawn this often (it does not change) */
+#define BOTTOM_MENU_ZOOM 1.4f   /* its text's size on the second display, times the window's rule */
 
 /* Draws the menu on the second display when it belongs there; returns whether it did. */
 static int bottom_settings_draw(SDL_Renderer *renderer)
@@ -314,12 +316,14 @@ static int bottom_settings_draw(SDL_Renderer *renderer)
     SDL_SetRenderTarget(renderer, target);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
+    khdays_settings_set_zoom(BOTTOM_MENU_ZOOM);
     if (open) {
         khdays_settings_draw(renderer, NULL);
     } else {
         khdays_settings_draw_closed(renderer, khdays_devices_profile());
         idle_drawn = SDL_GetTicks();
     }
+    khdays_settings_set_zoom(1.0f);
     read = SDL_RenderReadPixels(renderer, NULL);
     SDL_SetRenderTarget(renderer, previous);
     if (read == NULL) {
@@ -533,41 +537,6 @@ static void close_settings(void)
     }
 }
 
-#if defined(__ANDROID__)
-/* The touches on the settings menu on the second display, each as the mouse's click there: the first
- * opens the menu if it was only drawn (and then counts in it, laid out by the redraw). */
-static void bottom_taps(SDL_Window *window, SDL_Renderer *renderer)
-{
-    int x, y;
-    while (khdays_bottom_take_tap(&x, &y)) {
-        SDL_Event click;
-        if (!bottom_menu) {
-            continue;
-        }
-        if (!khdays_settings_is_open()) {
-            open_settings();
-            redraw(window, renderer);
-        }
-        SDL_zero(click);
-        click.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-        click.button.button = SDL_BUTTON_LEFT;
-        click.button.down = true;
-        click.button.x = (float)x;
-        click.button.y = (float)y;
-        if (khdays_settings_handle(&click, NULL)) {
-            const int update = khdays_settings_take_update_answer();
-            close_settings();
-            if (update >= 0) {
-                khdays_updates_answer(update);
-            }
-        } else {
-            apply_changes();
-        }
-        redraw(window, renderer);
-    }
-}
-#endif
-
 /* The mouse pointer is hidden over the game while its window has the focus (the touch screen is not
  * used) and shown over the settings menu or when another window has the focus. With the mouse camera
  * on, the window also holds the mouse while the game has the input (devices.c). */
@@ -678,9 +647,6 @@ static int host_thread(void *unused)
                 redraw(window, renderer);
             }
         }
-#if defined(__ANDROID__)
-        bottom_taps(window, renderer); /* the settings menu's on the second display */
-#endif
         animating = khdays_settings_is_open();
         khdays_devices_frame(); /* a wheel's notch let go */
         mouse_follow(window);

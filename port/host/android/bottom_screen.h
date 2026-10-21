@@ -29,12 +29,9 @@ int khdays_bottom_size(int *w, int *h);
 /* Shows `rgba` over the whole of the second display (a picture made at its size: the settings menu). */
 void khdays_bottom_present_whole(const uint8_t *rgba, int width, int height, int pitch);
 
-/* Whether the touches on the second display are the game's (1, the default) or the settings menu's
- * shown there (0): then each touch's first point is queued for khdays_bottom_take_tap instead. */
+/* Whether the touches on the second display are the game's (1, the default), or nobody's while the
+ * settings menu shows there (0). */
 void khdays_bottom_set_game_touch(int on);
-
-/* The oldest touch queued for the settings menu, in the surface's pixels: 0 when there is none. */
-int khdays_bottom_take_tap(int *x, int *y);
 
 #ifdef __cplusplus
 }

@@ -55,7 +55,12 @@ struct Menu {
     bool in_rows = false;     // the focus is on the section's rows
     int row = 0, cell = 0;
     Mode mode = MODE_BROWSE;
+#if defined(__ANDROID__)
+    int last_device = KHDAYS_DEVICE_GAMEPAD; // the device used last (2: the mouse), for the hints shown: on
+                                             // Android a handheld's own pad until another is used
+#else
     int last_device = KHDAYS_DEVICE_KEYBOARD; // the device used last (2: the mouse), for the hints shown
+#endif
     // A binding being made.
     int cap_device = 0, cap_layer = 0, cap_action = 0, cap_slot = 0;
     Uint64 cap_until = 0;
@@ -102,6 +107,7 @@ struct Menu {
 };
 
 Menu m;
+float menu_zoom = 1.0f; // the text's size times this (khdays_settings_set_zoom)
 
 bool selectable(const KhdaysRow &r)
 {
@@ -2207,8 +2213,9 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
     }
     settle();
 
-    // The text's size follows the window's height; the spacing with it.
-    const float size = std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f));
+    // The text's size follows the window's height; the spacing with it (larger by the zoom: a small
+    // second display's, khdays_settings_set_zoom).
+    const float size = std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f)) * menu_zoom;
     if (size != m.styled_size) {
         ImGuiStyle style;
         ImGui::StyleColorsDark(&style);
@@ -2408,9 +2415,14 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
     SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
 }
 
+void khdays_settings_set_zoom(float zoom)
+{
+    menu_zoom = zoom > 0.0f ? zoom : 1.0f;
+}
+
 void khdays_settings_draw_closed(SDL_Renderer *renderer, const KhdaysProfile *current)
 {
-    // the menu as it opens, drawn but not open: shown on a second display before it is touched
+    // the menu as it opens, drawn but not open: shown on a second display until it is opened
     if (m.open) {
         return;
     }

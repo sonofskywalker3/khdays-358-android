@@ -48,9 +48,13 @@ unsigned khdays_settings_take_changes(void);
 /* Draws the menu over whatever was rendered, in the renderer's own pixels. */
 void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window);
 
-/* The menu as it opens, drawn while it is closed (the settings shown on a second display before it is
- * touched; the first touch opens it there). */
+/* The menu as it opens, drawn while it is closed (the settings shown on a second display until the
+ * pad's settings button opens it there). */
 void khdays_settings_draw_closed(SDL_Renderer *renderer, const KhdaysProfile *current);
+
+/* The menu's text this many times its usual size (1 by default): a small second display's, where the
+ * window's size alone would make it unreadable. */
+void khdays_settings_set_zoom(float zoom);
 
 /* The renderer the menu drew with is about to be destroyed (a lost device,
  * another graphics API, the window closing): free its textures first. The

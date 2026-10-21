@@ -417,14 +417,21 @@ static void trace_title(const KhdaysFramePackage *p, const KhdaysSituation *s)
 
 /* The settings' prompt (ui/composition.h `prompt open_settings`): while a gamepad is played, its
  * inputs for the settings, named by its family as the pictures' icons are (an Xbox pad's, a
- * PlayStation's, any other's); none with the keyboard, whose settings key is Esc. */
+ * PlayStation's, any other's); none with the keyboard, whose settings key is Esc. On Android a
+ * connected gamepad's from the start (a handheld's own pad: no keyboard), and never its guide button,
+ * which is the system's home button there. */
 static void settings_prompt(void)
 {
     char names[KHDAYS_INPUTS_PER_ACTION][48];
     const char *list[KHDAYS_INPUTS_PER_ACTION];
     SDL_Gamepad *pad = khdays_devices_gamepad();
     int n = 0;
-    if (pad != NULL && khdays_devices_pad_in_use()) {
+#if defined(__ANDROID__)
+    const int pad_shown = pad != NULL;
+#else
+    const int pad_shown = pad != NULL && khdays_devices_pad_in_use();
+#endif
+    if (pad_shown) {
         const KhdaysProfile *profile = khdays_devices_profile();
         const SDL_GamepadType type = SDL_GetGamepadType(pad);
         const char *family =
@@ -435,6 +442,11 @@ static void settings_prompt(void)
         for (int s = 0; s < KHDAYS_INPUTS_PER_ACTION; ++s) {
             const int input = profile->input[KHDAYS_DEVICE_GAMEPAD][KHDAYS_LAYER_BASE][KHDAYS_ACT_OPEN_SETTINGS][s];
             const char *name = input != KHDAYS_NO_INPUT ? khdays_pad_input_name(input) : NULL;
+#if defined(__ANDROID__)
+            if (input == KHDAYS_PAD_GUIDE) {
+                continue;
+            }
+#endif
             if (name != NULL) {
                 SDL_snprintf(names[n], sizeof(names[n]), "%s:%s", family, name);
                 list[n] = names[n];

@@ -21,10 +21,7 @@ static int surface_w, surface_h;
 static int geometry_set, lock_failed_logged;
 static int touch_down;
 static float touch_nx, touch_ny;
-static int game_touch = 1; /* the touches are the game's (not the settings menu's on this display) */
-#define TAPS 8
-static float taps[TAPS][2]; /* each touch's first point, for the settings menu: queued, taken on its thread */
-static int tap_first, tap_count;
+static int game_touch = 1; /* the touches are the game's (not while the settings menu shows here) */
 static int *columns; /* for each destination column, the source column (nearest) */
 static int columns_src, columns_dst;
 
@@ -74,16 +71,6 @@ JNIEXPORT void JNICALL Java_com_sonofskywalker3_khdays358_BottomScreenBridge_nat
     pthread_mutex_lock(&lock);
     touch_nx = x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x;
     touch_ny = y < 0.0f ? 0.0f : y > 1.0f ? 1.0f : y;
-    if (action == 0 && !touch_down && !game_touch) {
-        const int at = (tap_first + tap_count) % TAPS;
-        taps[at][0] = touch_nx;
-        taps[at][1] = touch_ny;
-        if (tap_count < TAPS) {
-            ++tap_count;
-        } else {
-            tap_first = (tap_first + 1) % TAPS; /* the oldest dropped */
-        }
-    }
     touch_down = action != 2; /* 0 down, 1 move, 2 up (BottomScreenBridge.kt) */
     pthread_mutex_unlock(&lock);
 }
@@ -121,26 +108,8 @@ int khdays_bottom_size(int *w, int *h)
 void khdays_bottom_set_game_touch(int on)
 {
     pthread_mutex_lock(&lock);
-    if (on != game_touch) {
-        game_touch = on;
-        tap_count = 0; /* taps are the menu's while it shows here, from its showing on */
-    }
+    game_touch = on;
     pthread_mutex_unlock(&lock);
-}
-
-int khdays_bottom_take_tap(int *x, int *y)
-{
-    int taken;
-    pthread_mutex_lock(&lock);
-    taken = tap_count > 0 && surface_w > 0 && surface_h > 0;
-    if (taken) {
-        *x = (int)(taps[tap_first][0] * (float)surface_w);
-        *y = (int)(taps[tap_first][1] * (float)surface_h);
-        tap_first = (tap_first + 1) % TAPS;
-        --tap_count;
-    }
-    pthread_mutex_unlock(&lock);
-    return taken;
 }
 
 static void present(const uint8_t *rgba, int width, int height, int pitch, int whole);
@@ -270,13 +239,6 @@ int khdays_bottom_size(int *w, int *h)
 void khdays_bottom_set_game_touch(int on)
 {
     (void)on;
-}
-
-int khdays_bottom_take_tap(int *x, int *y)
-{
-    (void)x;
-    (void)y;
-    return 0;
 }
 
 void khdays_bottom_present_whole(const uint8_t *rgba, int width, int height, int pitch)
