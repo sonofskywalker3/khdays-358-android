@@ -44,19 +44,52 @@ PIECE = 600  # pictures given to RIFE at once (about 1.5 GB of 1080p PNGs, and t
 CRF = 16  # x264's quality: the 30 fps videos' look at about their size
 FIRST = "hd802"  # the opening first: the one a player sees first
 RIFE_TRIES = 3  # RIFE (the graphics driver under it) can crash once in a while: a piece is tried again
-# SetThreadExecutionState: the computer kept from sleeping while this runs. The display is kept on
-# too: with Modern Standby, the display going off is what puts the computer to sleep.
-ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x00000001, 0x00000002
+# SetThreadExecutionState: the computer kept from sleeping while this runs; the display still
+# turns off when the player's settings say (with Modern Standby too, the computer then stays awake).
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+AC_OFFLINE = 0  # SYSTEM_POWER_STATUS.ACLineStatus: on battery
+MB_RETRYCANCEL, MB_ICONWARNING, IDRETRY = 0x5, 0x30, 4
+ON_BATTERY = (
+    "This computer is running on its battery. Making the HD videos at 60 fps takes hours, and on "
+    "battery Windows may put the computer to sleep before they are done.\n\n"
+    "Plug in the charger, then press Retry.\n"
+    "Cancel makes them anyway: if the computer sleeps, run this again to go on from where it stopped."
+)
+
+
+class PowerStatus(ctypes.Structure):
+    _fields_ = [
+        ("ac_line", ctypes.c_ubyte),
+        ("battery_flag", ctypes.c_ubyte),
+        ("battery_percent", ctypes.c_ubyte),
+        ("saver", ctypes.c_ubyte),
+        ("life", ctypes.c_ulong),
+        ("full_life", ctypes.c_ulong),
+    ]
 
 
 def say(text: str) -> None:
     print(text, flush=True)
 
 
+def on_battery() -> bool:
+    status = PowerStatus()
+    return bool(ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status))) and status.ac_line == AC_OFFLINE
+
+
 def stay_awake() -> None:
-    """No sleep until this process ends (Windows gives the setting back when it does)."""
-    if sys.platform == "win32":
-        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
+    """No sleep until this process ends (Windows gives the setting back when it does); the display
+    turns off as usual. On battery Windows may sleep all the same: the player is asked to plug in."""
+    if sys.platform != "win32":
+        return
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+    while on_battery():
+        answer = ctypes.windll.user32.MessageBoxW(
+            None, ON_BATTERY, "Smooth the HD videos", MB_RETRYCANCEL | MB_ICONWARNING
+        )
+        if answer != IDRETRY:
+            say("On battery: if the computer sleeps, run this again to go on.")
+            break
 
 
 def sha256(path: Path) -> str:

@@ -80,6 +80,8 @@ card through Vulkan), its sound copied; Video's Movies `HD smooth (60 fps)` play
 ones where none was made. It takes hours (about four times the videos' 150 minutes on an RTX 3070)
 and keeps a few gigabytes of pictures in `setup/smooth-work` at once; it can be closed at any time,
 a video is put in place only when it is whole, and the next run goes on from the first one not made.
+While it runs the computer is kept from sleeping (its display still turns off as the player's
+settings say); on battery, where Windows may sleep all the same, it first asks to plug in.
 ffmpeg reads and writes the videos: the tool fetches the pinned build once into `setup/ffmpeg`
 (`THIRD_PARTY_NOTICES.md`). Nothing made leaves the computer: the videos are the player's own.
 
