@@ -72,8 +72,8 @@ mod may have put a smaller one there.
 
 ## The HD videos at 60 fps
 
-Optional, off by default: the finish page's last choice (shown when the HD videos are there) and a
-Start menu shortcut run `tools/hd/smooth_movies.py` in a window of its own. It makes each video of
+Optional, never started by the install itself: the Start menu shortcut `Smooth the HD videos (60 fps)`
+runs `tools/hd/smooth_movies.py` in a window of its own, whenever the player wants. It makes each video of
 `data/cutscenes/cinematics` again in `data/cutscenes/cinematics60` at twice its rate, a picture drawn
 between each two by RIFE (`setup/rife`, rife-ncnn-vulkan with its `rife-v4.6` model, on the graphics
 card through Vulkan), its sound copied; Video's Movies `HD smooth (60 fps)` plays them, and the HD
