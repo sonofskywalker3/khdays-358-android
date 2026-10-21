@@ -107,7 +107,6 @@ struct Menu {
 };
 
 Menu m;
-float menu_zoom = 1.0f; // the text's size times this (khdays_settings_set_zoom)
 constexpr float kLabelShare = 0.55f;  // at most this much of the rows' width for a setting's name
 constexpr float kColumnShare = 0.32f; // at most this much of the screen for the sections' column
 constexpr float kTwoPaneEms = 34.0f;  // the menu's width in its text's size below which it shows one pane
@@ -2221,13 +2220,12 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
     }
     settle();
 
-    // The text's size follows the window's height; the spacing with it (larger by the zoom: a small
-    // second display's, khdays_settings_set_zoom).
+    // The text's size follows the window's height; the spacing with it,
     // and by the player's menu text size ([video] menu_size: 3 as the window sets it), followed as it changes
     static const float kMenuSizes[8] = {0.8f, 0.9f, 1.0f, 1.15f, 1.3f, 1.5f, 1.75f, 2.0f};
     const int menu_size = std::max(1, std::min(8, m.work.video.menu_size));
     const float size =
-        std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f)) * menu_zoom * kMenuSizes[menu_size - 1];
+        std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f)) * kMenuSizes[menu_size - 1];
     if (size != m.styled_size) {
         ImGuiStyle style;
         ImGui::StyleColorsDark(&style);
@@ -2332,7 +2330,7 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
             column_w = std::max(column_w, width_of(khdays_model_section_title(s)));
         }
         column_w = std::min(column_w + 3 * pad, screen.x * kColumnShare); // the rows' room kept at large text
-        // text too large for the sections beside the rows (the menu text size, a small second display): one
+        // text too large for the sections beside the rows (a large menu text size, a small window): one
         // pane, the sections' column while one is chosen, then its rows across the whole width
         const bool one_pane = inner < size * kTwoPaneEms;
         if (!one_pane || !m.in_rows) {
@@ -2436,22 +2434,6 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
 
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
-}
-
-void khdays_settings_set_zoom(float zoom)
-{
-    menu_zoom = zoom > 0.0f ? zoom : 1.0f;
-}
-
-void khdays_settings_draw_closed(SDL_Renderer *renderer, const KhdaysProfile *current)
-{
-    // the menu as it opens, drawn but not open: shown on a second display until it is opened
-    if (m.open) {
-        return;
-    }
-    khdays_settings_open(current);
-    khdays_settings_draw(renderer, nullptr);
-    m.open = false;
 }
 
 int khdays_settings_place(int what, int index, SDL_FRect *out)

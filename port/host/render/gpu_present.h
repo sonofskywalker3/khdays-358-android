@@ -74,14 +74,6 @@ void khdays_present_screens(const uint32_t *upper_then_lower);
 /* The picture settings, from the next frame drawn. */
 void khdays_present_set_video(const KhdaysVideo *video);
 
-#if defined(__ANDROID__)
-/* With the lower screen on a second display: whether the title shows as a mod's HD picture on the
- * upper display alone (the lower one free), and whether the lower display is the settings menu's
- * now (held: the presenter sends it nothing). */
-int khdays_present_title_alone(void);
-void khdays_present_hold_bottom(int held);
-#endif
-
 /* Draws the picture; the caller draws the settings menu over it and
  * presents. */
 void khdays_present_draw(void);

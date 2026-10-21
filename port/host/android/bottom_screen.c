@@ -21,7 +21,6 @@ static int surface_w, surface_h;
 static int geometry_set, lock_failed_logged;
 static int touch_down;
 static float touch_nx, touch_ny;
-static int game_touch = 1; /* the touches are the game's (not while the settings menu shows here) */
 static int *columns; /* for each destination column, the source column (nearest) */
 static int columns_src, columns_dst;
 
@@ -69,9 +68,9 @@ JNIEXPORT void JNICALL Java_com_sonofskywalker3_khdays358_BottomScreenBridge_nat
     (void)env;
     (void)type;
     pthread_mutex_lock(&lock);
+    touch_down = action != 2; /* 0 down, 1 move, 2 up (BottomScreenBridge.kt) */
     touch_nx = x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x;
     touch_ny = y < 0.0f ? 0.0f : y > 1.0f ? 1.0f : y;
-    touch_down = action != 2; /* 0 down, 1 move, 2 up (BottomScreenBridge.kt) */
     pthread_mutex_unlock(&lock);
 }
 
@@ -94,37 +93,7 @@ static void fill(uint8_t *bits, int stride, int x0, int y0, int w, int h)
     }
 }
 
-int khdays_bottom_size(int *w, int *h)
-{
-    int known;
-    pthread_mutex_lock(&lock);
-    known = window != NULL && surface_w > 0 && surface_h > 0;
-    *w = surface_w;
-    *h = surface_h;
-    pthread_mutex_unlock(&lock);
-    return known;
-}
-
-void khdays_bottom_set_game_touch(int on)
-{
-    pthread_mutex_lock(&lock);
-    game_touch = on;
-    pthread_mutex_unlock(&lock);
-}
-
-static void present(const uint8_t *rgba, int width, int height, int pitch, int whole);
-
 void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch)
-{
-    present(rgba, width, height, pitch, 0);
-}
-
-void khdays_bottom_present_whole(const uint8_t *rgba, int width, int height, int pitch)
-{
-    present(rgba, width, height, pitch, 1);
-}
-
-static void present(const uint8_t *rgba, int width, int height, int pitch, int whole)
 {
     ANativeWindow_Buffer buffer;
     int x, y, w, h;
@@ -151,13 +120,7 @@ static void present(const uint8_t *rgba, int width, int height, int pitch, int w
     }
     surface_w = buffer.width;
     surface_h = buffer.height;
-    if (whole) {
-        x = y = 0;
-        w = buffer.width;
-        h = buffer.height;
-    } else {
-        fit(buffer.width, buffer.height, &x, &y, &w, &h);
-    }
+    fit(buffer.width, buffer.height, &x, &y, &w, &h);
     bits = (uint8_t *)buffer.bits;
     fill(bits, buffer.stride, 0, 0, buffer.width, y);
     fill(bits, buffer.stride, 0, y + h, buffer.width, buffer.height - (y + h));
@@ -197,7 +160,7 @@ int khdays_bottom_touch(int *tx, int *ty)
 {
     int x, y, w, h, down;
     pthread_mutex_lock(&lock);
-    down = window != NULL && game_touch && touch_down && surface_w > 0 && surface_h > 0;
+    down = window != NULL && touch_down && surface_w > 0 && surface_h > 0;
     if (down) {
         fit(surface_w, surface_h, &x, &y, &w, &h);
         *tx = (int)((touch_nx * (float)surface_w - (float)x) * DS_W / (float)w);
@@ -228,25 +191,6 @@ int khdays_bottom_touch(int *x, int *y)
     (void)x;
     (void)y;
     return 0;
-}
-
-int khdays_bottom_size(int *w, int *h)
-{
-    *w = *h = 0;
-    return 0;
-}
-
-void khdays_bottom_set_game_touch(int on)
-{
-    (void)on;
-}
-
-void khdays_bottom_present_whole(const uint8_t *rgba, int width, int height, int pitch)
-{
-    (void)rgba;
-    (void)width;
-    (void)height;
-    (void)pitch;
 }
 
 #endif

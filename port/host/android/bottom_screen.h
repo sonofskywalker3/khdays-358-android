@@ -19,19 +19,8 @@ int khdays_bottom_attached(void);
  * largest 4:3 rectangle that fits, centred, nearest sampled. Does nothing when none is attached. */
 void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch);
 
-/* The latest touch on the second display in DS coordinates (0-255, 0-191): 1 while it is down and the
- * touches are the game's (khdays_bottom_set_game_touch). */
+/* The latest touch on the second display in DS coordinates (0-255, 0-191): 1 while it is down. */
 int khdays_bottom_touch(int *x, int *y);
-
-/* The second display's surface in pixels: 0 when none is attached. */
-int khdays_bottom_size(int *w, int *h);
-
-/* Shows `rgba` over the whole of the second display (a picture made at its size: the settings menu). */
-void khdays_bottom_present_whole(const uint8_t *rgba, int width, int height, int pitch);
-
-/* Whether the touches on the second display are the game's (1, the default), or nobody's while the
- * settings menu shows there (0). */
-void khdays_bottom_set_game_touch(int on);
 
 #ifdef __cplusplus
 }

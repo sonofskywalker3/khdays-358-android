@@ -268,93 +268,6 @@ static void take_mod_notices(void)
     }
 }
 
-/* The renderer the settings menu draws with now: its textures (ImGui's, the HD pieces', the icons) are
- * that renderer's, and freed when it changes (the window's, or the second display's own below). */
-static SDL_Renderer *menu_renderer;
-
-static void menu_use(SDL_Renderer *renderer)
-{
-    if (menu_renderer != renderer) {
-        if (menu_renderer != NULL) {
-            khdays_settings_renderer_gone();
-        }
-        menu_renderer = renderer;
-    }
-}
-
-#if defined(__ANDROID__)
-/* The settings menu on the second display (asked for on 2026-10-21): while it is open, and on the
- * title while that shows as an HD picture on the upper display alone -- there drawn as it opens, the
- * pad's settings button (L3) moving the pad between the title and the menu. Not touched: its text is
- * zoomed to be read on the small display, which leaves its rows too narrow for fingers.
- *
- * It is drawn by SDL's software renderer into a picture of the display's size, handed to the display
- * as it is: reading a picture back from the graphics card took a second each time on the Thor
- * (SDL_RenderReadPixels, measured 2026-10-21), the window standing still meanwhile. */
-static int bottom_menu;
-
-#define BOTTOM_MENU_ZOOM 1.4f /* its text's size on the second display, times the window's rule */
-
-/* Draws the menu on the second display when it belongs there; returns whether it did. */
-static int bottom_settings_draw(void)
-{
-    static SDL_Surface *canvas;
-    static SDL_Renderer *soft;
-    static int closed_drawn; /* the closed menu's picture is there (it does not change) */
-    int w = 0, h = 0;
-    const int open = khdays_settings_is_open();
-    /* not over a movie (the title's opening and the rest): the second display black meanwhile */
-    const int movie = khdays_movie_hd_showing();
-    const int on = khdays_bottom_size(&w, &h) && (open || (khdays_present_title_alone() && !movie));
-    if (on != bottom_menu) {
-        bottom_menu = on;
-        closed_drawn = 0;
-        khdays_present_hold_bottom(on);
-        khdays_bottom_set_game_touch(!on);
-        if (!on && movie) {
-            static const Uint32 black = 0xff000000u; /* the menu's picture taken off the display */
-            khdays_bottom_present_whole((const Uint8 *)&black, 1, 1, 4);
-        }
-    }
-    if (!on) {
-        return 0;
-    }
-    if (open) {
-        closed_drawn = 0; /* drawn again when it closes, with what was changed */
-    } else if (closed_drawn) {
-        return 1;
-    }
-    if (canvas == NULL || canvas->w != w || canvas->h != h) {
-        if (soft != NULL) {
-            menu_use(NULL); /* its textures go with it */
-            SDL_DestroyRenderer(soft);
-            soft = NULL;
-        }
-        SDL_DestroySurface(canvas);
-        canvas = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
-        soft = canvas != NULL ? SDL_CreateSoftwareRenderer(canvas) : NULL;
-        if (soft == NULL) {
-            SDL_Log("settings: no software renderer for the second display: %s", SDL_GetError());
-            return 1;
-        }
-    }
-    menu_use(soft);
-    SDL_SetRenderDrawColor(soft, 0, 0, 0, 255);
-    SDL_RenderClear(soft);
-    khdays_settings_set_zoom(BOTTOM_MENU_ZOOM);
-    if (open) {
-        khdays_settings_draw(soft, NULL);
-    } else {
-        khdays_settings_draw_closed(soft, khdays_devices_profile());
-        closed_drawn = 1;
-    }
-    khdays_settings_set_zoom(1.0f);
-    SDL_FlushRenderer(soft);
-    khdays_bottom_present_whole((const Uint8 *)canvas->pixels, canvas->w, canvas->h, canvas->pitch);
-    return 1;
-}
-#endif
-
 /* Draws the last frame, with the FPS and ping displays and the settings menu
  * over it. Draws nothing while the graphics card is lost (the loop recreates
  * it). */
@@ -386,15 +299,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     for (int i = 0; i < mod_notice_count; ++i) {
         khdays_settings_corner_draw(renderer, mod_notices[i].line, corner_rows + i);
     }
-#if defined(__ANDROID__)
-    if (!bottom_settings_draw())
-#endif
-    {
-        if (khdays_settings_is_open()) {
-            menu_use(renderer);
-        }
-        khdays_settings_draw(renderer, window);
-    }
+    khdays_settings_draw(renderer, window);
     SDL_RenderPresent(renderer);
 }
 
@@ -735,7 +640,6 @@ static int host_thread(void *unused)
             khdays_hd_voice_stop(); /* a monologue's voice still heard */
             khdays_ui_font_forget();
             khdays_settings_renderer_gone();
-            menu_renderer = NULL;
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
             khdays_room_screen_renderer_gone();
@@ -772,7 +676,6 @@ static int host_thread(void *unused)
             int renewed;
             khdays_ui_font_forget(); /* free its textures before their renderer goes */
             khdays_settings_renderer_gone();
-            menu_renderer = NULL;
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
             khdays_room_screen_renderer_gone();
