@@ -110,6 +110,7 @@ Menu m;
 float menu_zoom = 1.0f; // the text's size times this (khdays_settings_set_zoom)
 constexpr float kLabelShare = 0.55f;  // at most this much of the rows' width for a setting's name
 constexpr float kColumnShare = 0.32f; // at most this much of the screen for the sections' column
+constexpr float kTwoPaneEms = 34.0f;  // the menu's width in its text's size below which it shows one pane
 
 bool selectable(const KhdaysRow &r)
 {
@@ -2235,6 +2236,7 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         style.ChildBorderSize = 0;
         ImGui::GetStyle() = style;
         m.styled_size = size;
+        m.scroll_to_focus = true; // the chosen row kept in sight at the new size (the menu text size)
     }
     ImGuiIO &io = ImGui::GetIO();
     const Uint64 now = SDL_GetTicks();
@@ -2330,10 +2332,16 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
             column_w = std::max(column_w, width_of(khdays_model_section_title(s)));
         }
         column_w = std::min(column_w + 3 * pad, screen.x * kColumnShare); // the rows' room kept at large text
-        ImGui::BeginChild("##column", ImVec2(column_w, body), ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
-        draw_column(row_h, pad);
-        ImGui::EndChild();
-        if (m.skin) {
+        // text too large for the sections beside the rows (the menu text size, a small second display): one
+        // pane, the sections' column while one is chosen, then its rows across the whole width
+        const bool one_pane = inner < size * kTwoPaneEms;
+        if (!one_pane || !m.in_rows) {
+            ImGui::BeginChild("##column", ImVec2(one_pane ? 0.0f : column_w, body), ImGuiChildFlags_None,
+                              ImGuiWindowFlags_NoNav);
+            draw_column(row_h, pad);
+            ImGui::EndChild();
+        }
+        if (m.skin && !one_pane) {
             // the pieces' line between the sections and the rows
             const ImVec2 lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
             float line_w = 0, line_h = 0;
@@ -2343,7 +2351,9 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
                                   ImVec2(x + half, hi.y));
             }
         }
-        ImGui::SameLine(0, pad);
+        if (!one_pane) {
+            ImGui::SameLine(0, pad);
+        }
 
         // the rows: scrolled only when they do not fit (to the chosen one), at this frame's height --
         // and again when the footer's height changes it (a row's warning showing)
@@ -2369,16 +2379,18 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         if (scroll >= 0) {
             ImGui::SetNextWindowScroll(ImVec2(-1.0f, scroll));
         }
-        ImGui::BeginChild("##rows", ImVec2(0, body), ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
-        draw_rows(row_h, pad);
-        m.rows_scroll = ImGui::GetScrollY();
-        m.rows_height = ImGui::GetWindowHeight();
-        ImGui::EndChild();
+        if (!one_pane || m.in_rows) {
+            ImGui::BeginChild("##rows", ImVec2(0, body), ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
+            draw_rows(row_h, pad);
+            m.rows_scroll = ImGui::GetScrollY();
+            m.rows_height = ImGui::GetWindowHeight();
+            ImGui::EndChild();
+        }
 
         // the footer, clear of the version at its right end
         char version[64];
         SDL_snprintf(version, sizeof(version), khdays_text(TXT_VERSION), KHDAYS_VERSION);
-        const float version_w = width_of(version) + pad;
+        const float version_w = one_pane ? 0.0f : width_of(version) + pad; // one pane: no room for it
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + std::max(inner * 0.5f, inner - version_w));
         ImGui::PushStyleColor(ImGuiCol_Text, m.skin ? kSkinHeading : kGrey);
         if (!note.empty()) {
@@ -2394,7 +2406,7 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         }
         ImGui::PopStyleColor();
         ImGui::PopTextWrapPos();
-        {
+        if (!one_pane) {
             // the port's version, in the window's bottom right corner
             const ImVec2 lo = ImGui::GetWindowPos(), extent = ImGui::GetWindowSize();
             const ImVec2 at(lo.x + extent.x - ImGui::GetStyle().WindowPadding.x - width_of(version),
