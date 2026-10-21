@@ -105,6 +105,33 @@ static int one_made;                 /* a one-screen picture has been made (the 
 static int one_kind;                 /* how the frame's screens are shown on one screen (KHDAYS_SCREENS_*) */
 static int presented_w, presented_h; /* the logical presentation set now */
 static int port2d_upper;             /* the engine on the upper screen */
+#if defined(__ANDROID__)
+static KhdaysVideo given_video; /* the settings as given, before the second display's say */
+static int two_displays;        /* they were applied with the lower screen on a display of its own */
+/* With the lower screen on a display of its own, the title (its boot logos, its menu, the new game's
+ * dialogs) is made as on one screen: a mod's HD title then shows on the upper display, the lower one
+ * black (asked for on 2026-10-21: the menu's options on one screen only). Without such a mod the two
+ * screens show as the DS's. */
+static int title_one;
+
+static int title_screens(const KhdaysFramePackage *p)
+{
+    const KhdaysSituationInputs *in = &p->situation;
+    return in->taken && in->title_valid &&
+           (in->title_shown || in->title_logo || in->title_newgame || in->title_passing);
+}
+
+static void send_black_bottom(void)
+{
+    static uint32_t black[16 * 12];
+    if (black[0] == 0) {
+        for (int i = 0; i < 16 * 12; ++i) {
+            black[i] = 0xff000000u; /* ABGR8888: opaque black */
+        }
+    }
+    khdays_bottom_present((const uint8_t *)black, 16, 12, 16 * 4);
+}
+#endif
 static struct {
     int frames;
     unsigned long long pixels;
@@ -395,6 +422,11 @@ int khdays_present_wants(void)
     if (video.one_screen) {
         wants |= KHDAYS_WANT_SITUATION; /* what the one-screen picture needs to tell the situation */
     }
+#if defined(__ANDROID__)
+    if (two_displays) {
+        wants |= KHDAYS_WANT_SITUATION; /* whether the title shows (title_one) */
+    }
+#endif
     return wants;
 }
 
@@ -978,6 +1010,12 @@ static void present(const KhdaysFramePackage *p, int first)
     khdays_raster3d_use_list(list);
     latest_drawn_by_card = 0;
     port2d_drawn = 0;
+#if defined(__ANDROID__)
+    if (two_displays && first && title_screens(p) != title_one) {
+        title_one = !title_one;
+        khdays_present_set_video(&given_video); /* the title made as on one screen, or no longer */
+    }
+#endif
     if (port2d_ready && (p->wants & KHDAYS_WANT_2D)) {
         /* Engine A's 3D is drawn at N x (also at 1x: the software 3D is off
          * while the window draws it), then composed with the 2D. With
@@ -1151,22 +1189,19 @@ int khdays_host_graphics_flags(void)
     return graphics_flags;
 }
 
-#if defined(__ANDROID__)
-static KhdaysVideo given_video; /* the settings as given, before the second display's say */
-static int two_displays;        /* they were applied with the lower screen on a display of its own */
-#endif
-
 void khdays_present_set_video(const KhdaysVideo *given)
 {
     KhdaysVideo copy = *given;
     const KhdaysVideo *v = &copy;
 #if defined(__ANDROID__)
     /* the lower screen on a display of its own: the DS's two screens, each where it belongs, whatever
-     * the screens setting says */
+     * the screens setting says -- but the title, made as on one screen (title_one) */
     given_video = *given;
     two_displays = khdays_bottom_attached();
-    if (two_displays) {
-        copy.one_screen = 0;
+    if (!two_displays) {
+        title_one = 0;
+    } else {
+        copy.one_screen = title_one;
     }
 #endif
     graphics_flags =
@@ -1377,7 +1412,9 @@ void khdays_present_draw(void)
     if (khdays_bottom_attached() != two_displays) {
         khdays_present_set_video(&given_video); /* the second display came or went */
     }
-    if (two_displays && draw_two_displays()) {
+    if (two_displays && video.one_screen && one_drawn) {
+        send_black_bottom(); /* the HD title on the upper display (below), the lower one black */
+    } else if (two_displays && draw_two_displays()) {
         return;
     }
 #endif
