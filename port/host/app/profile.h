@@ -160,6 +160,7 @@ typedef struct KhdaysVideo {
     int backend;       /* KhdaysBackend: the graphics API the picture goes through */
     int one_screen;    /* screens = one: one picture, else the DS's two */
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
+    int menu_size;     /* the settings menu's text size, 1 to 8 (3: as the window's size sets it) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
     int display;       /* KhdaysDisplay: a window, a borderless one over the screen, or full screen */
 } KhdaysVideo;

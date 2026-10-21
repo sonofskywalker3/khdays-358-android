@@ -108,6 +108,8 @@ struct Menu {
 
 Menu m;
 float menu_zoom = 1.0f; // the text's size times this (khdays_settings_set_zoom)
+constexpr float kLabelShare = 0.55f;  // at most this much of the rows' width for a setting's name
+constexpr float kColumnShare = 0.32f; // at most this much of the screen for the sections' column
 
 bool selectable(const KhdaysRow &r)
 {
@@ -1634,6 +1636,11 @@ void draw_rows(float row_h, float pad)
             cell_w = (room - label_w) / cells;
         }
     }
+    if (!bindings) {
+        // the values kept in sight when the text is large (the menu text size): a long name is cut off
+        // at its end instead
+        label_w = std::min(label_w, w * kLabelShare);
+    }
     const float value_x = pad + label_w + gap;
     ImDrawList *dl = ImGui::GetWindowDrawList();
     // where each row lies in the list, for scrolling to it
@@ -2215,7 +2222,11 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
 
     // The text's size follows the window's height; the spacing with it (larger by the zoom: a small
     // second display's, khdays_settings_set_zoom).
-    const float size = std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f)) * menu_zoom;
+    // and by the player's menu text size ([video] menu_size: 3 as the window sets it), followed as it changes
+    static const float kMenuSizes[8] = {0.8f, 0.9f, 1.0f, 1.15f, 1.3f, 1.5f, 1.75f, 2.0f};
+    const int menu_size = std::max(1, std::min(8, m.work.video.menu_size));
+    const float size =
+        std::max(13.0f, std::min((float)h / 40.0f, (float)w / 64.0f)) * menu_zoom * kMenuSizes[menu_size - 1];
     if (size != m.styled_size) {
         ImGuiStyle style;
         ImGui::StyleColorsDark(&style);
@@ -2318,7 +2329,7 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
         for (int s = 0; s < KHDAYS_SECTION_COUNT; ++s) {
             column_w = std::max(column_w, width_of(khdays_model_section_title(s)));
         }
-        column_w += 3 * pad;
+        column_w = std::min(column_w + 3 * pad, screen.x * kColumnShare); // the rows' room kept at large text
         ImGui::BeginChild("##column", ImVec2(column_w, body), ImGuiChildFlags_None, ImGuiWindowFlags_NoNav);
         draw_column(row_h, pad);
         ImGui::EndChild();

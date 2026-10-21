@@ -340,6 +340,8 @@ static void build_video(Builder *b, KhdaysProfile *w)
                         TXT_VIDEO_SCREENS_NOTE);
     needs_graphics_card(b, add_number(b, KHDAYS_SET_HUD_SIZE, TXT_VIDEO_HUD_SIZE, &v->hud_size, 1, 8, 1),
                         TXT_VIDEO_HUD_SIZE_NOTE);
+    add_number(b, KHDAYS_SET_MENU_SIZE, TXT_VIDEO_MENU_SIZE, &v->menu_size, 1, 8, 1)->note =
+        khdays_text(TXT_VIDEO_MENU_SIZE_NOTE);
     add_choice(b, KHDAYS_SET_SCALING, TXT_VIDEO_SCALING, &v->smooth_scaling, scalings, 2)->note =
         khdays_text(TXT_VIDEO_SCALING_NOTE);
     needs_graphics_card(b, add_switch(b, KHDAYS_SET_TEXTURES, TXT_VIDEO_TEXTURES, &v->texture_smoothing, 1, NULL),

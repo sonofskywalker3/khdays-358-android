@@ -264,6 +264,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
     v->hud_size = 4;
+    v->menu_size = 3;
     v->subtitles = 1; /* as the DS showed them */
     v->display = KHDAYS_DISPLAY_WINDOW;
 }
@@ -405,6 +406,7 @@ int khdays_profile_repair(KhdaysProfile *p)
             ++changed;
         }
         changed += clamp(&p->video.hud_size, 1, 8);
+        changed += clamp(&p->video.menu_size, 1, 8);
         changed += clamp(&p->video.display, 0, KHDAYS_DISPLAY_COUNT - 1);
     }
     changed += clamp(&p->sound.volume, 0, 100);
@@ -953,6 +955,17 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         }
         return;
     }
+    if (SDL_strcasecmp(key, "menu_size") == 0) {
+        char *end = NULL;
+        const long n = SDL_strtol(value, &end, 10);
+        if (end != value && *trim(end) == '\0' && n >= 1 && n <= 8) {
+            v->menu_size = (int)n;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "3");
+            v->menu_size = defaults.menu_size;
+        }
+        return;
+    }
     if (SDL_strcasecmp(key, "show_fps") == 0) {
         if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
             v->show_fps = SDL_strcasecmp(value, "on") == 0;
@@ -1478,6 +1491,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "screens = %s\n"
             "# hud_size: 1 to 8, the HUD's size on one screen (4 the default)\n"
             "hud_size = %d\n"
+            "# menu_size: 1 to 8, the settings menu's text size (3 the default)\n"
+            "menu_size = %d\n"
             "# aspect: 4:3 (the DS's), 16:9, 16:10, or window\n"
             "aspect = %s\n"
             "# scaling: sharp (the DS's pixels) or smooth\n"
@@ -1497,7 +1512,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
-            v->one_screen ? "one" : "two", v->hud_size,
+            v->one_screen ? "one" : "two", v->hud_size, v->menu_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
             v->dump_graphics ? "on" : "off",

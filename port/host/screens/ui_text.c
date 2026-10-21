@@ -420,6 +420,14 @@ static const char *const texts[TXT_COUNT][5] = {
          "restano uguali.",
          "Una pantalla: el tamaño de las piezas del HUD, de 1 a 8 (4 por defecto); los diálogos "
          "conservan el suyo."},
+    [TXT_VIDEO_MENU_SIZE] = {"Menu text size", "Taille du texte du menu", "Textgröße des Menüs",
+                             "Dimensione del testo del menu", "Tamaño del texto del menú"},
+    [TXT_VIDEO_MENU_SIZE_NOTE] =
+        {"How big this menu's text is, 1 to 8 (3 by default).",
+         "La taille du texte de ce menu, de 1 à 8 (3 par défaut).",
+         "Wie groß der Text dieses Menüs ist, 1 bis 8 (Standard 3).",
+         "Quanto è grande il testo di questo menu, da 1 a 8 (3 di base).",
+         "El tamaño del texto de este menú, de 1 a 8 (3 por defecto)."},
     [TXT_VIDEO_ASPECT] = {"Aspect ratio", "Format d'image", "Seitenverhältnis", "Proporzioni", "Proporción"},
     [TXT_VIDEO_ASPECT_NOTE] = {"The 3D view widens; the HUD keeps to the corners, the menus stay in the middle.",
                                "La vue 3D s'élargit ; l'interface reste dans les coins, les menus au milieu.",
