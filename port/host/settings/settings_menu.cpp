@@ -2408,6 +2408,17 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
     SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
 }
 
+void khdays_settings_draw_closed(SDL_Renderer *renderer, const KhdaysProfile *current)
+{
+    // the menu as it opens, drawn but not open: shown on a second display before it is touched
+    if (m.open) {
+        return;
+    }
+    khdays_settings_open(current);
+    khdays_settings_draw(renderer, nullptr);
+    m.open = false;
+}
+
 int khdays_settings_place(int what, int index, SDL_FRect *out)
 {
     const Place *p = place_of(what, index);

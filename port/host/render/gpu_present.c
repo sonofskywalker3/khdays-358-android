@@ -121,9 +121,14 @@ static int title_screens(const KhdaysFramePackage *p)
            (in->title_shown || in->title_logo || in->title_newgame || in->title_passing);
 }
 
+static int bottom_held; /* the second display shows the settings menu (khdays_present_hold_bottom) */
+
 static void send_black_bottom(void)
 {
     static uint32_t black[16 * 12];
+    if (bottom_held) {
+        return;
+    }
     if (black[0] == 0) {
         for (int i = 0; i < 16 * 12; ++i) {
             black[i] = 0xff000000u; /* ABGR8888: opaque black */
@@ -1189,6 +1194,18 @@ int khdays_host_graphics_flags(void)
     return graphics_flags;
 }
 
+#if defined(__ANDROID__)
+int khdays_present_title_alone(void)
+{
+    return two_displays && title_one && video.one_screen && one_drawn;
+}
+
+void khdays_present_hold_bottom(int held)
+{
+    bottom_held = held;
+}
+#endif
+
 void khdays_present_set_video(const KhdaysVideo *given)
 {
     KhdaysVideo copy = *given;
@@ -1311,7 +1328,7 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
     const int w = (int)from->w, h = (int)from->h;
     SDL_Texture *previous;
     SDL_Surface *read, *rgba;
-    if (w <= 0 || h <= 0) {
+    if (w <= 0 || h <= 0 || bottom_held) {
         return;
     }
     if (bottom_target == NULL || bottom_w != w || bottom_h != h) {

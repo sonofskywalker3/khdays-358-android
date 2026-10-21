@@ -48,6 +48,10 @@ unsigned khdays_settings_take_changes(void);
 /* Draws the menu over whatever was rendered, in the renderer's own pixels. */
 void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window);
 
+/* The menu as it opens, drawn while it is closed (the settings shown on a second display before it is
+ * touched; the first touch opens it there). */
+void khdays_settings_draw_closed(SDL_Renderer *renderer, const KhdaysProfile *current);
+
 /* The renderer the menu drew with is about to be destroyed (a lost device,
  * another graphics API, the window closing): free its textures first. The
  * next draw starts again on whatever renderer it is given. */

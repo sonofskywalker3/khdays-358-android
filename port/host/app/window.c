@@ -268,6 +268,75 @@ static void take_mod_notices(void)
     }
 }
 
+#if defined(__ANDROID__)
+/* The settings menu on the second display (asked for on 2026-10-21, to be used by touch): while it is
+ * open, and on the title while that shows as an HD picture on the upper display alone -- there drawn
+ * as it opens, and opened by the first touch on it (bottom_taps). */
+static int bottom_menu;
+
+#define BOTTOM_MENU_IDLE_MS 500 /* the closed menu's picture, redrawn this often (it does not change) */
+
+/* Draws the menu on the second display when it belongs there; returns whether it did. */
+static int bottom_settings_draw(SDL_Renderer *renderer)
+{
+    static SDL_Texture *target;
+    static int target_w, target_h;
+    static Uint64 idle_drawn;
+    SDL_Texture *previous;
+    SDL_Surface *read, *rgba;
+    int w = 0, h = 0;
+    const int open = khdays_settings_is_open();
+    const int on = khdays_bottom_size(&w, &h) && (open || khdays_present_title_alone());
+    if (on != bottom_menu) {
+        bottom_menu = on;
+        idle_drawn = 0;
+        khdays_present_hold_bottom(on);
+        khdays_bottom_set_game_touch(!on);
+    }
+    if (!on) {
+        return 0;
+    }
+    if (!open && idle_drawn != 0 && SDL_GetTicks() - idle_drawn < BOTTOM_MENU_IDLE_MS) {
+        return 1; /* the closed menu's picture is already there */
+    }
+    if (target == NULL || target_w != w || target_h != h) {
+        if (target != NULL) {
+            SDL_DestroyTexture(target);
+        }
+        target = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_TARGET, w, h);
+        target_w = w;
+        target_h = h;
+        if (target == NULL) {
+            return 1;
+        }
+    }
+    previous = SDL_GetRenderTarget(renderer);
+    SDL_SetRenderTarget(renderer, target);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    if (open) {
+        khdays_settings_draw(renderer, NULL);
+    } else {
+        khdays_settings_draw_closed(renderer, khdays_devices_profile());
+        idle_drawn = SDL_GetTicks();
+    }
+    read = SDL_RenderReadPixels(renderer, NULL);
+    SDL_SetRenderTarget(renderer, previous);
+    if (read == NULL) {
+        return 1;
+    }
+    rgba = read->format == SDL_PIXELFORMAT_ABGR8888 ? read : SDL_ConvertSurface(read, SDL_PIXELFORMAT_ABGR8888);
+    if (rgba != NULL) {
+        khdays_bottom_present_whole((const Uint8 *)rgba->pixels, rgba->w, rgba->h, rgba->pitch);
+        if (rgba != read) {
+            SDL_DestroySurface(rgba);
+        }
+    }
+    SDL_DestroySurface(read);
+    return 1;
+}
+#endif
+
 /* Draws the last frame, with the FPS and ping displays and the settings menu
  * over it. Draws nothing while the graphics card is lost (the loop recreates
  * it). */
@@ -299,7 +368,10 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     for (int i = 0; i < mod_notice_count; ++i) {
         khdays_settings_corner_draw(renderer, mod_notices[i].line, corner_rows + i);
     }
-    khdays_settings_draw(renderer, window);
+#if defined(__ANDROID__)
+    if (!bottom_settings_draw(renderer))
+#endif
+        khdays_settings_draw(renderer, window);
     SDL_RenderPresent(renderer);
 }
 
@@ -461,6 +533,41 @@ static void close_settings(void)
     }
 }
 
+#if defined(__ANDROID__)
+/* The touches on the settings menu on the second display, each as the mouse's click there: the first
+ * opens the menu if it was only drawn (and then counts in it, laid out by the redraw). */
+static void bottom_taps(SDL_Window *window, SDL_Renderer *renderer)
+{
+    int x, y;
+    while (khdays_bottom_take_tap(&x, &y)) {
+        SDL_Event click;
+        if (!bottom_menu) {
+            continue;
+        }
+        if (!khdays_settings_is_open()) {
+            open_settings();
+            redraw(window, renderer);
+        }
+        SDL_zero(click);
+        click.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        click.button.button = SDL_BUTTON_LEFT;
+        click.button.down = true;
+        click.button.x = (float)x;
+        click.button.y = (float)y;
+        if (khdays_settings_handle(&click, NULL)) {
+            const int update = khdays_settings_take_update_answer();
+            close_settings();
+            if (update >= 0) {
+                khdays_updates_answer(update);
+            }
+        } else {
+            apply_changes();
+        }
+        redraw(window, renderer);
+    }
+}
+#endif
+
 /* The mouse pointer is hidden over the game while its window has the focus (the touch screen is not
  * used) and shown over the settings menu or when another window has the focus. With the mouse camera
  * on, the window also holds the mouse while the game has the input (devices.c). */
@@ -571,6 +678,9 @@ static int host_thread(void *unused)
                 redraw(window, renderer);
             }
         }
+#if defined(__ANDROID__)
+        bottom_taps(window, renderer); /* the settings menu's on the second display */
+#endif
         animating = khdays_settings_is_open();
         khdays_devices_frame(); /* a wheel's notch let go */
         mouse_follow(window);
