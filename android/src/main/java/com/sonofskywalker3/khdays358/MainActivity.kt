@@ -1,6 +1,8 @@
 package com.sonofskywalker3.khdays358
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -9,6 +11,9 @@ import android.view.SurfaceHolder
 import android.view.WindowManager
 import org.libsdl.app.SDLActivity
 import org.libsdl.app.SDLSurface
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 /**
  * The game's activity. SDLActivity owns the surface, input and the native thread; this subclass names
@@ -31,7 +36,10 @@ class MainActivity : SDLActivity() {
             return  // SDLActivity is showing its error dialog
         }
         // the game's folder on the shared storage (data/, mods/, saves/): made now so it can be filled
-        getExternalFilesDir(null)?.let { Log.i(TAG, "game folder: ${it.absolutePath}") }
+        getExternalFilesDir(null)?.let {
+            Log.i(TAG, "game folder: ${it.absolutePath}")
+            Thread({ saveTitleFrame(it) }, "title frame").start()
+        }
         preferFastestDisplayMode()
         bottomScreen = BottomScreenHost(this)
     }
@@ -51,6 +59,39 @@ class MainActivity : SDLActivity() {
     override fun onDestroy() {
         bottomScreen = null
         super.onDestroy()
+    }
+
+    /**
+     * The opening movie's last picture (the game's logo on black), kept as a PNG for the lower display
+     * to show beside the title (bottom_screen.c). Made once from the player's own HD video, again only
+     * when the video is newer; nothing when there is none.
+     */
+    private fun saveTitleFrame(root: File) {
+        val video = File(root, OPENING_VIDEO)
+        val out = File(root, TITLE_FRAME)
+        if (!video.isFile || (out.isFile && out.lastModified() >= video.lastModified())) {
+            return
+        }
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(video.path)
+            val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: return
+            val frame = retriever.getFrameAtTime((ms - LAST_FRAME_BACK_MS) * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+                ?: return
+            out.parentFile?.mkdirs()
+            val part = File(out.path + ".part")
+            FileOutputStream(part).use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (!part.renameTo(out)) {
+                throw IOException("${out.name} cannot be put in place")
+            }
+            Log.i(TAG, "title frame: ${out.path} from ${video.name} at ${ms - LAST_FRAME_BACK_MS} ms")
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "title frame: not made from ${video.name}: $e")
+        } catch (e: IOException) {
+            Log.w(TAG, "title frame: not made from ${video.name}: $e")
+        } finally {
+            retriever.release()
+        }
     }
 
     /** The display mode with the highest refresh rate at the current resolution. */
@@ -91,5 +132,8 @@ class MainActivity : SDLActivity() {
         private const val TAG = "khdays"
         private const val FRAME_RATE = 120f
         private const val REFRESH_RATE_EPSILON = 0.5f
+        private const val OPENING_VIDEO = "data/cutscenes/cinematics/hd802.mp4"
+        const val TITLE_FRAME = "cache/title_frame.png" // read by bottom_screen.c (TITLE_FRAME there)
+        private const val LAST_FRAME_BACK_MS = 200L // how far before its end the last picture is taken
     }
 }

@@ -29,13 +29,17 @@ static int *columns; /* for each destination column, the source column (nearest)
 static int columns_src, columns_dst;
 static int mark_shown; /* the display shows the title's logo, or the crown mark (khdays_bottom_present_mark) */
 
-/* The title's logo (the heart, the crown, KINGDOM HEARTS 358/2 Days), cut from the HD menu's picture
- * when the player made one (a mod's layouts/title/<lang>/, tools/hd/theater_title.py): RGBA rows. */
+/* The title's logo (the heart, the crown, KINGDOM HEARTS 358/2 Days): the opening movie's last picture,
+ * the logo on black, as the app keeps it (MainActivity.saveTitleFrame), cut to what is not black; else
+ * cut from the HD menu's picture (a mod's layouts/title/<lang>/, tools/hd/theater_title.py). RGBA rows. */
 static uint8_t *logo;
 static int logo_w, logo_h, logo_looked;
 #define LOGO_WIDTH_SHARE 0.86f  /* at most this much of the display's width */
 #define LOGO_HEIGHT_SHARE 0.80f /* and of its height */
 #define TITLE_LAYOUT_WIDTH 1920 /* the main menu's picture (its `picture` line) */
+#define TITLE_FRAME "cache/title_frame.png" /* MainActivity.TITLE_FRAME, in the game's folder */
+#define FRAME_DARK 24                       /* a frame's pixels this dark or darker are its black */
+#define FRAME_MARGIN 0.06f                  /* the logo cut with this much of its size around it */
 
 /* The crown mark of the app's icon (android/.../ic_launcher_foreground.png), its corners in the icon's
  * 432 units; its fill and outline, R G B A bytes as a little-endian word. */
@@ -216,11 +220,60 @@ static int find_logo(const char *text, char *atlas, size_t size, int *sx, int *s
     return best > 0 && atlas[0] != '\0';
 }
 
-/* Reads the logo once (outside the lock: it reads files), from the first language's layout found. */
+/* The opening's last picture, cut to its logo (what is not black, and a margin): 1 when it is there. */
+static int load_frame(void)
+{
+    int w = 0, h = 0, x0, y0, x1 = -1, y1 = -1, mx, my;
+    const char *error = NULL;
+    uint8_t *pixels = khdays_png_read(TITLE_FRAME, &w, &h, &error);
+    if (pixels == NULL) {
+        return 0;
+    }
+    x0 = w;
+    y0 = h;
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const uint8_t *p = pixels + ((size_t)y * w + x) * 4;
+            if (p[0] > FRAME_DARK || p[1] > FRAME_DARK || p[2] > FRAME_DARK) {
+                x0 = x < x0 ? x : x0;
+                x1 = x > x1 ? x : x1;
+                y0 = y < y0 ? y : y0;
+                y1 = y > y1 ? y : y1;
+            }
+        }
+    }
+    if (x1 < x0 || y1 < y0) {
+        khdays_png_free(pixels);
+        return 0;
+    }
+    mx = (int)((float)(x1 - x0 + 1) * FRAME_MARGIN);
+    my = (int)((float)(y1 - y0 + 1) * FRAME_MARGIN);
+    x0 = x0 - mx > 0 ? x0 - mx : 0;
+    y0 = y0 - my > 0 ? y0 - my : 0;
+    x1 = x1 + mx < w - 1 ? x1 + mx : w - 1;
+    y1 = y1 + my < h - 1 ? y1 + my : h - 1;
+    logo_w = x1 - x0 + 1;
+    logo_h = y1 - y0 + 1;
+    logo = (uint8_t *)malloc((size_t)logo_w * logo_h * 4);
+    if (logo != NULL) {
+        for (int y = 0; y < logo_h; ++y) {
+            memcpy(logo + (size_t)y * logo_w * 4, pixels + ((size_t)(y0 + y) * w + x0) * 4, (size_t)logo_w * 4);
+        }
+        __android_log_print(ANDROID_LOG_INFO, "khdays", "display: the lower display shows the opening's last picture");
+    }
+    khdays_png_free(pixels);
+    return logo != NULL;
+}
+
+/* Reads the logo once (outside the lock: it reads files): the opening's last picture, else the first
+ * language's HD menu layout found. */
 static void load_logo(void)
 {
     static const char *const languages[] = {"en", "fr", "de", "it", "es"};
     logo_looked = 1;
+    if (load_frame()) {
+        return;
+    }
     for (size_t i = 0; i < sizeof(languages) / sizeof(languages[0]) && logo == NULL; ++i) {
         char relative[96], path[1024], atlas[256], *text;
         long length;
