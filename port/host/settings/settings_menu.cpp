@@ -95,6 +95,7 @@ struct Menu {
     std::vector<float> row_top, row_bottom;
     float rows_scroll = 0, rows_height = 0, wheel = 0;
     bool scroll_to_focus = false, scroll_to_top = false;
+    int column_seen = -1; // the sections' entry last kept in sight (draw_column)
     // ImGui.
     ImGuiContext *imgui = nullptr;
     ImFont *font = nullptr;
@@ -1222,6 +1223,9 @@ std::string footer_warning()
 void draw_column(float row_h, float pad)
 {
     const float w = ImGui::GetContentRegionAvail().x;
+    if (m.in_rows || m.mode != MODE_BROWSE) {
+        m.column_seen = -1; // back in the sections, the entry checked again
+    }
     for (int i = 0; i <= kQuit; ++i) {
         if (i < kQuit && !khdays_model_section_shown(i)) {
             continue;
@@ -1254,6 +1258,17 @@ void draw_column(float row_h, float pad)
                 i == kQuit ? khdays_text(TXT_QUIT_GAME) : khdays_model_section_title(i));
         ImGui::Dummy(ImVec2(w, row_h));
         record(KHDAYS_PLACE_ENTRY, i, p, q);
+        if (focus && i != m.column_seen) {
+            // the entry the pad moved to kept in sight when the sections do not fit (a large menu text)
+            const float scroll = ImGui::GetScrollY(), height = ImGui::GetWindowHeight();
+            const float top = p.y - ImGui::GetWindowPos().y + scroll - pad, bottom = top + row_h + 2 * pad;
+            if (top < scroll) {
+                ImGui::SetScrollY(std::max(0.0f, top));
+            } else if (bottom > scroll + height) {
+                ImGui::SetScrollY(bottom - height);
+            }
+            m.column_seen = i;
+        }
     }
 }
 
