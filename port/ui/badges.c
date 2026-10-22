@@ -221,7 +221,7 @@ void khdays_ui_badges_emit(void)
             found |= 1u << bit;
     }
     memset(&now, 0, sizeof(now));
-    now.one = (khdays_host_frame_wants() & KHDAYS_WANT_SITUATION) != 0; /* one screen */
+    now.one = (khdays_host_graphics_flags() & KHDAYS_HOST_ONE_SCREEN) != 0; /* one screen */
     /* the three cells, as Ov008_DrawMissionRow fills a row's: the ordeal
      * badge and the blazon first (by their count, each lit by bit 0, then
      * 1), then the unity badge (bit 3) */

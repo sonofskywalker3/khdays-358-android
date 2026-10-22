@@ -880,8 +880,12 @@ static void ui_check(const KhdaysFramePackage *p, const KhdaysGpuInput *in, int 
 static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int reference, u32 frame)
 {
     /* widescreen moves the elements to the sides like the HUD's pieces; on one screen they stay at their
-     * DS places and the composition places them */
-    khdays_ui_collect((p->wants & KHDAYS_WANT_SITUATION) ? 0 : (int)p->desc2d[0][KD_WIDE], p->upper);
+     * DS places and the composition places them. Whether the picture is one screen is the host's say, not
+     * whether the situation is wanted: on Android with the lower screen on a second display the
+     * situation is taken on two screens too (gpu_present.c title_one), and the HUD's pieces stayed at
+     * their DS places while the game's own cells went to the sides (the portrait shown twice). */
+    khdays_ui_collect((khdays_host_graphics_flags() & KHDAYS_HOST_ONE_SCREEN) ? 0 : (int)p->desc2d[0][KD_WIDE],
+                      p->upper);
     for (int e = 0; e < 2; ++e) {
         KhdaysFrameElements *fe = &p->elements[e];
         uint32_t n;
