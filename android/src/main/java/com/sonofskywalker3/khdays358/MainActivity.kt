@@ -13,7 +13,8 @@ import org.libsdl.app.SDLSurface
 /**
  * The game's activity. SDLActivity owns the surface, input and the native thread; this subclass names
  * the libraries to load, keeps the screen on, asks the display for its fastest refresh rate, and runs
- * the [BottomScreenHost] that puts the lower DS screen on a second display when there is one.
+ * the [BottomScreenHost] that puts the lower DS screen on a second display when there is one, while the
+ * game is in view.
  */
 class MainActivity : SDLActivity() {
 
@@ -32,11 +33,22 @@ class MainActivity : SDLActivity() {
         // the game's folder on the shared storage (data/, mods/, saves/): made now so it can be filled
         getExternalFilesDir(null)?.let { Log.i(TAG, "game folder: ${it.absolutePath}") }
         preferFastestDisplayMode()
-        bottomScreen = BottomScreenHost(this).also { it.start() }
+        bottomScreen = BottomScreenHost(this)
+    }
+
+    // The lower screen goes with the game: Home (or another app over it) takes it away, coming back
+    // brings it again. Started in onCreate, it stayed lit on the lower display after Home.
+    override fun onStart() {
+        super.onStart()
+        bottomScreen?.start()
+    }
+
+    override fun onStop() {
+        bottomScreen?.stop()
+        super.onStop()
     }
 
     override fun onDestroy() {
-        bottomScreen?.stop()
         bottomScreen = null
         super.onDestroy()
     }
