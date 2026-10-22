@@ -2,6 +2,7 @@
 #include "release_version.h"
 
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Reads a version: its three numbers (missing ones 0) and whether it is a pre-release. 0 when `s`
@@ -69,7 +70,8 @@ static const char *skip_space(const char *p)
     return p;
 }
 
-int khdays_release_tag(const char *json, char *tag, size_t size)
+/* The first "tag_name" in `json` into `tag`, when it is a version's characters only and fits. */
+static int raw_tag(const char *json, char *tag, size_t size)
 {
     static const char key[] = "\"tag_name\"";
     const char *p = json != NULL ? strstr(json, key) : NULL;
@@ -99,12 +101,21 @@ int khdays_release_tag(const char *json, char *tag, size_t size)
     }
     memcpy(tag, p, length);
     tag[length] = '\0';
-    return khdays_version_valid(tag);
+    return 1;
+}
+
+int khdays_release_tag(const char *json, char *tag, size_t size)
+{
+    return raw_tag(json, tag, size) && khdays_version_valid(tag);
 }
 
 /* ---- The installer among the release's files ---- */
 
 #define INSTALLER_PREFIX "KH358-2-Days-Port-Setup-"
+#define INSTALLER_SUFFIX ".exe"
+#define ANDROID_TAG_PREFIX "android-"
+#define APK_PREFIX "khdays-358-android-"
+#define APK_SUFFIX ".apk"
 #define DIGEST_PREFIX "sha256:"
 
 /* Just past the JSON string at `p` (its opening quote); NULL when it never closes. */
@@ -178,9 +189,9 @@ static int copy_string(const char *p, const char *end, char *to, size_t size)
     return 1;
 }
 
-/* One asset's object (from its '{' to just past its '}'): its fields into `f`; 1 when it is the
- * installer with all of them. */
-static int read_asset(const char *p, KhdaysReleaseFile *f)
+/* One asset's object (from its '{' to just past its '}'): its fields into `f`; 1 when it is the file
+ * named `prefix`...`suffix` with all of them. */
+static int read_asset(const char *p, KhdaysReleaseFile *f, const char *prefix_text, const char *suffix)
 {
     char digest[80] = "";
     memset(f, 0, sizeof(*f));
@@ -215,9 +226,9 @@ static int read_asset(const char *p, KhdaysReleaseFile *f)
         }
     }
     {
-        const size_t name = strlen(f->name), prefix = sizeof(INSTALLER_PREFIX) - 1, hex = 64;
-        if (name <= prefix + 4 || strncmp(f->name, INSTALLER_PREFIX, prefix) != 0 ||
-            strcmp(f->name + name - 4, ".exe") != 0 || f->url[0] == '\0' || f->size <= 0 ||
+        const size_t name = strlen(f->name), prefix = strlen(prefix_text), tail = strlen(suffix), hex = 64;
+        if (name <= prefix + tail || strncmp(f->name, prefix_text, prefix) != 0 ||
+            strcmp(f->name + name - tail, suffix) != 0 || f->url[0] == '\0' || f->size <= 0 ||
             strncmp(digest, DIGEST_PREFIX, sizeof(DIGEST_PREFIX) - 1) != 0 ||
             strlen(digest) != sizeof(DIGEST_PREFIX) - 1 + hex) {
             return 0;
@@ -234,7 +245,8 @@ static int read_asset(const char *p, KhdaysReleaseFile *f)
     return 1;
 }
 
-int khdays_release_installer(const char *json, KhdaysReleaseFile *out)
+/* The release's file named `prefix`...`suffix` in its JSON object `json`. */
+static int find_asset(const char *json, KhdaysReleaseFile *out, const char *prefix, const char *suffix)
 {
     const char *p = json != NULL ? skip_space(json) : NULL;
     if (p == NULL || *p != '{' || out == NULL) {
@@ -259,7 +271,7 @@ int khdays_release_installer(const char *json, KhdaysReleaseFile *out)
                 if (item_end == NULL) {
                     return 0;
                 }
-                if (read_asset(item, out)) {
+                if (read_asset(item, out, prefix, suffix)) {
                     return 1;
                 }
                 item = skip_space(item_end);
@@ -275,4 +287,55 @@ int khdays_release_installer(const char *json, KhdaysReleaseFile *out)
         }
     }
     return 0;
+}
+
+int khdays_release_installer(const char *json, KhdaysReleaseFile *out)
+{
+    return find_asset(json, out, INSTALLER_PREFIX, INSTALLER_SUFFIX);
+}
+
+int khdays_release_newest_android(const char *json, char *version, size_t size, KhdaysReleaseFile *out)
+{
+    const char *item = json != NULL ? skip_space(json) : NULL;
+    char best[64] = "";
+    if (item == NULL || *item != '[' || version == NULL || size == 0 || out == NULL) {
+        return 0;
+    }
+    item = skip_space(item + 1);
+    while (*item == '{') {
+        const char *item_end = value_end(item, 1);
+        char *one, tag[64];
+        KhdaysReleaseFile file;
+        size_t length;
+        if (item_end == NULL) {
+            break;
+        }
+        /* each release on its own, so that its tag and its files are its own */
+        length = (size_t)(item_end - item);
+        one = (char *)malloc(length + 1);
+        if (one == NULL) {
+            break;
+        }
+        memcpy(one, item, length);
+        one[length] = '\0';
+        if (raw_tag(one, tag, sizeof(tag)) && strncmp(tag, ANDROID_TAG_PREFIX, sizeof(ANDROID_TAG_PREFIX) - 1) == 0) {
+            const char *v = tag + sizeof(ANDROID_TAG_PREFIX) - 1;
+            if (khdays_version_valid(v) && strlen(v) < size && (best[0] == '\0' || khdays_version_compare(v, best) > 0) &&
+                find_asset(one, &file, APK_PREFIX, APK_SUFFIX)) {
+                strcpy(best, v);
+                *out = file;
+            }
+        }
+        free(one);
+        item = skip_space(item_end);
+        if (*item != ',') {
+            break;
+        }
+        item = skip_space(item + 1);
+    }
+    if (best[0] == '\0') {
+        return 0;
+    }
+    strcpy(version, best);
+    return 1;
 }

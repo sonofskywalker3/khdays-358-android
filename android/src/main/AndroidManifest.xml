@@ -20,6 +20,10 @@
         android:name="android.hardware.bluetooth"
         android:required="false" />
 
+    <!-- The update check and download (Updates.kt), and the update handed to Android's installer -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- No storage permission: the game's data, mods and saves live in the app's own folder on the
          shared storage (Android/data/<package>/files). -->
 
@@ -76,6 +80,10 @@
             android:excludeFromRecents="true"
             android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
+            android:exported="false" />
+        <!-- Android's installer tells how the update went, or that the player is to confirm it -->
+        <receiver
+            android:name=".Updates$InstallResult"
             android:exported="false" />
     </application>
 

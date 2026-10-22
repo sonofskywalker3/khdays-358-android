@@ -429,10 +429,13 @@ static void settings_closed(SDL_Window *window, SDL_Renderer *renderer)
     if (update >= 0) {
         khdays_updates_answer(update); /* the notice's: the page opened, or not told again */
     }
+#if !defined(__ANDROID__)
     if (update == KHDAYS_UPDATE_INSTALL) {
         khdays_log("updates: the game closes for its installer");
         _Exit(0);
     }
+#endif
+    /* on Android the game runs on under the system's installer, which closes it once it installs */
     redraw(window, renderer);
 }
 

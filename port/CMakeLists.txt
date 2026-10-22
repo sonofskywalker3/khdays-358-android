@@ -342,8 +342,6 @@ else()
     set(KHDAYS_INSTANCE_SOURCE host/app/instance_posix.c)
     set(KHDAYS_PLATFORM_SOURCES
         runtime/core/memory_posix.c
-        host/net/https_none.c
-        host/app/update_install_none.c
         host/app/context_posix.c
         host/app/context_arm64.S
         host/app/files_posix.c
@@ -352,9 +350,16 @@ else()
         host/posix/android_log.c
         host/android/bottom_screen.c)  # the lower screen on a second display
     if(ANDROID)
-        list(APPEND KHDAYS_PLATFORM_SOURCES host/movies/movie_hd_android.c) # the HD video through MediaCodec
+        list(APPEND KHDAYS_PLATFORM_SOURCES
+            host/movies/movie_hd_android.c       # the HD video through MediaCodec
+            host/net/https_android.c             # the update check and download through the app's Kotlin side
+            host/app/update_install_android.c    # the update's APK put in place by Android's installer
+            host/android/app_class.c)
     else()
-        list(APPEND KHDAYS_PLATFORM_SOURCES host/movies/movie_hd_none.c)
+        list(APPEND KHDAYS_PLATFORM_SOURCES
+            host/movies/movie_hd_none.c
+            host/net/https_none.c
+            host/app/update_install_none.c)
     endif()
 endif()
 

@@ -42,6 +42,11 @@ constexpr bool kWrap = true; // a handheld: up from the first entry or row goes 
 #else
 constexpr bool kWrap = false;
 #endif
+#if defined(__ANDROID__)
+constexpr int kUpdateDetailInstalls = TXT_UPDATE_DETAIL_ANDROID; // Android's installer asks; the game is opened again
+#else
+constexpr int kUpdateDetailInstalls = TXT_UPDATE_DETAIL_AUTO; // the game closes for the installer, which reopens it
+#endif
 
 enum Mode { MODE_BROWSE, MODE_CAPTURE, MODE_CONFLICT, MODE_UNBOUND, MODE_PRESET, MODE_TEXT, MODE_UPDATE, MODE_QUIT };
 enum { FACE_ACCEPT, FACE_CLEAR, FACE_BACK, FACE_COUNT };
@@ -1931,7 +1936,7 @@ void draw_prompt(float w, float h, float row_h, float pad)
         question = khdays_text(TXT_UPDATE_TITLE);
         SDL_snprintf(
             line, sizeof(line),
-            khdays_text(m.update_hooked && m.update_hooks.can_install() ? TXT_UPDATE_DETAIL_AUTO : TXT_UPDATE_DETAIL),
+            khdays_text(m.update_hooked && m.update_hooks.can_install() ? kUpdateDetailInstalls : TXT_UPDATE_DETAIL),
             m.update_have, m.update_new);
         details.push_back(line);
         yes = khdays_text(TXT_UPDATE_DOWNLOAD);

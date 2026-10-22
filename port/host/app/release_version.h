@@ -31,4 +31,10 @@ typedef struct KhdaysReleaseFile {
  * download that could not be checked is not run). */
 int khdays_release_installer(const char *json, KhdaysReleaseFile *out);
 
+/* The Android port's newest release in GitHub's answer for a repository's releases (a JSON array):
+ * of those tagged "android-<version>" that list a "khdays-358-android-<...>.apk" with a digest, the
+ * highest version. That version (the tag without "android-", at most `size` bytes with its NUL) into
+ * `version` and its APK into `out`: 1, or 0 when there is none. */
+int khdays_release_newest_android(const char *json, char *version, size_t size, KhdaysReleaseFile *out);
+
 #endif

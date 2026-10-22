@@ -8,6 +8,7 @@
 #include "../../runtime/core/sha256.h"
 
 #include <SDL3/SDL.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -16,8 +17,17 @@
 #define KHDAYS_VERSION "0.0.0" /* port/CMakeLists.txt gives the VERSION file's */
 #endif
 
+#if defined(__ANDROID__)
+/* The Android port's releases: test builds (pre-releases, which /releases/latest leaves out) tagged
+ * "android-<version>", each with its APK (khdays_release_newest_android) */
+#define REPOSITORY "sonofskywalker3/khdays-thor"
+#define LATEST "https://api.github.com/repos/" REPOSITORY "/releases?per_page=30"
+#define TAG_PREFIX "android-"
+#else
 #define REPOSITORY "Yokimitsuro/khdays-port"
 #define LATEST "https://api.github.com/repos/" REPOSITORY "/releases/latest"
+#define TAG_PREFIX ""
+#endif
 #define DOWNLOADS "https://github.com/" REPOSITORY "/releases/download/"
 #define STATE "saves/updates.txt"
 
@@ -152,8 +162,13 @@ static int SDLCALL ask(void *unused)
         khdays_log("updates: no answer about the latest release (asked again at the next start)");
         return 0;
     }
+#if defined(__ANDROID__)
+    found = khdays_release_newest_android(json, tag, sizeof(tag), &found_installer);
+    has_installer = found && trusted(found_installer.url);
+#else
     found = khdays_release_tag(json, tag, sizeof(tag));
     has_installer = found && khdays_release_installer(json, &found_installer) && trusted(found_installer.url);
+#endif
     free(json);
     SDL_LockMutex(lock);
     asked = (long long)time(NULL);
@@ -170,6 +185,8 @@ static int SDLCALL ask(void *unused)
     if (found) {
         khdays_log("updates: the latest release is %s (%s); this is %s", tag,
                    has_installer ? found_installer.name : "no installer listed", KHDAYS_VERSION);
+        fprintf(stderr, "updates: the latest release is %s (%s); this is %s\n", tag,
+                has_installer ? found_installer.name : "no installer listed", KHDAYS_VERSION);
     } else {
         khdays_log("updates: the answer named no release");
     }
@@ -391,7 +408,7 @@ void khdays_updates_answer(int answer)
     told = 1;
     SDL_LockMutex(lock);
     if (answer == KHDAYS_UPDATE_DOWNLOAD) {
-        SDL_snprintf(page, sizeof(page), "https://github.com/" REPOSITORY "/releases/tag/%s", latest);
+        SDL_snprintf(page, sizeof(page), "https://github.com/" REPOSITORY "/releases/tag/" TAG_PREFIX "%s", latest);
     } else if (answer == KHDAYS_UPDATE_SKIP) {
         SDL_strlcpy(skip, latest, sizeof(skip));
         write_state();

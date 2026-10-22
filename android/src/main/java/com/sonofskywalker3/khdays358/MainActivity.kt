@@ -51,6 +51,12 @@ class MainActivity : SDLActivity() {
         bottomScreen?.start()
     }
 
+    // Back from Settings, where the player was asked to let this app install updates (Updates.install).
+    override fun onResume() {
+        super.onResume()
+        Updates.resume(this)
+    }
+
     override fun onStop() {
         bottomScreen?.stop()
         super.onStop()

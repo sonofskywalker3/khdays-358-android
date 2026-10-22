@@ -99,11 +99,44 @@ static void test_installer(void)
     CHECK(!khdays_release_installer("[]", &f) && !khdays_release_installer(NULL, &f));
 }
 
+static void test_android(void)
+{
+    KhdaysReleaseFile f;
+    char version[64];
+    /* GitHub's list of releases, shortened: newest first, the PC's own and a draft-like tag among them */
+#define DIGEST "\"digest\":\"sha256:30b4e25c06f149fa56dbed4439a98fd4a56e3410ae6f87a3253f6ccf0be21338\","
+    static const char list[] =
+        "[{\"tag_name\":\"android-0.1.4-test1\",\"prerelease\":true,\"assets\":["
+        "{\"name\":\"KH358-2-Days-PC-Setup-0.1.4-us.exe\",\"size\":39946046," DIGEST
+        "\"browser_download_url\":\"https://github.com/o/r/releases/download/android-0.1.4-test1/pc.exe\"},"
+        "{\"name\":\"khdays-358-android-0.1.4-test1.apk\",\"size\":29294585," DIGEST
+        "\"browser_download_url\":\"https://github.com/o/r/releases/download/android-0.1.4-test1/"
+        "khdays-358-android-0.1.4-test1.apk\"}]},"
+        "{\"tag_name\":\"v0.2.0\",\"assets\":[{\"name\":\"khdays-358-android-0.2.0.apk\",\"size\":5," DIGEST
+        "\"browser_download_url\":\"https://github.com/o/r/releases/download/v0.2.0/a.apk\"}]},"
+        "{\"tag_name\":\"android-0.1.5-test1\",\"assets\":[{\"name\":\"notes.txt\",\"size\":5," DIGEST
+        "\"browser_download_url\":\"https://github.com/o/r/a\"}]},"
+        "{\"tag_name\":\"android-0.1.3-test1\",\"assets\":[{\"name\":\"khdays-358-android-0.1.3-test1.apk\","
+        "\"size\":29032421," DIGEST "\"browser_download_url\":\"https://github.com/o/r/b.apk\"}]}]";
+    /* the highest version with an APK: not the PC's tag, not the one without an APK */
+    CHECK(khdays_release_newest_android(list, version, sizeof(version), &f));
+    CHECK(strcmp(version, "0.1.4-test1") == 0 && strcmp(f.name, "khdays-358-android-0.1.4-test1.apk") == 0);
+    CHECK(f.size == 29294585 && strstr(f.url, "/android-0.1.4-test1/") != NULL);
+    CHECK(khdays_version_compare(version, "0.1.4") < 0); /* the 0.1.4 build is not told of its own test */
+    CHECK(khdays_version_compare("0.1.5-test1", "0.1.4") > 0);
+#undef DIGEST
+    CHECK(!khdays_release_newest_android("[]", version, sizeof(version), &f));
+    CHECK(!khdays_release_newest_android("{\"tag_name\":\"android-0.1.4\"}", version, sizeof(version), &f));
+    CHECK(!khdays_release_newest_android("[{\"tag_name\":\"android-0.1.4\",\"assets\":[", version, sizeof(version), &f));
+    CHECK(!khdays_release_newest_android(NULL, version, sizeof(version), &f));
+}
+
 int main(void)
 {
     test_versions();
     test_answer();
     test_installer();
+    test_android();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
