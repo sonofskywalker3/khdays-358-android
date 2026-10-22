@@ -20,7 +20,8 @@
 
 #define PICTURES_AHEAD 0.15   /* seconds of pictures decoded ahead of the clock */
 #define SOUND_AHEAD 0.30      /* seconds of sound queued ahead of the device */
-#define WAIT_US 2000          /* how long one look at a decoder's output waits */
+#define WAIT_US 2000          /* how long one look at the picture decoder's output waits (the sound's: none) */
+#define CLOCK_RUN_ON 0.05     /* the clock runs on from the sound's last step at most this long (s) */
 #define IDLE_LOOKS 500        /* looks with nothing out, after the input's end, that mean the end */
 #define NANOSECONDS 1000000000LL
 /* MediaCodecInfo.CodecCapabilities' colour formats */
@@ -85,6 +86,8 @@ static struct {
     int frame_bytes;            /* bytes per sound frame, all channels */
     volatile int64_t put_frames; /* sound frames put into the stream so far */
     double sound_start;          /* the first sound sample's time */
+    double step_time;            /* the sound's clock at its last step, and when it stepped (clock_now) */
+    int64_t step_at;
     int last_queued;             /* after the sound's end: what was still queued, and since when */
     int64_t still_since;
     /* the monotonic clock: used without sound, or once the sound has all played */
@@ -171,11 +174,21 @@ static double clock_now(void)
         return hd.first_time;
     }
     if (!hd.counter_clock && hd.sound != NULL) {
+        /* the sound played so far moves in the device's chunks (10-20 ms), longer than a 60 fps picture:
+         * between its steps the clock runs on the monotonic clock, so each picture is taken in turn */
         int queued = SDL_GetAudioStreamQueued(hd.sound);
+        const int64_t now = counter();
+        double sound;
         if (queued < 0) {
             queued = 0;
         }
-        return hd.sound_start + (double)(hd.put_frames - queued / hd.frame_bytes) / hd.info.rate;
+        sound = hd.sound_start + (double)(hd.put_frames - queued / hd.frame_bytes) / hd.info.rate;
+        if (sound != hd.step_time || hd.step_at == 0 || hd.paused) {
+            hd.step_time = sound;
+            hd.step_at = now;
+            return sound;
+        }
+        return sound + SDL_min((double)(now - hd.step_at) / (double)NANOSECONDS, CLOCK_RUN_ON);
     }
     {
         const int64_t now = hd.paused ? hd.paused_at : counter();
@@ -262,7 +275,7 @@ static ssize_t next_output(Track *t, AMediaCodecBufferInfo *info)
 {
     ssize_t o;
     feed(t);
-    o = AMediaCodec_dequeueOutputBuffer(t->codec, info, WAIT_US);
+    o = AMediaCodec_dequeueOutputBuffer(t->codec, info, t == &hd.video || t->input_end ? WAIT_US : 0);
     if (o >= 0) {
         t->idle = 0;
         return o;
