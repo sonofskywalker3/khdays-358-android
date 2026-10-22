@@ -172,10 +172,10 @@ void khdays_threads_init(void)
     }
 }
 
-int khdays_threads_list(unsigned int *contexts, KhdaysContext **running, int room)
+int khdays_threads_list(unsigned int *contexts, KhdaysContext **running, int capacity)
 {
     int n = 0;
-    for (int i = 0; i < nslots && n < room; ++i) {
+    for (int i = 0; i < nslots && n < capacity; ++i) {
         if (slots[i].context != 0) {
             contexts[n] = slots[i].context;
             running[n] = slots[i].running;

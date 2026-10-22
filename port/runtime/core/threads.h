@@ -13,9 +13,9 @@ void khdays_threads_init(void);
 void khdays_threads_reset(void);
 
 /* The game's threads' contexts (their OSContext references) and what runs each, for the stall report:
- * at most `room`; their number. */
+ * at most `capacity`; their number. */
 struct KhdaysContext;
-int khdays_threads_list(unsigned int *contexts, struct KhdaysContext **running, int room);
+int khdays_threads_list(unsigned int *contexts, struct KhdaysContext **running, int capacity);
 
 /* OS_InitContext: the context at `context` (re)starts -- its execution
  * context made anew, running the function its image names (pc+4, r0, lr:
