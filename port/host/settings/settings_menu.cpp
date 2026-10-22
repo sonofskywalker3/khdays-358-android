@@ -2527,13 +2527,15 @@ void khdays_settings_draw(SDL_Renderer *renderer, SDL_Window *window)
     ImGui::End();
     ImGui::PopStyleColor(2 + scroll_colours);
     if (m.skin) {
-        // the hints on the pieces' bar, in the middle of its height, cut off at its end
+        // the hints on the pieces' bar, in the middle of its height, made smaller when they would run
+        // past its end (a large menu text)
         float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         khdays_skin_bounds("hints", &x0, &y0, &x1, &y1);
         const ImVec2 a = khdays_skin_point(screen, x0, y0), b = khdays_skin_point(screen, x1, y1);
         ImDrawList *dl = ImGui::GetBackgroundDrawList();
         khdays_skin_piece(dl, "hints", "shown", a, b);
-        const float size_now = ImGui::GetFontSize();
+        const float room = b.x - a.x - pad * 3, wide = width_of(hints());
+        const float size_now = wide > room && room > 0 ? ImGui::GetFontSize() * room / wide : ImGui::GetFontSize();
         const ImVec4 clip(a.x, a.y, b.x - pad, b.y);
         dl->AddText(ImGui::GetFont(), size_now, ImVec2(a.x + pad * 2, (a.y + b.y - size_now) / 2), kGrey, hints(),
                     nullptr, 0.0f, &clip);

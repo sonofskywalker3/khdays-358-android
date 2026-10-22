@@ -461,9 +461,11 @@ static void build_multiplayer(Builder *b, KhdaysProfile *w)
     in_session(b, r);
     /* takes effect at once, in a session or not */
     add_switch(b, KHDAYS_SET_SHOW_PING, TXT_SHOW_PING, &n->show_ping, 1, khdays_text(TXT_SHOW_PING_NOTE));
-    /* read at the next start (host/app/updates.c) */
-    add_switch(b, KHDAYS_SET_CHECK_UPDATES, TXT_CHECK_UPDATES, &n->check_updates, 1,
-               khdays_text(TXT_CHECK_UPDATES_NOTE));
+    /* read at the next start (host/app/updates.c); a handheld's copy asks no one (host/net/https_none.c) */
+    if (!HANDHELD) {
+        add_switch(b, KHDAYS_SET_CHECK_UPDATES, TXT_CHECK_UPDATES, &n->check_updates, 1,
+                   khdays_text(TXT_CHECK_UPDATES_NOTE));
+    }
 }
 
 static void build_language(Builder *b, KhdaysProfile *w)

@@ -285,9 +285,14 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_TO_CANCEL] = {"%s to cancel (%d s).", "%s pour annuler (%d s).", "%s zum Abbrechen (%d s).",
                        "%s per annullare (%d s).", "%s para cancelar (%d s)."},
     [TXT_ESC] = {"Esc", "Échap", "Esc", "Esc", "Esc"},
+#if defined(__ANDROID__)
+    [TXT_ESC_OR_BUTTON] = {"The open-settings button", "Le bouton des réglages", "Die Einstellungstaste",
+                           "Il tasto delle impostazioni", "El botón de ajustes"},
+#else
     [TXT_ESC_OR_BUTTON] = {"Esc or the open-settings button", "Échap ou le bouton des réglages",
                            "Esc oder die Einstellungstaste", "Esc o il tasto delle impostazioni",
                            "Esc o el botón de ajustes"},
+#endif
     /* %s: the input; %s: what it does now; %s: what it would do. */
     [TXT_ALREADY_DOES] = {"%s already does \"%s\". Use it for \"%s\" instead?",
                           "%s fait déjà \"%s\". L'utiliser plutôt pour \"%s\" ?",
@@ -387,8 +392,13 @@ static const char *const texts[TXT_COUNT][5] = {
                                    "loro.",
                                    "El 3D se dibuja a este múltiplo de los píxeles de la DS; menús y textos "
                                    "conservan los suyos."},
+#if defined(__ANDROID__)
+    [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the screen allows", "Selon l'écran", "Wie der Bildschirm erlaubt",
+                                     "Quanto permette lo schermo", "Lo que permita la pantalla"},
+#else
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the window allows", "Selon la fenêtre", "Wie das Fenster erlaubt",
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
+#endif
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
     [TXT_VIDEO_ANTIALIASING_NOTE] = {"The picture is made this many times larger and shrunk: the 3D's edges come out "
                                      "smooth. 2x is four times the work for the graphics card, 4x sixteen.",
@@ -400,6 +410,24 @@ static const char *const texts[TXT_COUNT][5] = {
                                      "lisci. 2x è quattro volte il lavoro per la scheda grafica, 4x sedici.",
                                      "La imagen se hace tantas veces más grande y se reduce: los bordes del 3D salen "
                                      "suaves. 2x es cuatro veces el trabajo de la tarjeta gráfica, 4x dieciséis."},
+#if defined(__ANDROID__)
+    [TXT_VIDEO_ANTIALIASING_WARNING] =
+        {"The internal resolution already draws the 3D at the screen's size or larger: antialiasing "
+         "multiplies that work, so the game can slow down and use much more of the graphics card. "
+         "Leave it Off unless your card has power to spare.",
+         "La résolution interne dessine déjà la 3D à la taille de l'écran ou plus : l'anticrénelage "
+         "multiplie ce travail, le jeu peut ralentir et solliciter bien plus la carte graphique. "
+         "Laissez-le sur Non si votre carte n'a pas de puissance à revendre.",
+         "Die interne Auflösung zeichnet das 3D schon in Bildschirmgröße oder größer: die Kantenglättung "
+         "vervielfacht diese Arbeit, das Spiel kann langsamer werden und die Grafikkarte viel stärker "
+         "belasten. Lass sie auf Aus, wenn deine Karte keine Leistung übrig hat.",
+         "La risoluzione interna disegna già il 3D alla dimensione dello schermo o più: l'antialiasing "
+         "moltiplica quel lavoro, il gioco può rallentare e impegnare molto di più la scheda grafica. "
+         "Lascialo su No se la tua scheda non ha potenza da vendere.",
+         "La resolución interna ya dibuja el 3D al tamaño de la pantalla o mayor: el antialiasing "
+         "multiplica ese trabajo, y el juego puede ir más lento y exigir mucho más a la tarjeta gráfica. "
+         "Déjalo en No salvo que tu tarjeta vaya sobrada."},
+#else
     [TXT_VIDEO_ANTIALIASING_WARNING] =
         {"The internal resolution already draws the 3D at the window's size or larger: antialiasing "
          "multiplies that work, so the game can slow down and use much more of the graphics card. "
@@ -416,6 +444,7 @@ static const char *const texts[TXT_COUNT][5] = {
          "La resolución interna ya dibuja el 3D al tamaño de la ventana o mayor: el antialiasing "
          "multiplica ese trabajo, y el juego puede ir más lento y exigir mucho más a la tarjeta gráfica. "
          "Déjalo en No salvo que tu tarjeta vaya sobrada."},
+#endif
     [TXT_VIDEO_SCREENS] = {"Screens", "Écrans", "Bildschirme", "Schermi", "Pantallas"},
     [TXT_VIDEO_SCREENS_TWO] = {"Two (DS)", "Deux (DS)", "Zwei (DS)", "Due (DS)", "Dos (DS)"},
     [TXT_VIDEO_SCREENS_ONE] = {"One", "Un", "Einer", "Uno", "Una"},
@@ -450,14 +479,27 @@ static const char *const texts[TXT_COUNT][5] = {
                                "Die 3D-Ansicht wird breiter; die Anzeigen bleiben in den Ecken, Menüs in der Mitte.",
                                "La vista 3D si allarga; l'interfaccia resta negli angoli, i menu al centro.",
                                "La vista 3D se ensancha; el HUD sigue en las esquinas y los menús en el centro."},
+#if defined(__ANDROID__)
+    [TXT_VIDEO_ASPECT_WINDOW] = {"As the screen", "Comme l'écran", "Wie der Bildschirm", "Come lo schermo",
+                                 "La de la pantalla"},
+#else
     [TXT_VIDEO_ASPECT_WINDOW] = {"As the window", "Comme la fenêtre", "Wie das Fenster", "Come la finestra",
                                  "La de la ventana"},
+#endif
     [TXT_VIDEO_SCALING] = {"Screen scaling", "Mise à l'échelle", "Bildskalierung", "Ridimensionamento", "Escalado"},
+#if defined(__ANDROID__)
+    [TXT_VIDEO_SCALING_NOTE] = {"How the DS's screens are stretched to fit the display.",
+                                "Comment les écrans de la DS s'étirent à la taille de l'affichage.",
+                                "Wie die Bildschirme des DS auf die Anzeige gestreckt werden.",
+                                "Come gli schermi del DS vengono adattati al display.",
+                                "Cómo se estiran las pantallas de la DS a la del dispositivo."},
+#else
     [TXT_VIDEO_SCALING_NOTE] = {"How the screens are stretched to the window.",
                                 "Comment les écrans s'étirent à la taille de la fenêtre.",
                                 "Wie die Bildschirme auf das Fenster gestreckt werden.",
                                 "Come gli schermi vengono adattati alla finestra.",
                                 "Cómo se estiran las pantallas a la ventana."},
+#endif
     [TXT_VIDEO_SHARP] = {"Sharp (DS)", "Net (DS)", "Scharf (DS)", "Nitido (DS)", "Nítido (DS)"},
     [TXT_VIDEO_SMOOTH] = {"Smooth", "Lissé", "Weich", "Morbido", "Suave"},
     [TXT_VIDEO_TEXTURES] = {"3D texture smoothing", "Lissage des textures 3D", "3D-Texturglättung", "Filtro texture 3D",
@@ -668,6 +710,18 @@ static const char *const texts[TXT_COUNT][5] = {
          "El nombre que ven los demás jugadores en multijugador, hasta 10 caracteres. Vacío: uno "
          "automático."},
     [TXT_ONLINE] = {"Online play", "Jeu en ligne", "Online-Spiel", "Gioco online", "Juego en línea"},
+#if defined(__ANDROID__)
+    [TXT_ONLINE_NOTE] = {"Play with others anywhere, through the server; on this device and the local network no server is "
+                         "needed.",
+                         "Jouer avec d'autres n'importe où, par le serveur ; sur cet appareil et le réseau local, aucun "
+                         "serveur n'est nécessaire.",
+                         "Mit anderen überall spielen, über den Server; auf diesem Gerät und im lokalen Netzwerk ist kein "
+                         "Server nötig.",
+                         "Giocare con altri ovunque, tramite il server; su questo dispositivo e nella rete locale non serve "
+                         "alcun server.",
+                         "Jugar con otros desde cualquier sitio, a través del servidor; en este dispositivo y en la red local "
+                         "no hace falta servidor."},
+#else
     [TXT_ONLINE_NOTE] = {"Play with others anywhere, through the server; on this PC and the local network no server is "
                          "needed.",
                          "Jouer avec d'autres n'importe où, par le serveur ; sur ce PC et le réseau local, aucun "
@@ -678,6 +732,7 @@ static const char *const texts[TXT_COUNT][5] = {
                          "alcun server.",
                          "Jugar con otros desde cualquier sitio, a través del servidor; en este PC y en la red local "
                          "no hace falta servidor."},
+#endif
     [TXT_SERVER] = {"Server", "Serveur", "Server", "Server", "Servidor"},
     [TXT_SERVER_NOTE] = {"The address of the khdays-server to meet through (host, or host:port). Anyone can run one.",
                          "L'adresse du khdays-server par lequel se retrouver (hôte, ou hôte:port). N'importe qui peut "
