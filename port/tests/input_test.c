@@ -616,6 +616,10 @@ static void test_video_settings(void)
     CHECK(load_text("[video]\nmenu_size = 2\n", &q) == 0 && q.video.menu_size == 2);
     CHECK(load_text("[video]\nmenu_size = 8\n", &q) == 0 && q.video.menu_size == KHDAYS_MENU_SIZE_MAX);
     CHECK(load_text("[video]\nmenu_size = 0\n", &q) == 1 && q.video.menu_size == 3);
+    /* The HD movies' subtitles' size: 1 to 5, 1 by default; another the default, told. */
+    CHECK(p.video.subtitle_size == 1);
+    CHECK(load_text("[video]\nsubtitle_size = 4\n", &q) == 0 && q.video.subtitle_size == 4);
+    CHECK(load_text("[video]\nsubtitle_size = 9\n", &q) == 1 && q.video.subtitle_size == 1);
 
     /* The graphics API: SDL's choice by default; each name, and back through a save. */
     CHECK(p.video.backend == KHDAYS_BACKEND_AUTO);

@@ -103,6 +103,8 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_BACK] = {"Back", "Retour", "Zurück", "Indietro", "Volver"},
     [TXT_NO_GAMEPAD] = {"No gamepad connected", "Aucune manette connectée", "Kein Controller verbunden",
                         "Nessun controller collegato", "Ningún mando conectado"},
+    [TXT_BUILT_IN_PAD] = {"Built-in controls", "Commandes intégrées", "Eingebaute Steuerung", "Comandi integrati",
+                          "Controles integrados"},
     [TXT_NOTHING] = {"Nothing", "Rien", "Nichts", "Niente", "Nada"},
     [TXT_DPAD_MOVE] = {"D-pad (move)", "Croix (déplacement)", "Steuerkreuz (Bewegen)", "Croce (movimento)",
                        "Cruceta (moverse)"},
@@ -603,6 +605,16 @@ static const char *const texts[TXT_COUNT][5] = {
                                   "Die Untertitel der Filmsequenzen des Spiels. Ein neues Spiel fragt auch danach.",
                                   "I sottotitoli dei filmati del gioco. Anche una nuova partita lo chiede.",
                                   "Los subtítulos de las películas del juego. También lo pregunta una partida nueva."},
+    [TXT_VIDEO_SUBTITLE_SIZE] = {"Subtitle size", "Taille des sous-titres", "Untertitelgröße",
+                                 "Dimensione dei sottotitoli", "Tamaño de los subtítulos"},
+    [TXT_VIDEO_SUBTITLE_SIZE_NOTE] = {"How big the HD movies' subtitles are, 1 to 5 (1: as in the HD collection).",
+                                      "La taille des sous-titres des cinématiques HD, de 1 à 5 (1 : comme dans la "
+                                      "collection HD).",
+                                      "Wie groß die Untertitel der HD-Filme sind, 1 bis 5 (1: wie in der HD-Sammlung).",
+                                      "Quanto sono grandi i sottotitoli dei filmati HD, da 1 a 5 (1: come nella "
+                                      "raccolta HD).",
+                                      "El tamaño de los subtítulos de las películas HD, de 1 a 5 (1: como en la "
+                                      "colección HD)."},
     [TXT_VIDEO_BACKEND] = {"Graphics API", "API graphique", "Grafik-API", "API grafica", "API gráfica"},
     [TXT_VIDEO_BACKEND_AUTO] = {"Automatic", "Automatique", "Automatisch", "Automatica", "Automática"},
     [TXT_VIDEO_BACKEND_NOTE] = {"What draws the picture: Automatic is Direct3D 12 on Windows, Vulkan on a Steam Deck "

@@ -266,6 +266,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->hud_size = 4;
     v->menu_size = 3;
     v->subtitles = 1; /* as the DS showed them */
+    v->subtitle_size = 1;
     v->display = KHDAYS_DISPLAY_WINDOW;
 }
 
@@ -407,6 +408,7 @@ int khdays_profile_repair(KhdaysProfile *p)
         }
         changed += clamp(&p->video.hud_size, 1, 8);
         changed += clamp(&p->video.menu_size, 1, KHDAYS_MENU_SIZE_MAX);
+        changed += clamp(&p->video.subtitle_size, 1, KHDAYS_SUBTITLE_SIZE_MAX);
         changed += clamp(&p->video.display, 0, KHDAYS_DISPLAY_COUNT - 1);
     }
     changed += clamp(&p->sound.volume, 0, 100);
@@ -1011,6 +1013,17 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         v->display = d;
         return;
     }
+    if (SDL_strcasecmp(key, "subtitle_size") == 0) {
+        char *end = NULL;
+        const long n = SDL_strtol(value, &end, 10);
+        if (end != value && *trim(end) == '\0' && n >= 1 && n <= KHDAYS_SUBTITLE_SIZE_MAX) {
+            v->subtitle_size = (int)n;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "1");
+            v->subtitle_size = defaults.subtitle_size;
+        }
+        return;
+    }
     if (SDL_strcasecmp(key, "subtitles") == 0) {
         if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
             v->subtitles = SDL_strcasecmp(value, "on") == 0;
@@ -1505,6 +1518,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "movies = %s\n"
             "# subtitles: on or off, the movies' subtitles (a new game asks)\n"
             "subtitles = %s\n"
+            "# subtitle_size: 1 to 5, the HD movies' subtitles' size (1 the theater's, the default)\n"
+            "subtitle_size = %d\n"
             "# picture_pace: smooth (the 3D at the monitor's rate, up to a logic frame behind) or ds\n"
             "picture_pace = %s\n"
             "# show_fps: the pictures and the game's frames a second, in a corner\n"
@@ -1521,7 +1536,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             : v->movies == KHDAYS_MOVIES_PC        ? "pc"
             : v->movies == KHDAYS_MOVIES_HD_SMOOTH ? "hd-smooth"
                                                    : "hd",
-            v->subtitles ? "on" : "off", v->picture_ds ? "ds" : "smooth", v->show_fps ? "on" : "off",
+            v->subtitles ? "on" : "off", v->subtitle_size, v->picture_ds ? "ds" : "smooth", v->show_fps ? "on" : "off",
             v->backend == KHDAYS_BACKEND_D3D12    ? "direct3d12"
             : v->backend == KHDAYS_BACKEND_VULKAN ? "vulkan"
                                                   : "auto");

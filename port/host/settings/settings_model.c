@@ -382,6 +382,12 @@ static void build_video(Builder *b, KhdaysProfile *w)
     r->apply = KHDAYS_APPLY_NEXT;
     r->takes = TXT_TAKES_NEXT_MOVIE;
     add_switch(b, KHDAYS_SET_SUBTITLES, TXT_VIDEO_SUBTITLES, &v->subtitles, 1, khdays_text(TXT_VIDEO_SUBTITLES_NOTE));
+    if (HANDHELD) {
+        /* a handheld's small screen: the theater's subtitles made larger (host/movies/movie_subtitles.c) */
+        add_number(b, KHDAYS_SET_SUBTITLE_SIZE, TXT_VIDEO_SUBTITLE_SIZE, &v->subtitle_size, 1,
+                   KHDAYS_SUBTITLE_SIZE_MAX, 1)
+            ->note = khdays_text(TXT_VIDEO_SUBTITLE_SIZE_NOTE);
+    }
     r = add_choice(b, KHDAYS_SET_PACE, TXT_VIDEO_PACE, &v->picture_ds, paces, 2);
     r->note = khdays_text(TXT_VIDEO_PACE_NOTE);
     r->warning = khdays_text(TXT_VIDEO_PACE_WARNING); /* the pictures between the game's can go wrong */

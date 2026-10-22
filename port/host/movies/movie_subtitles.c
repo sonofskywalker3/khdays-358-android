@@ -13,6 +13,8 @@
 #include <string.h>
 #include <windows.h>
 
+#define SUBTITLE_WIDTH_SHARE 0.96f /* a line made larger stays within this much of the picture's width */
+
 typedef struct Line {
     int first, end, x, y, u, v, w, h;
 } Line;
@@ -131,7 +133,7 @@ void khdays_movie_subtitles_release(void)
     ReleaseSRWLockExclusive(&lock);
 }
 
-void khdays_movie_subtitles_draw(SDL_Renderer *renderer, double time, double fps, int width, int height)
+void khdays_movie_subtitles_draw(SDL_Renderer *renderer, double time, double fps, int width, int height, float scale)
 {
     int frame;
     float kx, ky;
@@ -179,7 +181,11 @@ void khdays_movie_subtitles_draw(SDL_Renderer *renderer, double time, double fps
         const Line *l = &shown.lines[i];
         if (frame >= l->first && frame < l->end) {
             const SDL_FRect from = {(float)l->u, (float)l->v, (float)l->w, (float)l->h};
-            const SDL_FRect at = {(float)l->x * kx, (float)l->y * ky, (float)l->w * kx, (float)l->h * ky};
+            /* `scale` times larger about the line's middle and its foot, kept within the picture */
+            const float k = SDL_min(scale, (float)shown.picture_w * SUBTITLE_WIDTH_SHARE / (float)l->w);
+            const float w = (float)l->w * SDL_max(k, 1.0f), h = (float)l->h * SDL_max(k, 1.0f);
+            const float middle = (float)l->x + (float)l->w / 2.0f, foot = (float)(l->y + l->h);
+            const SDL_FRect at = {(middle - w / 2.0f) * kx, (foot - h) * ky, w * kx, h * ky};
             SDL_RenderTexture(renderer, texture, &from, &at);
         }
     }

@@ -21,7 +21,8 @@ void khdays_movie_subtitles_load(const char *movie, int language);
 /* The host's thread, after the video's picture is drawn at `width` x
  * `height` (the renderer's logical size): the lines due at `time` (the
  * picture's, in seconds) of a file of `fps` frames a second. */
-void khdays_movie_subtitles_draw(struct SDL_Renderer *renderer, double time, double fps, int width, int height);
+void khdays_movie_subtitles_draw(struct SDL_Renderer *renderer, double time, double fps, int width, int height,
+                                 float scale);
 
 /* The host's thread: its texture freed (the renderer goes, or the video is over). */
 void khdays_movie_subtitles_release(void);

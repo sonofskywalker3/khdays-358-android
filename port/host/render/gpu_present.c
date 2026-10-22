@@ -1310,7 +1310,10 @@ static void draw_hd_movie(void)
         present_size(hd_movie_w, hd_movie_h);
         SDL_RenderTexture(renderer, hd_movie, NULL, NULL);
         if (khdays_subtitles_shown()) {
-            khdays_movie_subtitles_draw(renderer, hd_movie_time, hd_movie_fps, hd_movie_w, hd_movie_h);
+            /* [video] subtitle_size: 1 the theater's size, each step a quarter larger */
+            const int subtitle_size = SDL_clamp(video.subtitle_size, 1, KHDAYS_SUBTITLE_SIZE_MAX);
+            const float subtitle_scale = 1.0f + 0.25f * (float)(subtitle_size - 1);
+            khdays_movie_subtitles_draw(renderer, hd_movie_time, hd_movie_fps, hd_movie_w, hd_movie_h, subtitle_scale);
         }
         darken(1.0f - hd_movie_level);
     }
@@ -1467,7 +1470,7 @@ void khdays_present_draw(void)
         khdays_present_set_video(&given_video); /* the second display came or went */
     }
     if (two_displays && video.one_screen && one_drawn) {
-        khdays_bottom_present_mark(); /* the HD title on the upper display (below), the lower one the crown */
+        khdays_bottom_present_mark(); /* the HD title on the upper display (below), the lower one its logo */
     } else if (two_displays && draw_two_displays()) {
         return;
     }

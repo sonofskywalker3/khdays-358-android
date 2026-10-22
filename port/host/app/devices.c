@@ -151,6 +151,9 @@ int khdays_devices_take_settings_request(void)
 
 const char *khdays_devices_gamepad_name(void)
 {
+    if (active >= 0 && SDL_GetGamepadVendor(pads[active].gamepad) == AYN_VENDOR) {
+        return khdays_text(TXT_BUILT_IN_PAD); /* Android names an AYN handheld's own "Odin Controller" */
+    }
     return active >= 0 ? SDL_GetGamepadName(pads[active].gamepad) : NULL;
 }
 
