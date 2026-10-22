@@ -77,3 +77,16 @@ void khdays_hd_voice_set_gain(float gain)
 {
     (void)gain;
 }
+
+int khdays_hd_open_part(const char *path, double from, double until, KhdaysHdInfo *info, char *why, size_t size)
+{
+    (void)from;
+    (void)until;
+    return khdays_hd_open(path, info, why, size);
+}
+
+void khdays_hd_fades(double in, double out)
+{
+    (void)in;
+    (void)out;
+}

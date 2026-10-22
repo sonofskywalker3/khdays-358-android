@@ -75,6 +75,8 @@ static struct {
     long decoded, taken; /* pictures decoded; the number of the last one taken (-1: none) */
     double first_time;   /* the first picture's time */
     double duration;     /* how long the file says it lasts, or 0 when it does not say */
+    double from, end;         /* the part played (khdays_hd_open_part): its start, its end (0 the file's) */
+    double fade_in, fade_out; /* its fades (khdays_hd_fades), in seconds; 0 none */
     /* the sound */
     Track audio;
     int have_audio;
@@ -94,6 +96,32 @@ static struct {
     long shown, late;
     double worst_offset;
 } hd = {.status = 2, .taken = -1, .video = {.fd = -1}, .audio = {.fd = -1}};
+static double next_fade_in, next_fade_out; /* khdays_hd_fades: the next opening's */
+static uint8_t *faded;                     /* the sound's samples with the fades applied (read_sound) */
+static size_t faded_size;
+
+/* How much of the video shows at file time `t` through its fades: 1 all, 0 black and silent. */
+static float fade_level(double t)
+{
+    const double end = hd.end > 0.0 ? hd.end : hd.duration;
+    double level = 1.0;
+    if (hd.fade_in > 0.0) {
+        level = SDL_min(level, (t - hd.from) / hd.fade_in);
+    }
+    if (hd.fade_out > 0.0 && end > 0.0) {
+        level = SDL_min(level, (end - t) / hd.fade_out);
+    }
+    return (float)SDL_clamp(level, 0.0, 1.0);
+}
+
+/* Moves the track to the part's start (hd.from): it then reads from the key picture before it, and
+ * read_picture and read_sound leave out what comes before. */
+static void seek_to_part(Track *t)
+{
+    if (hd.from > 0.0) {
+        AMediaExtractor_seekTo(t->extractor, (int64_t)(hd.from * 1e6), AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC);
+    }
+}
 
 /* The monotonic clock now, in nanoseconds. */
 static int64_t counter(void)
@@ -305,6 +333,7 @@ static int open_video(void)
     if (format == NULL) {
         return 0;
     }
+    seek_to_part(&hd.video);
     if (AMediaFormat_getInt64(format, AMEDIAFORMAT_KEY_DURATION, &duration)) {
         hd.duration = (double)duration / 1e6;
     }
@@ -438,7 +467,7 @@ static int picture_end(void)
 {
     const double last = newest_time();
     hd.video_end = 1;
-    if (hd.duration > 0.0 && last + 0.5 < hd.duration) {
+    if (hd.end == 0.0 && hd.duration > 0.0 && last + 0.5 < hd.duration) {
         snprintf(hd.why, sizeof(hd.why), "its pictures end at %.2f s of its %.2f s (the file cut short?)", last,
                  hd.duration);
         return 0;
@@ -469,10 +498,23 @@ static int read_picture(void)
             snprintf(hd.why, sizeof(hd.why), "the picture cannot be decoded");
             return 0;
         }
+        const double time = (double)info.presentationTimeUs / 1e6;
+        if (info.size > 0 && hd.end > 0.0 && time >= hd.end) {
+            /* the part's end: neither this picture nor those after it are shown */
+            AMediaCodec_releaseOutputBuffer(hd.video.codec, (size_t)o, false);
+            hd.video_end = 1;
+            return 1;
+        }
+        if (info.size > 0 && hd.from > 0.0 && time + (hd.info.fps > 0.0 ? 0.5 / hd.info.fps : 0.008) < hd.from &&
+            !(info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM)) {
+            /* before the part's start (the seek goes to the key picture before it) */
+            AMediaCodec_releaseOutputBuffer(hd.video.codec, (size_t)o, false);
+            continue;
+        }
         if (info.size > 0) {
             size_t length = 0;
             const uint8_t *frame = AMediaCodec_getOutputBuffer(hd.video.codec, (size_t)o, &length);
-            ok = frame != NULL && keep_picture(frame + info.offset, (size_t)info.size, (double)info.presentationTimeUs / 1e6);
+            ok = frame != NULL && keep_picture(frame + info.offset, (size_t)info.size, time);
             if (frame == NULL) {
                 snprintf(hd.why, sizeof(hd.why), "a picture cannot be read");
             }
@@ -546,11 +588,56 @@ static void read_sound(void)
             size_t length = 0;
             const uint8_t *data = AMediaCodec_getOutputBuffer(hd.audio.codec, (size_t)o, &length);
             if (data != NULL) {
-                if (hd.put_frames == 0) {
-                    hd.sound_start = (double)info.presentationTimeUs / 1e6;
+                const int sample_bytes = hd.frame_bytes / hd.info.channels;
+                double at = (double)info.presentationTimeUs / 1e6;
+                int frames = info.size / hd.frame_bytes;
+                data += info.offset;
+                if (hd.from > 0.0 && at < hd.from) {
+                    /* before the part's start: left out */
+                    const int early = (int)((hd.from - at) * hd.info.rate);
+                    const int skipped = early < frames ? early : frames;
+                    data += (size_t)skipped * (size_t)hd.frame_bytes;
+                    frames -= skipped;
+                    at += (double)skipped / hd.info.rate;
                 }
-                SDL_PutAudioStreamData(hd.sound, data + info.offset, info.size);
-                __atomic_add_fetch(&hd.put_frames, info.size / hd.frame_bytes, __ATOMIC_SEQ_CST);
+                if (hd.end > 0.0 && at + (double)frames / hd.info.rate > hd.end) {
+                    /* the part's end: the sound up to it */
+                    const int kept = hd.end > at ? (int)((hd.end - at) * hd.info.rate) : 0;
+                    frames = kept < frames ? kept : frames;
+                    hd.sound_end = 1;
+                }
+                if ((hd.fade_in > 0.0 || hd.fade_out > 0.0) && frames > 0) {
+                    const size_t bytes = (size_t)frames * (size_t)hd.frame_bytes;
+                    if (faded_size < bytes) {
+                        uint8_t *grown = (uint8_t *)realloc(faded, bytes);
+                        if (grown != NULL) {
+                            faded = grown;
+                            faded_size = bytes;
+                        }
+                    }
+                    if (faded_size >= bytes) {
+                        memcpy(faded, data, bytes);
+                        for (int i = 0; i < frames; ++i) {
+                            const float level = fade_level(at + (double)i / hd.info.rate);
+                            for (int c = 0; c < hd.info.channels; ++c) {
+                                const size_t k = (size_t)i * (size_t)hd.info.channels + (size_t)c;
+                                if (sample_bytes == 4) {
+                                    ((float *)faded)[k] *= level;
+                                } else {
+                                    ((int16_t *)faded)[k] = (int16_t)((float)((int16_t *)faded)[k] * level);
+                                }
+                            }
+                        }
+                        data = faded;
+                    }
+                }
+                if (frames > 0) {
+                    if (hd.put_frames == 0) {
+                        hd.sound_start = at;
+                    }
+                    SDL_PutAudioStreamData(hd.sound, data, frames * hd.frame_bytes);
+                    __atomic_add_fetch(&hd.put_frames, frames, __ATOMIC_SEQ_CST);
+                }
             }
         }
         AMediaCodec_releaseOutputBuffer(hd.audio.codec, (size_t)o, false);
@@ -580,6 +667,7 @@ static int open_audio(void)
     AMediaFormat *format = open_track(&hd.audio, hd.path, "audio/", hd.why, sizeof(hd.why));
     media_status_t status = AMEDIA_ERROR_UNKNOWN;
     if (format != NULL) {
+        seek_to_part(&hd.audio);
         status = AMediaCodec_configure(hd.audio.codec, format, NULL, NULL, 0);
         AMediaFormat_delete(format);
     }
@@ -743,7 +831,17 @@ void khdays_hd_close(void)
 
 int khdays_hd_open(const char *path, KhdaysHdInfo *info, char *why, size_t size)
 {
+    return khdays_hd_open_part(path, 0.0, 0.0, info, why, size);
+}
+
+int khdays_hd_open_part(const char *path, double from, double until, KhdaysHdInfo *info, char *why, size_t size)
+{
     khdays_hd_close();
+    hd.from = from > 0.0 ? from : 0.0;
+    hd.end = until > hd.from ? until : 0.0;
+    hd.fade_in = next_fade_in;
+    hd.fade_out = next_fade_out;
+    next_fade_in = next_fade_out = 0.0;
     hd.path = strdup(path);
     if (hd.path == NULL || pthread_create(&hd.thread, NULL, run, NULL) != 0) {
         snprintf(why, size, "no thread for it");
@@ -760,6 +858,12 @@ int khdays_hd_open(const char *path, KhdaysHdInfo *info, char *why, size_t size)
     }
     *info = hd.info;
     return 1;
+}
+
+void khdays_hd_fades(double in, double out)
+{
+    next_fade_in = in > 0.0 ? in : 0.0;
+    next_fade_out = out > 0.0 ? out : 0.0;
 }
 
 void khdays_hd_start(void)
@@ -884,6 +988,7 @@ int khdays_hd_picture_begin(KhdaysHdPicture *picture)
     picture->chroma = hd.pictures[0].data + (size_t)hd.pictures[0].width * (size_t)hd.pictures[0].height;
     picture->time = hd.pictures[0].time;
     picture->fps = hd.info.fps;
+    picture->level = fade_level(hd.pictures[0].time);
     set_signal(&hd.woken); /* there is room ahead now: the thread decodes on */
     return 1;              /* the lock stays held until khdays_hd_picture_done */
 }
