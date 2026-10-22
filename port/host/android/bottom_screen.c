@@ -185,8 +185,8 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     pthread_mutex_unlock(&lock);
 }
 
-/* The logo's place in the main menu's layout `text`: of its pieces, the largest drawn in the left half
- * (the logo; the right half is the characters' picture). 0 when there is none. */
+/* The logo's place in the main menu's layout `text`: of its pieces, the largest whose middle is in the
+ * left half (the logo; the characters' picture, from x 934, is the right half's). 0 when there is none. */
 static int find_logo(const char *text, char *atlas, size_t size, int *sx, int *sy, int *w, int *h)
 {
     int best = 0, px = 0, py = 0, pw = 0, ph = 0, in_piece = 0;
@@ -195,15 +195,15 @@ static int find_logo(const char *text, char *atlas, size_t size, int *sx, int *s
         const char *end = strchr(line, '\n');
         const size_t length = end != NULL ? (size_t)(end - line) : strlen(line);
         char row[256], name[256];
-        float x0 = 0;
+        float x0 = 0, x1 = 0;
         snprintf(row, sizeof(row), "%.*s", (int)(length < sizeof(row) ? length : sizeof(row) - 1), line);
         if (sscanf(row, "atlas %255s", name) == 1) {
             snprintf(atlas, size, "%s", name);
         } else if (sscanf(row, "piece %d %d %d %d", &px, &py, &pw, &ph) == 4) {
             in_piece = 1;
-        } else if (in_piece && sscanf(row, "key %*d %f", &x0) == 1) {
+        } else if (in_piece && sscanf(row, "key %*d %f %*f %f", &x0, &x1) == 2) {
             in_piece = 0; /* the piece's first place says which half it is in */
-            if (pw > 1 && ph > 1 && x0 < TITLE_LAYOUT_WIDTH / 2 && pw * ph > best) {
+            if (pw > 1 && ph > 1 && (x0 + x1) / 2 < TITLE_LAYOUT_WIDTH / 2 && pw * ph > best) {
                 best = pw * ph;
                 *sx = px;
                 *sy = py;
