@@ -20,7 +20,7 @@
 #if defined(__ANDROID__)
 /* The Android port's releases: test builds (pre-releases, which /releases/latest leaves out) tagged
  * "android-<version>", each with its APK (khdays_release_newest_android) */
-#define REPOSITORY "sonofskywalker3/khdays-thor"
+#define REPOSITORY "sonofskywalker3/khdays-358-android"
 #define LATEST "https://api.github.com/repos/" REPOSITORY "/releases?per_page=30"
 #define TAG_PREFIX "android-"
 #else
