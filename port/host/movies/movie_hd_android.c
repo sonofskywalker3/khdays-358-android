@@ -98,6 +98,8 @@ static struct {
     /* what happened, for the report when it closes */
     long shown, late;
     double worst_offset;
+    long looks, starved;          /* the refreshes that looked for a picture; those whose next was not decoded */
+    int64_t first_look, last_look; /* when the first and the last of them looked (counter) */
 } hd = {.status = 2, .taken = -1, .video = {.fd = -1}, .audio = {.fd = -1}};
 static double next_fade_in, next_fade_out; /* khdays_hd_fades: the next opening's */
 static uint8_t *faded;                     /* the sound's samples with the fades applied (read_sound) */
@@ -769,8 +771,11 @@ static void follow_sound_end(void)
  * if nothing was needed, or -1 if a picture cannot be decoded. */
 static int decode_ahead(void)
 {
-    const double now = clock_now();
+    double now;
     int did = 0;
+    pthread_mutex_lock(&lock); /* the clock's bases are moved by the refreshes' looks too */
+    now = clock_now();
+    pthread_mutex_unlock(&lock);
     if (!hd.video_end && newest_time() < now + PICTURES_AHEAD) {
         if (!read_picture()) {
             return -1;
@@ -826,10 +831,12 @@ void khdays_hd_close(void)
         SDL_DestroyAudioStream(hd.sound); /* the sound stops at once */
     }
     if (hd.open_ok) {
+        const double looked = (double)(hd.last_look - hd.first_look) / (double)NANOSECONDS;
         fprintf(stderr,
                 "movies: the HD video showed %ld pictures, %ld late (passed over), its picture at most "
-                "%.1f ms off its clock\n",
-                hd.shown, hd.late, hd.worst_offset * 1000.0);
+                "%.1f ms off its clock; %ld refreshes (%.1f a second), %ld found the next picture not decoded\n",
+                hd.shown, hd.late, hd.worst_offset * 1000.0, hd.looks,
+                looked > 0.0 ? (double)(hd.looks - 1) / looked : 0.0, hd.starved);
     }
     pthread_mutex_lock(&lock);
     for (int i = 0; i < hd.count; ++i) {
@@ -977,10 +984,26 @@ int khdays_hd_picture_begin(KhdaysHdPicture *picture)
     }
     now = clock_now();
     half = hd.info.fps > 0.0 ? 0.5 / hd.info.fps : 0.0;
-    for (int i = 0; i < hd.count && hd.pictures[i].time <= now + half; ++i) {
-        pick = i;
+    if (hd.started) {
+        hd.last_look = counter();
+        hd.first_look = hd.looks++ == 0 ? hd.last_look : hd.first_look;
     }
-    if (pick < 0 || hd.pictures[pick].number == hd.taken) {
+    /* The picture after the one shown, once it is due (half a picture early at most); a later one only
+     * when that one too was due half a picture ago -- a whole picture behind. Taking the newest due
+     * picture instead passed one over each time the clock (the sound's, moving in steps) wobbled
+     * across a picture's time between two refreshes: 13-14% of a 60 fps video's pictures. */
+    {
+        const int next = hd.pictures[0].number == hd.taken ? 1 : 0;
+        if (next < hd.count && hd.pictures[next].time <= now + half) {
+            pick = next;
+            while (pick + 1 < hd.count && hd.pictures[pick + 1].time <= now - half) {
+                ++pick;
+            }
+        } else if (next >= hd.count && hd.started && !hd.video_end) {
+            ++hd.starved; /* not decoded yet */
+        }
+    }
+    if (pick < 0) {
         pthread_mutex_unlock(&lock);
         return 0;
     }
