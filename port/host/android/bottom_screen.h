@@ -19,9 +19,9 @@ int khdays_bottom_attached(void);
  * largest 4:3 rectangle that fits, centred, nearest sampled. Does nothing when none is attached. */
 void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch);
 
-/* Shows the app's crown mark alone, on black, on the second display: while it has nothing to show (the
- * title on the upper display), so that it is seen to be in use. Drawn once; again only after something
- * else was shown there or the display came back. */
+/* Shows the title's logo from the HD menu (else the app's crown mark) alone, on black, on the second
+ * display: while it has nothing to show (the title on the upper display), so that it is seen to be in
+ * use. Drawn once; again only after something else was shown there or the display came back. */
 void khdays_bottom_present_mark(void);
 
 /* The latest touch on the second display in DS coordinates (0-255, 0-191): 1 while it is down. */

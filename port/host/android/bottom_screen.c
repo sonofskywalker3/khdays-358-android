@@ -8,8 +8,12 @@
 #include <android/native_window_jni.h>
 #include <jni.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "../../runtime/core/rom.h"
+#include "../render/png_io.h"
 
 #define DS_W 256
 #define DS_H 192
@@ -23,7 +27,15 @@ static int touch_down;
 static float touch_nx, touch_ny;
 static int *columns; /* for each destination column, the source column (nearest) */
 static int columns_src, columns_dst;
-static int mark_shown; /* the display shows the crown mark (khdays_bottom_present_mark) */
+static int mark_shown; /* the display shows the title's logo, or the crown mark (khdays_bottom_present_mark) */
+
+/* The title's logo (the heart, the crown, KINGDOM HEARTS 358/2 Days), cut from the HD menu's picture
+ * when the player made one (a mod's layouts/title/<lang>/, tools/hd/theater_title.py): RGBA rows. */
+static uint8_t *logo;
+static int logo_w, logo_h, logo_looked;
+#define LOGO_WIDTH_SHARE 0.86f  /* at most this much of the display's width */
+#define LOGO_HEIGHT_SHARE 0.80f /* and of its height */
+#define TITLE_LAYOUT_WIDTH 1920 /* the main menu's picture (its `picture` line) */
 
 /* The crown mark of the app's icon (android/.../ic_launcher_foreground.png), its corners in the icon's
  * 432 units; its fill and outline, R G B A bytes as a little-endian word. */
@@ -173,6 +185,121 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     pthread_mutex_unlock(&lock);
 }
 
+/* The logo's place in the main menu's layout `text`: of its pieces, the largest drawn in the left half
+ * (the logo; the right half is the characters' picture). 0 when there is none. */
+static int find_logo(const char *text, char *atlas, size_t size, int *sx, int *sy, int *w, int *h)
+{
+    int best = 0, px = 0, py = 0, pw = 0, ph = 0, in_piece = 0;
+    atlas[0] = '\0';
+    for (const char *line = text; *line != '\0';) {
+        const char *end = strchr(line, '\n');
+        const size_t length = end != NULL ? (size_t)(end - line) : strlen(line);
+        char row[256], name[256];
+        float x0 = 0;
+        snprintf(row, sizeof(row), "%.*s", (int)(length < sizeof(row) ? length : sizeof(row) - 1), line);
+        if (sscanf(row, "atlas %255s", name) == 1) {
+            snprintf(atlas, size, "%s", name);
+        } else if (sscanf(row, "piece %d %d %d %d", &px, &py, &pw, &ph) == 4) {
+            in_piece = 1;
+        } else if (in_piece && sscanf(row, "key %*d %f", &x0) == 1) {
+            in_piece = 0; /* the piece's first place says which half it is in */
+            if (pw > 1 && ph > 1 && x0 < TITLE_LAYOUT_WIDTH / 2 && pw * ph > best) {
+                best = pw * ph;
+                *sx = px;
+                *sy = py;
+                *w = pw;
+                *h = ph;
+            }
+        }
+        line = end != NULL ? end + 1 : line + length;
+    }
+    return best > 0 && atlas[0] != '\0';
+}
+
+/* Reads the logo once (outside the lock: it reads files), from the first language's layout found. */
+static void load_logo(void)
+{
+    static const char *const languages[] = {"en", "fr", "de", "it", "es"};
+    logo_looked = 1;
+    for (size_t i = 0; i < sizeof(languages) / sizeof(languages[0]) && logo == NULL; ++i) {
+        char relative[96], path[1024], atlas[256], *text;
+        long length;
+        FILE *f;
+        int sx = 0, sy = 0, w = 0, h = 0, aw = 0, ah = 0;
+        uint8_t *pixels;
+        const char *error = NULL;
+        snprintf(relative, sizeof(relative), "layouts/title/%s/root_2_0.txt", languages[i]);
+        if (!khdays_mods_find(relative, path, (int)sizeof(path)) || (f = fopen(path, "rb")) == NULL) {
+            continue;
+        }
+        fseek(f, 0, SEEK_END);
+        length = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        text = length > 0 ? (char *)malloc((size_t)length + 1) : NULL;
+        if (text == NULL || fread(text, 1, (size_t)length, f) != (size_t)length) {
+            free(text);
+            fclose(f);
+            continue;
+        }
+        fclose(f);
+        text[length] = '\0';
+        if (!find_logo(text, atlas, sizeof(atlas), &sx, &sy, &w, &h)) {
+            free(text);
+            continue;
+        }
+        free(text);
+        snprintf(relative, sizeof(relative), "layouts/title/%s/%s", languages[i], atlas);
+        if (!khdays_mods_find(relative, path, (int)sizeof(path)) ||
+            (pixels = khdays_png_read(path, &aw, &ah, &error)) == NULL) {
+            continue;
+        }
+        if (sx >= 0 && sy >= 0 && sx + w <= aw && sy + h <= ah && (logo = (uint8_t *)malloc((size_t)w * h * 4)) != NULL) {
+            for (int y = 0; y < h; ++y) {
+                memcpy(logo + (size_t)y * w * 4, pixels + ((size_t)(sy + y) * aw + sx) * 4, (size_t)w * 4);
+            }
+            logo_w = w;
+            logo_h = h;
+            __android_log_print(ANDROID_LOG_INFO, "khdays", "display: the lower display shows the title's logo (%s)",
+                                relative);
+        }
+        khdays_png_free(pixels);
+    }
+}
+
+/* Draws the logo, as large as fits, centred over the black, smoothly scaled (bilinear, its alpha over
+ * the black). */
+static void draw_logo(uint8_t *bits, int stride, int width, int height)
+{
+    const float scale_w = (float)width * LOGO_WIDTH_SHARE / (float)logo_w;
+    const float scale_h = (float)height * LOGO_HEIGHT_SHARE / (float)logo_h;
+    const float scale = scale_w < scale_h ? scale_w : scale_h;
+    const int w = (int)((float)logo_w * scale), h = (int)((float)logo_h * scale);
+    const int x0 = (width - w) / 2, y0 = (height - h) / 2;
+    for (int y = 0; y < h; ++y) {
+        uint32_t *row = (uint32_t *)(bits + (size_t)(y0 + y) * (size_t)stride * 4u) + x0;
+        const float fy = ((float)y + 0.5f) / scale - 0.5f;
+        const int iy = fy < 0.0f ? 0 : (int)fy, iy1 = iy + 1 < logo_h ? iy + 1 : iy;
+        const float ty = fy < 0.0f ? 0.0f : fy - (float)iy;
+        for (int x = 0; x < w; ++x) {
+            const float fx = ((float)x + 0.5f) / scale - 0.5f;
+            const int ix = fx < 0.0f ? 0 : (int)fx, ix1 = ix + 1 < logo_w ? ix + 1 : ix;
+            const float tx = fx < 0.0f ? 0.0f : fx - (float)ix;
+            const uint8_t *p00 = logo + ((size_t)iy * logo_w + ix) * 4, *p01 = logo + ((size_t)iy * logo_w + ix1) * 4;
+            const uint8_t *p10 = logo + ((size_t)iy1 * logo_w + ix) * 4, *p11 = logo + ((size_t)iy1 * logo_w + ix1) * 4;
+            float c[3] = {0, 0, 0};
+            for (int k = 0; k < 4; ++k) {
+                /* each corner's colour weighted by its alpha (premultiplied), so the clear parts add nothing */
+                const uint8_t *q = k == 0 ? p00 : k == 1 ? p01 : k == 2 ? p10 : p11;
+                const float wgt = (k & 1 ? tx : 1.0f - tx) * (k & 2 ? ty : 1.0f - ty) * (float)q[3] / 255.0f;
+                c[0] += (float)q[0] * wgt;
+                c[1] += (float)q[1] * wgt;
+                c[2] += (float)q[2] * wgt;
+            }
+            row[x] = OPAQUE_BLACK | (uint32_t)(c[2] + 0.5f) << 16 | (uint32_t)(c[1] + 0.5f) << 8 | (uint32_t)(c[0] + 0.5f);
+        }
+    }
+}
+
 /* Whether (x, y) in icon units is inside the crown, and how far it is from its outline. */
 static int in_crown(float x, float y, float *edge)
 {
@@ -207,6 +334,9 @@ static uint32_t toward(uint32_t c, float part)
 void khdays_bottom_present_mark(void)
 {
     ANativeWindow_Buffer buffer;
+    if (!logo_looked && khdays_bottom_attached()) {
+        load_logo();
+    }
     pthread_mutex_lock(&lock);
     if (window == NULL || mark_shown) {
         pthread_mutex_unlock(&lock);
@@ -223,7 +353,9 @@ void khdays_bottom_present_mark(void)
     surface_w = buffer.width;
     surface_h = buffer.height;
     fill((uint8_t *)buffer.bits, buffer.stride, 0, 0, buffer.width, buffer.height);
-    {
+    if (logo != NULL) {
+        draw_logo((uint8_t *)buffer.bits, buffer.stride, buffer.width, buffer.height);
+    } else {
         /* the display's pixels an icon unit, the crown centred */
         const float unit = (float)buffer.height * CROWN_SHARE / (CROWN_BOTTOM - CROWN_TOP);
         const float ox = (float)buffer.width / 2.0f - CROWN_MIDDLE * unit;
