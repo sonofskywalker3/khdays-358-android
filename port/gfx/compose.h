@@ -76,10 +76,27 @@ KD_FN uint kd_hd_index(uint id, uint tile, float u, float v)
     return (texel & 0xffu) != 0u ? KD_HD_INDEX | (texel & 0xffu) : 0u;
 }
 
-/* A replaced tile in its own colours: the texels under an output pixel `ru` x `rv` DS pixels wide,
- * centred at (u, v), averaged by how much of each it covers. A picture bigger than shown is read from
- * a smaller copy (gpu_hd.c), so no line is skipped. KD_HD | the colour, with how much of what is
- * under it shows in bits 24-30 (KD_SEE_THROUGH); 0 where it is clear. */
+KD_FN float kd_floorf(float x)
+{
+    const float t = (float)(int)x;
+    return t > x ? t - 1.0f : t;
+}
+
+KD_FN int kd_clampi(int x, int lo, int hi)
+{
+    return x < lo ? lo : x > hi ? hi : x;
+}
+
+/* Catmull-Rom's weight for a texel `d` texels from where it is read (0 from 2 on). */
+KD_FN float kd_cubic(float d)
+{
+    const float x = d < 0.0f ? -d : d;
+    return x < 1.0f ? (1.5f * x - 2.5f) * x * x + 1.0f : x < 2.0f ? ((-0.5f * x + 2.5f) * x - 4.0f) * x + 2.0f : 0.0f;
+}
+
+/* A replaced tile's colour under an output pixel `ru` x `rv` DS pixels wide at (u, v): the texels it
+ * covers averaged, or, when it is smaller than a texel, a smooth Catmull-Rom blend of the 4 x 4 around.
+ * KD_HD | the colour, how much shows through in bits 24-30 (KD_SEE_THROUGH); 0 where clear. */
 KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv)
 {
     const uint info = KD_HD_INFO(id);
@@ -102,10 +119,39 @@ KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv
     k = (float)side / 8.0f; /* texels in a DS pixel */
     ox = (tile % columns) * side;
     oy = (tile / columns) * side;
-    x0 = kd_maxf((u - 0.5f * ru) * k, 0.0f);
-    x1 = kd_minf((u + 0.5f * ru) * k, (float)side);
-    y0 = kd_maxf((v - 0.5f * rv) * k, 0.0f);
-    y1 = kd_minf((v + 0.5f * rv) * k, (float)side);
+    if (texels < 1.0f) {
+        /* drawn larger than its texels: the 4 x 4 round the pixel's centre, those past the tile's edge
+         * read at its edge (the tile beside it in the sheet is not the one beside it on the screen) */
+        const float fx = u * k - 0.5f, fy = v * k - 0.5f;
+        const float bx = kd_floorf(fx), by = kd_floorf(fy);
+        const int last = (int)side - 1;
+        for (int j = -1; j <= 2; ++j) {
+            const float wy = kd_cubic(fy - (by + (float)j));
+            const uint ty = (uint)kd_clampi((int)by + j, 0, last);
+            for (int i = -1; i <= 2; ++i) {
+                const float w = wy * kd_cubic(fx - (bx + (float)i));
+                const uint tx = (uint)kd_clampi((int)bx + i, 0, last);
+                uint texel = 0u; /* past the picture: clear */
+                float ta;
+                area += w;
+                if (ox + tx < width && oy + ty < height) {
+                    texel = KD_HD_TEXEL(first + (oy + ty) * width + ox + tx);
+                }
+                ta = w * (float)(texel >> 24);
+                r += ta * (float)(texel & 255u);
+                g += ta * (float)((texel >> 8) & 255u);
+                b += ta * (float)((texel >> 16) & 255u);
+                a += ta;
+            }
+        }
+        x1 = x0 = 0.0f; /* the area's loop below reads none */
+        y1 = y0 = 0.0f;
+    } else {
+        x0 = kd_maxf((u - 0.5f * ru) * k, 0.0f);
+        x1 = kd_minf((u + 0.5f * ru) * k, (float)side);
+        y0 = kd_maxf((v - 0.5f * rv) * k, 0.0f);
+        y1 = kd_minf((v + 0.5f * rv) * k, (float)side);
+    }
     for (y = (uint)y0; (float)y < y1; ++y) {
         const float wy = kd_minf((float)(y + 1u), y1) - kd_maxf((float)y, y0);
         for (x = (uint)x0; (float)x < x1; ++x) {
@@ -127,11 +173,14 @@ KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv
     if (a <= 0.0f || area <= 0.0f) {
         return 0u;
     }
-    seen = (uint)((1.0f - a / (area * 255.0f)) * 127.0f + 0.5f);
+    /* (Catmull-Rom's weights go below 0 and the sum above: kept within what a texel can be) */
+    seen = (uint)((1.0f - kd_minf(a / (area * 255.0f), 1.0f)) * 127.0f + 0.5f);
     if (seen >= 127u) {
         return 0u;
     }
-    return KD_HD | (seen << 24) | (uint)(r / a + 0.5f) | ((uint)(g / a + 0.5f) << 8) | ((uint)(b / a + 0.5f) << 16);
+    return KD_HD | (seen << 24) | (uint)(kd_minf(kd_maxf(r / a, 0.0f), 255.0f) + 0.5f) |
+           ((uint)(kd_minf(kd_maxf(g / a, 0.0f), 255.0f) + 0.5f) << 8) |
+           ((uint)(kd_minf(kd_maxf(b / a, 0.0f), 255.0f) + 0.5f) << 16);
 }
 
 /* Replaced tile `entry` (a KD_HD_BG or KD_HD_OBJ word) at (u, v) inside its 8x8 tile, in DS pixels,

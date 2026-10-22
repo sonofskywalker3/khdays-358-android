@@ -18,4 +18,17 @@ int khdays_version_compare(const char *a, const char *b);
  * bytes with its NUL: 1, or 0 when the answer has none, or none that is a version. */
 int khdays_release_tag(const char *json, char *tag, size_t size);
 
+/* A file of the release, as GitHub's answer lists it among its "assets". */
+typedef struct KhdaysReleaseFile {
+    char name[128];
+    char url[1024];  /* its "browser_download_url" */
+    char sha256[65]; /* its "digest" without "sha256:", 64 lowercase hex digits */
+    long long size;  /* its "size", in bytes */
+} KhdaysReleaseFile;
+
+/* The release's installer in GitHub's JSON answer: the file named KH358-2-Days-Port-Setup-<...>.exe,
+ * with its address, size and SHA-256. 1, or 0 when the answer lists none, or none with a digest (a
+ * download that could not be checked is not run). */
+int khdays_release_installer(const char *json, KhdaysReleaseFile *out);
+
 #endif

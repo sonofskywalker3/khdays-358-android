@@ -92,9 +92,10 @@ typedef struct Clip {
     int32_t x, y, z, w;
     int r, g, b;  /* 6 bits */
     int32_t s, t; /* 12.4 */
+    int32_t unused; /* a mod's vertex has its alpha here; the game's polygon has one */
 } Clip;
-_Static_assert(sizeof(Clip) == sizeof(KhdaysG3dPreVertex), "a vertex before clipping is nine words");
-_Static_assert(sizeof(KhdaysG3dClipVertex) == sizeof(KhdaysG3dPreVertex), "a mod's vertex is nine words");
+_Static_assert(sizeof(Clip) == sizeof(KhdaysG3dPreVertex), "a vertex before clipping is ten words");
+_Static_assert(sizeof(KhdaysG3dClipVertex) == sizeof(KhdaysG3dPreVertex), "a mod's vertex is ten words");
 
 static struct {
     int mode;
@@ -530,6 +531,7 @@ static int clip_plane(const Clip *in, int n, Clip *out, int axis, int sign, int3
             c.b = a->b + (int)lround((b->b - a->b) * f);
             c.s = a->s + (int32_t)llround((b->s - (double)a->s) * f);
             c.t = a->t + (int32_t)llround((b->t - (double)a->t) * f);
+            c.unused = 0;
             out[m++] = c;
         }
     }
@@ -721,6 +723,7 @@ static void finish_polygon(List *out, int32_t ds[2], const Clip *v, int n, const
             o->b = (float)a[i].b;
             o->s = (float)a[i].s;
             o->t = (float)a[i].t;
+            o->a = 1.0f;
             if (o->y < p->ymin)
                 p->ymin = o->y;
             if (o->y > p->ymax)
@@ -779,6 +782,7 @@ static void vertex(int32_t x, int32_t y, int32_t z)
     c.b = expand5(g.color[2]);
     c.s = (int16_t)g.s;
     c.t = (int16_t)g.t;
+    c.unused = 0;
 
     g.strip[g.strip_count++] = c;
     switch (g.prim) {
@@ -921,11 +925,18 @@ static int clip_plane_f(const KhdaysG3dClipVertex *in, int n, KhdaysG3dClipVerte
             c.b = a->b + (b->b - a->b) * f;
             c.s = a->s + (b->s - a->s) * f;
             c.t = a->t + (b->t - a->t) * f;
+            c.a = a->a + (b->a - a->a) * f;
             out[m++] = c;
         }
     }
     return m;
 }
+
+/* A mod's depths (z / w): a room's farthest, then the sky's band behind it, short of 1. Each sky
+ * layer is a step nearer than the one before, as KH2 paints its skies in turn. */
+#define MOD_FAR 0.9999f
+#define MOD_SKY_END 0.99995f
+#define MOD_SKY_LAYERS 32
 
 static void finish_mod_polygon(List *out, const KhdaysG3dClipVertex *v, int n, const Polygon *in,
                                const KhdaysG3dPreInfo *info, int report)
@@ -945,20 +956,31 @@ static void finish_mod_polygon(List *out, const KhdaysG3dClipVertex *v, int n, c
     if (det != 0 && ((front && !(attr & 0x80)) || (!front && !(attr & 0x40)))) {
         return;
     }
-    if (!(attr & 0x1000)) {
-        for (int i = 0; i < n; ++i) {
-            if (v[i].z > v[i].w) {
-                return;
-            }
-        }
-    }
+    /* clipped on every side but the far one: a big floor triangle reaching past it must not vanish */
     memcpy(a, v, sizeof(*v) * n);
     for (int axis = 0; axis < 3 && count > 0; ++axis) {
-        count = clip_plane_f(a, count, b, axis, 1, widen);
+        if (axis == 2) {
+            memcpy(b, a, sizeof(*a) * (size_t)count);
+        } else {
+            count = clip_plane_f(a, count, b, axis, 1, widen);
+        }
         count = clip_plane_f(b, count, a, axis, -1, widen);
     }
     if (count < 3) {
         return;
+    }
+    /* the depth, only after clipping with the true one: past the far plane, at it; a sky, its layer */
+    {
+        const int layer =
+            KHDAYS_G3D_SKY_LAYER(in->flags) < MOD_SKY_LAYERS ? KHDAYS_G3D_SKY_LAYER(in->flags) : MOD_SKY_LAYERS;
+        const float sky = MOD_SKY_END - (float)(layer - 1) * ((MOD_SKY_END - MOD_FAR) / (float)MOD_SKY_LAYERS);
+        for (int i = 0; i < count; ++i) {
+            if (layer > 0) {
+                a[i].z = a[i].w * sky;
+            } else if (a[i].z > a[i].w * MOD_FAR) {
+                a[i].z = a[i].w * MOD_FAR;
+            }
+        }
     }
     if (!khdays_g3d_list_reserve(out, out->npolys + 1, out->nverts + count)) {
         if (report) {
@@ -993,6 +1015,7 @@ static void finish_mod_polygon(List *out, const KhdaysG3dClipVertex *v, int n, c
             o->b = a[i].b;
             o->s = a[i].s;
             o->t = a[i].t;
+            o->a = a[i].a;
             if (o->y < p->ymin)
                 p->ymin = o->y;
             if (o->y > p->ymax)
@@ -1005,7 +1028,7 @@ static void finish_mod_polygon(List *out, const KhdaysG3dClipVertex *v, int n, c
 }
 
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
-                            int translucent_)
+                            int translucent_, int sky)
 {
     Polygon what;
     if (n < 3 || n > 4) {
@@ -1014,7 +1037,8 @@ void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, 
     memset(&what, 0, sizeof(what));
     what.attr = attr;
     what.tex = replacement >= 0 ? tex : 0;
-    what.flags = KHDAYS_G3D_MOD | (g.hud ? KHDAYS_G3D_HUD | (g.hud == 2 ? KHDAYS_G3D_OVER_2D : 0) : 0);
+    what.flags = KHDAYS_G3D_MOD | (sky > 0 ? KHDAYS_G3D_SKY | (((sky < 255 ? sky : 255) & 0xff) << 8) : 0) |
+                 (g.hud ? KHDAYS_G3D_HUD | (g.hud == 2 ? KHDAYS_G3D_OVER_2D : 0) : 0);
     what.replacement = replacement;
     what.translucent = translucent_ || translucent(attr, 0);
     KhdaysG3dPreInfo spare;

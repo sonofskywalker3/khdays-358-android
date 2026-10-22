@@ -572,6 +572,15 @@ HOOKS = {
             "FSOverlayInitFunc *p = (khdays_data_init((int)p_ovi->header.id), p_ovi->header.sinit_init);",
         )
     ],
+    # An overlay the game unloads is unloaded for the port too (runtime/core/overlays.c); the info's
+    # first word is its id.
+    "main@0200b69c": [
+        (  # FS_UnloadOverlayImage
+            "    FS_EndOverlay(p);\n",
+            "    FS_EndOverlay(p);\n"
+            "    { extern void khdays_overlay_ended(int id); khdays_overlay_ended(*(int *)p); }\n",
+        )
+    ],
     # An object's update returns its next update; the ROM calls it with its own address in r0, so
     # one that leaves r0 alone keeps itself (EMPTY_FUNCTION). Anything returned that is not native
     # code (or -1/-2) is caught here, naming the update (runtime/core/diag.c).

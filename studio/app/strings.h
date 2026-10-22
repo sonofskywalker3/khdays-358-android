@@ -106,6 +106,7 @@ enum class S {
     restart_note,
     play,
     stop,
+    sound_cannot_play,
     settings,
     language,
     language_system,

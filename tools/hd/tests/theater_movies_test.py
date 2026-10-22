@@ -33,7 +33,7 @@ class Movies(unittest.TestCase):
         tm.SCENE_MAP = root / "hd_scenes.txt"
         tm.SCENE_MAP.write_text(
             "# the port's\nEV_S#196 hd002 ; pictures\nEV_S#3 off ; none\nmnl#0 hd000 # a comment\n"
-            "EV_S#169 hd131a hd132\n",
+            "EV_S#169 hd131a hd132\nEV_S#182 hd132[1.5:3] hd140[:2] ; parts\n",
             encoding="utf-8",
         )
 
@@ -42,7 +42,7 @@ class Movies(unittest.TestCase):
         self.temp.cleanup()
 
     def test_scene_stems(self):
-        self.assertEqual(tm.scene_stems(), ["hd002", "hd000", "hd131a", "hd132"])
+        self.assertEqual(tm.scene_stems(), ["hd002", "hd000", "hd131a", "hd132", "hd140"])
 
     def test_videos(self):
         (self.movies / "hd002.mp4").write_bytes(scrambled(PLAIN))  # as the collection ships them

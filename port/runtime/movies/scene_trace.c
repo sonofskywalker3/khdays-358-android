@@ -14,6 +14,7 @@
 #include "movie_hd.h"
 #include "scenes.h"
 #include "../core/events.h"
+#include "../core/session_log.h"
 #include "../core/window.h"
 
 #include <stdio.h>
@@ -141,9 +142,9 @@ void khdays_scene_field_record(void *record, int from_argument)
     }
 }
 
-/* KHDAYS_TEST_SKIP_AT=<frames>: that many frames after a stretch begins, the port asks the game's own
- * skip, as the event pause's Skip does (PauseMenu_Frame: the sound effects stopped, the skip
- * request at the state's +0x588 set), at the machine's next step. */
+/* Asks the game's own skip, as the pause's Skip does (sound effects stopped, the request at +0x588
+ * set), from frame `skip_frame` on: for a scene the map skips, or KHDAYS_TEST_SKIP_AT frames into any
+ * stretch. */
 static uint32_t skip_state, skip_frame;
 
 /* KHDAYS_TEST_SCENE=<slot>:<entry> (4:6 for EV_S#6): the first scene path the event's script holds
@@ -197,7 +198,7 @@ void khdays_scene_step(void *st)
     }
     SoundMgr_StopAllSePlayers();
     *(volatile uint32_t *)((uint8_t *)st + STATE_SKIP) = 1u;
-    fprintf(stderr, "scene: f%u KHDAYS_TEST_SKIP_AT: the game's skip asked\n", khdays_events_vblank_count());
+    fprintf(stderr, "scene: f%u the game's skip asked\n", khdays_events_vblank_count());
     skip_state = 0u;
 }
 
@@ -210,6 +211,13 @@ const char *khdays_scene_current(void)
     return current;
 }
 
+/* The scenes' skip mark (GameState field 0x2484): a skipped scene sets it and the scenes after it skip
+ * themselves while it is set. The port clears it after its own skip (HD videos watched), so the next
+ * scene of a chain still plays. */
+#define SKIP_MARK 0x2484
+extern void GameState_SetField(int field, int bits, int value);
+static int map_skip; /* the scene running now was skipped as the scene map says (not by the player) */
+
 /* Game_ActionSetBranchTarget (prepare.py HOOKS): `state` the script machine's (a reference), the
  * operand the target's offset from the entry's script start, -1 clearing it. */
 void khdays_scene_target(unsigned int state, int operand)
@@ -217,8 +225,14 @@ void khdays_scene_target(unsigned int state, int operand)
     const uint32_t depth = u32_at(state + STATE_DEPTH);
     const uint32_t entry = state + STATE_ENTRIES + depth * ENTRY_SIZE;
     if (operand == -1) {
+        const int watched = khdays_movie_hd_scene_ended();
+        if (watched || map_skip) {
+            GameState_SetField(SKIP_MARK, 1, 0);
+            khdays_log("scene %s: the game's mark of a skipped scene cleared (%s), so the scene after it plays",
+                       current, watched ? "its HD videos were watched" : "the HD movie before it showed it");
+        }
+        map_skip = 0;
         current[0] = '\0';
-        khdays_movie_hd_scene_ended();
     } else if (!khdays_scenes_recognise(u32_at(entry + ENTRY_START), current, (int)sizeof(current))) {
         current[0] = '\0';
     } else if (getenv("KHDAYS_TEST_SKIP_AT") != NULL) {
@@ -228,8 +242,13 @@ void khdays_scene_target(unsigned int state, int operand)
     } else if ((*(const volatile uint8_t *)KHDAYS_W(MISSION_FLAGS) & MISSION_MODE) == 0u) {
         /* the story's: the theater's videos in its place when the map gives them */
         const KhdaysSceneEntry *e = khdays_scene_map_find(khdays_scenes_map(), current);
-        if (e != NULL && !e->off) {
-            khdays_movie_hd_scene(current, state, e->stems, e->stem_count);
+        if (e != NULL && e->skip && khdays_movie_hd_last_shown(e->stems[0])) {
+            skip_state = state; /* the HD movie before it showed it */
+            skip_frame = khdays_events_vblank_count();
+            map_skip = 1;
+            khdays_log("scene %s: skipped, as %s before it showed it", current, e->stems[0]);
+        } else if (e != NULL && !e->off && !e->skip) {
+            khdays_movie_hd_scene(current, state, e->stems, e->from, e->until, e->stem_count);
         }
     }
     if (tracing_scenes()) {
@@ -243,6 +262,10 @@ void khdays_scene_target(unsigned int state, int operand)
                 fprintf(stderr, "ds (not in the map)\n");
             } else if (e->off) {
                 fprintf(stderr, "ds (off)\n");
+            } else if (e->skip) {
+                fprintf(stderr, "%s\n",
+                        khdays_movie_hd_last_shown(e->stems[0]) ? "skipped (the HD movie showed it)"
+                                                                : "ds (its HD movie not shown)");
             } else {
                 fprintf(stderr, "hd");
                 for (int i = 0; i < e->stem_count; ++i) {

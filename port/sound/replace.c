@@ -2,10 +2,15 @@
 #include "replace.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h> /* MultiByteToWideChar: open_utf8 */
+#endif
 
 #define STB_VORBIS_HEADER_ONLY
 #include "stb_vorbis.c"
@@ -94,9 +99,28 @@ static uint16_t le16(const uint8_t *p)
     return (uint16_t)(p[0] | p[1] << 8);
 }
 
+/* Opens a file by its UTF-8 path; on Windows through the wide path, so names like "Días" work. */
+static FILE *open_utf8(const char *path, const char *mode)
+{
+#ifdef _WIN32
+    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
+    wchar_t *wide = n > 0 ? malloc((size_t)n * sizeof(wchar_t)) : NULL;
+    wchar_t wide_mode[8];
+    FILE *f = NULL;
+    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, n) == n &&
+        MultiByteToWideChar(CP_UTF8, 0, mode, -1, wide_mode, 8) > 0) {
+        f = _wfopen(wide, wide_mode);
+    }
+    free(wide);
+    return f;
+#else
+    return fopen(path, mode);
+#endif
+}
+
 static uint8_t *read_file(const char *path, size_t *size)
 {
-    FILE *f = fopen(path, "rb");
+    FILE *f = open_utf8(path, "rb");
     uint8_t *data;
     long length;
     if (f == NULL) {
@@ -226,9 +250,12 @@ static int load_flac(KhdaysReplacement *r, const char *path, const KhdaysOrigina
                      int why_size)
 {
     Comments comments = {-1, -1};
-    drflac *flac = drflac_open_file_with_metadata(path, flac_metadata, &comments, NULL);
+    size_t size;
+    uint8_t *data = read_file(path, &size); /* read here: dr_flac's own opening is not UTF-8 on Windows */
+    drflac *flac = data != NULL ? drflac_open_memory_with_metadata(data, size, flac_metadata, &comments, NULL) : NULL;
     if (flac == NULL) {
-        say(why, why_size, "is not a FLAC file dr_flac can read");
+        say(why, why_size, data == NULL ? "cannot be read" : "is not a FLAC file dr_flac can read");
+        free(data);
         return 0;
     }
     r->rate = flac->sampleRate;
@@ -236,17 +263,20 @@ static int load_flac(KhdaysReplacement *r, const char *path, const KhdaysOrigina
     r->frames = flac->totalPCMFrameCount;
     if (r->channels < 1 || r->channels > 2 || r->frames == 0) {
         drflac_close(flac);
+        free(data);
         say(why, why_size, "has other than 1 or 2 channels, or no length");
         return 0;
     }
     r->samples = malloc((size_t)r->frames * (size_t)r->channels * sizeof(int16_t));
     if (r->samples == NULL) {
         drflac_close(flac);
+        free(data);
         say(why, why_size, "is too large");
         return 0;
     }
     r->frames = drflac_read_pcm_frames_s16(flac, r->frames, r->samples);
     drflac_close(flac);
+    free(data);
     set_loop(r, comments.start, comments.start >= 0 && comments.length > 0 ? comments.start + comments.length : -1,
              original);
     return 1;
@@ -257,13 +287,16 @@ static int load_flac(KhdaysReplacement *r, const char *path, const KhdaysOrigina
 static int load_ogg(KhdaysReplacement *r, const char *path, const KhdaysOriginalLoop *original, char *why, int why_size)
 {
     int error = 0;
-    stb_vorbis *ogg = stb_vorbis_open_filename(path, &error, NULL);
+    size_t size;
+    uint8_t *data = read_file(path, &size); /* read here: stb_vorbis's own opening is not UTF-8 on Windows */
+    stb_vorbis *ogg = data != NULL && size <= INT_MAX ? stb_vorbis_open_memory(data, (int)size, &error, NULL) : NULL;
     stb_vorbis_info info;
     stb_vorbis_comment list;
     Comments comments = {-1, -1};
     uint64_t made = 0;
     if (ogg == NULL) {
-        say(why, why_size, "is not an Ogg Vorbis file stb_vorbis can read");
+        say(why, why_size, data == NULL ? "cannot be read" : "is not an Ogg Vorbis file stb_vorbis can read");
+        free(data);
         return 0;
     }
     info = stb_vorbis_get_info(ogg);
@@ -276,12 +309,14 @@ static int load_ogg(KhdaysReplacement *r, const char *path, const KhdaysOriginal
     r->frames = stb_vorbis_stream_length_in_samples(ogg);
     if (r->channels < 1 || r->channels > 2 || r->frames == 0) {
         stb_vorbis_close(ogg);
+        free(data);
         say(why, why_size, "has other than 1 or 2 channels, or no length");
         return 0;
     }
     r->samples = malloc((size_t)r->frames * (size_t)r->channels * sizeof(int16_t));
     if (r->samples == NULL) {
         stb_vorbis_close(ogg);
+        free(data);
         say(why, why_size, "is too large");
         return 0;
     }
@@ -294,6 +329,7 @@ static int load_ogg(KhdaysReplacement *r, const char *path, const KhdaysOriginal
         made += (uint64_t)got;
     }
     stb_vorbis_close(ogg);
+    free(data);
     r->frames = made;
     set_loop(r, comments.start, comments.start >= 0 && comments.length > 0 ? comments.start + comments.length : -1,
              original);
@@ -423,7 +459,7 @@ int khdays_replacement_write_wav(const char *path, uint32_t rate, int channels, 
     memcpy(h, "data", 4);
     put32(h + 4, (uint32_t)data_size);
     h += 8;
-    f = fopen(path, "wb");
+    f = open_utf8(path, "wb");
     if (f == NULL) {
         return 0;
     }

@@ -75,8 +75,10 @@ release of KINGDOM HEARTS 358/2 Days; it finds it by itself where KH Melon Mix k
 KINGDOM HEARTS HD 1.5+2.5 ReMIX folder), prepares the game's data from it, and
 can also make the HD pack from your HD collections, add the port to Steam (PC
 and Steam Deck), and install the mod studio. Nothing of the game comes with
-it. The port tells you when a newer release is out. More:
-[`installer/README.md`](installer/README.md).
+it. The port tells you when a newer release is out, and its Download updates
+your copy by itself: it fetches the new installer, checks it, closes the game,
+updates it with your choices (Windows asks for the administrator's permission)
+and opens it again. More: [`installer/README.md`](installer/README.md).
 
 ### On Android
 
@@ -301,7 +303,8 @@ once:
 - **Antialiasing** (off, 2x, 3x, 4x): the picture made that many times
   larger, then shrunk to the size shown, each pixel the average of what is
   under it -- the 3D's edges come out smooth instead of in steps. 2x is four times the graphics
-  card's work, 4x sixteen; off by default. (A mod's textures, and the HD
+  card's work, 4x sixteen; off by default, and the settings warn while it is on, as the internal
+  resolution already draws the 3D at the window's size or larger. (A mod's textures, and the HD
   replacements, are read at the size they are drawn whatever this says:
   smaller copies of each are kept, so a model far away does not break into
   steps that flicker.)
@@ -669,7 +672,10 @@ them from your copy with `tools/hd/theater_movies.py --videos` (see
 nothing of them is in this repository, and `data/` is never committed. With the Movies setting on HD, a movie that has one shows it over
 the whole window with its own sound, in both screen layouts; the game plays
 its own movie behind it, unseen, and waits at its end until the video ends.
-START stops the video where the DS lets you skip the movie. Windows decodes
+Where the DS lets you skip the movie, START pauses the video under the
+DS's own scene pause (PAUSE, Continue, Skip), drawn from the game's pieces:
+the game has no pause over its movies, but the HD scenes have the game's, so
+the movies have the same. Windows decodes
 the videos (Media Foundation); a file it cannot play, or a movie without an
 HD video, plays the game's movie, and the log says why. A mod's movie for the
 same movie comes first. The theater's subtitles show over them (see
@@ -678,18 +684,33 @@ same movie comes first. The theater's subtitles show over them (see
 **HD scenes.** The theater also holds the game's event scenes the DS draws in
 real time, made again in HD, and Roxas's monologues as a voice. The same tool
 makes the ones the port plays: the scene map, `port/movies/hd_scenes.txt`
-(86 scenes and 7 monologues, each paired by its lines or its pictures, every
+(95 scenes and 7 monologues, each paired by its lines or its pictures, every
 pair checked side by side; `tools/hd/scene_report.py` says where each video
 of your collection plays). With the Movies setting on HD, when the game
 reaches a scene of the map its videos play over the whole window with their
 sound and subtitles while the game waits; then the game takes its own skip,
-so it goes on exactly as after the DS's Skip. A day's monologue keeps the
+so it goes on exactly as after the DS's Skip. Nothing is cut: the game's
+picture and sound go down to black and silence over half a second before the
+videos, the videos come up from them and go down to them at their end, and
+the game comes up again after them. A day's monologue keeps the
 game's page, and the theater's voice reads it. Without the video, or with
 Movies on PC or DS, the DS's scene plays. START pauses the video and opens
 the game's own pause over it, as on the DS: Continue goes on with the video,
 Skip ends the scene (on two screens the pause shows over the game's screens).
+Three of the theater's movies go on past the DS's: hd830 and hd836 also hold
+the event scene that follows them (Riku and Mickey; Riku and Roxas before
+their fight), so after them that scene is skipped (`skip`), and hd833 also
+shows the fight against Xion the player fights next, so it is split along the
+fight: it stops as the screen fades to black, the game's own scenes take
+Roxas through Wonderland, Neverland and Agrabah, the scene that brings him
+back to Twilight Town shows its next part (Roxas drawing his Keyblade and
+leaping into the fight), and the rest of it, the fight to its end, plays once
+the player has won, before hd848 (`mv#833 hd833[:128.4]`, `EV_S#182
+hd833[129.4:173.2]`, `EV_S#183 hd833[173.2:]`).
 A mod's `cutscenes/scenes.txt` adds or replaces entries (`<script> <videos>
-; <evidence>`, or `off` for the DS's scene), and its
+; <evidence>`, `off` for the DS's scene, `skip <video>` for a scene that
+video shows; `mv#<movie> <videos>`, or `off`, for a movie; a video may be a
+part of it, `<video>[<from>:<until>]` in seconds), and its
 `cutscenes/cinematics/<video>.mp4` comes before your own.
 
 Most of the theater's videos, scenes and movies alike, hold the voices and

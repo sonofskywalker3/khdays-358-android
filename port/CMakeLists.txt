@@ -331,6 +331,7 @@ if(WIN32)
     set(KHDAYS_PLATFORM_SOURCES
         resources/game.rc   # the executable's icon (port/resources/game.ico)
         runtime/core/memory.c
+        host/app/update_install_win.c      # its installer run to update this copy
         host/net/https_win.c               # the update check, asked of GitHub through WinHTTP
         host/app/context_win.c
         host/app/context_x64.asm             # the contexts' switch (host/app/context.h)
@@ -342,6 +343,7 @@ else()
     set(KHDAYS_PLATFORM_SOURCES
         runtime/core/memory_posix.c
         host/net/https_none.c
+        host/app/update_install_none.c
         host/app/context_posix.c
         host/app/context_arm64.S
         host/app/files_posix.c
@@ -486,7 +488,7 @@ target_sources(khdays-native PRIVATE
     runtime/core/start.c
     runtime/core/vram.c
     host/app/window.c
-    host/app/updates.c                 # a newer release, told of on the title
+    host/app/updates.c                 # a newer release, told of on the title,
     host/app/release_version.c
     host/app/sound_output.c
     host/settings/settings_sample.cpp       # the settings menu's volume samples (specs/019)
@@ -500,6 +502,7 @@ target_sources(khdays-native PRIVATE
     host/screens/room_screen.c             # the port's list of Mission Mode's rooms on the screen
     host/screens/select_screen.c           # Mission Mode's character select on one screen
     host/screens/camp_screen.c             # Mission Mode's camp menu on one screen
+    host/screens/movie_pause.cpp           # the DS's scene pause over an HD movie
     runtime/display/frame_package.c
     runtime/display/gfx_check.c
     runtime/core/origin.c
@@ -630,7 +633,8 @@ target_compile_options(khdays-input-test PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-input COMMAND khdays-input-test)
 # The course of an HD movie (specs/013) against a scripted game and video.
-add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/core/clock.c)
+add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/movies/scene_map.c
+               runtime/core/clock.c)
 target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
@@ -654,6 +658,9 @@ target_link_libraries(khdays-movie-hd-decode-test PRIVATE khdays-sound SDL3::SDL
 target_compile_options(khdays-movie-hd-decode-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd-decode
          COMMAND khdays-movie-hd-decode-test "${CMAKE_CURRENT_SOURCE_DIR}/../data/cutscenes/cinematics/hd808.mp4" 7.19)
+# ... a part of it, as the scene map plays a movie's video
+add_test(NAME khdays-movie-hd-part
+         COMMAND khdays-movie-hd-decode-test "${CMAKE_CURRENT_SOURCE_DIR}/../data/cutscenes/cinematics/hd808.mp4" 7.19 2.0 5.0)
 # The port's elements in the composition (specs/011): fixed screens composed on the CPU.
 # The multiplayer session's delivery (specs/015): two processes on this
 # machine, a room found and joined, records through 30% loss.
@@ -685,9 +692,15 @@ add_executable(khdays-elements-test tests/elements_test.c)
 target_link_libraries(khdays-elements-test PRIVATE khdays-gfx)
 target_compile_options(khdays-elements-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-elements COMMAND khdays-elements-test)
+# A mod's polygons into a list: the near plane only, a sky behind everything else.
+add_executable(khdays-mod-polygon-test tests/mod_polygon_test.c)
+target_link_libraries(khdays-mod-polygon-test PRIVATE khdays-gfx)
+target_compile_options(khdays-mod-polygon-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-mod-polygon COMMAND khdays-mod-polygon-test)
 # The one-screen picture: the compositions' places and the port's own file, the pass's steps and the 2D
 # apart from the 3D, on the CPU.
-add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/situation.c host/render/png_io.c)
+add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/situation.c ui/situation_decide.c
+                                     host/render/png_io.c)
 target_include_directories(khdays-onescreen-test PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(khdays-onescreen-test PRIVATE khdays-gfx SDL3::SDL3)
 target_compile_definitions(khdays-onescreen-test PRIVATE "KHDAYS_PORT_COMPOSITIONS_FILE=\"${KHDAYS_PORT_COMPOSITIONS}\""

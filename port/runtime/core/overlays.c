@@ -74,6 +74,24 @@ void khdays_overlay_started(int id)
     }
 }
 
+/* The game unloaded overlay `id` (FS_UnloadOverlayImage); its bytes stay until another overlay
+ * overwrites them. */
+void khdays_overlay_ended(int id)
+{
+    if (count < 0) {
+        read_table();
+    }
+    if (id < 0 || id >= count || !overlays[id].loaded) {
+        return;
+    }
+    overlays[id].loaded = 0;
+    khdays_function_references_moved();
+    khdays_log("overlay %d ended", id);
+    if (getenv("KHDAYS_TRACE_OVERLAYS") != NULL) {
+        fprintf(stderr, "overlay: %d ended (frame %u)\n", id, khdays_events_vblank_count());
+    }
+}
+
 /* The game's reset (start.c): no overlay is loaded any more. */
 void khdays_overlays_reset(void)
 {

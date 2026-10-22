@@ -24,6 +24,16 @@ int khdays_analog_heading(int x, int y)
     return heading & (FULL_TURN - 1);
 }
 
+int khdays_analog_heading_turned(int stick, int dpad)
+{
+    /* the D-pad's bits come from the same stick: within an eighth of a turn of it unless turned */
+    const int apart = (dpad - stick) & (FULL_TURN - 1);
+    if (apart >= FULL_TURN / 4 && apart <= FULL_TURN * 3 / 4) {
+        return (stick + FULL_TURN / 2) & (FULL_TURN - 1);
+    }
+    return stick;
+}
+
 int khdays_analog_tilt(int x, int y)
 {
     const double pushed = sqrt((double)x * x + (double)y * y) * 100.0 / 32767.0;

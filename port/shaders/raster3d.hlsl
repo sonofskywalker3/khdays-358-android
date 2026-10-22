@@ -13,7 +13,7 @@ struct Polygon {
 };
 
 struct Vertex {
-    float x, y, z, w, r, g, b, s, t;
+    float x, y, z, w, r, g, b, s, t, a;
 };
 
 static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's polygon
@@ -51,7 +51,7 @@ cbuffer Params : register(b0, space2) {
 
 #define TEX_PAL 0x80000u
 
-// gfx/g3d.h's KhdaysG3dPolygon (40 bytes) and KhdaysG3dVertex (36 bytes), word by word
+// gfx/g3d.h's KhdaysG3dPolygon (40 bytes) and KhdaysG3dVertex (40 bytes), word by word
 Polygon polygon_at(uint i)
 {
     const uint4 a = polys.Load4(i * 40u), b = polys.Load4(i * 40u + 16u);
@@ -72,7 +72,7 @@ Polygon polygon_at(uint i)
 
 Vertex vertex_at(int i)
 {
-    const uint at = (uint)i * 36u;
+    const uint at = (uint)i * 40u;
     const float4 a = asfloat(verts.Load4(at)), b = asfloat(verts.Load4(at + 16u));
     Vertex v;
     v.x = a.x;
@@ -83,7 +83,9 @@ Vertex vertex_at(int i)
     v.g = b.y;
     v.b = b.z;
     v.s = b.w;
-    v.t = asfloat(verts.Load(at + 32u));
+    const uint2 c = verts.Load2(at + 32u);
+    v.t = asfloat(c.x);
+    v.a = asfloat(c.y);
     return v;
 }
 
@@ -403,7 +405,7 @@ struct Pixel {
 };
 
 struct Attrs {
-    float iw, r, g, b, s, t, z;
+    float iw, r, g, b, s, t, z, a;
 };
 
 Attrs attrs_of(Vertex v)
@@ -417,6 +419,7 @@ Attrs attrs_of(Vertex v)
     a.s = v.s * iw;
     a.t = v.t * iw;
     a.z = v.z;
+    a.a = v.a * iw;
     return a;
 }
 
@@ -430,6 +433,7 @@ Attrs lerp_attrs(Attrs a, Attrs b, float f)
     precise float s = a.s + (b.s - a.s) * f;
     precise float t = a.t + (b.t - a.t) * f;
     precise float z = a.z + (b.z - a.z) * f;
+    precise float va = a.a + (b.a - a.a) * f;
     o.iw = iw;
     o.r = r;
     o.g = g;
@@ -437,6 +441,7 @@ Attrs lerp_attrs(Attrs a, Attrs b, float f)
     o.s = s;
     o.t = t;
     o.z = z;
+    o.a = va;
     return o;
 }
 
@@ -524,6 +529,10 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     if (alpha == 0) {  // wire-frame: only the edges, solid
         if (edge == 0u) return;
         alpha = 31;
+    } else if (((uint)p.flags & G3D_MOD) != 0u) {
+        // a mod's vertex alpha, blended across the polygon
+        alpha = (int)((float)alpha * saturate(at.a * w) + 0.5f);
+        if (alpha == 0) return;
     }
     rv = clamp(rv, 0, cmax);
     gv = clamp(gv, 0, cmax);

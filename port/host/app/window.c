@@ -21,6 +21,7 @@
 #include "../screens/room_screen.h"
 #include "../screens/select_screen.h"
 #include "../screens/camp_screen.h"
+#include "../screens/movie_pause.h"
 #include "../screens/save_screen.h"
 #include "sound_output.h"
 #include "updates.h"
@@ -406,12 +407,33 @@ static void stop_game_for_menu(void)
     }
 }
 
-/* Opens the menu for the notice of a newer release alone (host/app/updates.h). */
+/* Opens the menu with only the notice of a newer release (host/app/updates.h). */
 static void open_update_notice(const char *tag)
 {
+    static const KhdaysUpdateHooks hooks = {khdays_updates_can_install, khdays_updates_download,
+                                            khdays_updates_download_state, khdays_updates_download_cancel,
+                                            khdays_updates_install};
     khdays_log("updates: telling the player of %s", tag);
     stop_game_for_menu();
-    khdays_settings_offer_update(khdays_devices_profile(), khdays_updates_version(), tag);
+    khdays_settings_offer_update(khdays_devices_profile(), khdays_updates_version(), tag, &hooks);
+}
+
+static void close_settings(void);
+
+/* The menu has closed: acts on the update notice's answer, and closes the game once the update's
+ * installer runs (it replaces the game's files). */
+static void settings_closed(SDL_Window *window, SDL_Renderer *renderer)
+{
+    const int update = khdays_settings_take_update_answer();
+    close_settings();
+    if (update >= 0) {
+        khdays_updates_answer(update); /* the notice's: the page opened, or not told again */
+    }
+    if (update == KHDAYS_UPDATE_INSTALL) {
+        khdays_log("updates: the game closes for its installer");
+        _Exit(0);
+    }
+    redraw(window, renderer);
 }
 
 /* Opens the settings menu (the game pauses, stop_game_for_menu). */
@@ -455,7 +477,9 @@ static void close_settings(void)
     if (settings_stopped) {
         khdays_clock_hold(KHDAYS_HOLD_SETTINGS, 0);
         khdays_sound_output_pause(0);
-        khdays_hd_pause(0);
+        if (!khdays_movie_hd_course_paused()) {
+            khdays_hd_pause(0); /* not a video its course keeps paused (a pause over it) */
+        }
         khdays_hd_voice_pause(0);
         settings_stopped = 0;
     }
@@ -581,7 +605,7 @@ static int host_thread(void *unused)
          * refresh rate whether or not the game sends frames (the game waits at
          * the movie's end). Here we watch for its end and pass on START, which
          * the waiting game thread cannot read. */
-        const int movie = khdays_movie_hd_showing();
+        const int movie = khdays_movie_hd_running();
         /* So is an animated backdrop (the title's, ui/composition.h): its pieces move while the
          * game's still menu sends no frames. */
         const int backdrop = khdays_present_backdrop_moving();
@@ -614,6 +638,9 @@ static int host_thread(void *unused)
                 khdays_settings_tick();
                 if (khdays_settings_is_open()) {
                     apply_changes(); /* a held direction keeps repeating its change */
+                } else {
+                    settings_closed(window, renderer); /* by itself: the update's installer runs */
+                    continue;
                 }
             }
             if ((smooth && khdays_present_refresh()) || (backdrop && khdays_present_refresh_backdrop()) ||
@@ -645,6 +672,7 @@ static int host_thread(void *unused)
             khdays_room_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
             khdays_camp_screen_renderer_gone();
+            khdays_movie_pause_renderer_gone();
             khdays_present_close();
             SDL_DestroyWindow(window);
             SDL_Quit();
@@ -681,6 +709,7 @@ static int host_thread(void *unused)
             khdays_room_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
             khdays_camp_screen_renderer_gone();
+            khdays_movie_pause_renderer_gone();
             renderer = khdays_present_event(&event, &renewed);
             khdays_settings_set_graphics_card(khdays_present_gpu());
             tell_game();
@@ -709,12 +738,12 @@ static int host_thread(void *unused)
             static Uint64 drawn_at;
             khdays_devices_handle(&event, renderer);
             if (khdays_settings_handle(&event, window)) {
-                const int update = khdays_settings_take_update_answer();
-                close_settings();
-                if (update >= 0) {
-                    khdays_updates_answer(update); /* the notice's: the page opened, or not told again */
-                }
-                redraw(window, renderer);
+                settings_closed(window, renderer);
+                continue;
+            }
+            khdays_settings_tick(); /* also while events keep coming (a gamepad's stream of them) */
+            if (!khdays_settings_is_open()) {
+                settings_closed(window, renderer);
                 continue;
             }
             apply_changes();

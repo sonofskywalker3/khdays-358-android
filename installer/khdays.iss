@@ -61,9 +61,13 @@ Source: "{#Stage}\setup\python\*"; DestDir: "{tmp}\helper\setup\python"; Exclude
 Source: "{#Stage}\installer\*"; DestDir: "{tmp}\helper\installer"; Flags: dontcopy recursesubdirs
 Source: "{#Stage}\tools\*"; DestDir: "{tmp}\helper\tools"; Flags: dontcopy
 ; the port, its tools and its Python (the studio is apart, installed only when chosen)
-Source: "{#Stage}\*"; DestDir: "{app}"; Excludes: "studio\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Stage}\*"; DestDir: "{app}"; Excludes: "\studio"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; the mod studio, beside the port so it shares the game's data, only if the player chose it
 Source: "{#Stage}\studio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Tasks: studio
+
+[Dirs]
+; where the player's mods go, there from the start even with none
+Name: "{app}\mods"
 
 [Tasks]
 ; off by default: the installer asks whether to install the mod studio too
@@ -79,6 +83,8 @@ Name: "{autoprograms}\{cm:SmoothShortcut}"; Filename: "{app}\setup\python\python
 ; the shortcut earlier versions made, its name cut at the "/" into a folder of its own
 Type: files; Name: "{autoprograms}\KH 358\2 Days Port.lnk"
 Type: dirifempty; Name: "{autoprograms}\KH 358"
+; the empty studio folder earlier versions left (the studio goes beside the port)
+Type: dirifempty; Name: "{app}\studio"
 
 [Run]
 ; make the install folder writable by the player (the SID is the Users group, name-independent),
@@ -616,6 +622,19 @@ begin
   Result := DataOk;
 end;
 
+{ Run by the game itself to update this copy (host/app/update_install_win.c: /SILENT /AUTOUPDATE
+  /DIR=...): Steam's entry is left as it is (changing it would close Steam, which may be running the
+  game's shortcut), and the game is opened again at the end. }
+function AutoUpdate: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/AUTOUPDATE') = 0 then
+      Result := True;
+end;
+
 { Program Files (an administrator install) needs the folder made writable for the player; a
   per-user install (/PRIVILEGESREQUIRED=lowest) is already writable, so the grant is skipped. }
 function NeedsWriteGrant: Boolean;
@@ -654,7 +673,10 @@ begin
     { the starting settings, when the install has none yet (a player's own are kept on an update);
       if it does not run, the port writes its own defaults on first start, so no error is shown }
     RunHelperIn(ExpandConstant('{app}'), 'seed-settings "' + ExpandConstant('{app}') + '"', Json);
-    { the port as a non-Steam game: added when chosen, taken out when a re-run turns it off }
+    { the port as a non-Steam game: added when chosen, taken out when a re-run turns it off (an
+      update the game runs leaves it as it is) }
+    if AutoUpdate then
+      Exit;
     if SteamFound and SteamAdd.Checked and not UnderWine then begin
       WizardForm.StatusLabel.Caption := CustomMessage('SteamAdding');
       WizardForm.Refresh;
@@ -667,6 +689,10 @@ begin
     end else if SteamFound and SteamPresent and not SteamAdd.Checked and not UnderWine then
       DoSteam('remove-from-steam', ExpandConstant('{app}'), not WizardSilent);
   end;
+  { an update the game ran: the game again, as the player (not the administrator that installed it) }
+  if (CurStep = ssDone) and AutoUpdate and DataOk then
+    ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait,
+      Code);
 end;
 
 { ---- Uninstalling: the player's saves and settings kept unless they ask ---- }

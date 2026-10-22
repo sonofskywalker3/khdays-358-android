@@ -1,4 +1,5 @@
-/* SHA-256 (FIPS 180-4): the mods' fingerprints (runtime/scripts). */
+/* SHA-256 (FIPS 180-4): the mods' fingerprints (runtime/scripts), the update's installer checked
+ * (host/app/updates.c). */
 #ifndef KHDAYS_SHA256_H
 #define KHDAYS_SHA256_H
 

@@ -22,6 +22,14 @@ typedef struct KhdaysHdInfo {
  * showing its first picture, until khdays_hd_start. */
 int khdays_hd_open(const char *path, KhdaysHdInfo *info, char *why, size_t size);
 
+/* The same for a part of the file: from `from` seconds of it (0 its start) to `until` (0 its end),
+ * as if the file began and ended there; its clock reads the file's own time. */
+int khdays_hd_open_part(const char *path, double from, double until, KhdaysHdInfo *info, char *why, size_t size);
+
+/* Fades for the next video opened only: in from black and silence over `in` seconds, out over the
+ * last `out` seconds (of its part); 0 for none. */
+void khdays_hd_fades(double in, double out);
+
 /* Starts the video: its sound starts, and its clock with it. */
 void khdays_hd_start(void);
 
@@ -50,6 +58,7 @@ typedef struct KhdaysHdPicture {
     int pitch, width, height;
     double time; /* its presentation time in the file, in seconds */
     double fps;  /* the file's frame rate, 0 when it does not say */
+    float level; /* how much of it shows through the video's fades (khdays_hd_fades): 1 all, 0 black */
 } KhdaysHdPicture;
 int khdays_hd_picture_begin(KhdaysHdPicture *picture);
 void khdays_hd_picture_done(void);

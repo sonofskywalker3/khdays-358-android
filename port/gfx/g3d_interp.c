@@ -161,15 +161,15 @@ int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, co
             const KhdaysG3dPreVertex *a = &older->pre_verts[q->first + k];
             KhdaysG3dPreVertex *b = &work->verts[p->first + k];
             if (p->flags & KHDAYS_G3D_MOD) {
-                float fa[9], fb[9];
+                float fa[10], fb[10];
                 memcpy(fa, a->word, sizeof(fa));
                 memcpy(fb, b->word, sizeof(fb));
-                for (int w = 0; w < 9; ++w) {
+                for (int w = 0; w < 10; ++w) {
                     fb[w] = (float)((double)fa[w] + ((double)fb[w] - (double)fa[w]) * t);
                 }
                 memcpy(b->word, fb, sizeof(fb));
             } else {
-                for (int w = 0; w < 9; ++w) {
+                for (int w = 0; w < 10; ++w) {
                     b->word[w] = between_fixed(a->word[w], b->word[w], t);
                 }
             }

@@ -8,6 +8,7 @@
 #include "../movies/theater_music.h"
 #include "profile.h"
 #include "../../runtime/core/clock.h"
+#include "../../runtime/movies/movie_hd.h"
 #include "../../runtime/sound/sound.h"
 #include "../../runtime/sound/sound_bridge.h"
 
@@ -20,6 +21,7 @@
 static void *audio;              /* the SDL_AudioStream (SDL_GetAtomicPointer, SDL_SetAtomicPointer) */
 static SDL_AtomicInt paused;     /* the settings menu paused the device */
 static SDL_AtomicInt muted;      /* an HD video plays (khdays_sound_output_mute) */
+static float level_set = 1.0f;   /* the game's level around a scene's videos, as last applied */
 static SDL_AtomicInt needs_lead; /* the next samples go in after LEAD_MS of silence */
 static SDL_AtomicInt dry;        /* times the stream ran dry since the last report */
 static int device_rate;          /* the device's own rate, for the PC's mixer */
@@ -33,6 +35,13 @@ static SDL_AudioSpec input = {SDL_AUDIO_S16, 2, KHDAYS_SOUND_RATE};
 static int frame_bytes(void)
 {
     return input.format == SDL_AUDIO_F32 ? 8 : 4;
+}
+
+/* The stream's gain: 0 while muted, else the game's fade level around a scene's videos. */
+static void apply_gain(SDL_AudioStream *stream)
+{
+    level_set = khdays_movie_hd_game_level();
+    SDL_SetAudioStreamGain(stream, SDL_GetAtomicInt(&muted) ? 0.0f : level_set);
 }
 
 /* Puts LEAD_MS of silence into the stream. */
@@ -95,7 +104,7 @@ void khdays_sound_output_open(void)
     device_rate =
         SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), &device, NULL) && device.freq > 0 ? device.freq : 0;
     SDL_SetAtomicInt(&needs_lead, 1);
-    SDL_SetAudioStreamGain(stream, SDL_GetAtomicInt(&muted) ? 0.0f : 1.0f);
+    apply_gain(stream);
     SDL_ResumeAudioStreamDevice(stream);
     SDL_SetAtomicPointer(&audio, stream);
 }
@@ -119,7 +128,7 @@ void khdays_sound_output_mute(int mute)
     SDL_AudioStream *stream = (SDL_AudioStream *)SDL_GetAtomicPointer(&audio);
     SDL_SetAtomicInt(&muted, mute != 0);
     if (stream != NULL) {
-        SDL_SetAudioStreamGain(stream, mute ? 0.0f : 1.0f);
+        apply_gain(stream);
     }
 }
 
@@ -157,6 +166,12 @@ static int sound_thread(void *unused)
     for (;;) {
         SDL_Delay(1);
         khdays_sound_bridge_advance(khdays_clock_cycles());
+        if (khdays_movie_hd_game_level() != level_set) {
+            SDL_AudioStream *stream = (SDL_AudioStream *)SDL_GetAtomicPointer(&audio);
+            if (stream != NULL) {
+                apply_gain(stream);
+            }
+        }
         if (profile && SDL_GetTicks() >= report_at) {
             SDL_AudioStream *stream = (SDL_AudioStream *)SDL_GetAtomicPointer(&audio);
             const int queued = stream != NULL ? SDL_GetAudioStreamQueued(stream) : 0;

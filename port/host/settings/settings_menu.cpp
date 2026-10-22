@@ -103,10 +103,14 @@ struct Menu {
     SDL_Renderer *bound = nullptr; // the renderer the backend draws with
     float styled_size = 0;
     Uint64 last_draw = 0;
-    // A newer release told of (khdays_settings_offer_update): this build's version, the new one,
-    // and the player's answer (KHDAYS_UPDATE_*), -1 until given.
+    // The update notice (khdays_settings_offer_update): both versions and the player's answer
+    // (KHDAYS_UPDATE_*, -1 until given).
     char update_have[64] = {}, update_new[64] = {};
     int update_answer = -1;
+    int update_stage = 0;
+    bool update_hooked = false;
+    KhdaysUpdateHooks update_hooks{};
+    char update_why[256] = {};
 };
 
 Menu m;
@@ -915,8 +919,14 @@ bool mouse_click(float x, float y)
 
 // ---- A newer release (the menu opened for its notice alone) -----------------
 
-// Download, Later, Don't remind me of this version: KHDAYS_UPDATE_*, in that order.
-constexpr int kUpdateAnswers = 3;
+// The notice's stages: the offer (Download, Later, Don't remind me), downloading (Cancel), failed
+// (Open its page, Later).
+enum { UPDATE_OFFER, UPDATE_GETTING, UPDATE_FAILED };
+
+int update_answers()
+{
+    return m.update_stage == UPDATE_OFFER ? 3 : m.update_stage == UPDATE_GETTING ? 1 : 2;
+}
 
 // The answer closes the notice, and with it the menu (opened for it alone): returns true.
 bool answer_update(int answer)
@@ -929,7 +939,54 @@ bool answer_update(int answer)
 
 void update_step(int by)
 {
-    m.choice = (m.choice + kUpdateAnswers + by) % kUpdateAnswers;
+    m.choice = (m.choice + update_answers() + by) % update_answers();
+}
+
+// Answer `index` of the stage shown; returns true when it closed the notice.
+bool update_choose(int index)
+{
+    switch (m.update_stage) {
+    case UPDATE_OFFER:
+        if (index == KHDAYS_UPDATE_DOWNLOAD && m.update_hooked && m.update_hooks.can_install()) {
+            m.update_hooks.download();
+            m.update_stage = UPDATE_GETTING;
+            m.choice = 0;
+            return false;
+        }
+        return answer_update(index);
+    case UPDATE_GETTING: m.update_hooks.cancel(); return answer_update(KHDAYS_UPDATE_LATER);
+    default: return answer_update(index == 0 ? KHDAYS_UPDATE_DOWNLOAD : KHDAYS_UPDATE_LATER);
+    }
+}
+
+// Back (Escape, B, the right mouse button): later, the download given up.
+bool update_back()
+{
+    if (m.update_stage == UPDATE_GETTING) {
+        m.update_hooks.cancel();
+    }
+    return answer_update(KHDAYS_UPDATE_LATER);
+}
+
+// While the installer downloads: once checked it runs and the notice closes, or it says why not.
+void update_tick()
+{
+    char why[256] = "";
+    if (m.mode != MODE_UPDATE || m.update_stage != UPDATE_GETTING) {
+        return;
+    }
+    const int state = m.update_hooks.state(nullptr, nullptr, why, sizeof(why));
+    if (state == KHDAYS_DOWNLOAD_READY) {
+        if (m.update_hooks.install(why, sizeof(why))) {
+            answer_update(KHDAYS_UPDATE_INSTALL);
+            return;
+        }
+    } else if (state != KHDAYS_DOWNLOAD_FAILED) {
+        return;
+    }
+    SDL_strlcpy(m.update_why, why, sizeof(m.update_why));
+    m.update_stage = UPDATE_FAILED;
+    m.choice = 0;
 }
 
 // Returns true when the notice was answered (the menu closed).
@@ -944,9 +1001,9 @@ bool update_event(const SDL_Event *e)
         case SDL_SCANCODE_RIGHT: update_step(1); break;
         case SDL_SCANCODE_RETURN:
         case SDL_SCANCODE_KP_ENTER:
-        case SDL_SCANCODE_SPACE: return answer_update(m.choice);
+        case SDL_SCANCODE_SPACE: return update_choose(m.choice);
         case SDL_SCANCODE_ESCAPE:
-        case SDL_SCANCODE_BACKSPACE: return answer_update(KHDAYS_UPDATE_LATER);
+        case SDL_SCANCODE_BACKSPACE: return update_back();
         default: break;
         }
         break;
@@ -958,8 +1015,8 @@ bool update_event(const SDL_Event *e)
         case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: update_step(1); break;
         default:
             switch (face_of((SDL_GamepadButton)e->gbutton.button)) {
-            case FACE_ACCEPT: return answer_update(m.choice);
-            case FACE_BACK: return answer_update(KHDAYS_UPDATE_LATER);
+            case FACE_ACCEPT: return update_choose(m.choice);
+            case FACE_BACK: return update_back();
             default: break;
             }
             break;
@@ -973,10 +1030,10 @@ bool update_event(const SDL_Event *e)
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (e->button.button == SDL_BUTTON_LEFT) {
             if (const Place *p = place_at(KHDAYS_PLACE_ANSWER, e->button.x * m.density, e->button.y * m.density)) {
-                return answer_update(p->index);
+                return update_choose(p->index);
             }
         } else if (e->button.button == SDL_BUTTON_RIGHT) {
-            return answer_update(KHDAYS_UPDATE_LATER);
+            return update_back();
         }
         break;
     default: break;
@@ -1828,9 +1885,27 @@ void draw_prompt(float w, float h, float row_h, float pad)
         details.push_back(khdays_text(TXT_QUIT_GAME_DETAIL));
         yes = khdays_text(TXT_QUIT_GAME);
         no = khdays_text(TXT_CANCEL);
+    } else if (m.mode == MODE_UPDATE && m.update_stage == UPDATE_GETTING) {
+        long long done = 0, total = 0;
+        m.update_hooks.state(&done, &total, nullptr, 0);
+        SDL_snprintf(line, sizeof(line), khdays_text(TXT_UPDATE_GETTING), m.update_new);
+        question = line;
+        SDL_snprintf(line, sizeof(line), khdays_text(TXT_UPDATE_PROGRESS), total > 0 ? (int)(done * 100 / total) : 0,
+                     (double)done / 1048576.0, (double)total / 1048576.0);
+        details.push_back(line);
+        yes = khdays_text(TXT_CANCEL);
+    } else if (m.mode == MODE_UPDATE && m.update_stage == UPDATE_FAILED) {
+        question = khdays_text(TXT_UPDATE_FAILED);
+        SDL_snprintf(line, sizeof(line), khdays_text(TXT_UPDATE_FAILED_DETAIL), m.update_why);
+        details.push_back(line);
+        yes = khdays_text(TXT_UPDATE_OPEN_PAGE);
+        no = khdays_text(TXT_UPDATE_LATER);
     } else if (m.mode == MODE_UPDATE) {
         question = khdays_text(TXT_UPDATE_TITLE);
-        SDL_snprintf(line, sizeof(line), khdays_text(TXT_UPDATE_DETAIL), m.update_have, m.update_new);
+        SDL_snprintf(
+            line, sizeof(line),
+            khdays_text(m.update_hooked && m.update_hooks.can_install() ? TXT_UPDATE_DETAIL_AUTO : TXT_UPDATE_DETAIL),
+            m.update_have, m.update_new);
         details.push_back(line);
         yes = khdays_text(TXT_UPDATE_DOWNLOAD);
         no = khdays_text(TXT_UPDATE_LATER);
@@ -1907,8 +1982,10 @@ void draw_prompt(float w, float h, float row_h, float pad)
         ImGui::Dummy(ImVec2(0, row_h * 0.25f));
         const ImVec2 p = ImGui::GetCursorScreenPos();
         const float bw = (box_w - 3 * pad) / 2;
-        for (int b = 0; b < 2; ++b) {
-            const ImVec2 a(p.x + (float)b * (bw + pad), p.y), z(a.x + bw, a.y + row_h);
+        const int count = no != nullptr ? 2 : 1; // one answer alone in the middle
+        const float first_x = count == 2 ? p.x : p.x + (box_w - 2 * pad - bw) / 2;
+        for (int b = 0; b < count; ++b) {
+            const ImVec2 a(first_x + (float)b * (bw + pad), p.y), z(a.x + bw, a.y + row_h);
             if (m.skin) {
                 khdays_skin_piece(ImGui::GetWindowDrawList(), "answer", "shown", a, z);
                 if (m.choice == b) {
@@ -1974,12 +2051,17 @@ void khdays_settings_open(const KhdaysProfile *current)
     settle();
 }
 
-void khdays_settings_offer_update(const KhdaysProfile *current, const char *have, const char *latest)
+void khdays_settings_offer_update(const KhdaysProfile *current, const char *have, const char *latest,
+                                  const KhdaysUpdateHooks *hooks)
 {
     khdays_settings_open(current);
     m.mode = MODE_UPDATE;
     m.choice = 0;
     m.update_answer = -1;
+    m.update_stage = UPDATE_OFFER;
+    m.update_hooked = hooks != nullptr;
+    m.update_hooks = hooks != nullptr ? *hooks : KhdaysUpdateHooks{};
+    m.update_why[0] = '\0';
     SDL_snprintf(m.update_have, sizeof(m.update_have), "%s%s", have[0] == 'v' ? "" : "v", have);
     SDL_strlcpy(m.update_new, latest, sizeof(m.update_new));
 }
@@ -2180,6 +2262,7 @@ void khdays_settings_tick(void)
     if (!m.open) {
         return;
     }
+    update_tick();
     if (m.mode == MODE_CAPTURE && now >= m.cap_until) {
         m.mode = MODE_BROWSE; // nothing pressed in time: unchanged
     }

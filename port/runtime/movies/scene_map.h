@@ -1,17 +1,20 @@
 /* The scene map (port/movies/hd_scenes.txt and a mod's cutscenes/scenes.txt): which of the theater's
- * HD videos play in place of a game's event scene, by the scene's script. Text in, entries out; no
- * game or file access (scenes.c reads the files). */
+ * HD videos play in place of a game's event scene, by the scene's script, and how a movie's HD video
+ * plays when not as it is. Text in, entries out; no game or file access (scenes.c reads the files). */
 #ifndef KHDAYS_SCENE_MAP_H
 #define KHDAYS_SCENE_MAP_H
 
 #include <stddef.h>
 
 typedef struct KhdaysSceneEntry {
-    char *key;    /* EV_S#4, mi/0105/11:_e, mnl#1 */
-    int off;      /* the game's own scene */
+    char *key;    /* EV_S#4, mi/0105/11:_e, mnl#1, or a movie's mv#833 */
+    int off;      /* the game's own scene (or movie) */
+    int skip;     /* the scene skipped at once when the HD movie last shown was stems[0], which shows it */
     char **stems; /* the videos in order (data/cutscenes/cinematics/<stem>.mp4) */
     int stem_count;
-    char *evidence; /* the text after ';', "" when none */
+    double *from, *until; /* the videos' parts, in seconds of each (0 its own start or end); NULL when
+                             all are whole */
+    char *evidence;       /* the text after ';', "" when none */
 } KhdaysSceneEntry;
 
 typedef struct KhdaysSceneMap {

@@ -175,8 +175,11 @@ a set of states:
 | Idle | Playing | a movie's stream opens and its HD video plays |
 | Playing | Held | the game's movie ends first (the clock holds the game) |
 | Playing | Finishing | the video ends first (by at most 1.13 s) |
-| Playing, Finishing | Skipping | START where the DS lets the movie be skipped (the video closed, START given to the game until it marks the skip) |
-| Held | Idle | the video ends, or START |
+| Playing, Held | Paused | START where the DS lets the movie be skipped: the video paused under the port's pause, the DS's scene pause (`host/screens/movie_pause.h`), the game held |
+| Paused | Playing, Held | its Continue, or START (as it was; Held when the game's movie ended as it opened) |
+| Paused | Skipping, Idle | its Skip: from Playing the video closed, START given to the game until it marks the skip; from Held the course ends |
+| Finishing | Skipping | START where the DS lets the movie be skipped (the video over already: no pause) |
+| Held | Idle | the video ends |
 | Finishing, Skipping | Idle | the game's movie ends |
 
 The credits scene is held at the end of its staff roll instead, and ends with

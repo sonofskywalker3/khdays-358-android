@@ -32,15 +32,35 @@ static wchar_t *piece(const wchar_t *s, DWORD n)
     return w;
 }
 
-char *khdays_https_get(const char *url, const char *agent, int timeout_ms)
+/* One GET's handles. */
+typedef struct Request {
+    HINTERNET session, connection, request;
+} Request;
+
+static void request_close(Request *r)
+{
+    if (r->request != NULL) {
+        WinHttpCloseHandle(r->request);
+    }
+    if (r->connection != NULL) {
+        WinHttpCloseHandle(r->connection);
+    }
+    if (r->session != NULL) {
+        WinHttpCloseHandle(r->session);
+    }
+    memset(r, 0, sizeof(*r));
+}
+
+/* Sends a GET for `url` (with `accept` as its Accept header, or none) and waits for the answer's
+ * headers, following redirects (a release's file is served from another address): 1 when it is
+ * 200 OK, `r` then open to read its body; 0 otherwise, `r` closed. */
+static int request_open(Request *r, const char *url, const char *agent, int timeout_ms, const wchar_t *accept)
 {
     wchar_t *wurl = wide(url), *wagent = wide(agent), *host = NULL, *path = NULL;
-    HINTERNET session = NULL, connection = NULL, request = NULL;
     URL_COMPONENTS parts;
     DWORD status = 0, status_size = sizeof(status);
-    char *body = NULL;
-    size_t size = 0;
-    int whole = 0;
+    int ok = 0;
+    memset(r, 0, sizeof(*r));
     if (wurl == NULL || wagent == NULL) {
         goto done;
     }
@@ -60,35 +80,55 @@ char *khdays_https_get(const char *url, const char *agent, int timeout_ms)
     if (host == NULL || path == NULL) {
         goto done;
     }
-    session =
+    r->session =
         WinHttpOpen(wagent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (session == NULL) {
+    if (r->session == NULL) {
         goto done;
     }
-    WinHttpSetTimeouts(session, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
-    connection = WinHttpConnect(session, host, parts.nPort, 0);
-    if (connection == NULL) {
+    WinHttpSetTimeouts(r->session, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+    r->connection = WinHttpConnect(r->session, host, parts.nPort, 0);
+    if (r->connection == NULL) {
         goto done;
     }
-    request = WinHttpOpenRequest(connection, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                 parts.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0);
-    if (request == NULL) {
+    r->request = WinHttpOpenRequest(r->connection, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                    parts.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0);
+    if (r->request == NULL) {
         goto done;
     }
-    WinHttpAddRequestHeaders(request, L"Accept: application/vnd.github+json", (DWORD)-1L, WINHTTP_ADDREQ_FLAG_ADD);
-    if (!WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
-        !WinHttpReceiveResponse(request, NULL)) {
+    if (accept != NULL) {
+        WinHttpAddRequestHeaders(r->request, accept, (DWORD)-1L, WINHTTP_ADDREQ_FLAG_ADD);
+    }
+    if (!WinHttpSendRequest(r->request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !WinHttpReceiveResponse(r->request, NULL)) {
         goto done;
     }
-    if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                             WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX) ||
-        status != 200) {
-        goto done;
+    ok = WinHttpQueryHeaders(r->request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX) &&
+         status == 200;
+done:
+    if (!ok) {
+        request_close(r);
+    }
+    free(path);
+    free(host);
+    free(wagent);
+    free(wurl);
+    return ok;
+}
+
+char *khdays_https_get(const char *url, const char *agent, int timeout_ms)
+{
+    Request r;
+    char *body = NULL;
+    size_t size = 0;
+    int whole = 0;
+    if (!request_open(&r, url, agent, timeout_ms, L"Accept: application/vnd.github+json")) {
+        return NULL;
     }
     for (;;) {
         DWORD available = 0, read = 0;
         char *grown;
-        if (!WinHttpQueryDataAvailable(request, &available)) {
+        if (!WinHttpQueryDataAvailable(r.request, &available)) {
             goto done;
         }
         if (available == 0) {
@@ -99,7 +139,7 @@ char *khdays_https_get(const char *url, const char *agent, int timeout_ms)
             goto done;
         }
         body = grown;
-        if (!WinHttpReadData(request, body + size, available, &read)) {
+        if (!WinHttpReadData(r.request, body + size, available, &read)) {
             goto done;
         }
         size += read;
@@ -117,18 +157,55 @@ done:
         free(body);
         body = NULL;
     }
-    if (request != NULL) {
-        WinHttpCloseHandle(request);
-    }
-    if (connection != NULL) {
-        WinHttpCloseHandle(connection);
-    }
-    if (session != NULL) {
-        WinHttpCloseHandle(session);
-    }
-    free(path);
-    free(host);
-    free(wagent);
-    free(wurl);
+    request_close(&r);
     return body;
+}
+
+int khdays_https_download(const char *url, const char *agent, const char *path, int timeout_ms,
+                          KhdaysDownloadProgress progress, void *context)
+{
+    enum { CHUNK = 64 * 1024 };
+    Request r;
+    wchar_t *wpath = wide(path);
+    HANDLE file = INVALID_HANDLE_VALUE;
+    char *chunk = (char *)malloc(CHUNK);
+    long long done = 0;
+    int whole = 0;
+    if (wpath == NULL || chunk == NULL || !request_open(&r, url, agent, timeout_ms, NULL)) {
+        free(chunk);
+        free(wpath);
+        return 0;
+    }
+    file = CreateFileW(wpath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        goto done;
+    }
+    for (;;) {
+        DWORD read = 0, written = 0;
+        if (!WinHttpReadData(r.request, chunk, CHUNK, &read)) {
+            goto done;
+        }
+        if (read == 0) {
+            break; /* the whole body */
+        }
+        if (!WriteFile(file, chunk, read, &written, NULL) || written != read) {
+            goto done;
+        }
+        done += read;
+        if (progress != NULL && progress(context, done)) {
+            goto done; /* given up */
+        }
+    }
+    whole = 1;
+done:
+    if (file != INVALID_HANDLE_VALUE) {
+        CloseHandle(file);
+        if (!whole) {
+            DeleteFileW(wpath);
+        }
+    }
+    request_close(&r);
+    free(chunk);
+    free(wpath);
+    return whole;
 }

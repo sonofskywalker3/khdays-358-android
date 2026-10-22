@@ -1,5 +1,6 @@
 /* The scene map's text (runtime/movies/scene_map.c): entries of the three key forms, comments, `off`,
- * malformed lines among good ones, an entry replacing one of the same key, lookups. */
+ * malformed lines among good ones, an entry replacing one of the same key, lookups; scenes skipped
+ * after a movie's video and the movies' own entries (`until`). */
 #include "../runtime/movies/scene_map.h"
 
 #include <stdio.h>
@@ -52,6 +53,19 @@ int main(void)
                        "EV_TT#61 hd007c"; /* the last line without its end */
     const char *mod = "EV_S#0 off ; the mod keeps the DS's room\n"
                       "EV_S#4 hd004 hd004b\n";
+    /* skipped scenes and the movies' entries */
+    const char *movies = "EV_S#168 skip hd830 ; hd830 shows it\n"
+                         "mv#833 hd833[:128.4] ; to its fade to black\n"
+                         "mv#848 hd833[173.2:] hd848\n"
+                         "mv#802 off\n"
+                         "EV_S#182 hd833[129.4:173.2] ; a scene's part\n"
+                         "EV_S#9 skip\n"       /* 6: no video named */
+                         "mv#833 skip hd833\n" /* 7: a movie is not skipped */
+                         "mv#834 hd834[5:2]\n" /* 8: ends before it starts */
+                         "mv#835 hd835[:x]\n"  /* 9: not seconds */
+                         "mv#836 hd836[1.5]\n" /* 10: no colon */
+                         "mv#837 hd837[-1:]\n" /* 11: before the video's start */
+                         "mnl#2 hd003[1:3]\n"; /* 12: a monologue's voice is whole */
 
     CHECK(khdays_scene_map_read(&map, port, length(port), "port", report) == 7);
     CHECK(map.count == 7);
@@ -88,6 +102,31 @@ int main(void)
     CHECK(e != NULL && e->off && e->stem_count == 0);
     e = khdays_scene_map_find(&map, "EV_S#4");
     CHECK(e != NULL && e->stem_count == 2 && strcmp(e->stems[1], "hd004b") == 0);
+
+    report_count = 0;
+    CHECK(khdays_scene_map_read(&map, movies, length(movies), "movies", report) == 5);
+    CHECK(report_count == 7 && reported[0] == 6 && reported[1] == 7 && reported[2] == 8 && reported[3] == 9 &&
+          reported[4] == 10 && reported[5] == 11 && reported[6] == 12);
+    e = khdays_scene_map_find(&map, "EV_S#168");
+    CHECK(e != NULL && e->skip && !e->off && e->stem_count == 1 && strcmp(e->stems[0], "hd830") == 0 &&
+          strcmp(e->evidence, "hd830 shows it") == 0);
+    e = khdays_scene_map_find(&map, "mv#833");
+    CHECK(e != NULL && !e->skip && e->stem_count == 1 && strcmp(e->stems[0], "hd833") == 0 && e->from != NULL &&
+          e->until != NULL && e->from[0] == 0.0 && e->until[0] == 128.4 &&
+          strcmp(e->evidence, "to its fade to black") == 0);
+    e = khdays_scene_map_find(&map, "EV_S#182");
+    CHECK(e != NULL && !e->skip && e->stem_count == 1 && strcmp(e->stems[0], "hd833") == 0 && e->from != NULL &&
+          e->until != NULL && e->from[0] == 129.4 && e->until[0] == 173.2);
+    e = khdays_scene_map_find(&map, "mv#848");
+    CHECK(e != NULL && e->stem_count == 2 && strcmp(e->stems[0], "hd833") == 0 && strcmp(e->stems[1], "hd848") == 0 &&
+          e->from != NULL && e->until != NULL && e->from[0] == 173.2 && e->until[0] == 0.0 && e->from[1] == 0.0 &&
+          e->until[1] == 0.0);
+    e = khdays_scene_map_find(&map, "mv#802");
+    CHECK(e != NULL && e->off);
+    e = khdays_scene_map_find(&map, "EV_S#4");
+    CHECK(e != NULL && e->from == NULL && e->until == NULL); /* whole videos */
+    CHECK(khdays_scene_map_find(&map, "EV_S#9") == NULL && khdays_scene_map_find(&map, "mv#834") == NULL &&
+          khdays_scene_map_find(&map, "mv#835") == NULL && khdays_scene_map_find(&map, "mnl#2") == NULL);
 
     khdays_scene_map_free(&map);
     CHECK(map.count == 0 && map.entries == NULL);

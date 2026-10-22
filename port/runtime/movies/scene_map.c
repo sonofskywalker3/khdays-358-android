@@ -1,5 +1,7 @@
 /* The scene map's text (scene_map.h): a line per scene,
- *   <script> <stem> [<stem> ...] ; <evidence>      or      <script> off ; <evidence>
+ *   <script> <stem> [<stem> ...] ; <evidence>   <script> off ; <evidence>   <script> skip <stem> ; <evidence>
+ * or per movie, mv#<movie> <stem> ... ; <evidence> (or off). A scene's or a movie's stem may be a part
+ * of the video, <stem>[<from>:<until>] in seconds, either left out.
  * '#' comments, blank lines skipped. A script is EV_<world>#<index>, mi/<mission>/<script>:<section>
  * or mnl#<record> (a day's monologue, ui/mnl's record);
  * a stem is a video's file name without .mp4. */
@@ -25,6 +27,8 @@ static void entry_free(KhdaysSceneEntry *e)
         free(e->stems[i]);
     }
     free(e->stems);
+    free(e->from);
+    free(e->until);
     free(e->key);
     free(e->evidence);
     memset(e, 0, sizeof(*e));
@@ -44,10 +48,13 @@ static int digits(const char *p)
     return 1;
 }
 
-/* EV_<world>#<index>, mi/<mission>/<script>:<section> (letters, digits and _ in the names) or
- * mnl#<record> */
+/* EV_<world>#<index>, mi/<mission>/<script>:<section> (letters, digits and _ in the names),
+ * mnl#<record> or mv#<movie> */
 static int key_valid(const char *k)
 {
+    if (strncmp(k, "mv#", 3) == 0) {
+        return digits(k + 3);
+    }
     if (strncmp(k, "EV_", 3) == 0) {
         const char *hash = strchr(k, '#');
         if (hash == NULL || hash == k + 3) {
@@ -69,6 +76,32 @@ static int key_valid(const char *k)
         return slash != NULL && slash > k + 3 && colon != NULL && colon > slash + 1 && colon[1] != '\0';
     }
     return 0;
+}
+
+/* A video's part, "[<from>:<until>]" in seconds of it (either left out: its own start or end), at
+ * `open`. Returns 0 when it is not one. */
+static int read_part(const char *open, double *from, double *until)
+{
+    const char *colon = strchr(open, ':');
+    const size_t n = strlen(open);
+    char *end;
+    if (colon == NULL || n < 3 || open[n - 1] != ']') {
+        return 0;
+    }
+    *from = *until = 0.0;
+    if (colon > open + 1) {
+        *from = strtod(open + 1, &end);
+        if (end != colon || !(*from >= 0.0)) {
+            return 0;
+        }
+    }
+    if (colon + 1 < open + n - 1) {
+        *until = strtod(colon + 1, &end);
+        if (end != open + n - 1 || !(*until > *from)) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int stem_valid(const char *s)
@@ -169,7 +202,8 @@ static int read_line(KhdaysSceneMap *map, const char *start, size_t length, cons
     if (count == 0) {
         result = 0;
     } else if (!key_valid(words[0])) {
-        *why = "not a scene's script (EV_<world>#<index>, mi/<mission>/<script>:<section> or mnl#<record>)";
+        *why = "not a scene's script (EV_<world>#<index>, mi/<mission>/<script>:<section> or mnl#<record>) "
+               "nor a movie (mv#<movie>)";
         result = -1;
     } else if (count == 1) {
         *why = "no video and no `off`";
@@ -178,20 +212,61 @@ static int read_line(KhdaysSceneMap *map, const char *start, size_t length, cons
         e.key = copy_of(words[0], strlen(words[0]));
         e.off = 1;
         result = 1;
-    } else {
-        int i;
-        for (i = 1; i < count && stem_valid(words[i]) && strcmp(words[i], "off") != 0; ++i) {
+    } else if (strcmp(words[1], "skip") == 0) {
+        if (count != 3 || strncmp(words[0], "mv#", 3) == 0 || !stem_valid(words[2])) {
+            *why = "`skip` takes the HD movie's video that shows the scene (a scene's, not a movie's)";
+            result = -1;
+        } else {
+            e.key = copy_of(words[0], strlen(words[0]));
+            e.skip = 1;
+            e.stems = (char **)calloc(1, sizeof(char *));
+            if (e.stems != NULL) {
+                e.stems[e.stem_count++] = copy_of(words[2], strlen(words[2]));
+            }
+            result = 1;
         }
-        if (i < count) {
-            *why = "a video's name is not a file's name (letters, digits, _ and -)";
+    } else {
+        const int monologue = strncmp(words[0], "mnl#", 4) == 0;
+        double *from = (double *)calloc((size_t)(count - 1), sizeof(double));
+        double *until = (double *)calloc((size_t)(count - 1), sizeof(double));
+        int parts = 0;
+        *why = NULL;
+        for (int i = 1; i < count && *why == NULL && from != NULL && until != NULL; ++i) {
+            char *open = strchr(words[i], '[');
+            if (open != NULL) {
+                if (monologue || !read_part(open, &from[i - 1], &until[i - 1])) {
+                    *why = "a part of a video is [<from>:<until>] in seconds, a scene's or a movie's (not a "
+                           "monologue's)";
+                }
+                *open = '\0';
+                parts = 1;
+            }
+            if (*why == NULL &&
+                (!stem_valid(words[i]) || strcmp(words[i], "off") == 0 || strcmp(words[i], "skip") == 0)) {
+                *why = "a video's name is not a file's name (letters, digits, _ and -)";
+            }
+        }
+        if (from == NULL || until == NULL) {
+            *why = "out of memory";
+        }
+        if (*why != NULL) {
+            free(from);
+            free(until);
             result = -1;
         } else {
             e.key = copy_of(words[0], strlen(words[0]));
             e.stems = (char **)calloc((size_t)(count - 1), sizeof(char *));
             if (e.stems != NULL) {
-                for (i = 1; i < count; ++i) {
+                for (int i = 1; i < count; ++i) {
                     e.stems[e.stem_count++] = copy_of(words[i], strlen(words[i]));
                 }
+            }
+            if (parts) {
+                e.from = from;
+                e.until = until;
+            } else {
+                free(from);
+                free(until);
             }
             result = 1;
         }

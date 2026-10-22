@@ -131,7 +131,14 @@ A newer installer run over an install updates it in place: the port's files are 
 game's data (already made), the HD pieces (unless its HD tools differ), the saves, the settings and
 the mods are kept. The port
 itself tells the player when a newer release is out (at each start it asks GitHub for the latest
-release, `host/app/updates.c`; a setting turns it off), with a link to the release's page.
+release, `host/app/updates.c`; a setting turns it off). Its Download fetches the release's
+installer (the `KH358-2-Days-Port-Setup-*.exe` among the release's files), checks it against the
+size and SHA-256 GitHub gives for it, and runs it as
+`/SILENT /NORESTART /AUTOUPDATE /DIR=<the game's folder>` (`host/app/update_install_win.c`), the
+game closing: Windows asks for the administrator's permission, the installer shows its progress
+alone with the last install's choices, leaves the Steam entry as it is and opens the game again at
+the end. An install that is not one (no uninstaller beside the game), or one under Proton or Wine,
+gets the release's page instead, as does a download that fails or does not match.
 
 ## Without its pages
 

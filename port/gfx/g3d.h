@@ -22,6 +22,7 @@ typedef struct KhdaysG3dVertex {
     float w;       /* clip w, 12 fractional bits as a float */
     float r, g, b; /* 6 bits each */
     float s, t;    /* texels, 4 fractional bits as a float */
+    float a;       /* a mod's vertex alpha, 0..1, times the polygon's (the game's: 1) */
 } KhdaysG3dVertex;
 
 typedef struct KhdaysG3dPolygon {
@@ -34,10 +35,10 @@ typedef struct KhdaysG3dPolygon {
 } KhdaysG3dPolygon;
 
 /* A polygon as the game sent it, before clipping, in a list's `pre` arrays: its vertices in clip space
- * (the game's in fixed point, a mod's in floats, nine words each), what it was drawn with, and the key
+ * (the game's in fixed point, a mod's in floats, ten words each), what it was drawn with, and the key
  * that finds the same polygon in the next list (its model draw and its place in it). */
 typedef struct KhdaysG3dPreVertex {
-    int32_t word[9];
+    int32_t word[10];
 } KhdaysG3dPreVertex;
 
 typedef struct KhdaysG3dPreInfo {
@@ -53,6 +54,8 @@ typedef struct KhdaysG3dPreInfo {
 #define KHDAYS_G3D_HUD 0x1       /* sent by the HUD's own drawing (khdays_g3d_set_hud) */
 #define KHDAYS_G3D_BEYOND_DS 0x2 /* the DS's polygon or vertex RAM would not have held it */
 #define KHDAYS_G3D_MOD 0x4       /* a mod's model's, drawn instead of the game's (runtime/mods/models.h): no DS's */
+#define KHDAYS_G3D_SKY 0x10      /* a mod's sky: behind everything else, its layer in bits 8-15 */
+#define KHDAYS_G3D_SKY_LAYER(flags) (((flags) & KHDAYS_G3D_SKY) ? ((flags) >> 8) & 0xff : 0)
 #define KHDAYS_G3D_OVER_2D                                                                                             \
     0x8 /* a HUD polygon the DS shows over all its 2D (its BG0 the top layer): the one
                                   * picture puts it in front of its shapes, widescreen leaves it in place (the
@@ -211,15 +214,15 @@ typedef struct KhdaysG3dClipVertex {
     float x, y, z, w;
     float r, g, b; /* 6 bits */
     float s, t;    /* texels, 4 fractional bits */
+    float a;       /* alpha, 0..1, blended across the polygon */
 } KhdaysG3dClipVertex;
 
-/* A polygon of a mod's model into the list being built: culled by `attr`'s
- * faces, its far-plane rule and the clip volume as the DS's are, marked
- * KHDAYS_G3D_MOD (and the HUD's while they are). Drawn with texture
- * `replacement` (runtime/mods/textures.h) over `tex`'s size and repeats, or
- * untextured when `replacement` is -1. Not counted against the DS's RAM. */
+/* A polygon of a mod's model into the list being built, culled and clipped as the DS's are except at
+ * the far plane: what lies past it is drawn at its depth. `sky` > 0 makes it a sky layer, behind
+ * everything and in front of the layers before it. `replacement` is its texture
+ * (runtime/mods/textures.h), -1 for none. */
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
-                            int translucent);
+                            int translucent, int sky);
 
 /* For traces: `hook` hears of each polygon added to the list being built,
  * as it is added (NULL: none). */

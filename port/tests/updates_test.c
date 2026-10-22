@@ -1,5 +1,5 @@
 /* khdays-updates-test: the release versions the update check compares, and the latest release's
- * tag read from GitHub's answer (host/app/release_version.h). */
+ * tag and installer read from GitHub's answer (host/app/release_version.h). */
 #include "../host/app/release_version.h"
 
 #include <stdio.h>
@@ -61,10 +61,49 @@ static void test_answer(void)
     CHECK(khdays_release_tag("{\"tag_name\":\"v0.1.1\"}", tag, 7) && strcmp(tag, "v0.1.1") == 0);
 }
 
+static void test_installer(void)
+{
+    KhdaysReleaseFile f;
+    /* GitHub's answer, shortened: two files, the installer the second, with a nested uploader */
+    static const char answer[] =
+        "{\"url\":\"https://api.github.com/repos/x/y/releases/1\",\"tag_name\":\"v0.1.4\",\"author\":{\"login\":\"x\","
+        "\"id\":1},\"body\":\"notes with \\\"quotes\\\" and [brackets] {braces}\",\"assets\":[{\"name\":\"notes.txt\","
+        "\"size\":12,\"digest\":\"sha256:"
+        "0000000000000000000000000000000000000000000000000000000000000000\",\"browser_download_url\":"
+        "\"https://github.com/x/y/releases/download/v0.1.4/notes.txt\"},{\"url\":\"https://api.github.com/a/2\","
+        "\"id\":2,\"name\":\"KH358-2-Days-Port-Setup-0.1.4.exe\",\"label\":null,\"uploader\":{\"login\":\"x\","
+        "\"site_admin\":false},\"content_type\":\"application/x-msdownload\",\"state\":\"uploaded\","
+        "\"size\":28812813,\"digest\":\"sha256:"
+        "6D5C19706E5FA386F164A338DADD03A6AFE791F37F35139ADF13DDADA6E149FF\",\"download_count\":0,"
+        "\"browser_download_url\":\"https://github.com/x/y/releases/download/v0.1.4/"
+        "KH358-2-Days-Port-Setup-0.1.4.exe\"}],\"zipball_url\":\"https://api.github.com/z\"}";
+    CHECK(khdays_release_installer(answer, &f));
+    CHECK(strcmp(f.name, "KH358-2-Days-Port-Setup-0.1.4.exe") == 0 && f.size == 28812813);
+    CHECK(strcmp(f.url, "https://github.com/x/y/releases/download/v0.1.4/KH358-2-Days-Port-Setup-0.1.4.exe") == 0);
+    CHECK(strcmp(f.sha256, "6d5c19706e5fa386f164a338dadd03a6afe791f37f35139adf13ddada6e149ff") == 0); /* lower case */
+
+    /* none: no installer, one without its digest or with a broken one, a cut-short answer */
+    CHECK(!khdays_release_installer("{\"tag_name\":\"v0.1.4\",\"assets\":[]}", &f));
+    CHECK(!khdays_release_installer("{\"assets\":[{\"name\":\"KH358-2-Days-Port-Setup-0.1.4.exe\",\"size\":5,"
+                                    "\"browser_download_url\":\"https://github.com/a\"}]}",
+                                    &f));
+    CHECK(!khdays_release_installer("{\"assets\":[{\"name\":\"KH358-2-Days-Port-Setup-0.1.4.exe\",\"size\":5,"
+                                    "\"digest\":\"sha256:12ab\",\"browser_download_url\":\"https://github.com/a\"}]}",
+                                    &f));
+    CHECK(!khdays_release_installer("{\"assets\":[{\"name\":\"KH358-2-Days-Port-Setup-0.1.4.zip\",\"size\":5,"
+                                    "\"digest\":\"sha256:"
+                                    "6d5c19706e5fa386f164a338dadd03a6afe791f37f35139adf13ddada6e149ff\","
+                                    "\"browser_download_url\":\"https://github.com/a\"}]}",
+                                    &f));
+    CHECK(!khdays_release_installer("{\"assets\":[{\"name\":\"KH358-2-Days-Port-Setup-0.1.4.exe\"", &f));
+    CHECK(!khdays_release_installer("[]", &f) && !khdays_release_installer(NULL, &f));
+}
+
 int main(void)
 {
     test_versions();
     test_answer();
+    test_installer();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

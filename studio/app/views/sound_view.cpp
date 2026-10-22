@@ -20,26 +20,32 @@ namespace {
 // One sound playing at a time.
 struct Player {
     SDL_AudioStream* stream = nullptr;
-    std::string what;  // the file playing
+    std::string what;    // the file playing
+    Uint64 ends_at = 0;  // when it has been heard to its end (the device still plays what it took)
 } player;
 
-void play(const fs::path& file) {
+void play(App& app, const fs::path& file) {
     stop_sounds();
     KhdaysReplacement sound{};
     char why[256] = {};
-    if (!khdays_replacement_load(&sound, u8(file).c_str(), nullptr, why, static_cast<int>(sizeof(why))))
+    if (!khdays_replacement_load(&sound, u8(file).c_str(), nullptr, why, static_cast<int>(sizeof(why)))) {
+        app.tell(fmt(app.language, S::sound_cannot_play, {u8(file.filename()), why}), false);
         return;
+    }
     SDL_AudioSpec spec{};
     spec.format = SDL_AUDIO_S16;
     spec.channels = sound.channels;
     spec.freq = static_cast<int>(sound.rate);
     player.stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-    if (player.stream != nullptr) {
+    if (player.stream == nullptr) {
+        app.tell(fmt(app.language, S::sound_cannot_play, {u8(file.filename()), SDL_GetError()}), false);
+    } else {
         SDL_PutAudioStreamData(player.stream, sound.samples,
                                static_cast<int>(sound.frames * static_cast<uint64_t>(sound.channels) * 2u));
         SDL_FlushAudioStream(player.stream);
         SDL_ResumeAudioStreamDevice(player.stream);
         player.what = u8(file);
+        player.ends_at = SDL_GetTicks() + sound.frames * 1000u / sound.rate + 250u;
     }
     khdays_replacement_free(&sound);
 }
@@ -47,7 +53,7 @@ void play(const fs::path& file) {
 bool playing(const fs::path& file) {
     if (player.stream == nullptr || player.what != u8(file))
         return false;
-    if (SDL_GetAudioStreamQueued(player.stream) <= 0) {
+    if (SDL_GetAudioStreamQueued(player.stream) <= 0 && SDL_GetTicks() >= player.ends_at) {
         stop_sounds();
         return false;
     }
@@ -70,7 +76,7 @@ void sound_row(App& app, const char* id, const fs::path& file) {
         if (ImGui::Button(tr(app.language, S::stop)))
             stop_sounds();
     } else if (ImGui::Button(tr(app.language, S::play))) {
-        play(file);
+        play(app, file);
     }
     ImGui::PopID();
 }

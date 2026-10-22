@@ -94,17 +94,17 @@ static int in_game_ram(u32 p)
     return khdays_game_ram(p); /* main RAM or the game's heaps */
 }
 
-/* KHDAYS_TRACE_PLAYER: the local player's position every 30 frames. The players' actors: the table at
- * *(data_ov022_020b2e78 + 4), 0xc bytes an entry, the actor at the entry's +4 then +0x20; its
- * position at +0x48c, fx32. */
+/* KHDAYS_TRACE_PLAYER[=N]: logs the local player's position every N frames (30 by default). The
+ * actors' table is at *(data_ov022_020b2e78 + 4), 0xc bytes an entry; the position is at +0x48c. */
 static void trace_player(u32 frame)
 {
-    static int trace = -1;
+    static int every = -1;
     u32 base, entry, actor;
-    if (trace < 0) {
-        trace = getenv("KHDAYS_TRACE_PLAYER") != NULL;
+    if (every < 0) {
+        const char *v = getenv("KHDAYS_TRACE_PLAYER");
+        every = v == NULL ? 0 : atoi(v) > 0 ? atoi(v) : 30;
     }
-    if (!trace || frame % 30 != 0) {
+    if (every == 0 || frame % (u32)every != 0) {
         return;
     }
     base = *(const volatile u32 *)KHDAYS_W(0x020b2e7c);

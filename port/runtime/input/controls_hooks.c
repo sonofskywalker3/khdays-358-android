@@ -314,7 +314,7 @@ int khdays_controls_move_heading(int actor, int heading)
     Stick in;
     int result = heading;
     if (heading != -1 && analog_moving(actor, &in)) {
-        result = khdays_analog_heading(in.x, in.y);
+        result = khdays_analog_heading_turned(khdays_analog_heading(in.x, in.y), heading);
     }
     if (trace_on() && actor == local_actor()) {
         const int buttons = *(u16 *)KHDAYS_W(actor + 0x18) | *(u16 *)KHDAYS_W(actor + 0x1a) << 16;

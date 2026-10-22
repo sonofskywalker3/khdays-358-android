@@ -353,6 +353,8 @@ static void build_video(Builder *b, KhdaysProfile *w)
     r = add_choice(b, KHDAYS_SET_ANTIALIASING, TXT_VIDEO_ANTIALIASING, &v->antialiasing, antialiasings, 4);
     r->values = antialiasing_values;
     needs_graphics_card(b, r, TXT_VIDEO_ANTIALIASING_NOTE);
+    r->warning = khdays_text(TXT_VIDEO_ANTIALIASING_WARNING); /* on top of the internal resolution's */
+    r->safe = 1;                                              /* off */
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_ASPECT, TXT_VIDEO_ASPECT, &v->aspect, aspects, KHDAYS_ASPECT_COUNT),
                         TXT_VIDEO_ASPECT_NOTE);
     if (!b->context->second_display) { /* there each screen has a display of its own */

@@ -130,9 +130,9 @@ static int field_screens(const KhdaysSituationInputs *in)
     if (in->tutorial != 0) {
         return KHDAYS_SIT_TUTORIAL;
     }
-    /* the 3D on both screens: the game swaps engine A's screen every VBlank and shows the 3D it
-     * captured on the other (runtime/display/display.c engine_swaps; two swaps in a row) */
-    if (in->engine_swaps >= 2u) {
+    /* the 3D on both screens: engine A swaps screens every VBlank. Two swaps in the last 8 start it
+     * and one keeps it, so a swap the game skips does not change the layout */
+    if (in->engine_swaps >= 2u || (previous == KHDAYS_SIT_FIELD_3D_BOTH && in->engine_swaps >= 1u)) {
         return KHDAYS_SIT_FIELD_3D_BOTH;
     }
     return KHDAYS_SIT_FIELD;
@@ -215,8 +215,7 @@ static uint32_t states_of(const KhdaysSituationInputs *in, int scene)
         if ((in->mission_flags & 7u) != 0u) {
             s |= ST(HOLO);
         }
-        /* the 3D on the lower screen alone: engine A shows the lower screen (POWCNT1 bit 15
-         * clear) and does not swap */
+        /* the 3D on the lower screen alone: engine A there, no swap in the last 8 VBlanks */
         if ((in->powcnt1 & 0x8000u) == 0u && in->engine_swaps == 0u && scene != KHDAYS_SIT_FIELD_3D_BOTH) {
             s |= ST(LOWER_3D);
         }

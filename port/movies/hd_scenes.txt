@@ -8,6 +8,13 @@
 #             mission's script section, mi/<mission>/<script>:<section>, or a day's monologue,
 #             mnl#<record> (ui/mnl's text record, picked by the story's day)
 #   off       in place of the stems: the game's own scene (a mod may switch an entry off)
+#   skip <video stem>  the scene skipped with no video when the movie just before it was shown as
+#             that HD video, which shows the scene too (the game's own scene otherwise)
+# mv#<movie> <video stem> [...] ; <evidence>
+#             a game's movie shown as those videos in a row (hd<movie> alone without an entry);
+#             or `off`, the game's own movie
+# A scene's or a movie's video stem may be a part of it, <video stem>[<from>:<until>]: the video
+# between those seconds (either left out: its own start or end).
 
 # Roxas's monologues (scene 10, before the calendar): the theater's clips are his voice over black,
 # so their sound alone is heard over the game's own page (his picture and the DS's text), the game
@@ -100,7 +107,8 @@ EV_S#99 hd077 ; pictures: Xion asleep, the shells (no lines on either side)
 # Day 193
 EV_S#102 hd080 ; lines: 63% of the theater's found in the scene's
 EV_S#104 hd082a ; lines (1 of 1): Xion's name called; pictures: Xion falls in Twilight Town
-EV_S#106 hd082b ; lines: 21% of the theater's found in the scene's
+EV_S#105 hd082b ; lines (2 of 2, other words): Axel has Xion, Roxas takes the target; pictures: Axel holding Xion, then Roxas leaping at the giant Heartless, before the fight (mission 0110, the Destroyer). Matched by its words to EV_S#106 it played after the fight
+# EV_S#106 (after the fight: Xion's "Sora...", back to the castle) has no theater video: the game's own scene
 EV_S#107 hd084 ; lines: 63% of the theater's found in the scene's
 EV_S#108 hd085 ; lines: 46% of the theater's found in the scene's
 EV_S#109 hd086a ; pictures: Naminé drawing (no lines on either side)
@@ -152,6 +160,7 @@ EV_S#164 hd128 ; lines: 58% of the theater's found in the scene's
 # Day 354
 EV_S#165 hd129 ; lines: 36% of the theater's found in the scene's
 EV_S#166 hd130a ; lines: 54% of the theater's found in the scene's
+EV_S#168 skip hd830 ; lines: hd830 from 44 s says the scene's (¡Riku! ... Te lo prometo, Riku.), the game's movie 830 being 43.8 s of its 194.6 s; the theater has no video after it on day 354
 # Day 355
 EV_S#169 hd132 ; lines: 55% of the theater's found in the scene's
 EV_S#187 hd131a ; lines (by meaning): Xion a replica, both special Nobodies, Axel hiding things; pictures: Roxas on his bed
@@ -159,5 +168,14 @@ EV_S#188 hd132a ; lines (by meaning, 3 of 3): he tried, he must find out about h
 # Day 356
 EV_S#171 hd133b ; lines: 45% of the theater's found in the scene's
 EV_S#174 hd136 ; lines: 72% of the theater's found in the scene's
+# Day 357, Xion's fight (mission 0114's script 99:_e): the game's movie 833, its own scenes EV_S#179-181
+# through Wonderland, Neverland and Agrabah to the fight's first three parts, EV_S#182 back in Twilight
+# Town before the last (area 41), EV_S#183 after it, then the game's movie 848. hd833 goes on past the
+# game's movie 833 (mv#833 below): its rest is shown in those two scenes, which have no lines.
+EV_S#182 hd833[129.4:173.2] ; pictures: hd833 after its fade to black (127.5-129.4 s) shows Roxas in the dark, then on Twilight Town's wall at sunset, drawing his Keyblade (168.2 s) and leaping to the fight (173.2 s); the scene brings the fight from Agrabah (wd_al) back to Twilight Town (wd_tt) and loads Roxas's Keyblade for its last part
+EV_S#183 hd833[173.2:] ; pictures: hd833 from 173.2 s shows the fight against Xion to her last form breaking (black from 270.6 s); the scene follows the fight's last part, before the game's movie 848 (the theater's chapter: hd833, hd848)
 # Day 358
-EV_S#177 hd140 ; pictures: Riku and the hooded Roxas at the Memory's Skyscraper (the theater lists it in no chapter and has no subtitles for it)
+EV_S#177 skip hd836 ; lines: hd836 from 73 s says the scene's (¿Quién eres? ... ¡Cállate!), the game's movie 836 being 72.9 s of its 129.8 s; hd140, in no chapter of the theater, is that end again in Japanese without subtitles
+
+# The game's movies whose HD video goes on past them
+mv#833 hd833[:128.4] ; the game's movie 833 is 128.1 s (1920 pictures at 14.985 a second) of hd833's 272.2 s, whose lines end by 125.1 s and pictures by its fade to black (127.5 s); the rest is EV_S#182's and EV_S#183's (day 357)

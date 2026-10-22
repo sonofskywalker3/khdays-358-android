@@ -215,7 +215,8 @@ struct Mesh {
     std::vector<Picture> frame_pictures;
     bool frames_loop = true;
     std::size_t frames_loop_from = 0;
-    bool sky = false; // drawn behind everything
+    // 0, or the sky layer it is (1 is painted first), drawn around the camera behind everything
+    int sky = 0;
 };
 
 struct Model {
@@ -512,7 +513,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
                                                                                     : VertexAlpha::cut;
         out.cutoff = in.alpha_mode == AlphaMode::mask ? in.alpha_cutoff : 0.5F;
         out.scroll = in.scroll;
-        out.sky = in.sky;
+        out.sky = in.sky ? 1 : 0;
         for (const auto &[picture, length] : in.texture_frames) {
             Mesh::Picture shown;
             if (const Made *t = texture_for(picture, in.alpha_mode, in.alpha_cutoff)) {
@@ -528,6 +529,12 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         triangles += out.indices.size() / 3;
         model->meshes.push_back(std::move(out));
     }
+    // the sky layers in KH2's painting order: opaque and cut-out meshes first, then blended ones
+    int sky_layer = 0;
+    for (const bool blended : {false, true})
+        for (Mesh &mesh : model->meshes)
+            if (mesh.sky != 0 && mesh.translucent == blended)
+                mesh.sky = ++sky_layer;
     // its own animation: the nodes its skinned meshes' joints are (with their parents) move; one that moves
     // another node would move a mesh made still on loading, which is not played
     if (!mod.animations.empty()) {
@@ -557,7 +564,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         for (const Mesh &mesh : model->meshes) {
             scrolling += mesh.scroll[0] != 0.0F || mesh.scroll[1] != 0.0F ? 1 : 0;
             framed += mesh.frames.empty() ? 0 : 1;
-            sky += mesh.sky ? 1 : 0;
+            sky += mesh.sky != 0 ? 1 : 0;
         }
         khdays_log("models: %s: its own animation: %zu moving parts' animations, %zu scrolling and %zu changing "
                    "textures, %zu sky meshes",
@@ -646,13 +653,8 @@ bool triangle_attr(const Mesh &mesh, std::size_t t, uint32_t attr, uint32_t &out
                         (3.0F * 255.0F);
     if (mesh.vertex_alpha == VertexAlpha::cut)
         return alpha >= mesh.cutoff;
-    if (alpha < 1.0F) {
-        const auto a = static_cast<uint32_t>(std::lround(static_cast<float>((attr >> 16) & 31u) * alpha));
-        if (a == 0u)
-            return false; // the DS draws a polygon of alpha 0 as its outline: nothing of it here
-        out = (attr & ~(31u << 16)) | (a << 16);
-    }
-    return true;
+    // blended: the vertex alphas are blended across the polygon; a fully clear one is skipped
+    return alpha > 0.0F;
 }
 
 void draw(Model &m)
@@ -821,7 +823,8 @@ void draw(Model &m)
                     continue;
                 const std::uint32_t jt = v.joints[static_cast<std::size_t>(w)];
                 const Mat &s = jt < skin.size() ? skin[jt] : unskinned;
-                const auto q = point(s, v.position);
+                // a sky stays around the camera: turned with the room, not moved
+                const auto q = mesh.sky != 0 ? vec(s, v.position) : point(s, v.position);
                 const auto n = vec(s, v.normal);
                 for (int c = 0; c < 3; ++c) {
                     p[static_cast<std::size_t>(c)] += weight * q[static_cast<std::size_t>(c)];
@@ -830,7 +833,7 @@ void draw(Model &m)
                 total += weight;
             }
             if (total <= 0.0F) {
-                p = point(unskinned, v.position);
+                p = mesh.sky != 0 ? vec(unskinned, v.position) : point(unskinned, v.position);
                 nrm = vec(unskinned, v.normal);
             } else if (std::fabs(total - 1.0F) > 1e-4F) {
                 for (int c = 0; c < 3; ++c)
@@ -855,8 +858,7 @@ void draw(Model &m)
             o.b = rgb[2] * static_cast<float>(v.color[2]) / 255.0F;
             o.s = (v.texcoord[0] + offset[0]) / tex_w * 1024.0F * 16.0F;
             o.t = (v.texcoord[1] + offset[1]) / tex_h * 1024.0F * 16.0F;
-            if (mesh.sky && o.w > 0.0F)
-                o.z = o.w * 0.9999F; // as far as can be drawn: behind everything, never past the far plane
+            o.a = mesh.vertex_alpha == VertexAlpha::blended ? static_cast<float>(v.color[3]) / 255.0F : 1.0F;
         }
         // the session log's diagnosis: where the mesh falls on the screen (x/w and y/w: -1..1
         // the view), and how near (w)
@@ -893,7 +895,8 @@ void draw(Model &m)
                                                 clip[mesh.indices[t + 2]]};
             uint32_t tri_attr;
             if (triangle_attr(mesh, t, attr, tri_attr))
-                khdays_g3d_mod_polygon(tri, 3, tri_attr, tex, picture.replacement, picture.translucent);
+                khdays_g3d_mod_polygon(tri, 3, tri_attr, tex, picture.replacement,
+                                       picture.translucent || mesh.vertex_alpha == VertexAlpha::blended, mesh.sky);
         }
     }
 }

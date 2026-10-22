@@ -122,7 +122,7 @@ typedef struct KhdaysFramePackage {
     uint32_t bank_intact;
 } KhdaysFramePackage;
 
-/* What KHDAYS_RECORD_FRAMES writes of a package (version 13): all of it but
+/* What KHDAYS_RECORD_FRAMES writes of a package (version 14): all of it but
  * the situation's inputs. */
 #define KHDAYS_FRAME_RECORDED offsetof(KhdaysFramePackage, situation)
 

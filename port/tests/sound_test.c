@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h> /* the UTF-8 path's check: MultiByteToWideChar, GetFileAttributesW */
+#endif
 
 static int failures;
 
@@ -970,6 +974,21 @@ static void test_loops(void)
         CHECK(!khdays_replacement_load(&r, temp_file("khdays_broken.wav"), NULL, why, sizeof(why)));
         CHECK(why[0] != '\0');
     }
+#ifdef _WIN32
+    /* a name outside the system's code page (a player's folder in Japanese, or José's): written and read
+     * by its UTF-8 path, and on disk by its real name, the wide one Windows shows */
+    {
+        char path[512];
+        wchar_t wide[512];
+        snprintf(path, sizeof(path), "%s", temp_file("khdays_\xe3\x81\x82_jos\xc3\xa9.wav")); /* あ, é */
+        CHECK(khdays_replacement_write_wav(path, 22050, 1, samples, 1000, 0, 0, 0));
+        CHECK(MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 512) > 0 &&
+              GetFileAttributesW(wide) != INVALID_FILE_ATTRIBUTES);
+        CHECK(khdays_replacement_load(&r, path, NULL, why, sizeof(why)) && r.frames == 1000);
+        khdays_replacement_free(&r);
+        DeleteFileW(wide);
+    }
+#endif
     remove(temp_file("khdays_loop.wav"));
     remove(temp_file("khdays_loop.flac"));
     remove(temp_file("khdays_noloop.wav"));

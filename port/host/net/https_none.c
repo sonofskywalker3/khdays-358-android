@@ -11,3 +11,15 @@ char *khdays_https_get(const char *url, const char *agent, int timeout_ms)
     (void)timeout_ms;
     return NULL;
 }
+
+int khdays_https_download(const char *url, const char *agent, const char *path, int timeout_ms,
+                          KhdaysDownloadProgress progress, void *context)
+{
+    (void)url;
+    (void)agent;
+    (void)path;
+    (void)timeout_ms;
+    (void)progress;
+    (void)context;
+    return 0;
+}

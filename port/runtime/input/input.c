@@ -426,8 +426,8 @@ u16 khdays_input_xy(void)
 
 int khdays_input_touch(int *x, int *y)
 {
-    if (khdays_movie_hd_showing()) {
-        return 0; /* the player's input is not the game's while an HD video plays */
+    if (khdays_movie_hd_running()) {
+        return 0; /* the player's input is not the game's while an HD video plays (or is about to) */
     }
     if (script_touch_x >= 0) {
         *x = script_touch_x;

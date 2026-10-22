@@ -36,6 +36,17 @@ and a day-357 save loaded into the Grey Area and challenge 07.
 | 6 | a mission's results | ov005 (`ov005_mission_result`) |
 | 12 | "Error de conexión. Pulsa A para volver a la pantalla principal." | ov010 (`scenes/ov010`) |
 
+**Overlays unloaded.** An overlay is loaded for the port from `FS_StartOverlay` until
+`FS_UnloadOverlayImage` (the end of `FS_UnloadOverlay`, the info's first word its id:
+`khdays_overlay_ended`) or another overlay starting over its range. Before 2026-10-21 only the
+second counted, and one the game unloaded but left in memory stayed "loaded": the credits' ov011
+(`0205ac40-0205e980`) is overlapped by neither the title's ov000 (`0204cac0-0205ac40`) nor the
+post-credits save's ov009, so after the credits the one-screen situation stayed "the-end" (it is
+decided before the scene) and the port's HD screens (the title, the save lists, the menus) gave way
+to the DS's until the field's ov002 started over it (the testers: "when you finish the game, the
+HUD returns to its original state"). Traced: on a new game every overlay ends as its scene is
+left (ov000 at f1732, ov012 and ov024 at f2154, ov004 at f2372; ov028 starts and ends at once).
+
 **Resets.** `OS_ResetSystem` (0x02003948) restarts the console, and
 `Boot_InitScene` picks the first scene from the word it left at
 `0x027ffc20`: 0 (a cold boot) and -2 give scene 1, anything else scene 12.
@@ -181,6 +192,18 @@ both were 0. What only the decompilation's C says, not a trace, is marked
   its buttons at +0x18 (pressed) and +0x1a (held), filled from the control
   packet: what `Pad_Sample` read in game frame N is there in frame N+1 (Up
   read in frame 2329 was +0x1a = 0x40 in 2330; B read in 2577, in 2578).
+- **Flip Foot** (the Tricky Monkey's status, `+0x2770` = 5): `Ov022_StepChargeSequence` swaps the
+  held Up/Down and Left/Right at `+0x1a` (`Ov022_SwapPairedStateFlags`), `Ov022_TranslateCommandToAction`
+  makes the heading from them and swaps them back. Analog movement's stick heading turns around when
+  the game's points away from it (`khdays_analog_heading_turned`); with the status forced, Right on
+  the stick moved Roxas as Right on the D-pad did (`KHDAYS_TRACE_PLAYER`), the other way from without it.
+- **How soon the field answers.** On the `play` walk's route (`KHDAYS_TRACE_PLAYER=1`,
+  `KHDAYS_TRACE_PAD`, `KHDAYS_TRACE_SOUND`): Right read in game frame 2513 had Roxas moved
+  by the VBlank after it, reaching full speed about 8 game frames later (a quarter of a
+  second); A read in game frame 2615 started the first sounds 2 game frames later and
+  `se_rox_weap_bg_hit` 7 frames later. The game itself answers within a game frame or two;
+  the rest is its own pace (30 game frames a second, the walk's ramp, the attack's
+  animation). Headless, so the picture's way to the screen is not in these numbers.
 - **Heading.** `Ov022_HeadingFromHeldDpad` turned the held D-pad into Up 0, Left
   0x3fff, Down 0x8000, Right 0xbfff, Up+Left 0x2000 (seen; its C gives
   Up+Right 0xe000, Down+Left 0x6000, Down+Right 0xa000). Left and Right are
@@ -372,7 +395,7 @@ The native build prints these to stderr when the variable is set:
   taken again (section 7, "The screen blends at the port's resolution").
 - `KHDAYS_TRACE_INPUT` -- each step of a `KHDAYS_INPUT` script, with the
   VBlank, the game's frame count and the pad reads so far.
-- `KHDAYS_TRACE_PLAYER` -- the field players' positions every 30 frames.
+- `KHDAYS_TRACE_PLAYER[=N]` -- the field players' positions every N frames (30 if no number is given).
 - `KHDAYS_TRACE_SCRIPT` -- each step of the action-script interpreter.
 - `KHDAYS_TRACE_SCENES` -- the field's event scenes (section 21): the field's record and script,
   the scene controller's pending scene, the event's status, each skip target set and cleared, the
@@ -2927,6 +2950,52 @@ second, without subtitles. Their first 0x100 bytes are XORed with a 16-byte
 pattern (the header's zeros show it); the rest is a plain MP4
 (`tools/hd/theater_movies.py` writes them as the port plays them).
 
+**The scenes' mark of a skip** (GameState field 0x2484, a bit). Every event scene starts with
+`00.05` (`CommitRecordCursor`): it tests an expression in its data, field 0x2484 = 1, and when it
+holds goes on into its skip path -- the skip target (+0x1c), a fade (`01.11`), `00.00`
+(`Game_ActionAssign`, mode 4: `GameState_SetField(0x2484, 1, 1)`) and a jump to its end -- else
+jumps over it to set its target (`00.0a`) and play. So a skip (the pause's Skip, or the port's own
+after an HD scene) sets the mark, and the scenes after it skip themselves until one clears it at
+its end (EV_S#196 does, `GameState_SetField(0x2484, 1, 0)`; EV_S#38 does not). A player's
+session (day 71, mission 0106, whose end section `99:_e` loads `4:38` and `4:39` and runs them):
+hd034 for EV_S#38 watched to its end, the port's skip asked at f14216, EV_S#39 (the ice cream)
+loaded at f14246 with its music, then the mission's review at f14253 without its stretch begun.
+The port now clears the mark when its own skip ends a scene (the HD videos watched, or a scene the
+scene map's `skip` leaves to the HD movie before it), and leaves it to the player's Skip. Seen
+(KHDAYS_TEST_SCENE=4:38 in the story walk, a mod's map giving EV_S#38 hd034 and EV_S#0 hd035): hd034
+to its end, the skip, then EV_S#0 began its stretch two frames later and hd035 played; before, with
+the game's skip asked in EV_S#177, EV_S#0 reached its end six frames later without beginning.
+
+**Movies the theater's videos outlast** (the DS's `mv/<id>.mods`, 14.985 pictures a second,
+against the theater's): 829, 831, 832, 834, 835 and 848 last as long within a second; 830 is 43.8
+s of hd830's 194.6, whose lines from 44 s are EV_S#168's (Riku and Mickey, `¡Riku!` to `Te lo
+prometo, Riku.`); 836 is 72.9 s of hd836's 129.8, whose lines from 73 s are EV_S#177's (Riku and
+the hooded Roxas, `¿Quién eres?` to `¡Cállate!`), and hd140, in none of the theater's chapters,
+is that end again in Japanese without subtitles; 833 is 128.1 s of hd833's 272.2, whose lines end
+by 125.1 s and which fades to black from 127.5 to 129.4 s, then shows Roxas and the fight against
+Xion (to her last form breaking, black from 270.6 s); 837 is 146.4 s of hd837's 169.1, its last
+line (`Lo he aceptado.`, 166 s) in no script of the game. The theater's chapters: day 354 hd129,
+hd130a, hd830 (nothing after it); day 357 hd833, hd848, then hd834; day 358 hd835, hd836, hd837,
+hd840. So the scene map skips EV_S#168 after hd830 and EV_S#177 after hd836 (`skip`, only when
+that video was the movie shown), and plays hd833 in three parts along the fight (the
+maintainer's pick): to 128.4 s for 833, its fade to black; from 129.4 to 173.2 s for EV_S#182
+(Roxas in the dark, then on Twilight Town's wall, his Keyblade drawn, his leap); from 173.2 s,
+the fight to Xion's last form breaking, for EV_S#183 (`mv#833 hd833[:128.4]`, `EV_S#182
+hd833[129.4:173.2]`, `EV_S#183 hd833[173.2:]`). Mission 0114 (day 357) runs the fight so: its
+script 99:_e plays EV_S#179 (wd_tt and wd_aw loaded) before area 11, EV_S#180 (wd_aw to wd_nm)
+before 21, EV_S#181 (wd_nm to wd_al) before 31, EV_S#182 (wd_al to wd_tt, Roxas's Keyblade and
+`mi/mo/xo.p2` loaded) before 41, the fight's last part, then once it is won EV_S#183 and area 97,
+whose script 97:_m holds the subtitles of the movies 833 and 848; EV_S#179-183 have no lines and
+each sets a skip target (the census's). EV_S#176, the scene with no lines nearby, is Roxas with two
+Keyblades among Neoshadows in The World That Never Was, day 358, seen with
+`KHDAYS_TEST_SCENE=4:176`. Seen: the decoder plays hd833 to 128.367 s (3851 pictures in
+128.41 s), from 129.400 to 173.200 s (1315 pictures in 43.84 s) and from 173.200 s to 272.200 s
+(2971 pictures in 99.03 s, the seek dropping the pictures and sound before the part), and hd808
+from 2.000 to 4.967 s; EV_S#182 swapped into day 7 (`KHDAYS_TEST_SCENE=4:182`) is recognised and
+given hd833 (headless, the DS's scene plays: Video `hd` is the window's); the story walk with
+EV_S#177 swapped in and its skip asked at once (`KHDAYS_TEST_SCENE=4:177`, `KHDAYS_TEST_SKIP_AT=0`)
+ended the stretch 6 frames later and went on.
+
 **The theater's subtitles.** It draws them over its videos from each video's
 event, `<lang folder>/event/<lang>/hd/hd<id>/hd<id>.exia2` (XML, `EXUSIA2_XML`;
 the same file in every folder, its header naming the language it was written
@@ -3388,13 +3457,13 @@ beside it and logs every frame where they differ.
 | pause | `gPauseMode` != 0 | mission walk f5029-5529 (2) |
 | the-end | ov011 loaded (the credits, scene 8: `Ov011_CreateScene` .. `Ov011_DestroyScene`) | the Theater's last entry with a copy of the maintainer's save, from f3809 (after the movie's last subtitle) to the list again near f26400 |
 | tutorial | `data_ov002_0207f9fc` != 0: set by `Ov002_OpenTutorialPage`, cleared by `Ov002_TeardownBriefing` | story walk from f12009 |
-| field-3d-both | engine A changes screens at two VBlanks in a row (POWCNT1 bit 15; the game shows its 3D on both screens so, with the display capture) | -- |
+| field-3d-both | engine A changes screens at two of the last 8 VBlanks (POWCNT1 bit 15; the game shows its 3D on both screens so, with the display capture), and stays while one of them does: the game skips a change where its frame runs late (a dialog opening), and with two in a row counted the layout became the upper screen's 3D, then the lower's, for the two VBlanks after each skip -- the testers' flickering cutscenes (2026-10-21) | a player's log of missions 46, 47, 51 and 53: the three layouts in turn, every VBlank, through events with Sora's memories |
 | field | scene 2 otherwise | -- |
 | info-upper | the panel of a mission's start (`data_ov002_0207f614`, its state +0x18c, 1-8 from f4207 to f4582 on the play walk) in 3-6: the mission's information on the upper screen, no deck | play walk f4229-4562 |
 | dialog | the field's event (ov023: `data_ov023_0208a784[1]`) has its status halfword's (+0x8758c) bit 1 set and bit 3 (closing, `Ov023_BeginClose`) clear while `Ov023_SceneRun` runs (an event over leaves 0xa there while ov023 stays loaded: mission 56 f6672-7997 runs, then 0xa); or a person talks in the field: the panel of a mission's start in state 10, its box across the upper screen's lower half (9-11 the talk: in 9 the HUD is still drawn, `Ov002_LeavePanelForMap` clearing BG1 and BG3 as it moves to 10; in 11 the HUD comes back) (no ov023 then; the story walk's input, then A through day 7's event, START on the tutorial's page, and UP and A towards Saix in the Grey Area) | story walk f10155-11926; Saix's words: state 10 f12954-13067, the box to f13064, the HUD again from f13082 in state 11 |
 | hud | the field, tutorial or field-3d-both otherwise | -- |
 | challenge | the story's camp started the mission as a challenge: `data_0204c240` bit 1 (`Ov025_MissionList_StartMission`: 3 with the challenge's thresholds copied, 1 otherwise); after Mission Mode's camp the byte is its session's (`Ov008SessionInfo`: 3 a wireless host), so not a challenge | run07 walk from f5359; the multiplayer walk (host, 3) not one |
-| lower-3d | engine A on the lower screen (POWCNT1 bit 15 clear) and not changing screens | story walk f11933-11943 |
+| lower-3d | engine A on the lower screen (POWCNT1 bit 15 clear) and no change of screens in the last 8 VBlanks | story walk f11933-11943 |
 | lower-shown | field-3d-both and the lower screen shows a picture: a quarter of its dots or more lit and its brightness not faded past 12 of 16, kept until 8 decisions dark (`host/render/onescreen.c`) | Holo-Missions 61 (mission 304), the Guard Armor in area 71: Sora's memories under the game's noise |
 | party-4 | ov022's member count (`func_ov022_020882f8`'s root +0x34) >= 4 | -- |
 | event | the pause opened while an event of the field runs (ov023's scene there: `data_ov023_0208a784[1]` set): a cutscene's pause, "Continue" and "Skip", the lower screen without the field's HUD | story walk with START in its dialog, f10737-11034; none in the mission walk's battle pause (f5029-5529) |
@@ -4500,6 +4569,37 @@ the story walk and `KHDAYS_TEST_DAY`).
   (`Ov023_FlushTextBox`, +0x588) unwinds the event and clears its target, which ends the course;
   Continue (`PauseMenu_GetMode` back to 0, the request clear) holds the game again and the video
   goes on. Seen on day 7's castle (hd002), both ways.
+- **No cut between the game and an HD scene.** Cut at once, the game's picture gave way to the video
+  mid-move and its sound stopped mid-note (the maintainer, 2026-10-21: Xion's third phase won, the
+  video of Roxas back in Twilight Town came in at once). The game's sound is made as its clock runs:
+  held, it makes none, so it cannot go down while held. The port lets the game go on for half a
+  second as its target is set, its picture under a black growing to full and its sound going down
+  with it (`khdays_movie_hd_game_level`, the sound thread setting the stream's gain), without the
+  player's buttons; then holds it and starts the video. The scene's first video comes up from black
+  and silence over its first half second, its last goes down to them over its last
+  (`khdays_hd_fades`: its pictures' level, its sound scaled sample by sample, from the file's time),
+  and once the scene ends the game comes up from black and silence over half a second. A Theater
+  chapter starts at once from its list; a movie's videos have no fades (the DS's movies begin and
+  end in black).
+- **The pause over a movie.** The DS has none: START skips a movie where its player allows it
+  (`Ov024_MobiClip_UpdatePlayback`'s flag bit 3), and the game's pause belongs to the event scenes
+  (`PauseMenu_PollInput`, `gPauseAllowed`). A player asked for one over the HD movies, as over the HD
+  scenes; the maintainer chose the DS's own look (2026-10-21), so the port draws the scene pause from
+  the game's pieces (`host/screens/movie_pause.cpp`). `Pause_LoadResources` loads
+  `pause/pausebg_<lang>.pbg` (a D2KP pack: its screen, 256 4-bit tiles, the palette) and the screens
+  `pauseicon.NSCR`, `pausemsg.NSCR` and `etcicon.NSCR` (33 x 12 cells, kept in 32 x 32 blocks as
+  `func_020130b0` reads them); `SubObject_SetupDrawsForMode`, for a scene (no mission, field 0x2483
+  clear), copies into the pack's screen the title (`pauseicon` 12 x 2 to cells 10, 8), Continue
+  (`etcicon` 11 x 2 from 0, 0 to 10, 11) and Skip (from 11, 0 to 10, 13) -- `SubObject_SetDrawParams`
+  (srcX, srcY, dstX, dstY, w, h, srcY doubled); an entry lit takes the cells 2 rows down and its blink
+  the cells 4 rows down (`SubObject_NudgeAndRedraw`), flipped every 16 frames (`Input_DebounceSlot`);
+  up and down wrap (`TabPanel_HandleUpDown`); `PauseMenu_Open` puts the screen on BG3 and darkens the
+  rest by 8. The tiles hold PAUSE, Continue, Skip, Give Up, Yes, No and Are you sure? in each
+  language. The port pauses the video and holds the game (its movie waits with it), darkens the
+  video by half and draws the panel as the DS's screen would show it, 4:3 in the middle; A takes the
+  entry lit, START (or B) continues; Skip does what START did. Seen over hd802 (the opening) in a
+  window: PAUSA, Continuar lit with the glove, Omitir. Silent, as the scenes' pause is under their
+  video (the game's sound muted).
 - **The theater's music over its videos.** Most of the theater's videos carry the voices and effects
   alone (hd848, Xion's end: near silence up to 2.9 s between lines, the DS movie 848's sound the same
   to a tenth of a decibel); the theater plays music over them from each event file's

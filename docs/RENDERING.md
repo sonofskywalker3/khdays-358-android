@@ -278,7 +278,15 @@ much of it the pixel covers (its colour weighted by its alpha), read from the
 smaller copy with one to two texels to the pixel while a copy's texel still
 comes from one tile: a sheet larger than shown keeps its lines, and its soft
 edges show what is under them by their alpha (`KD_SEE_THROUGH`), the pixel
-composed with the tile and without it, as the elements are. The map of replaced tiles
+composed with the tile and without it, as the elements are. A sheet smaller than
+shown (an output pixel inside one texel: a 6x sheet at a 4K window's 12x) is read
+through Catmull-Rom over the 4 x 4 texels round the pixel, those past the tile's
+edge taken at its edge (the tile beside it in the sheet is not the one beside it
+on the screen), so its edges stay smooth instead of showing the texels' steps. A
+frame whose 2D memory holds a replaced tile is composed at the internal resolution
+even without 3D (`has_hd_tiles`, gpu_present.c): at the DS's own size, which a
+frame of 2D alone keeps otherwise, the sheet was averaged down to the DS's pixels
+and stretched (the Journal's pages, seen blurred at 4K). The map of replaced tiles
 holds, where a replaced sheet's tile starts, the replacement's id + 1 in bits
 20-31 and the tile's number in bits 0-19; a page is mapped again when its
 memory, its bank or its bytes' origin changed.
@@ -298,7 +306,15 @@ game turns G; its head is where its parent's K puts it, so the mod keeps its
 own proportions. A joint at G's place with no correction is drawn with D_G
 itself; one that follows no node moves with its parent. A mesh is drawn both
 sides or front only as its file says (glTF `doubleSided`; FBX both), unless
-`<model>.bones.txt` says `cull back` or `cull none`. A room of a mission world
+`<model>.bones.txt` says `cull back` or `cull none`. A blended mesh's vertex
+alpha goes across each polygon, pixel by pixel, times the polygon's (the list's
+vertices carry it: `KhdaysG3dVertex` `a`, 1 for the game's, whose polygons have
+one alpha as the DS's): taken whole per triangle, KH2's sun glow came out a disk
+with a hard edge and its cloud layers in patches. Its polygons are cut by
+the clip volume but for the game's far plane, which neither cuts nor hides them
+(the DS's far-plane rule hid a polygon reaching past it whole: a KH2 room's
+floor, a few large triangles, went at once); what lies past it is drawn at its
+depth (`gfx/g3d_geometry.c` `finish_mod_polygon`). A room of a mission world
 whose world the same mod replaces is drawn with HD graphics off too: its new
 ground is played either way.
 
@@ -308,8 +324,15 @@ joint that follows no game node is drawn with its node's matrix now times its
 inverse bind, so a piece skinned to its own bones moves as the file says (a
 mesh on an animated node with no skin is made still on loading, and the log
 says so). The port's glTF extras say the rest: `khdays_sky` on a node (its
-meshes drawn as far as can be drawn, behind everything, never past the far
-plane), on a material `khdays_scroll` `[u, v]` (texture coordinates, 0..1 over
+meshes drawn as KH2 draws its skies: around the camera, turned with the room but
+not moved, and behind everything else, painted in turn with no depth among
+them -- the opaque and cut-out meshes in the file's order, then the blended
+ones, each layer a step nearer in a band of depth at the far end, set once the
+near plane has cut them at their true depth. Placed at the room's origin, a
+sky's inner ring of hills and trees was seen edge on as zigzags; with one depth
+for all, or their distance's, its layers covered one another in wedges; set
+before the cut, a sky triangle reaching behind the camera came out near it and
+hid the room), on a material `khdays_scroll` `[u, v]` (texture coordinates, 0..1 over
 the picture, added each game frame) and `khdays_frames` `{"pictures": [...],
 "frames": [[picture, game frames], ...], "loop": true, "loop_from": i}`
 (pictures in turn), on an animation `khdays_loop` and `khdays_loop_from`

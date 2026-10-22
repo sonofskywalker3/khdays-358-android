@@ -1041,6 +1041,42 @@ static void test_split_under_3d(void)
     }
 }
 
+/* The 3D on both screens with a swap skipped now and then (the game's frame late as a dialog opens):
+ * the layout must stay (it used to flicker for two VBlanks after each skip). Then 8 VBlanks with no
+ * swap and engine A below give the lower screen's 3D alone. */
+static void test_swap_skips(void)
+{
+    static const char screens[] = "101010010100100101010"; /* engine A: 1 the upper screen, 0 the lower */
+    KhdaysSituationInputs in;
+    memset(&in, 0, sizeof(in));
+    in.scene = 2; /* the field */
+    in.camp_screen = -2;
+    in.mission_start = -1;
+    in.event_status = -1;
+    uint32_t history = 0;
+    int upper = 1;
+    const KhdaysSituationFrame frame = {&in, 0, 0, 0, NULL, NULL};
+    KhdaysSituation s;
+    for (int i = 0; screens[i] != '\0'; ++i) {
+        const int now = screens[i] == '1';
+        in.engine_swaps = khdays_situation_swaps(&history, now != upper);
+        in.powcnt1 = now ? 0x8000u : 0u;
+        upper = now;
+        khdays_situation_decide(&frame, &s);
+        if (i >= 2) {
+            CHECK(s.scene == KHDAYS_SIT_FIELD_3D_BOTH);
+            CHECK((s.states & (1u << KHDAYS_ST_LOWER_3D)) == 0u);
+        }
+    }
+    in.powcnt1 = 0;
+    for (int i = 0; i < 8; ++i) {
+        in.engine_swaps = khdays_situation_swaps(&history, 0);
+        khdays_situation_decide(&frame, &s);
+        CHECK(s.scene == (i < 7 ? KHDAYS_SIT_FIELD_3D_BOTH : KHDAYS_SIT_FIELD));
+    }
+    CHECK((s.states & (1u << KHDAYS_ST_LOWER_3D)) != 0u);
+}
+
 int main(void)
 {
     test_places();
@@ -1058,6 +1094,7 @@ int main(void)
     test_steps();
     test_split();
     test_split_under_3d();
+    test_swap_skips();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;
