@@ -368,17 +368,23 @@ static int open_video(void)
 /* A buffer for a picture of `size` bytes: a spare one of that size, or a new one. */
 static uint8_t *picture_buffer(size_t size)
 {
+    /* under the lock: the refreshes give buffers back meanwhile (keep_spare, khdays_hd_picture_begin).
+     * Taken without it, a buffer could be listed twice, handed out twice and freed twice at the close
+     * (Scudo's "invalid chunk state when deallocating" at the opening's end). */
+    pthread_mutex_lock(&lock);
     while (hd.spare_count > 0) {
         Picture p = hd.spare[--hd.spare_count];
         if (p.size == size) {
+            pthread_mutex_unlock(&lock);
             return p.data;
         }
         free(p.data);
     }
+    pthread_mutex_unlock(&lock);
     return (uint8_t *)malloc(size);
 }
 
-/* Keeps a picture's buffer to be used again (freed if there is no room). */
+/* Keeps a picture's buffer to be used again (freed if there is no room). Under the lock. */
 static void keep_spare(Picture p)
 {
     if (hd.spare_count == hd.spare_capacity) {
@@ -1062,6 +1068,7 @@ int khdays_hd_picture_rgba(uint8_t **rgba, size_t *capacity, int *w, int *h)
 /* --- A voice over the game (khdays_hd_voice_play) ---------------------------------------------- */
 
 static pthread_mutex_t voice_lock = PTHREAD_MUTEX_INITIALIZER; /* guards the voice's stream against the pause and the volume */
+static pthread_mutex_t voice_control = PTHREAD_MUTEX_INITIALIZER; /* one start or stop at a time (game and window threads) */
 static float voice_gain = 1.0f;                                 /* khdays_hd_voice_set_gain */
 static volatile int voice_paused;                               /* khdays_hd_voice_pause */
 
@@ -1188,7 +1195,7 @@ static void *voice_run(void *unused)
     return NULL;
 }
 
-void khdays_hd_voice_stop(void)
+static void voice_stop(void)
 {
     if (!voice.have_thread) {
         return;
@@ -1207,12 +1214,21 @@ void khdays_hd_voice_stop(void)
     pthread_mutex_unlock(&voice_lock);
 }
 
+void khdays_hd_voice_stop(void)
+{
+    pthread_mutex_lock(&voice_control);
+    voice_stop();
+    pthread_mutex_unlock(&voice_control);
+}
+
 void khdays_hd_voice_play(const char *const *paths, int count)
 {
     char **files;
     int n = 0;
-    khdays_hd_voice_stop();
+    pthread_mutex_lock(&voice_control);
+    voice_stop();
     if (count <= 0 || (files = (char **)calloc((size_t)count, sizeof(*files))) == NULL) {
+        pthread_mutex_unlock(&voice_control);
         return;
     }
     for (int i = 0; i < count; ++i) {
@@ -1229,9 +1245,11 @@ void khdays_hd_voice_play(const char *const *paths, int count)
         }
         free(files);
         memset(&voice, 0, sizeof(voice));
+        pthread_mutex_unlock(&voice_control);
         return;
     }
     voice.have_thread = 1;
+    pthread_mutex_unlock(&voice_control);
 }
 
 void khdays_hd_voice_pause(int pause)
