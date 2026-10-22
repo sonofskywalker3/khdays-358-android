@@ -10,8 +10,9 @@
 int khdays_version_valid(const char *s);
 
 /* Below zero when version `a` is older than `b`, zero when they are the same, above zero when it
- * is newer. Missing parts count 0; at equal numbers a pre-release is the older. A text that is no
- * version counts older than any version. */
+ * is newer. Missing parts count 0; at equal numbers a pre-release is the older, and two pre-releases
+ * go by their texts with numbers as numbers (beta10 after beta9). A text that is no version counts
+ * older than any version. */
 int khdays_version_compare(const char *a, const char *b);
 
 /* The latest release's tag in GitHub's JSON answer (its "tag_name") into `tag`, at most `size`
@@ -32,7 +33,7 @@ typedef struct KhdaysReleaseFile {
 int khdays_release_installer(const char *json, KhdaysReleaseFile *out);
 
 /* The Android port's newest release in GitHub's answer for a repository's releases (a JSON array):
- * of those tagged "android-<version>" that list a "khdays-358-android-<...>.apk" with a digest, the
+ * of those tagged "android-<version>" or "android-<version>-beta<n>" that list a "khdays-358-android-<...>.apk" with a digest, the
  * highest version. That version (the tag without "android-", at most `size` bytes with its NUL) into
  * `version` and its APK into `out`: 1, or 0 when there is none. */
 int khdays_release_newest_android(const char *json, char *version, size_t size, KhdaysReleaseFile *out);

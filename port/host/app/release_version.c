@@ -7,10 +7,11 @@
 
 /* Reads a version: its three numbers (missing ones 0) and whether it is a pre-release. 0 when `s`
  * is no version. */
-static int parse(const char *s, unsigned long n[3], int *pre)
+static int parse(const char *s, unsigned long n[3], int *pre, const char **pre_text)
 {
     n[0] = n[1] = n[2] = 0;
     *pre = 0;
+    *pre_text = "";
     if (s == NULL) {
         return 0;
     }
@@ -34,6 +35,7 @@ static int parse(const char *s, unsigned long n[3], int *pre)
     }
     if (*s == '-') {
         *pre = s[1] != '\0';
+        *pre_text = s + 1;
         return *pre;
     }
     return *s == '\0' || *s == '+';
@@ -43,14 +45,42 @@ int khdays_version_valid(const char *s)
 {
     unsigned long n[3];
     int pre;
-    return parse(s, n, &pre);
+    const char *pre_text;
+    return parse(s, n, &pre, &pre_text);
+}
+
+/* Two pre-releases' parts ("beta2", "rc10"), their runs of digits compared as numbers: beta10 is after
+ * beta9. Build metadata ("+abc") is left out. */
+static int compare_pre(const char *a, const char *b)
+{
+    while (*a != '\0' && *a != '+' && *b != '\0' && *b != '+') {
+        if (isdigit((unsigned char)*a) && isdigit((unsigned char)*b)) {
+            unsigned long x = 0, y = 0;
+            while (isdigit((unsigned char)*a)) {
+                x = x * 10 + (unsigned long)(*a++ - '0');
+            }
+            while (isdigit((unsigned char)*b)) {
+                y = y * 10 + (unsigned long)(*b++ - '0');
+            }
+            if (x != y) {
+                return x < y ? -1 : 1;
+            }
+        } else if (*a != *b) {
+            return (unsigned char)*a < (unsigned char)*b ? -1 : 1;
+        } else {
+            ++a;
+            ++b;
+        }
+    }
+    return (*a != '\0' && *a != '+') - (*b != '\0' && *b != '+');
 }
 
 int khdays_version_compare(const char *a, const char *b)
 {
     unsigned long x[3], y[3];
     int pa, pb;
-    const int va = parse(a, x, &pa), vb = parse(b, y, &pb);
+    const char *ta, *tb;
+    const int va = parse(a, x, &pa, &ta), vb = parse(b, y, &pb, &tb);
     if (!va || !vb) {
         return va - vb;
     }
@@ -59,7 +89,7 @@ int khdays_version_compare(const char *a, const char *b)
             return x[i] < y[i] ? -1 : 1;
         }
     }
-    return pb - pa;
+    return pa && pb ? compare_pre(ta, tb) : pb - pa;
 }
 
 static const char *skip_space(const char *p)
@@ -115,6 +145,7 @@ int khdays_release_tag(const char *json, char *tag, size_t size)
 #define INSTALLER_SUFFIX ".exe"
 #define ANDROID_TAG_PREFIX "android-"
 #define APK_PREFIX "khdays-358-android-"
+#define BETA "-beta" /* the only pre-releases offered (the earlier "-test" builds are not) */
 #define APK_SUFFIX ".apk"
 #define DIGEST_PREFIX "sha256:"
 
@@ -320,7 +351,9 @@ int khdays_release_newest_android(const char *json, char *version, size_t size, 
         one[length] = '\0';
         if (raw_tag(one, tag, sizeof(tag)) && strncmp(tag, ANDROID_TAG_PREFIX, sizeof(ANDROID_TAG_PREFIX) - 1) == 0) {
             const char *v = tag + sizeof(ANDROID_TAG_PREFIX) - 1;
-            if (khdays_version_valid(v) && strlen(v) < size && (best[0] == '\0' || khdays_version_compare(v, best) > 0) &&
+            const char *dash = strchr(v, '-');
+            if (khdays_version_valid(v) && (dash == NULL || strncmp(dash, BETA, sizeof(BETA) - 1) == 0) &&
+                strlen(v) < size && (best[0] == '\0' || khdays_version_compare(v, best) > 0) &&
                 find_asset(one, &file, APK_PREFIX, APK_SUFFIX)) {
                 strcpy(best, v);
                 *out = file;

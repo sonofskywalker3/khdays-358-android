@@ -17,6 +17,9 @@ endif()
 # The release's version (the repository's VERSION file; its tag is v<version>): the update check
 # compares it with the latest release's (host/app/updates.c).
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" KHDAYS_VERSION LIMIT_COUNT 1)
+# a build's pre-release part after it ("-beta1": the Android build's, android/build.gradle)
+set(KHDAYS_VERSION_SUFFIX "" CACHE STRING "Appended to the VERSION file's version")
+string(APPEND KHDAYS_VERSION "${KHDAYS_VERSION_SUFFIX}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
 # only the files that tell it (the update check, the settings menu's corner): a new version rebuilds them alone
 set_source_files_properties(host/app/updates.c host/settings/settings_menu.cpp

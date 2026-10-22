@@ -118,12 +118,24 @@ static void test_android(void)
         "\"browser_download_url\":\"https://github.com/o/r/a\"}]},"
         "{\"tag_name\":\"android-0.1.3-test1\",\"assets\":[{\"name\":\"khdays-358-android-0.1.3-test1.apk\","
         "\"size\":29032421," DIGEST "\"browser_download_url\":\"https://github.com/o/r/b.apk\"}]}]";
-    /* the highest version with an APK: not the PC's tag, not the one without an APK */
-    CHECK(khdays_release_newest_android(list, version, sizeof(version), &f));
-    CHECK(strcmp(version, "0.1.4-test1") == 0 && strcmp(f.name, "khdays-358-android-0.1.4-test1.apk") == 0);
-    CHECK(f.size == 29294585 && strstr(f.url, "/android-0.1.4-test1/") != NULL);
-    CHECK(khdays_version_compare(version, "0.1.4") < 0); /* the 0.1.4 build is not told of its own test */
-    CHECK(khdays_version_compare("0.1.5-test1", "0.1.4") > 0);
+    /* the earlier test builds are not offered */
+    CHECK(!khdays_release_newest_android(list, version, sizeof(version), &f));
+    static const char betas[] =
+        "[{\"tag_name\":\"android-0.1.4-beta1\",\"assets\":[{\"name\":\"khdays-358-android-0.1.4-beta1.apk\","
+        "\"size\":7," DIGEST "\"browser_download_url\":\"https://github.com/o/r/b1.apk\"}]},"
+        "{\"tag_name\":\"android-0.1.4-beta2\",\"assets\":[{\"name\":\"khdays-358-android-0.1.4-beta2.apk\","
+        "\"size\":8," DIGEST "\"browser_download_url\":\"https://github.com/o/r/b2.apk\"}]},"
+        "{\"tag_name\":\"android-0.1.5-test1\",\"assets\":[{\"name\":\"khdays-358-android-0.1.5-test1.apk\","
+        "\"size\":9," DIGEST "\"browser_download_url\":\"https://github.com/o/r/t.apk\"}]}]";
+    /* the highest beta with an APK (not the PC's tag, not one without an APK); a test build passed over */
+    CHECK(khdays_release_newest_android(betas, version, sizeof(version), &f));
+    CHECK(strcmp(version, "0.1.4-beta2") == 0 && strcmp(f.name, "khdays-358-android-0.1.4-beta2.apk") == 0);
+    CHECK(f.size == 8 && khdays_version_compare(version, "0.1.4-beta1") > 0); /* beta 1 is told of beta 2 */
+    CHECK(khdays_version_compare("0.1.4-beta2", "0.1.4-beta1") > 0);
+    CHECK(khdays_version_compare("0.1.4-beta10", "0.1.4-beta9") > 0); /* numbers, not letters */
+    CHECK(khdays_version_compare("0.1.4-beta1", "0.1.4-beta1") == 0);
+    CHECK(khdays_version_compare("0.1.4", "0.1.4-beta3") > 0);
+    CHECK(khdays_version_compare("0.1.5-beta1", "0.1.4") > 0);
 #undef DIGEST
     CHECK(!khdays_release_newest_android("[]", version, sizeof(version), &f));
     CHECK(!khdays_release_newest_android("{\"tag_name\":\"android-0.1.4\"}", version, sizeof(version), &f));
