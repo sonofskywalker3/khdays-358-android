@@ -38,6 +38,9 @@
 
 static SDL_Window *window;
 static SDL_GPUDevice *device; /* NULL before the window is made, and while it is remade */
+#if defined(__ANDROID__)
+static void bottom_release(void);
+#endif
 static SDL_Renderer *renderer;
 static SDL_Texture *screens;      /* the two screens, upper above lower */
 static uint32_t shown[2 * W * H]; /* what it holds, to upload it again after a reset */
@@ -284,6 +287,11 @@ static void destroy(void)
         SDL_DestroyTexture(screens);
         screens = NULL;
     }
+#if defined(__ANDROID__)
+    if (device != NULL) {
+        bottom_release();
+    }
+#endif
     if (renderer != NULL) {
         SDL_DestroyRenderer(renderer);
         renderer = NULL;
@@ -1357,47 +1365,144 @@ static SDL_ScaleMode mode_for(SDL_Texture *t, float w, float h)
 }
 
 #if defined(__ANDROID__)
-/* The lower screen on the second display (host/android/bottom_screen.h): drawn into a texture of its
- * own size, read back and shown there. */
-static SDL_Texture *bottom_target;
+/* The lower screen on the second display (host/android/bottom_screen.h). Each frame it is scaled on the
+ * card to the size it is shown at there and copied into a buffer the processor can read, without
+ * waiting: a copy is shown when the card has finished it, a frame or two later. Waiting for the card
+ * each frame (SDL_RenderReadPixels, as before) kept the card idle between frames and the game at
+ * 45-50 fps. */
+#define BOTTOM_SLOTS 3 /* copies on their way at once; a frame finding none free sends nothing */
+typedef struct BottomSlot {
+    SDL_GPUTexture *texture; /* the lower screen at the display's size */
+    SDL_GPUTransferBuffer *buffer;
+    SDL_GPUFence *fence; /* while the copy is on its way */
+    Uint64 order;        /* when it was sent */
+} BottomSlot;
+static BottomSlot bottom_slots[BOTTOM_SLOTS];
 static int bottom_w, bottom_h;
+static Uint64 bottom_sent;
+
+static void bottom_release(void)
+{
+    for (int i = 0; i < BOTTOM_SLOTS; ++i) {
+        BottomSlot *s = &bottom_slots[i];
+        if (s->fence != NULL) {
+            SDL_WaitForGPUFences(device, true, &s->fence, 1);
+            SDL_ReleaseGPUFence(device, s->fence);
+        }
+        if (s->texture != NULL) {
+            SDL_ReleaseGPUTexture(device, s->texture);
+        }
+        if (s->buffer != NULL) {
+            SDL_ReleaseGPUTransferBuffer(device, s->buffer);
+        }
+        SDL_zero(*s);
+    }
+    bottom_w = bottom_h = 0;
+}
+
+/* Shows the newest copy the card has finished (the older finished ones are passed over). */
+static void bottom_show_finished(void)
+{
+    BottomSlot *newest = NULL;
+    for (int i = 0; i < BOTTOM_SLOTS; ++i) {
+        BottomSlot *s = &bottom_slots[i];
+        if (s->fence != NULL && SDL_QueryGPUFence(device, s->fence)) {
+            SDL_ReleaseGPUFence(device, s->fence);
+            s->fence = NULL;
+            if (newest == NULL || s->order > newest->order) {
+                newest = s;
+            }
+        }
+    }
+    if (newest != NULL) {
+        const uint8_t *rgba = (const uint8_t *)SDL_MapGPUTransferBuffer(device, newest->buffer, false);
+        if (rgba != NULL) {
+            khdays_bottom_present(rgba, bottom_w, bottom_h, bottom_w * 4);
+            SDL_UnmapGPUTransferBuffer(device, newest->buffer);
+        }
+    }
+}
+
+static int bottom_make(int w, int h)
+{
+    bottom_release();
+    for (int i = 0; i < BOTTOM_SLOTS; ++i) {
+        SDL_GPUTextureCreateInfo t;
+        SDL_GPUTransferBufferCreateInfo b;
+        SDL_zero(t);
+        t.type = SDL_GPU_TEXTURETYPE_2D;
+        t.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        t.width = (Uint32)w;
+        t.height = (Uint32)h;
+        t.layer_count_or_depth = 1;
+        t.num_levels = 1;
+        SDL_zero(b);
+        b.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+        b.size = (Uint32)(w * h * 4);
+        bottom_slots[i].texture = SDL_CreateGPUTexture(device, &t);
+        bottom_slots[i].buffer = SDL_CreateGPUTransferBuffer(device, &b);
+        if (bottom_slots[i].texture == NULL || bottom_slots[i].buffer == NULL) {
+            bottom_release();
+            return 0;
+        }
+    }
+    bottom_w = w;
+    bottom_h = h;
+    return 1;
+}
 
 static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
 {
-    const int w = (int)from->w, h = (int)from->h;
-    SDL_Texture *previous;
-    SDL_Surface *read, *rgba;
-    if (w <= 0 || h <= 0) {
+    SDL_GPUTexture *source = (SDL_GPUTexture *)SDL_GetPointerProperty(SDL_GetTextureProperties(lower),
+                                                                       SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, NULL);
+    BottomSlot *slot = NULL;
+    SDL_GPUCommandBuffer *cmd;
+    int w = 0, h = 0;
+    if (source == NULL || from->w <= 0.0f || from->h <= 0.0f || !khdays_bottom_fit_size(&w, &h) || w <= 0 ||
+        h <= 0) {
         return;
     }
-    if (bottom_target == NULL || bottom_w != w || bottom_h != h) {
-        if (bottom_target != NULL) {
-            SDL_DestroyTexture(bottom_target);
-        }
-        bottom_target = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_TARGET, w, h);
-        bottom_w = w;
-        bottom_h = h;
-        if (bottom_target == NULL) {
-            return;
-        }
-    }
-    previous = SDL_GetRenderTarget(renderer);
-    SDL_SetRenderTarget(renderer, bottom_target);
-    SDL_SetTextureScaleMode(lower, SDL_SCALEMODE_NEAREST);
-    SDL_RenderTexture(renderer, lower, from, NULL);
-    read = SDL_RenderReadPixels(renderer, NULL);
-    SDL_SetRenderTarget(renderer, previous);
-    if (read == NULL) {
+    if ((w != bottom_w || h != bottom_h) && !bottom_make(w, h)) {
         return;
     }
-    rgba = read->format == SDL_PIXELFORMAT_ABGR8888 ? read : SDL_ConvertSurface(read, SDL_PIXELFORMAT_ABGR8888);
-    if (rgba != NULL) {
-        khdays_bottom_present((const uint8_t *)rgba->pixels, rgba->w, rgba->h, rgba->pitch);
-        if (rgba != read) {
-            SDL_DestroySurface(rgba);
-        }
+    bottom_show_finished();
+    for (int i = 0; i < BOTTOM_SLOTS && slot == NULL; ++i) {
+        slot = bottom_slots[i].fence == NULL ? &bottom_slots[i] : NULL;
     }
-    SDL_DestroySurface(read);
+    if (slot == NULL || (cmd = SDL_AcquireGPUCommandBuffer(device)) == NULL) {
+        return;
+    }
+    {
+        SDL_GPUBlitInfo blit;
+        SDL_GPUCopyPass *copy;
+        SDL_GPUTextureRegion region;
+        SDL_GPUTextureTransferInfo to;
+        SDL_zero(blit);
+        blit.source.texture = source;
+        blit.source.x = (Uint32)from->x;
+        blit.source.y = (Uint32)from->y;
+        blit.source.w = (Uint32)from->w;
+        blit.source.h = (Uint32)from->h;
+        blit.destination.texture = slot->texture;
+        blit.destination.w = (Uint32)w;
+        blit.destination.h = (Uint32)h;
+        blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        blit.filter = video.smooth_scaling ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
+        SDL_BlitGPUTexture(cmd, &blit);
+        copy = SDL_BeginGPUCopyPass(cmd);
+        SDL_zero(region);
+        SDL_zero(to);
+        region.texture = slot->texture;
+        region.w = (Uint32)w;
+        region.h = (Uint32)h;
+        region.d = 1;
+        to.transfer_buffer = slot->buffer;
+        SDL_DownloadFromGPUTexture(copy, &region, &to);
+        SDL_EndGPUCopyPass(copy);
+    }
+    slot->fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    slot->order = ++bottom_sent;
 }
 
 /* With the lower screen on the second display: the window shows the upper screen alone, as wide as it

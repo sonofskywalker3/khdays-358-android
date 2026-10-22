@@ -19,6 +19,10 @@ int khdays_bottom_attached(void);
  * largest 4:3 rectangle that fits, centred, nearest sampled. Does nothing when none is attached. */
 void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch);
 
+/* The size the lower screen is shown at on the second display (its largest 4:3 rectangle): 1 while
+ * one is attached. A picture of that size is copied as it is, without scaling. */
+int khdays_bottom_fit_size(int *width, int *height);
+
 /* Shows the title's logo from the HD menu (else the app's crown mark) alone, on black, on the second
  * display: while it has nothing to show (the title on the upper display), so that it is seen to be in
  * use. Drawn once; again only after something else was shown there or the display came back. */

@@ -115,6 +115,18 @@ int khdays_bottom_attached(void)
     return attached;
 }
 
+int khdays_bottom_fit_size(int *width, int *height)
+{
+    int x, y, attached;
+    pthread_mutex_lock(&lock);
+    attached = window != NULL && surface_w > 0 && surface_h > 0;
+    if (attached) {
+        fit(surface_w, surface_h, &x, &y, width, height);
+    }
+    pthread_mutex_unlock(&lock);
+    return attached;
+}
+
 static void fill(uint8_t *bits, int stride, int x0, int y0, int w, int h)
 {
     for (int y = y0; y < y0 + h; ++y) {
@@ -476,6 +488,13 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     (void)width;
     (void)height;
     (void)pitch;
+}
+
+int khdays_bottom_fit_size(int *width, int *height)
+{
+    (void)width;
+    (void)height;
+    return 0;
 }
 
 void khdays_bottom_present_mark(void)
