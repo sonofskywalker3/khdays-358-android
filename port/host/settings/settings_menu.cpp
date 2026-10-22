@@ -37,6 +37,11 @@ constexpr Uint64 kCaptureMs = 5000;         // how long a new binding waits for 
 constexpr Uint64 kRepeatDelayMs = 400;      // a held gamepad direction starts repeating after this,
 constexpr Uint64 kRepeatEveryMs = 100;      // and then repeats this often
 constexpr int kQuit = KHDAYS_SECTION_COUNT; // the column's last entry, Quit the game (B or Escape close the menu)
+#if defined(__ANDROID__)
+constexpr bool kWrap = true; // a handheld: up from the first entry or row goes to the last, and down back round
+#else
+constexpr bool kWrap = false;
+#endif
 
 enum Mode { MODE_BROWSE, MODE_CAPTURE, MODE_CONFLICT, MODE_UNBOUND, MODE_PRESET, MODE_TEXT, MODE_UPDATE, MODE_QUIT };
 enum { FACE_ACCEPT, FACE_CLEAR, FACE_BACK, FACE_COUNT };
@@ -436,8 +441,11 @@ void choose_section(int section)
 void column_move(int dir)
 {
     int next = m.column + dir;
+    if (kWrap) {
+        next = (next + kQuit + 1) % (kQuit + 1); // the entries are 0 to kQuit
+    }
     while (next >= 0 && next < kQuit && !khdays_model_section_shown(next)) {
-        next += dir;
+        next = kWrap ? (next + dir + kQuit + 1) % (kQuit + 1) : next + dir;
     }
     if (next < 0) {
         return;
@@ -617,10 +625,14 @@ bool activate()
 void row_move(int dir)
 {
     int next = m.row;
+    int steps = 0;
     do {
         next += dir;
-    } while (next >= 0 && next < m.count && !selectable(m.rows[next]));
-    if (next >= 0 && next < m.count) {
+        if (kWrap && m.count > 0) {
+            next = (next + m.count) % m.count;
+        }
+    } while (next >= 0 && next < m.count && !selectable(m.rows[next]) && ++steps < m.count);
+    if (next >= 0 && next < m.count && selectable(m.rows[next])) {
         m.row = next;
         settle();
         m.scroll_to_focus = true;
