@@ -1,5 +1,10 @@
 # khdays-port
 
+> **This is the Android build of [Yokimitsuro's khdays-port](https://github.com/Yokimitsuro/khdays-port).**
+> The port, and the decompilation it runs on, come from there; this fork adds the Android app and
+> the AYN Thor's two-screen layout. For the PC version, go to the
+> [original repository](https://github.com/Yokimitsuro/khdays-port).
+
 https://github.com/user-attachments/assets/cf4f4c99-220c-4a11-9ce0-7cd8a10f9d3b
 
 *Running on the AYN Thor: both screens, HD 3D and the HD cutscenes. For Android, download the
