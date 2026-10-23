@@ -162,6 +162,15 @@ unsigned long long khdays_heaps_committed(void)
     return 0;
 }
 
+int khdays_heaps_touched(KhdaysRef reference, unsigned *rest)
+{
+    /* a page the game never touched reads as zeros and is given no memory by being read: every page
+     * can be read, one page at a time */
+    const unsigned page = 4096u;
+    *rest = page - (reference - KHDAYS_HEAPS_BASE) % page;
+    return 1;
+}
+
 void khdays_heaps_reset(void)
 {
     /* given back: the next touch reads zeros, as a decommitted range recommitted does on Windows */
