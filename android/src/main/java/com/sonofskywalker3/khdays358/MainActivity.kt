@@ -119,10 +119,14 @@ class MainActivity : SDLActivity() {
         }
     }
 
-    /** SDL's surface, plus a Surface.setFrameRate request where the API exists. */
+    /**
+     * SDL's surface, plus a Surface.setFrameRate request where the API exists, telling the game when it
+     * comes and goes (GameSurface: no frame is presented without one).
+     */
     private class FastSurface(context: Context) : SDLSurface(context) {
         override fun surfaceCreated(holder: SurfaceHolder) {
             super.surfaceCreated(holder)
+            GameSurface.ready(true) // SDL holds the new surface: frames are presented again
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 return
             }
@@ -131,6 +135,11 @@ class MainActivity : SDLActivity() {
             } catch (e: IllegalArgumentException) {
                 Log.w(TAG, "display: setFrameRate refused: ${e.message}")
             }
+        }
+
+        override fun surfaceDestroyed(holder: SurfaceHolder) {
+            GameSurface.ready(false) // before SDL lets it go; a frame being presented ends first
+            super.surfaceDestroyed(holder)
         }
     }
 

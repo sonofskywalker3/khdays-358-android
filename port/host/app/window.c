@@ -5,6 +5,7 @@
 #include "host.h"
 #if defined(__ANDROID__)
 #include "../android/bottom_screen.h"
+#include "../android/game_surface.h"
 #endif
 #include "devices.h"
 #include "press_edges.h"
@@ -281,6 +282,11 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     if (khdays_present_lost()) {
         return;
     }
+#if defined(__ANDROID__)
+    if (!khdays_game_surface_frame_begin()) {
+        return; /* no surface to show into now (host/android/game_surface.h) */
+    }
+#endif
     khdays_present_draw();
     khdays_save_screen_draw(renderer);   /* the port's save list over the game's (runtime/menus/savelist.h) */
     khdays_cine_screen_draw(renderer);   /* MODO CINE's list as the HD theater's (runtime/menus/cinelist.h) */
@@ -304,6 +310,9 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     }
     khdays_settings_draw(renderer, window);
     SDL_RenderPresent(renderer);
+#if defined(__ANDROID__)
+    khdays_game_surface_frame_end();
+#endif
 }
 
 /* Whether the open settings menu paused the game. In a multiplayer session

@@ -373,7 +373,8 @@ else()
             host/movies/movie_hd_android.c       # the HD video through MediaCodec
             host/net/https_android.c             # the update check and download through the app's Kotlin side
             host/app/update_install_android.c    # the update's APK put in place by Android's installer
-            host/android/app_class.c)
+            host/android/app_class.c
+            host/android/game_surface.c)         # frames presented only while the game's surface is there
     else()
         list(APPEND KHDAYS_PLATFORM_SOURCES
             host/movies/movie_hd_none.c
