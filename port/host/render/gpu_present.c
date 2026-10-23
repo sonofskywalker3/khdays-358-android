@@ -110,6 +110,7 @@ static int one_made;                 /* a one-screen picture has been made (the 
 static int one_kind;                 /* how the frame's screens are shown on one screen (KHDAYS_SCREENS_*) */
 static int presented_w, presented_h; /* the logical presentation set now */
 static int port2d_upper;             /* the engine on the upper screen */
+static int port_screen;              /* one of the port's own screens covered the window last frame */
 #if defined(__ANDROID__)
 static KhdaysVideo given_video; /* the settings as given, before the second display's say */
 static int two_displays;        /* they were applied with the lower screen on a display of its own */
@@ -1359,6 +1360,11 @@ int khdays_present_one_picture(void)
     return one_drawn && (one_kind == KHDAYS_SCREENS_UPPER || one_kind == KHDAYS_SCREENS_LOWER);
 }
 
+void khdays_present_port_screen(int covered)
+{
+    port_screen = covered;
+}
+
 /* The scale mode for texture `t` shown as `w` x `h` DS pixels: nearest when it already has the
  * window's pixels for them (shrunk to the size shown, gfx_render.c) -- drawn one to one, a filter
  * would only blur it -- else the setting's. */
@@ -1422,7 +1428,7 @@ static void bottom_show_finished(void)
             }
         }
     }
-    if (newest != NULL) {
+    if (newest != NULL && !port_screen) {
         const uint8_t *rgba = (const uint8_t *)SDL_MapGPUTransferBuffer(device, newest->buffer, false);
         if (rgba != NULL) {
             khdays_bottom_present(rgba, bottom_w, bottom_h, bottom_w * 4);
@@ -1475,6 +1481,12 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
         return;
     }
     bottom_show_finished();
+    if (port_screen) {
+        /* the port's screen on the upper display stands for the game's lower one under it: the lower
+         * display shows the mark rather than the page that screen replaces */
+        khdays_bottom_present_mark();
+        return;
+    }
     for (int i = 0; i < BOTTOM_SLOTS && slot == NULL; ++i) {
         slot = bottom_slots[i].fence == NULL ? &bottom_slots[i] : NULL;
     }

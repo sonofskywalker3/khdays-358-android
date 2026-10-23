@@ -79,6 +79,10 @@ void khdays_present_set_video(const KhdaysVideo *video);
 void khdays_present_draw(void);
 /* Whether the window shows the one-screen picture of the last frame made. */
 int khdays_present_one_picture(void);
+/* Whether one of the port's own screens (the save list, the theater, the rooms, Mission Mode's
+ * character select) covered the whole window last frame: with the lower screen on a second display,
+ * that display then shows the mark, not the game's page under the port's screen. */
+void khdays_present_port_screen(int covered);
 
 /* A render event: after a device reset the picture is uploaded again; after a lost device the
  * renderer is made again. Returns the renderer to use from now on (`*renewed` set when new: the

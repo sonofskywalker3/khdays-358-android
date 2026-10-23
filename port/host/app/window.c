@@ -288,10 +288,13 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     }
 #endif
     khdays_present_draw();
-    khdays_save_screen_draw(renderer);   /* the port's save list over the game's (runtime/menus/savelist.h) */
-    khdays_cine_screen_draw(renderer);   /* MODO CINE's list as the HD theater's (runtime/menus/cinelist.h) */
-    khdays_room_screen_draw(renderer);   /* the port's list of rooms over the game's (runtime/net/roomlist.h) */
-    khdays_select_screen_draw(renderer); /* Mission Mode's character select on one screen (charselect.h) */
+    {
+        int covered = khdays_save_screen_draw(renderer); /* the port's save list over the game's (runtime/menus/savelist.h) */
+        covered |= khdays_cine_screen_draw(renderer);   /* MODO CINE's list as the HD theater's (runtime/menus/cinelist.h) */
+        covered |= khdays_room_screen_draw(renderer);   /* the port's list of rooms over the game's (runtime/net/roomlist.h) */
+        covered |= khdays_select_screen_draw(renderer); /* Mission Mode's character select on one screen (charselect.h) */
+        khdays_present_port_screen(covered);
+    }
     khdays_camp_screen_draw(renderer);   /* Mission Mode's camp menu on one screen (camp.h) */
     khdays_mod_screen_draw(renderer);    /* a mod's screen, the title's mods' prompt (runtime/scripts/screens.h) */
     fps = khdays_present_fps(&pictures, &frames);
