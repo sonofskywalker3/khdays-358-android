@@ -331,6 +331,7 @@ enum {
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,
     TXT_MOUSE_SPEED,
+    TXT_MOD_CHOOSE, /* a mod's screens: its list's A */
     TXT_COUNT
 };
 

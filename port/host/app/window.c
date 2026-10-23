@@ -18,6 +18,7 @@
 #include "../settings/settings_ui.h"
 #include "../screens/cine_screen.h"
 #include "../../runtime/menus/cinelist.h"
+#include "../screens/mod_screen.h"
 #include "../screens/room_screen.h"
 #include "../screens/select_screen.h"
 #include "../screens/camp_screen.h"
@@ -286,6 +287,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     khdays_room_screen_draw(renderer);   /* the port's list of rooms over the game's (runtime/net/roomlist.h) */
     khdays_select_screen_draw(renderer); /* Mission Mode's character select on one screen (charselect.h) */
     khdays_camp_screen_draw(renderer);   /* Mission Mode's camp menu on one screen (camp.h) */
+    khdays_mod_screen_draw(renderer);    /* a mod's screen, the title's mods' prompt (runtime/scripts/screens.h) */
     fps = khdays_present_fps(&pictures, &frames);
     if (fps) {
         khdays_settings_fps_draw(renderer, pictures, frames);
@@ -673,6 +675,7 @@ static int host_thread(void *unused)
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
             khdays_room_screen_renderer_gone();
+            khdays_mod_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
             khdays_camp_screen_renderer_gone();
             khdays_movie_pause_renderer_gone();
@@ -710,6 +713,7 @@ static int host_thread(void *unused)
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
             khdays_room_screen_renderer_gone();
+            khdays_mod_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
             khdays_camp_screen_renderer_gone();
             khdays_movie_pause_renderer_gone();

@@ -2,10 +2,12 @@
 the result file and the exit codes."""
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import setup_steps as s  # noqa: E402
@@ -180,6 +182,100 @@ class HdTools(unittest.TestCase):
             # none failing: no log left from before
             s.run_hd_tools([("good.py", [])], line_of, folder, log, "en")
             self.assertFalse(log.exists())
+
+    def test_each_tool_with_the_files_it_wrote(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            (folder / "one.py").write_text(
+                "from pathlib import Path\n"
+                "Path('mod/x').mkdir(parents=True)\n"
+                "Path('mod/x/1.txt').write_text('1')\n"
+                "Path('mod/shared.txt').write_text('one')\n",
+                encoding="utf-8",
+            )
+            (folder / "two.py").write_text(
+                "from pathlib import Path\nPath('mod/2.txt').write_text('2')\nPath('mod/shared.txt').write_text('two!')\n",
+                encoding="utf-8",
+            )
+
+            def line_of(tool, template):
+                return [sys.executable, str(folder / tool), *template]
+
+            runs = [("one.py", []), ("two.py", [])]
+            pieces = s.run_hd_tools(runs, line_of, folder, folder / "log", "en", watch=folder / "mod")
+            self.assertEqual(pieces[0]["files"], ["shared.txt", "x/1.txt"])
+            self.assertEqual(pieces[1]["files"], ["2.txt", "shared.txt"])  # one's file written again
+
+    def test_the_installed_videos_are_linked_not_copied(self):
+        with tempfile.TemporaryDirectory() as d:
+            installed, work = Path(d) / "cinematics", Path(d) / "work" / "cinematics"
+            (installed / "music").mkdir(parents=True)
+            (installed / "hd802.mp4").write_bytes(b"a video")
+            s.link_videos(installed, work)
+            self.assertTrue(os.path.samefile(installed / "hd802.mp4", work / "hd802.mp4"))
+            self.assertFalse((work / "music").exists())  # written again by the tool: never shared
+            s.link_videos(Path(d) / "none", Path(d) / "work2")  # none installed yet
+
+
+class HdMenuTools(unittest.TestCase):
+    """Each HD menu tool kept apart: an update runs again only those that changed."""
+
+    def tools(self, folder: Path):
+        hd = folder / "tools" / "hd"
+        hd.mkdir(parents=True)
+        (hd / "base.py").write_text("X = 1\n", encoding="utf-8")
+        (hd / "a.py").write_text("import base as b\nimport numpy\n", encoding="utf-8")
+        (hd / "b.py").write_text("from base import X\n", encoding="utf-8")
+        (hd / "c.py").write_text("print('c')\n", encoding="utf-8")
+        return mock.patch.multiple(
+            s,
+            tool_folders=lambda: {"rom": folder / "tools", "hd": hd},
+            HD_MENU_TOOLS=[("a.py", ["{mare}"]), ("b.py", []), ("c.py", [])],
+        )
+
+    def test_a_tool_is_made_by_what_it_imports_too(self):
+        with tempfile.TemporaryDirectory() as d, self.tools(Path(d)):
+            hd = Path(d) / "tools" / "hd"
+            a = s.tool_made_by("a.py", ["{mare}"])
+            self.assertNotEqual(a, s.tool_made_by("a.py", ["{ddd}"]))  # other arguments
+            (hd / "c.py").write_text("print('changed')\n", encoding="utf-8")
+            self.assertEqual(a, s.tool_made_by("a.py", ["{mare}"]))  # not imported
+            (hd / "base.py").write_text("X = 2\n", encoding="utf-8")
+            self.assertNotEqual(a, s.tool_made_by("a.py", ["{mare}"]))
+
+    def test_only_what_changed_is_made_again(self):
+        with tempfile.TemporaryDirectory() as d, self.tools(Path(d)):
+            hd, made = Path(d) / "tools" / "hd", Path(d) / "mods" / s.HD_MOD
+            files = {"a.py": ["a/1.png"], "b.py": ["b/2.png", "shared.txt"], "c.py": ["c/3.png", "shared.txt"]}
+            for f in ("a/1.png", "b/2.png", "c/3.png", "shared.txt"):
+                (made / f).parent.mkdir(parents=True, exist_ok=True)
+                (made / f).write_text(f, encoding="utf-8")
+            inputs = {"1.5+2.5": r"Z:\KH 1.5", "2.8": r"Z:\KH 2.8"}
+
+            def record():
+                tools = {t: {"by": s.tool_made_by(t, template), "files": files[t]} for t, template in s.HD_MENU_TOOLS}
+                return {"steps": {"hd-menus": {"complete": True, "inputs": inputs, "tools": tools}}}
+
+            everything = ["a.py", "b.py", "c.py"]
+            state = record()
+            self.assertEqual(s.menu_tools_to_make(state, inputs, made), [])
+            (hd / "a.py").write_text("import base\n# changed\n", encoding="utf-8")
+            self.assertEqual(s.menu_tools_to_make(state, inputs, made), ["a.py"])
+            # b changed (by what it imports), and c wrote one of its files: both again, in their order
+            state = record()
+            (hd / "base.py").write_text("X = 3\n", encoding="utf-8")
+            self.assertEqual(s.menu_tools_to_make(state, inputs, made), everything)
+            state = record()
+            (made / "a" / "1.png").unlink()  # one of its files gone
+            self.assertEqual(s.menu_tools_to_make(state, inputs, made), ["a.py"])
+            del state["steps"]["hd-menus"]["tools"]["a.py"]  # it failed last time
+            self.assertEqual(s.menu_tools_to_make(state, inputs, made), ["a.py"])
+            self.assertEqual(s.menu_tools_to_make(record(), {**inputs, "2.8": r"Z:\Other"}, made), everything)
+            # a record from before each tool was kept: all or none
+            old = {"steps": {"hd-menus": {"complete": True, "inputs": inputs, "made_by": s.made_by("hd-menus")}}}
+            self.assertEqual(s.menu_tools_to_make(old, inputs, made), [])
+            old["steps"]["hd-menus"]["made_by"] = "another installer's tools"
+            self.assertEqual(s.menu_tools_to_make(old, inputs, made), everything)
 
 
 class Results(unittest.TestCase):

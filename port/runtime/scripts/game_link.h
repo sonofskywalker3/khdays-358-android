@@ -20,6 +20,12 @@ int khdays_link_paused(void);
 /* The current scene (gSceneCtl) and its argument. */
 unsigned khdays_link_scene(unsigned *argument);
 
+/* Where the game is, for the names of version 2 that act only there (api_v2.h): the field (scene 2 with
+ * the field's and the battle's overlays), a camp (Mission Mode's, scene 19 with ov008; the story's,
+ * scene 5 with ov025), the title (scene 1). */
+enum KhdaysWhere { KHDAYS_WHERE_ELSEWHERE, KHDAYS_WHERE_FIELD, KHDAYS_WHERE_CAMP, KHDAYS_WHERE_TITLE };
+int khdays_link_where(void);
+
 /* The game's state (gGameState's reference), 0 while there is none: the state names and the item
  * actions need it. */
 unsigned khdays_link_state(void);
@@ -44,6 +50,10 @@ int khdays_link_mission(void);
  * and maximum at +0x16 (Ov022_ActorSetHp's entity). Each returns 0 without the actor. */
 int khdays_link_position(float at[3]);
 int khdays_link_player_hp(int *hp, int *max);
+/* The local player put at `at` (the field's units) by the game's own routine for it
+ * (func_ov022_02088218: its actor moved with its child, its position +0x48c, its motion reset after the
+ * move); NULL when done, else why not. */
+const char *khdays_link_set_position(const float at[3]);
 /* Through Ov022_ActorSetHp, as the game's own hits and cures do. */
 int khdays_link_set_player_hp(int hp);
 
@@ -53,10 +63,30 @@ void khdays_link_entity_hp(const void *entity, int *hp, int *max);
 /* Whether that entity is the local player's actor. */
 int khdays_link_is_player(const void *entity);
 
-/* KHDAYS_TRACE_MODS: what the interface's open questions are answered from, on stderr: each HP
- * change's entity against the field's players, the game over's flags, the frame points per scene. */
-void khdays_link_trace_frame(void);
-void khdays_link_trace_hp(const void *entity, int before);
+/* The hit being dealt (Ov022_ReceiveHit's join): its source, NULL once dealt. Its attacker: the enemy's
+ * actor into `*actor` and its kind returned; -1 when the hit is no enemy's or none is being dealt. */
+void khdays_link_hit_from(void *source);
+int khdays_link_attacker(unsigned *actor);
+
+/* The game's language (1-5, the firmware's: English .. Spanish): the one just chosen, else the game's. */
+int khdays_link_language(void);
+
+/* Whether the title's menu waits for the player (its scene object's update Ov000_TickMenuLoop). */
+int khdays_link_title_idle(void);
+
+/* Whether the game over (ov027) is up. */
+int khdays_link_game_over(void);
+
+/* Whether the results being recorded record the mission cleared (Ov005_CommitMissionResults' rule). */
+int khdays_link_results_cleared(void);
+
+/* The mission ended as the pause's Give Up does (PauseMenu_ConfirmFrame's yes: Ov002_PauseMissionScene and
+ * game field 0x20ef), on to the results and the camp; NULL when done, else why not. */
+const char *khdays_link_leave_mission(void);
+
+/* Mission file `number` (mi/mi/<number>) started from Mission Mode's camp, by the camp's own presses
+ * (runtime/menus/mission_start.h); NULL when on its way, else why not. */
+const char *khdays_link_start_mission(int number);
 
 /* The game's actions, each through its own routine; NULL when done, else the reason it was not. */
 

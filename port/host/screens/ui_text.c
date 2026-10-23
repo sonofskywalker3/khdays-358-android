@@ -943,6 +943,7 @@ static const char *const texts[TXT_COUNT][5] = {
                         "Taste oder Knopf drücken: %s", "Premi un tasto o un pulsante: %s",
                         "Pulsa una tecla o un botón: %s"},
     [TXT_MODS] = {"Mods", "Mods", "Mods", "Mod", "Mods"},
+    [TXT_MOD_CHOOSE] = {"Choose", "Choisir", "Auswählen", "Scegli", "Elegir"},
     [TXT_MOD_ENABLED] = {"Enabled", "Activé", "Aktiviert", "Attivo", "Activado"},
     [TXT_MOD_EARLIER] = {"Load earlier", "Charger avant", "Früher laden", "Carica prima", "Cargar antes"},
     [TXT_MOD_LATER] = {"Load later", "Charger après", "Später laden", "Carica dopo", "Cargar después"},

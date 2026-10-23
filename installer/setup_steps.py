@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import traceback
@@ -223,18 +224,72 @@ def hd_made(state: dict[str, Any], step: str, folders: dict[str, str], made: Pat
         return False
     if record.get("made_by") != made_by(step):
         return False  # other tools (or a record from before they were kept): made again
+    return same_inputs(record, folders)
+
+
+def same_inputs(record: dict[str, Any], folders: dict[str, str]) -> bool:
     recorded = record.get("inputs", {})
     return set(recorded) == set(folders) and all(same_folder(recorded[k], folders[k]) for k in folders)
 
 
 def made_by(step: str) -> str:
-    """What an HD step's pieces are made by: its tools as installed beside the installer, with their
-    arguments, and for the videos the scene map; an update whose tools differ makes them again."""
-    tools = HD_MENU_TOOLS if step == "hd-menus" else HD_VIDEO_TOOLS
-    parts = [repr(tools).encode()] + [(tool_folders()["hd"] / t).read_bytes() for t, _ in tools]
-    if step == "hd-videos":
+    """What an HD step's pieces are made by as a whole: for the videos, their tool (with what it imports)
+    and the scene map; for the menus, their tools as earlier installers recorded them, before each was
+    kept apart (`menu_tools_to_make`). An update whose tools differ makes them again."""
+    if step == "hd-menus":
+        parts = [repr(HD_MENU_TOOLS).encode()] + [(tool_folders()["hd"] / t).read_bytes() for t, _ in HD_MENU_TOOLS]
+    else:
+        parts = [tool_made_by(t, template).encode() for t, template in HD_VIDEO_TOOLS]
         parts.append((HERE.parent / SCENE_MAP).read_bytes())
     return hashlib.sha256(b"".join(parts)).hexdigest()
+
+
+IMPORTS = re.compile(r"^\s*(?:import|from)\s+(\w+)", re.MULTILINE)
+
+
+def tool_made_by(tool: str, template: list[str]) -> str:
+    """What one HD tool's pieces are made by: the tool with its arguments and the repository's tools it
+    imports (theater_title.py's helpers, decompress_data.py...), as installed beside the installer."""
+    folders = tool_folders()
+    parts, seen, waiting = [repr((tool, template)).encode()], set(), [tool]
+    while waiting:
+        name = waiting.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        path = next((f / name for f in (folders["hd"], folders["rom"]) if (f / name).is_file()), None)
+        if path is None:
+            continue  # not one of the repository's (numpy, PIL...)
+        source = path.read_bytes()
+        parts.append(source)
+        waiting += [module + ".py" for module in IMPORTS.findall(source.decode("utf-8"))]
+    return hashlib.sha256(b"".join(parts)).hexdigest()
+
+
+def menu_tools_to_make(state: dict[str, Any], folders: dict[str, str], made: Path) -> list[str]:
+    """The HD menu tools to run, in their order: none when each one's files are there, made by the same
+    tool from these collections; else those whose tool changed or whose files went missing, with every
+    tool that made one of the same files. A record from before each tool was kept: all or none."""
+    everything = [tool for tool, _ in HD_MENU_TOOLS]
+    record = state.get("steps", {}).get("hd-menus")
+    if not record or not made.is_dir() or not any(made.iterdir()) or not same_inputs(record, folders):
+        return everything
+    tools = record.get("tools")
+    if tools is None:
+        return [] if hd_made(state, "hd-menus", folders, made) else everything
+    again = {
+        tool
+        for tool, template in HD_MENU_TOOLS
+        if tool not in tools
+        or tools[tool]["by"] != tool_made_by(tool, template)
+        or not all((made / f).is_file() for f in tools[tool]["files"])
+    }
+    while True:
+        files = {f for tool in again if tool in tools for f in tools[tool]["files"]}
+        sharing = {t for t in tools if t in everything and t not in again and files & set(tools[t]["files"])}
+        if not sharing:
+            return [tool for tool in everything if tool in again]
+        again |= sharing
 
 
 # ---- The commands ------------------------------------------------------------------------------
@@ -418,7 +473,7 @@ def to_recycle_bin(path: Path) -> None:
 # The tools that make the maintainer's mods/HD PACK (the HD menus and HUD, both collections) and the
 # theater's videos (1.5+2.5), each with its arguments: {mare}, {settings} the 1.5+2.5 theater's and
 # settings menu's files (their original/ folder), {ddd} 2.8's kh3d_first (its original/ and
-# remastered/), {hand} KH2's title sheet (kh2_first, remastered), {movies} the theater's videos.
+# remastered/), {kh2} KH2's kh2_first extraction, {hand} its title sheet, {movies} the theater's videos.
 HD_MENU_TOOLS = [
     ("theater_title.py", ["{mare}"]),
     ("theater_settings.py", ["{settings}"]),
@@ -427,6 +482,7 @@ HD_MENU_TOOLS = [
     ("theater_cine.py", ["{mare}"]),
     ("save_screen.py", ["{ddd}", "{mare}"]),
     ("ddd_camp.py", ["{ddd}", "{mare}", "{settings}"]),
+    ("kh2_fonts.py", ["{kh2}"]),
 ]
 HD_VIDEO_TOOLS = [
     ("theater_movies.py", ["{mare}", "--movies", "{movies}", "--videos", "--subtitles", "--music"]),
@@ -462,10 +518,12 @@ def run_hd_tools(
     cwd: Path,
     log: Path,
     language: str,
+    watch: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Each HD tool run in turn. One that fails leaves its screens with the DS's look and the others
     are made all the same (a copy changed by a mod may lack what one of them reads); what each failed
-    one said is kept whole in `log`, which is removed when none fails. Each tool, made or not."""
+    one said is kept whole in `log`, which is removed when none fails. Each tool, made or not, and for
+    one made the files under `watch` it wrote."""
     import subprocess
 
     pieces: list[dict[str, Any]] = []
@@ -473,6 +531,7 @@ def run_hd_tools(
     for i, (tool, template) in enumerate(runs):
         progress(i, len(runs), words("hd-making", language, what=tool))
         line = line_of(tool, template)
+        before = files_in(watch) if watch else {}
         done = subprocess.run(line, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if done.returncode != 0:
             said = done.stderr.strip()
@@ -480,12 +539,38 @@ def run_hd_tools(
             errors.append(f"== {tool} ({' '.join(line[1:])})" + chr(10) + (said or last) + chr(10))
             pieces.append({"tool": tool, "made": False, "error": last})
             continue
-        pieces.append({"tool": tool, "made": True})
+        piece = {"tool": tool, "made": True}
+        if watch:
+            piece["files"] = sorted(f for f, stamp in files_in(watch).items() if before.get(f) != stamp)
+        pieces.append(piece)
     log.unlink(missing_ok=True)
     if errors:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_bytes(chr(10).join(errors).encode("utf-8"))
     return pieces
+
+
+def files_in(folder: Path) -> dict[str, tuple[int, int]]:
+    """Each file under `folder` by its path there, with its size and when it was written."""
+    if not folder.is_dir():
+        return {}
+    found = {}
+    for path in folder.rglob("*"):
+        if path.is_file():
+            stat = path.stat()
+            found[path.relative_to(folder).as_posix()] = (stat.st_size, stat.st_mtime_ns)
+    return found
+
+
+def link_videos(installed: Path, work: Path) -> None:
+    """The videos already installed, linked into the work folder (not copied): theater_movies.py keeps
+    a video that is there, so it makes only the missing ones. On a disk without links, all are made."""
+    work.mkdir(parents=True, exist_ok=True)
+    for video in installed.glob("*.mp4"):
+        try:
+            os.link(video, work / video.name)
+        except OSError:
+            return
 
 
 def tool_arguments(template: list[str], places: dict[str, Path]) -> list[str]:
@@ -517,7 +602,14 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
 
     repository = HERE.parent
     hand = args.kh2 / "remastered" / HAND / HAND_ASSET
-    places = {"mare": args.mare, "settings": args.settings, "ddd": args.ddd, "hand": hand, "movies": args.movies}
+    places = {
+        "mare": args.mare,
+        "settings": args.settings,
+        "ddd": args.ddd,
+        "kh2": args.kh2,
+        "hand": hand,
+        "movies": args.movies,
+    }
     # the archives the sources are extractions of, and how a file there names its entry
     sources = [
         ("Mare", args.mare, "original"),
@@ -630,7 +722,7 @@ def movies_folder(folder: Path) -> Path:
     return folder / MOVIES
 
 
-DATA_TOOLS = {"theater_mission.py", "theater_cine.py", "save_screen.py", "ddd_camp.py"}  # take --data
+DATA_TOOLS = {"theater_mission.py", "theater_cine.py", "save_screen.py", "ddd_camp.py", "kh2_fonts.py"}  # take --data
 
 MESSAGES.update(
     {
@@ -810,16 +902,14 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     # an update leaves the pieces already made from the same collections by the same tools (their folder
     # deleted: made again)
     made_before = load_state(install)
-    if args.menus and hd_made(
-        made_before, "hd-menus", {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, install / "mods" / HD_MOD
-    ):
-        args.menus = False
-    if args.videos and hd_made(made_before, "hd-videos", {"1.5+2.5": str(args.c1525)}, install / "data" / "cutscenes"):
-        args.videos = False
-    if not args.menus and not args.videos:
+    menu_inputs, video_inputs = {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, {"1.5+2.5": str(args.c1525)}
+    mod, cutscenes = install / "mods" / HD_MOD, install / "data" / "cutscenes"
+    menus = menu_tools_to_make(made_before, menu_inputs, mod) if args.menus else []
+    videos = args.videos and not hd_made(made_before, "hd-videos", video_inputs, cutscenes)
+    if not menus and not videos:
         return {"pieces": [], "skipped": True, "message": words("hd-ready", args.language)}
     for kind, folder in (("1.5+2.5", args.c1525), ("2.8", args.c28)):
-        if folder is not None and (args.menus or kind == "1.5+2.5"):
+        if folder is not None and (menus or kind == "1.5+2.5"):
             missing = check_folder(kind, folder)
             if missing:
                 raise Refusal("hd-missing", missing="; ".join(missing))
@@ -843,19 +933,30 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             "mare": src / "Mare.hed_out" / "original",
             "settings": src / "SettingMenu.hed_out" / "original",
             "ddd": src / "kh3d_first.hed_out",
+            "kh2": src / "kh2_first.hed_out",
             "hand": src / "kh2_first.hed_out" / "remastered" / HAND / HAND_ASSET,
         }
-        # the collections' files the tools read, made from their archives
-        wanted = {"Mare": args.c1525} if args.videos else {}
-        if args.menus:
-            wanted = {"Mare": args.c1525, "SettingMenu": args.c1525, "kh2_first": args.c1525, "kh3d_first": args.c28}
-        cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE)) if args.menus else None
-        for archive, folder in wanted.items():
+        runs = [(t, template) for t, template in HD_MENU_TOOLS if t in menus] + (HD_VIDEO_TOOLS if videos else [])
+        # the collections' files these tools read (their arguments' archives), made from their archives
+        read = {places[a[1:-1]] for _, template in runs for a in template if a[1:-1] in places}
+        wanted = sorted({p.relative_to(src).parts[0].removesuffix(".hed_out") for p in read if p.is_relative_to(src)})
+        cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE)) if menus else None
+        for archive in wanted:
             kind = "1.5+2.5" if archive in COLLECTION_ARCHIVES["1.5+2.5"] else "2.8"
             progress(0, 1, words("hd-making", args.language, what=archive))
+            folder = args.c1525 if kind == "1.5+2.5" else args.c28
             with collection_archive.Archive(archive_base(folder, kind, archive), cipher) as a:
                 collection_archive.materialise(a, inputs.get(archive, []), src / f"{archive}.hed_out")
-        runs = (HD_MENU_TOOLS if args.menus else []) + (HD_VIDEO_TOOLS if args.videos else [])
+        # what stays as it was made: the files of the menu tools not run again, copied, and the videos,
+        # linked (each the theater's own, unscrambled: the same from the same collection)
+        recorded = (made_before.get("steps", {}).get("hd-menus", {}).get("tools") or {}) if menus else {}
+        kept = {t: r for t, r in recorded.items() if t not in menus and t in dict(HD_MENU_TOOLS)}
+        for record in kept.values():
+            for f in record["files"]:
+                (root / "mods" / HD_MOD / f).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(mod / f, root / "mods" / HD_MOD / f)
+        if videos and same_inputs(made_before.get("steps", {}).get("hd-videos", {}), video_inputs):
+            link_videos(cutscenes / "cinematics", root / "data" / "cutscenes" / "cinematics")
 
         def line_of(tool: str, template: list[str]) -> list[str]:
             # (the installed Python is isolated by its ._pth file; -I would hide a developer's own packages)
@@ -867,26 +968,27 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             return line
 
         log = install / "setup" / HD_ERRORS
-        pieces = run_hd_tools(runs, line_of, root, log, args.language)
+        pieces = run_hd_tools(runs, line_of, root, log, args.language, watch=root / "mods" / HD_MOD)
         if not any(p["made"] for p in pieces):
             first = pieces[0]
             raise RuntimeError(f"{first['tool']}: {first['error']} ({log})")
-        made = {p["tool"] for p in pieces if p["made"]}
-        menus = [tool for tool, _ in HD_MENU_TOOLS if args.menus]
-        videos = [tool for tool, _ in HD_VIDEO_TOOLS if args.videos]
-        # whole, into their places: the menus when any was made (those that were not keep the DS's look,
-        # and the step stays undone so the next run tries them again), the videos when all were
+        made = {p["tool"]: p for p in pieces if p["made"]}
+        # whole, into their places: the menus when any was made (one that was not keeps the DS's look,
+        # unrecorded, so the next run tries it again), the videos when all were
         state = load_state(install)
-        if menus and any(tool in made for tool in menus):
-            put_in_place(root / "mods" / HD_MOD, install / "mods" / HD_MOD)
-            if all(tool in made for tool in menus):
-                mark_step(
-                    state, "hd-menus", {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, made_by=made_by("hd-menus")
-                )
-                save_state(install, state)  # kept even when the videos fail next
-        if videos and all(tool in made for tool in videos):
-            put_in_place(root / "data" / "cutscenes", install / "data" / "cutscenes")
-            mark_step(state, "hd-videos", {"1.5+2.5": str(args.c1525)}, made_by=made_by("hd-videos"))
+        if any(tool in made for tool in menus):
+            put_in_place(root / "mods" / HD_MOD, mod)
+            tools = kept | {
+                t: {"by": tool_made_by(t, template), "files": made[t]["files"]}
+                for t, template in HD_MENU_TOOLS
+                if t in made
+            }
+            complete = len(tools) == len(HD_MENU_TOOLS)
+            state.setdefault("steps", {})["hd-menus"] = {"complete": complete, "inputs": menu_inputs, "tools": tools}
+            save_state(install, state)  # kept even when the videos fail next
+        if videos and all(tool in made for tool, _ in HD_VIDEO_TOOLS):
+            put_in_place(root / "data" / "cutscenes", cutscenes)
+            mark_step(state, "hd-videos", video_inputs, made_by=made_by("hd-videos"))
         save_state(install, state)
     finally:
         remove(work)

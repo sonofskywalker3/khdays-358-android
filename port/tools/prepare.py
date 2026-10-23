@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import abi_repair  # noqa: E402
 import registers  # noqa: E402
+import font_layout  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 DECOMP = ROOT / "external" / "khdays-decomp"
@@ -714,7 +715,7 @@ HOOKS = {
             "    khdays_video_blit_begin((u32)pDecoder->blit.pDest, (u32)pDecoder->blit.nStride, pDecoder->nHeight);\n"
             "    Ov024_MobiClip_BlitRows(&pDecoder->blit);\n"
             "    khdays_video_blit_end();\n"
-            "    khdays_video_frame_blitted((u32)&pDecoder->blit); /* the port's picture of it (US2) */\n",
+            "    khdays_video_frame_blitted((u32)&pDecoder->blit); /* the port's picture of it */\n",
         ),
     ],
     # A movie's sound: the channels Ov024_MobiClip_StartAudio locks (mask 3,
@@ -1459,12 +1460,106 @@ HOOKS = {
             "    struct Ent *pSelf = (struct Ent *)pEnt;\n",
             "    struct Ent *pSelf = (struct Ent *)pEnt;\n    const int khdays_before = pSelf->nHp;\n",
         ),
+        (  # a defeat of the local player a mod holds: 1 instead, as the routine does for a host's peer
+            "    if (nValue != pSelf->nHp) {\n",
+            "    { extern int khdays_scripts_lethal(void *entity, int value); nValue = khdays_scripts_lethal(pEnt, nValue); }\n"
+            "    if (nValue != pSelf->nHp) {\n",
+        ),
         (
             "    Ov002_GetPanelWord0220(pSelf->nId, pSelf->nHp);\n}\n",
             "    Ov002_GetPanelWord0220(pSelf->nId, pSelf->nHp);\n"
             "    { extern void khdays_scripts_hp(void *entity, int before); khdays_scripts_hp(pEnt, khdays_before); }\n"
             "}\n",
         ),
+    ],
+    "ov022@020a08a8": [
+        (  # Ov022_ReceiveHit: the hit's source while its damage is dealt (a defeat's attacker, api_run.c)
+            "        Ov022_ActorSetHp(pActor, pActor->nHp - nAmount);\n",
+            "        { extern void khdays_link_hit_from(void *source); khdays_link_hit_from(pReq->pSrc); }\n"
+            "        Ov022_ActorSetHp(pActor, pActor->nHp - nAmount);\n"
+            "        { extern void khdays_link_hit_from(void *source); khdays_link_hit_from(0); }\n",
+        )
+    ],
+    # The music a mod plays (runtime/scripts/game_link.h): while it plays, the game's own requests to
+    # the sound manager's queue (its four ways in) are kept back, the last of them made as it ends.
+    "main@020335ec": [
+        (  # SetSelectionIfChanged: request 2
+            "    int base = gSoundMgr;\n",
+            "    int base = gSoundMgr;\n"
+            "    { extern int khdays_link_music_request(int kind, int arg, int value);\n"
+            "      if (khdays_link_music_request(2, param_1, 0)) return 1; }\n",
+        )
+    ],
+    "main@02033660": [
+        (  # SoundMgr_QueueKind1: request 1
+            "int SoundMgr_QueueKind1(int arg) {\n",
+            "int SoundMgr_QueueKind1(int arg) {\n"
+            "    { extern int khdays_link_music_request(int kind, int arg, int value);\n"
+            "      if (khdays_link_music_request(1, arg, 0)) return 1; }\n",
+        )
+    ],
+    "main@020336a4": [
+        (  # RequestQueue_SetOrPushKind3: request 3, the music stopped
+            "void RequestQueue_SetOrPushKind3(int arg) {\n",
+            "void RequestQueue_SetOrPushKind3(int arg) {\n"
+            "    { extern int khdays_link_music_request(int kind, int arg, int value);\n"
+            "      if (khdays_link_music_request(3, 0, arg)) return; }\n",
+        )
+    ],
+    "main@020336e8": [
+        (  # SoundMgr_QueueRequest: requests 4 and 5 (SoundMgr_SwitchBgm, SoundMgr_SwitchBgmResume)
+            "    unsigned char *ptr;\n",
+            "    unsigned char *ptr;\n"
+            "    { extern int khdays_link_music_request(int kind, int arg, int value);\n"
+            "      if (khdays_link_music_request(kind, arg1, arg2)) return; }\n",
+        )
+    ],
+    # The field's enemies (runtime/scripts/enemies_link.h): the actor a marker row made (a mod's enemy
+    # is made that way), every defeat, the area's enemies let go; the class asked for, the spawners and
+    # their slots given back only for KHDAYS_TRACE_ENEMIES.
+    "ov002@02073d0c": [
+        (  # Ov002_CreateActorFromMarker: the actor made from a marker row
+            "    if(pRow->bId==0x55){\n",
+            "    { extern void khdays_enemies_marker_made(int source, int row, void *actor, int id);\n"
+            "      khdays_enemies_marker_made(nSourceIndex, nRowIndex, pActor, pRow->bId); }\n"
+            "    if(pRow->bId==0x55){\n",
+        )
+    ],
+    "ov107@020c2ea8": [
+        (  # Ov107_SpawnEntityClass
+            "    unsigned char state = data_ov107_020cbb20[id];\n",
+            "    unsigned char state = data_ov107_020cbb20[id];\n"
+            "    { extern void khdays_enemies_class(int id); khdays_enemies_class(id); }\n",
+        )
+    ],
+    "ov107@020c1870": [
+        (  # Ov107_Spawner_Run: op 0 (an idle enemy set going) skipped while a mod holds the mission's own
+            "    table = 0;\n",
+            "    { extern int khdays_enemies_spawner_run(void *spawner, int op);\n"
+            "      if (khdays_enemies_spawner_run(obj, op)) return; }\n"
+            "    table = 0;\n",
+        )
+    ],
+    "ov107@020c1e80": [
+        (  # Ov107_Spawner_OnActorRetired
+            "    Ov107Object *obj = actor->pSpawner;\n",
+            "    Ov107Object *obj = actor->pSpawner;\n"
+            "    { extern void khdays_enemies_retired(void *actor); khdays_enemies_retired(actor); }\n",
+        )
+    ],
+    "ov107@020c7da4": [
+        (  # Ov107_AiState_OnDefeat: any enemy defeated, before its reward and its spawner's slot
+            "    context = self->field_04;\n",
+            "    { extern void khdays_enemies_defeated(void *actor); khdays_enemies_defeated(self); }\n"
+            "    context = self->field_04;\n",
+        )
+    ],
+    "ov002@020736c0": [
+        (  # Ov002_ReleaseResources: the area's enemies let go
+            "    Ov002Res *r = data_ov002_0207fa14;\n",
+            "    Ov002Res *r = data_ov002_0207fa14;\n"
+            "    { extern void khdays_enemies_area_left(void); khdays_enemies_area_left(); }\n",
+        )
     ],
 }
 
@@ -1587,9 +1682,23 @@ HOOKS["ov008@0207c7c8"] = _ov008_members  # Ov008_UpdateMissionMenuSelectionScre
 
 # The routines whose drawing the port takes over: (function, part, the port's function, kind).
 # "replace" runs the game's body (off), the port's (on) or both (check); "follow" runs the game's,
-# then the port's with what it returned. Parts: port/ui/parts.h; docs/BUILD.md.
+# then the port's with what it returned; "around" also observes the input. Parts: port/ui/parts.h; docs/BUILD.md.
 UI_PARTS = {"text": 0, "hud": 1, "pause": 2, "camp": 3, "save": 4, "mission": 5, "shop": 6}
 UI_HOOKS: dict[str, list[tuple[str, str, str, str]]] = {
+    "src/overlays/scenes/ov002_field/Ov002_LinkPageRefresh.c": [
+        ("Ov002_LinkPageRefresh", "text", "khdays_ui_text_field_tutorial", "around")
+    ],
+    # NitroSystem BG text operations. These are followed, never replaced:
+    # original DS text logic and canvases remain authoritative.
+    "libs/nns/g2d/calls/DrawGlyphLine.c": [("DrawGlyphLine", "text", "khdays_ui_text_glyph", "around")],
+    "libs/nns/g2d/calls/ClearContinuous.c": [("ClearContinuous", "text", "khdays_ui_text_clear", "follow")],
+    "libs/nns/g2d/calls/ClearAreaLine.c": [("ClearAreaLine", "text", "khdays_ui_text_clear_area", "follow")],
+    "src/engine/TextWindow_ScrollUp.c": [("TextWindow_ScrollUp", "text", "khdays_ui_text_scroll", "around")],
+    "libs/nns/g2d/calls/NNS_G2dFontInitUTF16.c": [
+        ("NNS_G2dFontInitUTF16", "text", "khdays_ui_text_font_init", "follow")
+    ],
+    "src/engine/Font_LoadUTF16.c": [("Font_LoadUTF16", "text", "khdays_ui_text_font_loaded", "follow")],
+    "src/engine/Resource_BindByName.c": [("Resource_BindByName", "text", "khdays_ui_text_font_bound", "follow")],
     # The text: the two text surfaces that make
     # NitroSystem character canvases, the frees that end them, and the SDK's
     # loads of characters into VRAM that show them (the transfer queue's,
@@ -1616,6 +1725,50 @@ UI_HOOKS: dict[str, list[tuple[str, str, str, str]]] = {
     "libs/nitro/gx/calls/GXS_LoadOBJ.c": [("GXS_LoadOBJ", "text", "khdays_ui_text_obj_b", "follow")],
 }
 
+for _module, _prefix in (
+    ("scenes/ov008_camp_menu", "Ov008"),
+    ("screens/ov025_camp_menu_2", "Ov025"),
+):
+    for _function, _role in (
+        ("DrawMissionSummaryHeading", "instruction"),
+        ("MainMenu_UpdateSelectionText", "world"),
+        ("DrawMissionDetail", "header"),
+        ("MissionMenu_DrawMissionText", "summary"),
+        ("MissionMenu_DrawInfo", "objectives"),
+        ("DrawMissionInfoText", "rewards"),
+    ):
+        _name = f"{_prefix}_{_function}"
+        UI_HOOKS[f"src/overlays/{_module}/{_name}.c"] = [(_name, "text", f"mission_select.{_role}", "scope")]
+
+
+# Field HUD text shares fonts with dialogue; scope only layout/drawing operations.
+for _function, _scope in (
+    ("BeginTextCrawl", "field.hud.information"),
+    ("StepTextCrawl", "field.hud.information"),
+    ("HoldPanelScreen", "field.hud.information"),
+    ("SetCaptionText", "field.hud.information"),
+    ("BuildRunSummary", "field.hud.information"),
+    ("DrawLoadedCaption", "field.hud.area"),
+    ("DrawLoadedPortrait", "field.hud.status"),
+    ("DrawLoadedTally", "field.hud.status"),
+    ("DrawMessageCaption", "field.hud.status"),
+    ("ShowNoticeText", "field.hud.status"),
+    ("DrawPanelRowText", "field.command"),
+):
+    _name = f"Ov002_{_function}"
+    UI_HOOKS[f"src/overlays/scenes/ov002_field/{_name}.c"] = [(_name, "text", _scope, "scope")]
+
+for _function, _role in (("UpdateResultLabels", "summary"), ("RenderTextSurface", "rewards")):
+    _name = f"Ov005_{_function}"
+    UI_HOOKS[f"src/overlays/scenes/ov005_mission_result/{_name}.c"] = [
+        (_name, "text", f"mission.results.{_role}", "scope")
+    ]
+
+
+for _function in ("DrawStringShadowed", "DrawNumber3Shadowed", "DrawDescriptionText", "OpenShopDetailPanel"):
+    _name = f"Ov026_{_function}"
+    UI_HOOKS[f"src/overlays/screens/ov026_shop/{_name}.c"] = [(_name, "text", "shop", "scope")]
+
 
 def ui_hook(text: str, rel: str, name: str, part: str, port: str, kind: str = "replace") -> str:
     """`name`'s definition in `text` split in two: the game's body under a
@@ -1625,7 +1778,7 @@ def ui_hook(text: str, rel: str, name: str, part: str, port: str, kind: str = "r
     if d is None:
         raise SystemExit(f"UI hook: no definition of {name} in {rel}")
     head = text[d.ret_start : d.name_start]
-    params = abi_repair.param_list(text, d)
+    params = abi_repair.param_list("".join(ch if code else " " for ch, code in zip(text, mask)), d)
     names = [abi_repair.param_name(p) for p in params]
     if any(not n for n in names):
         raise SystemExit(f"UI hook: {name} in {rel} has an unnamed parameter")
@@ -1634,13 +1787,23 @@ def ui_hook(text: str, rel: str, name: str, part: str, port: str, kind: str = "r
     args = ", ".join(names)
     result_type = re.sub(r"\b(?:static|inline|extern)\b", "", head).strip()
     param_text = text[d.params[0] : d.params[1]].strip()
-    if kind == "follow":
+    if kind == "scope":
+        if not void:
+            raise SystemExit("UI scope hooks require a void function")
+        port_decl = (
+            "extern void khdays_ui_text_scope_push(const char *scope);\nextern void khdays_ui_text_scope_pop(void);"
+        )
+    elif kind in ("follow", "around"):
         told = ([param_text] if param_text not in ("", "void") else []) + (
             [] if void else [f"{result_type} khdays_result"]
         )
         port_decl = f"extern void {port}({', '.join(told) or 'void'});"
     else:
         port_decl = f"extern {head.strip()} {port}({text[d.params[0] : d.params[1]]});"
+    if kind == "around":
+        if not void:
+            raise SystemExit("UI around hooks require a void function")
+        port_decl += f"\nextern void {port}_before({param_text});"
     game = (
         text[: d.ret_start]
         + port_decl
@@ -1652,7 +1815,19 @@ def ui_hook(text: str, rel: str, name: str, part: str, port: str, kind: str = "r
         + text[d.name_start + len(name) : d.body[1] + 1]
     )
     mode = f"    const int khdays_mode = khdays_ui_mode({UI_PARTS[part]});  /* the port's {part} (prepare.py UI_HOOKS) */\n"
-    if kind == "follow" and void:
+    if kind == "scope":
+        body = (
+            f'\n{{\n{mode}    if (khdays_mode != 0) khdays_ui_text_scope_push("{port}");\n'
+            f"    {name}__khdays_game({args});\n"
+            "    if (khdays_mode != 0) khdays_ui_text_scope_pop();\n}"
+        )
+    elif kind == "around":
+        body = (
+            f"\n{{\n{mode}    if (khdays_mode != 0) {{\n        {port}_before({args});\n    }}\n"
+            f"    {name}__khdays_game({args});\n"
+            f"    if (khdays_mode != 0) {{\n        {port}({args});\n    }}\n}}"
+        )
+    elif kind == "follow" and void:
         body = (
             f"\n{{\n{mode}    {name}__khdays_game({args});\n"
             f"    if (khdays_mode != 0) {{\n        {port}({args});\n    }}\n}}"
@@ -1844,6 +2019,72 @@ FILE_HOOKS = {
     ],
 }
 
+# The portrait label is measured and drawn here, before dialogue window layout.
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"] = [
+    (
+        "void Ov002_SceneApplyPanelRequest(int *pReq)",
+        "extern void khdays_ui_text_scope_push(const char *scope);\n"
+        "extern void khdays_ui_text_scope_pop(void);\n"
+        "void Ov002_SceneApplyPanelRequest(int *pReq)",
+    ),
+    (
+        "        Resource_BindByName(f.aBind, gOv002TextFontEu10SPath);",
+        '        khdays_ui_text_scope_push("field.dialogue.speaker");\n'
+        "        Resource_BindByName(f.aBind, gOv002TextFontEu10SPath);",
+    ),
+    (
+        "        FreeFieldAt8(f.aBind);",
+        "        FreeFieldAt8(f.aBind);\n        khdays_ui_text_scope_pop();",
+    ),
+]
+
+# The pickup banner aliases the Items list's character tiles. Draw its routed
+# name into a private, non-uploaded surface; text.c retains that capture only.
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PanelDrawSlotCursor.c"] = [
+    (
+        '#include "nitro/types.h"',
+        '#include "nitro/types.h"\n'
+        "extern int khdays_ui_text_obtained_wants(unsigned int slot, int obtained);\n"
+        "extern void khdays_ui_text_obtained_capture(const void *surface);\n"
+        "extern void khdays_ui_text_scope_push(const char *scope);\n"
+        "extern void khdays_ui_text_scope_pop(void);\n"
+        "extern int khdays_ui_mode(int part);\n"
+        "extern char *data_ov002_0207f620;\n"
+        "extern char gOv002TextFontEu08SPath_2[];\n"
+        "extern int data_ov002_0207eb08[];\n"
+        "extern int Ov002_Hud_GetBlock24(void);\n"
+        "extern void *Ov002_FindNamedEntry(int key);\n"
+        "extern void Resource_BindByName(void *handle, void *name);\n"
+        "extern void FreeFieldAt8(char *handle);\n"
+        "extern int TileSurface_Init4bpp(int surface, int config);\n"
+        "extern void Ov002_PickTextFitting64(int surface, int font, int narrow, int text);\n"
+        "extern void Text_DrawWithShadow(void *surface, int x, int y, int style, void *text, int shadow);\n"
+        "extern void HD_FontFitShadow(void *surface, int x, int y, int style, void *text, int shadow, int layout);\n"
+        "extern void FreeAllListNodeSubBuffers(void *surface);",
+    ),
+    (
+        "    Ov002_SelectEntry(9);\n}",
+        "    Ov002_SelectEntry(9);\n"
+        "    if (khdays_ui_mode(0) != 0 && khdays_ui_text_obtained_wants(nSlot, nShift == -2)) {\n"
+        "        int surface[15];\n"
+        "        int narrow[3];\n"
+        "        int font = Ov002_Hud_GetBlock24();\n"
+        "        int config[10] = {0, 0, 8, 2, 0, 15, 0, 0, font, 0};\n"
+        "        void *text = Ov002_FindNamedEntry(*(u16 *)(data_ov002_0207f620 + 0x4b8 + nSlot * 12));\n"
+        "        if (text == 0) text = data_ov002_0207eb08;\n"
+        '        khdays_ui_text_scope_push("field.obtained");\n'
+        "        Resource_BindByName(narrow, gOv002TextFontEu08SPath_2);\n"
+        "        TileSurface_Init4bpp((int)surface, (int)config);\n"
+        "        Ov002_PickTextFitting64((int)surface, font, (int)narrow, (int)text);\n"
+        "        HD_FontFitShadow(surface, 0, 3, 2, text, 1, 1);\n"
+        "        khdays_ui_text_obtained_capture(surface);\n"
+        "        FreeAllListNodeSubBuffers(surface);\n"
+        "        FreeFieldAt8((char *)narrow);\n"
+        "        khdays_ui_text_scope_pop();\n"
+        "    }\n}",
+    ),
+]
+
 # New games start with Config's "Command list" (option 6) on X with the D-pad, not X alone, so the
 # command menu moves in all four directions (runtime/input/sequencers.c). Every place that makes a
 # fresh game state sets it, Mission Mode's guest game too (a whole state copied from /ttl/ttl.p2).
@@ -1864,6 +2105,46 @@ _COMMAND_LIST = [
 ]
 for _rel, _old, _new in _COMMAND_LIST:
     FILE_HOOKS.setdefault(_rel, []).append((_old, _new))
+
+
+for _module, _prefix in (
+    ("scenes/ov008_camp_menu", "Ov008"),
+    ("screens/ov025_camp_menu_2", "Ov025"),
+):
+    _root = f"src/overlays/{_module}/{_prefix}_"
+    FILE_HOOKS[_root + "MainMenu_SetupTextSurfaces.c"] = [
+        (
+            f"void {_prefix}_MainMenu_SetupTextSurfaces(int obj)",
+            "extern void khdays_ui_text_scope_push(const char *scope);\n"
+            "extern void khdays_ui_text_scope_pop(void);\n"
+            f"void {_prefix}_MainMenu_SetupTextSurfaces(int obj)",
+        ),
+        (
+            "    if (*(int *)(obj + 0x14e0) == 0 || Session_IsReady() != 0) {",
+            '    khdays_ui_text_scope_push("mission_select.instruction");\n'
+            "    if (*(int *)(obj + 0x14e0) == 0 || Session_IsReady() != 0) {",
+        ),
+        (
+            "    EnqueueObjGfxCommand(obj + 0x1420);",
+            "    EnqueueObjGfxCommand(obj + 0x1420);\n    khdays_ui_text_scope_pop();\n"
+            '    khdays_ui_text_scope_push("mission_select.world");',
+        ),
+        (
+            "    EnqueueObjGfxCommand(obj + 0x145c);",
+            "    EnqueueObjGfxCommand(obj + 0x145c);\n    khdays_ui_text_scope_pop();",
+        ),
+    ]
+    FILE_HOOKS[_root + "DrawMissionDetail.c"] = [
+        (
+            "        Obj_InvokeInnerVtable4(pMenu->hintSurface);",
+            '        khdays_ui_text_scope_push("mission_select.buttons");\n'
+            "        Obj_InvokeInnerVtable4(pMenu->hintSurface);",
+        ),
+        (
+            f"        {_prefix}_MarkSlotUsed(SLOT_A);",
+            "        khdays_ui_text_scope_pop();\n" + f"        {_prefix}_MarkSlotUsed(SLOT_A);",
+        ),
+    ]
 
 
 # Calls whose native form the ROM shows but no mechanical rule gives (see
@@ -2186,10 +2467,11 @@ PORT_DS_SYMBOLS = (
     "gLangPath",
     "data_0204c238",
     # the mods' interface (runtime/scripts/game_link.c): the game's state, the object list's frame
-    # count, the current mission
+    # count, the current mission, the sound manager (its track playing)
     "gGameState",
     "gObjSystem",
     "data_0204c23c",
+    "gSoundMgr",
 )
 
 
@@ -2857,6 +3139,7 @@ def main() -> int:
             # Anything still carrying ARM assembly after the transforms is
             # hardware-level code the HAL replaces.
             new = transform(text)
+            new = font_layout.patch(new, rel)
             file_hooks = hooks.get(Path(rel).stem, []) + FILE_HOOKS.get(rel, [])
             for ui_name, ui_part, ui_port, ui_kind in UI_HOOKS.get(rel, []):
                 new = ui_hook(new, rel, ui_name, ui_part, ui_port, ui_kind)

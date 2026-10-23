@@ -123,8 +123,13 @@ the identifiers: `seq/<name>`, `seqarc/<archive>/<entry>`,
 of its own, to 16 bits with its loop: a WAV's `smpl` loop, else the Vorbis
 comments `LOOPSTART` and `LOOPLENGTH` of a FLAC or Ogg file, else the
 original's loop scaled to the file's rate; a sound the original plays once
-plays once (`port/sound/replace.c`). It plays at its own rate while the
-original goes on unheard (what the game reads back stays the original's):
+plays once (`port/sound/replace.c`). A file not decoded yet when its sound
+starts leaves the original heard, so the short ones are decoded ahead: the
+sequence archives' entries (sound effects, voices) from the game's first sound
+on, a wave archive's replaced waves as it loads; a sequence or stream (music)
+when it is first wanted, and what is wanted now goes before those. It plays at
+its own rate while the original goes on unheard (what the game reads back stays
+the original's):
 
 - a sequence or entry from when its ARM7 player starts, under that player's
   volume;

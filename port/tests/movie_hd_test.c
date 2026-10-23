@@ -608,7 +608,7 @@ int main(void)
         khdays_movie_hd_stream(1, "/mv/833.mods", 0);
         CHECK(strcmp(opened_path, "data/cutscenes/cinematics/hd833.mp4") == 0 && opened_from == 0.0 &&
               opened_until == 173.2 && strcmp(subtitles_movie, "833") == 0);
-        CHECK(opened_in == 0.0 && opened_out == 0.0); /* a movie's videos: no fades of their own */
+        CHECK(opened_in == 0.5 && opened_out == 0.5); /* one video: up from black and down to it */
         CHECK(khdays_movie_hd_showing() && khdays_movie_hd_last_shown("hd833") && !khdays_movie_hd_last_shown("hd830"));
         khdays_movie_hd_stopped();
         status_now = 1;
@@ -621,13 +621,15 @@ int main(void)
         khdays_movie_hd_stream(1, "/mv/848.mods", 0); /* the fight's end first, then hd848 */
         CHECK(opens == opens_before + 1 && strcmp(opened_path, "data/cutscenes/cinematics/hd833.mp4") == 0 &&
               opened_from == 173.2 && opened_until == 0.0 && strcmp(subtitles_movie, "833") == 0 && started);
-        khdays_movie_hd_poll(); /* still playing */
+        CHECK(opened_in == 0.5 && opened_out == 0.0); /* the first of two comes up, the last goes down */
+        khdays_movie_hd_poll();                       /* still playing */
         CHECK(opens == opens_before + 1);
         status_now = 1; /* its first video ends: the second opens, its own subtitles with it */
         khdays_movie_hd_poll();
         CHECK(khdays_movie_hd_showing() && opens == opens_before + 2 &&
               strcmp(opened_path, "data/cutscenes/cinematics/hd848.mp4") == 0 && opened_from == 0.0 &&
               strcmp(subtitles_movie, "848") == 0 && started && khdays_movie_hd_last_shown("hd848"));
+        CHECK(opened_in == 0.0 && opened_out == 0.5);
         khdays_movie_hd_stopped(); /* the game's movie ends first: held for the video */
         CHECK(khdays_movie_hd_showing() && held());
         status_now = 1;

@@ -2601,6 +2601,11 @@ const unsigned char *khdays_pad_icon_png(const char *name, unsigned *size)
     return nullptr;
 }
 
+const char *khdays_pad_icon_name(int input)
+{
+    return icon_name(input);
+}
+
 int khdays_settings_row_info(int row, int *id, int *action)
 {
     if (row < 0 || row >= m.count) {

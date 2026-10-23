@@ -526,6 +526,27 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
         khdays_layout_utf8(input_name, out->label, (int)(sizeof(out->label) / sizeof(out->label[0])));
         return 1;
     }
+    if (input >= KHDAYS_MOUSE_INPUT && input < KHDAYS_KEYBOARD_INPUTS) {
+        /* a mouse button: Kenney's, as the Controls section shows it */
+        static const char *const mouse[KHDAYS_MOUSE_COUNT] = {
+            [KHDAYS_MOUSE_LEFT] = "mouse_left",
+            [KHDAYS_MOUSE_MIDDLE] = "mouse_scroll",
+            [KHDAYS_MOUSE_RIGHT] = "mouse_right",
+            [KHDAYS_MOUSE_X1] = "mouse_side_back",
+            [KHDAYS_MOUSE_X2] = "mouse_side_forward",
+            [KHDAYS_MOUSE_WHEEL_UP] = "mouse_scroll_up",
+            [KHDAYS_MOUSE_WHEEL_DOWN] = "mouse_scroll_down",
+        };
+        const char *icon = mouse[input - KHDAYS_MOUSE_INPUT];
+        SDL_Texture *t = icon != NULL ? switch_icon(l->renderer, icon) : NULL;
+        if (t == NULL) {
+            return 0;
+        }
+        out->texture = t;
+        out->src.x = out->src.y = 0;
+        SDL_GetTextureSize(t, &out->src.w, &out->src.h);
+        return 1;
+    }
     snprintf(name, sizeof(name), "icon key:%d", input);
     p = khdays_layout_piece(l, name);
     if (p != NULL) {

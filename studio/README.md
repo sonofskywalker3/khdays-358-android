@@ -64,7 +64,11 @@ is chosen). It changes at once and is kept in the settings.
    - a **3D texture**: any PNG (JPEG, TGA and BMP are converted); one that is
      not the same whole multiple of the original on both sides is drawn
      stretched by the port, and the tool says so. "For every palette of this
-     texture" saves the form the port uses whatever the palette.
+     texture" saves the form the port uses whatever the palette. To paint one
+     in HD, "Export this texture..." writes it at 1 to 8 times its size (each
+     pixel repeated: the model's UVs stay as they are), and "Export every 3D
+     texture..." writes all of them at that size into a folder you choose, as
+     `<texture>.png` where a mod's replacement of each goes under `graphics/`.
    - a **2D tile sheet**: a PNG of the sheet's size times a whole number (1 to
      255), as the port requires; indexed, it is drawn with the game's palettes,
      otherwise with its own colours. (Editing it as a picture: see 6.)
@@ -298,8 +302,7 @@ is chosen). It changes at once and is kept in the settings.
    the mod: that slot keeps its place in the Mission Mode list, its name
    there, its unlock and its saved progress (kept by its number); its chests
    and emblems become this mission's when the two sets have as many rows. A
-   mission in a slot of its own needs the port's list made larger (specs/021
-   US3, not done). The names of
+   mission in a slot of its own needs the port's list made larger (not done). The names of
    the enemies are those the decompilation gives the overlay each id loads
    (`studio/tools/enemy_names.py`).
 
@@ -326,7 +329,7 @@ is chosen). It changes at once and is kept in the settings.
     game's movies set to HD. A mod holds one of the two per movie (an
     `.mpg` would win over an `.mp4`).
 
-Sound loops and old-format mods come next (specs/018).
+Sound loops and old-format mods come next.
 
 ## Command line
 
@@ -380,6 +383,13 @@ starts with are marked.
 
 writes every 2D sheet into `<folder>` as `<sheet>.png`, coloured as the window
 first shows it (with `mod:`, the sheet as that mod has it and its rows).
+
+```powershell
+.\build\studio\release\khdays-studio.exe --export-textures <folder> [scale:<n>]
+```
+
+writes every 3D texture the graphics dump has into `<folder>` as `<texture>.png`,
+`n` (1 to 8) times its size with each pixel repeated.
 
 ```powershell
 .\build\studio\release\khdays-studio.exe --check-sheets

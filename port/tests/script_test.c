@@ -1,7 +1,11 @@
 /* Gameplay mods' scripts (runtime/scripts) against a game of the test's own: SHA-256, manifests, the
  * load order, the sandbox, a stopped mod beside a running one, an endless loop paused, the events and
- * the state names. Each case writes its mods under a folder of its own, removed at the end. */
+ * the state names, the interface's version 2. Each case writes its mods under a folder of its own,
+ * removed at the end. */
 #include "../runtime/core/sha256.h"
+#include "../runtime/scripts/api_v2.h"
+#include "../runtime/scripts/deck_link.h"
+#include "../runtime/scripts/enemies_link.h"
 #include "../runtime/scripts/folders.h"
 #include "../runtime/scripts/game_link.h"
 #include "../runtime/scripts/manifest.h"
@@ -9,6 +13,8 @@
 #include "../runtime/scripts/order.h"
 #include "../runtime/scripts/queue.h"
 #include "../runtime/scripts/scripts.h"
+#include "../runtime/scripts/screens.h"
+#include "../runtime/scripts/time_link.h"
 #include "../runtime/scripts/view.h"
 
 #include <SDL3/SDL.h>
@@ -50,9 +56,11 @@ unsigned khdays_link_frame(void)
     return fake_frame;
 }
 
+static int fake_paused;
+
 int khdays_link_paused(void)
 {
-    return 0;
+    return fake_paused;
 }
 
 unsigned khdays_link_scene(unsigned *argument)
@@ -127,6 +135,14 @@ int khdays_link_position(float at[3])
 
 static int fake_hp = 40, fake_hp_max = 50;
 
+static float fake_set_at[3];
+
+const char *khdays_link_set_position(const float at[3])
+{
+    memcpy(fake_set_at, at, sizeof(fake_set_at));
+    return NULL;
+}
+
 int khdays_link_player_hp(int *hp, int *max)
 {
     *hp = fake_hp;
@@ -152,12 +168,62 @@ int khdays_link_is_player(const void *entity)
     return ((const int *)entity)[2];
 }
 
-void khdays_link_trace_frame(void) {}
+/* The hit being dealt's attacker, the game over, the results' rule. */
+static unsigned fake_attacker;
+static int fake_attacker_kind = -1, fake_game_over, fake_cleared;
 
-void khdays_link_trace_hp(const void *entity, int before)
+void khdays_link_hit_from(void *source)
 {
-    (void)entity;
-    (void)before;
+    (void)source;
+}
+
+int khdays_link_attacker(unsigned *actor)
+{
+    *actor = fake_attacker;
+    return fake_attacker_kind;
+}
+
+int khdays_link_game_over(void)
+{
+    return fake_game_over;
+}
+
+int khdays_link_results_cleared(void)
+{
+    return fake_cleared;
+}
+
+static int fake_left, fake_started, fake_title_idle;
+
+int khdays_link_language(void)
+{
+    return 5; /* Spanish */
+}
+
+int khdays_link_title_idle(void)
+{
+    return fake_title_idle;
+}
+
+const char *khdays_link_start_mission(int number)
+{
+    if (fake_scene != 19) {
+        return "not in a camp";
+    }
+    if (number != 10 && number != 2) {
+        return "unknown mission";
+    }
+    fake_started = number;
+    return NULL;
+}
+
+const char *khdays_link_leave_mission(void)
+{
+    if (fake_scene != 2) {
+        return "not in the field";
+    }
+    ++fake_left;
+    return NULL;
 }
 
 static char fake_sound[64], fake_notice[64];
@@ -206,6 +272,198 @@ int khdays_link_guest(void)
     return fake_guest;
 }
 
+int khdays_link_where(void)
+{
+    return fake_scene == 2    ? KHDAYS_WHERE_FIELD
+           : fake_scene == 19 ? KHDAYS_WHERE_CAMP
+           : fake_scene == 1  ? KHDAYS_WHERE_TITLE
+                              : KHDAYS_WHERE_ELSEWHERE;
+}
+
+/* Time, music, the seed, sharing: VBlanks the test counts; tracks 2 TwilightR_F and 8 Herc_B; a fixed
+ * seed; the bytes shared last, and shares waiting for a guest. */
+static unsigned fake_vblanks;
+static int fake_music = -1, fake_music_holding;
+static unsigned long long fake_seed = 12345;
+static unsigned char *fake_share_sent;
+static unsigned fake_share_sent_size;
+static unsigned char *fake_share_waiting;
+static unsigned fake_share_waiting_size;
+
+unsigned khdays_link_vblanks(void)
+{
+    return fake_vblanks;
+}
+
+int khdays_link_music_track(const char *name)
+{
+    return strcmp(name, "TwilightR_F") == 0 || strcmp(name, "seq/TwilightR_F") == 0 ? 2
+           : strcmp(name, "Herc_B") == 0                                            ? 8
+                                                                                    : -1;
+}
+
+const char *khdays_link_music_play(int track, int fade)
+{
+    (void)fade;
+    fake_music = track;
+    fake_music_holding = 1;
+    return NULL;
+}
+
+void khdays_link_music_stop(int fade)
+{
+    (void)fade;
+    fake_music = -1;
+    fake_music_holding = 0;
+}
+
+int khdays_link_music_playing(void)
+{
+    return fake_music_holding;
+}
+
+void khdays_link_music_frame(void) {}
+
+unsigned long long khdays_link_seed(int *in_room)
+{
+    *in_room = 0;
+    return fake_seed;
+}
+
+void khdays_link_next_seed(void) {}
+
+int khdays_link_share(const void *data, unsigned size)
+{
+    free(fake_share_sent);
+    fake_share_sent = malloc(size);
+    memcpy(fake_share_sent, data, size);
+    fake_share_sent_size = size;
+    return 1;
+}
+
+int khdays_link_shared(unsigned char **data, unsigned *size)
+{
+    if (fake_share_waiting == NULL) {
+        return 0;
+    }
+    *data = fake_share_waiting;
+    *size = fake_share_waiting_size;
+    fake_share_waiting = NULL;
+    return 1;
+}
+
+/* The deck: panels 2-9 one cell each, 10 two cells across (its own the left), all of category 1; 11 a
+ * link panel (category 4); each its id's kind. No other item is a panel. */
+static unsigned short fake_deck[KHDAYS_LINK_DECK_CELLS];
+static int fake_deck_busy;
+
+int khdays_link_deck(unsigned short *cells)
+{
+    if (fake_state == 0) {
+        return 0;
+    }
+    memcpy(cells, fake_deck, sizeof(fake_deck));
+    return 1;
+}
+
+const char *khdays_link_deck_busy(void)
+{
+    return fake_deck_busy ? "not now" : NULL;
+}
+
+void khdays_link_set_deck(const unsigned short *cells)
+{
+    memcpy(fake_deck, cells, sizeof(fake_deck));
+}
+
+int khdays_link_panel(int id, KhdaysLinkPanel *out)
+{
+    if (id < 2 || id > 11) {
+        return 0;
+    }
+    memset(out, 0, sizeof(*out));
+    out->category = id == 11 ? 4 : 1;
+    out->kind = id;
+    out->shape = id == 10 ? 1 : -1; /* one cell: no shape, as the game has them */
+    out->cells = id == 10 ? 3u : 0;
+    return 1;
+}
+
+/* The field's enemies: kinds 0 and 1, actors from 0x1000 up; the last make's level, HP and strength. */
+static unsigned fake_next_actor;
+static int fake_level;
+static double fake_enemy_hp, fake_strength;
+static unsigned fake_removed;
+
+int khdays_enemies_kinds(int *out, int room)
+{
+    if (fake_scene != 2) {
+        return 0;
+    }
+    for (int i = 0; out != NULL && i < room && i < 2; ++i) {
+        out[i] = i;
+    }
+    return 2;
+}
+
+const char *khdays_enemies_name(int kind)
+{
+    return kind == 0 ? "Shadow" : kind == 1 ? "Yellow Opera" : NULL;
+}
+
+/* Six kinds: the area's 0 and 1, 2 of another mission whose overlay fits, 3-5 that do not. */
+static int fake_held;
+
+void khdays_enemies_hold_mission(int on)
+{
+    fake_held = on;
+}
+
+int khdays_enemies_kind_count(void)
+{
+    return 6;
+}
+
+const char *khdays_enemies_can_make(int kind)
+{
+    return fake_scene != 2         ? "not in the field"
+           : kind < 0 || kind >= 6 ? "unknown kind"
+           : kind > 2              ? "no room for its kind"
+                                   : NULL;
+}
+
+unsigned khdays_enemies_make(int kind, const float at[3], int level, double hp, double strength, const char **why)
+{
+    (void)at;
+    *why = NULL;
+    if (kind > 2) {
+        *why = "no room for its kind";
+        return 0;
+    }
+    fake_level = level;
+    fake_enemy_hp = hp;
+    fake_strength = strength;
+    return 0x1000u + fake_next_actor++;
+}
+
+int khdays_enemies_remove(unsigned actor)
+{
+    fake_removed = actor;
+    return 1;
+}
+
+int khdays_enemies_info(unsigned actor, KhdaysEnemyInfo *out)
+{
+    out->kind = 0;
+    out->hp = out->max_hp = 30;
+    out->level = 5;
+    out->at[0] = (float)(actor - 0x1000u);
+    out->at[1] = out->at[2] = 0;
+    return 1;
+}
+
+void khdays_enemies_frame(void) {}
+
 static void reset_game(void)
 {
     fake_scene = 1;
@@ -215,8 +473,23 @@ static void reset_game(void)
     fake_guest = 0;
     fake_hp = 40;
     fake_sound[0] = fake_notice[0] = 0;
+    fake_next_actor = 0;
+    fake_removed = 0;
+    fake_attacker = 0;
+    fake_attacker_kind = -1;
+    fake_game_over = fake_cleared = fake_left = fake_started = fake_title_idle = 0;
     memset(fake_items, 0, sizeof(fake_items));
     memset(fake_flags, 0, sizeof(fake_flags));
+    memset(fake_deck, 0, sizeof(fake_deck));
+    fake_deck_busy = 0;
+    fake_paused = 0;
+    fake_vblanks = 0;
+    fake_music = -1;
+    fake_music_holding = 0;
+    free(fake_share_sent);
+    fake_share_sent = NULL;
+    free(fake_share_waiting);
+    fake_share_waiting = NULL;
 }
 
 /* ---- the cases' folders ----------------------------------------------------------------------------- */
@@ -230,15 +503,20 @@ static void put(const char *relative, const char *text)
     CHECK(khdays_folders_write(path, text, strlen(text)));
 }
 
-/* A mod folder with its mod.ini and main script. */
-static void mod_folder(const char *folder, const char *id, const char *kind, const char *main_lua)
+/* A mod folder with its mod.ini (the interface `api`) and main script. */
+static void mod_folder_api(const char *folder, const char *id, const char *kind, int api, const char *main_lua)
 {
     char path[512], ini[512];
-    snprintf(ini, sizeof(ini), "id = %s\nname = %s\nversion = 1.0\nkind = %s\napi = 1\n", id, id, kind);
+    snprintf(ini, sizeof(ini), "id = %s\nname = %s\nversion = 1.0\nkind = %s\napi = %d\n", id, id, kind, api);
     snprintf(path, sizeof(path), "mods/%s/mod.ini", folder);
     put(path, ini);
     snprintf(path, sizeof(path), "mods/%s/scripts/main.lua", folder);
     put(path, main_lua);
+}
+
+static void mod_folder(const char *folder, const char *id, const char *kind, const char *main_lua)
+{
+    mod_folder_api(folder, id, kind, 1, main_lua);
 }
 
 static void remove_all(const char *path)
@@ -451,7 +729,7 @@ static void test_faults(void)
     mod_folder("C loop", "test.loop", "gameplay", "mod.on('frame', function() while true do end end)\n");
     mod_folder("D caught loop", "test.caught", "gameplay",
                "mod.on('frame', function()\n  while true do pcall(function() while true do end end) end\nend)\n");
-    put("mods/E newer/mod.ini", "id = test.newer\nname = Newer\nversion = 1\nkind = gameplay\napi = 2\n");
+    put("mods/E newer/mod.ini", "id = test.newer\nname = Newer\nversion = 1\nkind = gameplay\napi = 3\n");
     put("mods/F same id/mod.ini", "id = test.counter\nname = Twin\nversion = 1\nkind = gameplay\napi = 1\n");
     put("mods/G no main/mod.ini", "id = test.nomain\nname = No main\nversion = 1\nkind = gameplay\napi = 1\n");
     put("mods/H syntax/mod.ini", "id = test.syntax\nname = Syntax\nversion = 1\nkind = gameplay\napi = 1\n");
@@ -468,7 +746,7 @@ static void test_faults(void)
     CHECK(m != NULL && m->state == KHDAYS_MOD_PAUSED);
     m = mod_by_folder("E newer");
     CHECK(m != NULL && m->state == KHDAYS_MOD_REFUSED &&
-          strcmp(m->reason, "needs mod interface 2, this port has 1") == 0);
+          strcmp(m->reason, "needs mod interface 3, this port has 2") == 0);
     m = mod_by_folder("F same id");
     CHECK(m != NULL && m->state == KHDAYS_MOD_REFUSED && strcmp(m->reason, "same id as B counter") == 0);
     m = mod_by_folder("G no main");
@@ -856,6 +1134,468 @@ static void test_guest(void)
     end_case();
 }
 
+static void test_api_versions(void)
+{
+    begin_case("versions");
+    mod_folder("One", "test.one", "gameplay",
+               "print('one', enemies == nil, pcall(mod.on, 'enemy_defeated', function() end))\n");
+    mod_folder_api(
+        "Two", "test.two", "gameplay", 2,
+        "print('two', type(enemies), type(enemies.make), mod.on('enemy_defeated', function() end) ~= nil)\n");
+    mod_folder_api("Three", "test.three", "gameplay", 3, "print('three')\n");
+    start();
+    CHECK(log_has("test.one print scripts/main.lua:1 one\ttrue\tfalse"));
+    CHECK(log_has("test.two print scripts/main.lua:1 two\ttable\tfunction\ttrue"));
+    CHECK(mod_by_folder("Three")->state == KHDAYS_MOD_REFUSED);
+    end_case();
+}
+
+static void test_enemies(void)
+{
+    begin_case("enemies");
+    mod_folder_api(
+        "Waves", "test.waves", "gameplay", 2,
+        "local n, seen, heard = 0, 0, {}\n"
+        "local function ok(c, what) if c then n = n + 1 else print('not ok', what) end end\n"
+        "local function says(want, a, b) return a == nil and b == want end\n"
+        "local made\n"
+        "mod.on('enemy_appeared', function(e) seen = seen + 1 end)\n"
+        "mod.on('enemy_defeated', function(e)\n"
+        "  heard[#heard + 1] = tostring(e.enemy) .. ' ' .. e.kind .. ' ' .. tostring(e.mine)\n"
+        "end)\n"
+        "ok(says('not in the field', enemies.make{ kind = 0, at = 'player' }), 'title')\n"
+        "mod.on('scene', function(e)\n"
+        "  if e.to ~= 2 then return end\n"
+        "  local k = enemies.kinds()\n"
+        "  ok(#k == 2 and k[1].kind == 0 and k[1].name == 'Shadow', 'kinds')\n"
+        "  made = enemies.make{ kind = 0, at = 'player', count = 3, spread = 2, level = 4, hp = 2,"
+        " strength = 1.5 }\n"
+        "  ok(#made == 3 and made[1] ~= made[2], 'made')\n"
+        "  ok(says('no room for its kind', enemies.make{ kind = 5, at = { 0, 0, 0 } }), 'kind 5')\n"
+        "  ok(says('unknown kind', enemies.make{ kind = 300, at = { 0, 0, 0 } }), 'kind 300')\n"
+        "  ok(not pcall(enemies.make, { kind = 0, at = 'player', count = 0 }), 'count 0')\n"
+        "  ok(not pcall(enemies.make, { kind = 'x', at = 'player' }), 'kind x')\n"
+        "  ok(#enemies.list() == 3 and enemies.info(made[1]).max_hp == 30, 'list')\n"
+        "  ok(enemies.remove(made[1]) == true and says('gone', enemies.remove(made[1])), 'remove')\n"
+        "  ok(#enemies.list() == 2 and says('gone', enemies.info(made[1])), 'removed')\n"
+        "  local all = enemies.kinds('all')\n"
+        "  ok(#all == 6 and all[3].ready and not all[4].ready and all[1].name == 'Shadow', 'all')\n"
+        "  ok(#enemies.make{ kind = 2, at = { 0, 0, 0 }, level = 4, hp = 2, strength = 1.5 } == 1 and #enemies.list() == 3, 'another kind')\n"
+        "  print('field', n)\n"
+        "end)\n"
+        "mod.on('frame', function(e)\n"
+        "  if e.frame == 4 then print('heard', seen, table.concat(heard, ','), #enemies.list()) end\n"
+        "end)\n");
+    mod_folder_api("Other", "test.other", "gameplay", 2,
+                   "mod.on('enemy_appeared', function(e) print('not mine appeared') end)\n"
+                   "mod.on('enemy_defeated', function(e) print('other', tostring(e.enemy), e.mine) end)\n");
+    start();
+    frames(1); /* the title seen, then the field */
+    fake_scene = 2;
+    frames(1);
+    CHECK(log_has("test.waves print scripts/main.lua:26 field\t12"));
+    CHECK(fake_level == 4 && fake_enemy_hp == 2 && fake_strength == 1.5 && fake_removed == 0x1000u);
+    khdays_api_enemies_defeated(0x1001u, 0); /* a made one */
+    khdays_api_enemies_defeated(0x2000u, 1); /* the mission's own */
+    frames(1);
+    khdays_api_enemies_field_left();
+    frames(1);
+    CHECK(log_has("test.waves print scripts/main.lua:29 heard\t3\t2 0 true,nil 1 false\t0"));
+    CHECK(log_has("test.other print scripts/main.lua:2 other\tnil\tfalse"));
+    CHECK(!log_has("not mine appeared"));
+    end_case();
+}
+
+static void test_enemies_guest(void)
+{
+    begin_case("enemies_guest");
+    mod_folder_api("Guest", "test.guest", "gameplay", 2,
+                   "mod.on('scene', function(e)\n"
+                   "  if e.to == 2 then print('guest', enemies.make{ kind = 0, at = 'player' }) end\n"
+                   "end)\n");
+    fake_guest = 1;
+    start();
+    frames(1);
+    fake_scene = 2;
+    frames(1);
+    CHECK(log_has("test.guest print scripts/main.lua:2 guest\tnil\tguest"));
+    end_case();
+}
+
+static void test_defeat(void)
+{
+    int entity[3] = {30, 50, 1}; /* HP 30 of 50, the player */
+    begin_case("defeat");
+    mod_folder_api("A holder", "test.holder", "gameplay", 2,
+                   "print('take', player.take_defeat(true))\n"
+                   "mod.on('defeat', function(e) print('defeat', e.damage, tostring(e.enemy), tostring(e.kind)) end)\n"
+                   "mod.on('mission_end', function(e) print('end', e.ending) end)\n"
+                   "mod.on('frame', function(e) if e.frame == 2 then error('on purpose') end end)\n");
+    mod_folder_api("B second", "test.second", "gameplay", 2,
+                   "print('second', player.take_defeat(true))\n"
+                   "mod.on('defeat', function(e) print('second heard') end)\n");
+    mod_folder("C one", "test.one", "gameplay",
+               "mod.on('mission_end', function(e) print('one', tostring(e.ending)) end)\n");
+    start();
+    CHECK(log_has("test.holder print scripts/main.lua:1 take\ttrue"));
+    CHECK(log_has("test.second print scripts/main.lua:1 second\tnil\ttaken by test.holder"));
+    frames(1);
+    fake_attacker = 0x2000u; /* the mission's Scarlet Tango */
+    fake_attacker_kind = 26;
+    CHECK(khdays_scripts_lethal(entity, -5) == 1);
+    CHECK(log_has("test.holder print scripts/main.lua:2 defeat\t35\tnil\t26"));
+    CHECK(!log_has("second heard"));
+    CHECK(khdays_scripts_lethal(entity, 10) == 10); /* not a defeat */
+    entity[2] = 0;
+    CHECK(khdays_scripts_lethal(entity, 0) == 0); /* not the player */
+    entity[2] = 1;
+    /* the endings */
+    khdays_scripts_field_begins();
+    khdays_scripts_mission_start();
+    fake_cleared = 1;
+    khdays_scripts_mission_end(15, 1, -1);
+    CHECK(log_has("test.holder print scripts/main.lua:3 end\tcleared"));
+    CHECK(log_has("test.one print scripts/main.lua:1 one\tnil")); /* api 1: as before */
+    entity[0] = 0;
+    khdays_scripts_hp(entity, 30); /* the defeat given back: the player falls */
+    entity[0] = 30;
+    fake_game_over = 1;
+    frames(1); /* frame 2: the game over seen; the holder stops on its error */
+    fake_game_over = 0;
+    khdays_link_set_flag(KHDAYS_LINK_GIVEN_UP, 1); /* the game over's give-up */
+    khdays_scripts_mission_end(15, -1, -1);
+    CHECK(mod_by_folder("A holder")->state == KHDAYS_MOD_STOPPED);
+    CHECK(khdays_scripts_lethal(entity, -5) == -5); /* a stopped holder gives the defeat back */
+    end_case();
+}
+
+static void test_deck(void)
+{
+    begin_case("deck");
+    mod_folder_api("Loadout", "test.loadout", "gameplay", 2,
+                   "local n = 0\n"
+                   "local function ok(c, what) if c then n = n + 1 else print('not ok', what) end end\n"
+                   "local function says(want, a, b) return a == nil and b == want end\n"
+                   "local function at(id)\n"
+                   "  for _, p in ipairs(deck.read().panels) do if p.panel == id then return p end end\n"
+                   "end\n"
+                   "local d = deck.read()\n"
+                   "ok(d.open == 16 and #d.panels == 13 and d.spare[3] == 1 and d.spare[9] == nil, 'read')\n"
+                   "ok(at(2).page == 1 and at(2).row == 1 and at(2).col == 2, 'cell')\n"
+                   "local saved = deck.save()\n"
+                   "ok(says('unknown panel', deck.give(40)) and says('unknown panel', deck.info(1)), 'unknown')\n"
+                   "ok(deck.info(10).link == false and #deck.info(10).cells == 2 and deck.info(11).link, 'info')\n"
+                   "ok(deck.give(4) == true and deck.read().spare[4] == 1, 'spare')\n"
+                   "ok(deck.give(10, true) == true and at(10).col == 3, 'first fit')\n"
+                   "ok(says('no room', deck.give(10, { page = 1, row = 1, col = 5 })), 'taken cell')\n"
+                   "ok(says('no room', deck.give(5, { page = 1, row = 4, col = 2 })), 'closed')\n"
+                   "ok(deck.give(5, { page = 1, row = 4, col = 1 }) == true, 'at')\n"
+                   "ok(says('no room', deck.give(11, true)), 'a link panel without its panel')\n"
+                   "ok(deck.give(6, true) == true and at(6).col == 4, 'on a panel of its category')\n"
+                   "ok(says('no room', deck.give(7, true)), 'full')\n"
+                   "ok(deck.read().spare[7] == nil and deck.read().spare[11] == nil, 'nothing changed')\n"
+                   "ok(says('not there', deck.take(3, 2)) and deck.take(2) == true and at(2) == nil, 'take')\n"
+                   "local bad = deck.save()\n"
+                   "bad.grid[40] = 7\n"
+                   "bad.owned[7] = 1\n"
+                   "ok(says('does not fit', deck.restore(bad)) and deck.read().spare[7] == nil, 'refused whole')\n"
+                   "ok(deck.restore(saved) == true, 'restore')\n"
+                   "ok(at(2) ~= nil and at(10) == nil and deck.read().spare[4] == nil, 'restored')\n"
+                   "ok(not pcall(deck.restore, {}) and not pcall(deck.give, 2, 'x'), 'bad arguments')\n"
+                   "print('deck', n)\n");
+    fake_items[1] = 1; /* 16 cells open: rows 1-3 of page 1 and the first of row 4 */
+    fake_items[2] = 1;
+    fake_items[3] = 1;
+    fake_deck[1] = 2;
+    /* full but for the cells panel 10 and 5 take: everything else on page 1's open cells */
+    for (int c = 0; c < 15; ++c) {
+        if (c != 1 && c != 2 && c != 3) {
+            fake_deck[c] = 9;
+        }
+    }
+    fake_items[9] = 12;
+    start();
+    CHECK(log_has("test.loadout print scripts/main.lua:30 deck\t18"));
+    CHECK(fake_deck[1] == 2 && fake_deck[2] == 0 && fake_items[4] == 0 && fake_items[10] == 0);
+    end_case();
+}
+
+static void test_deck_busy(void)
+{
+    begin_case("deck_busy");
+    mod_folder_api("Loadout", "test.loadout", "gameplay", 2,
+                   "print('busy', select(2, deck.give(2)), deck.read() ~= nil)\n");
+    fake_deck_busy = 1;
+    start();
+    CHECK(log_has("test.loadout print scripts/main.lua:1 busy\tnot now\ttrue"));
+    CHECK(fake_items[2] == 0);
+    end_case();
+}
+
+static void test_timers(void)
+{
+    int fired_at = 0, every = 0;
+    begin_case("timers");
+    mod_folder_api(
+        "Clock", "test.clock", "gameplay", 2,
+        "local n = 0\n"
+        "timer.after(60, function() print('fired') end)\n"
+        "local h\n"
+        "h = timer.every(1, function() n = n + 1; if n == 3 then timer.cancel(h) end; print('tick', n) end)\n"
+        "print('bad', pcall(timer.every, 0, print), pcall(timer.after, -1, print), select(2, "
+        "timer.cancel(999)))\n");
+    start();
+    for (int second = 1; second <= 90; ++second) {
+        fake_paused = second > 40 && second <= 60; /* 20 seconds paused */
+        fake_vblanks += 60;
+        frames(1);
+        if (fired_at == 0 && log_has("fired")) {
+            fired_at = second;
+        }
+    }
+    every = log_has("tick\t3") && !log_has("tick\t4");
+    CHECK(fired_at == 80);
+    CHECK(every);
+    CHECK(log_has("bad\tfalse\tfalse\tno such timer"));
+    end_case();
+}
+
+static void test_draws_and_music(void)
+{
+    begin_case("draws_music");
+    mod_folder_api("Clock", "test.clock", "gameplay", 2,
+                   "local function ten() local t = {} for i = 1, 10 do t[i] = random(100) end return "
+                   "table.concat(t, ' ') end\n"
+                   "local seen = {}\n"
+                   "for i = 1, 1000 do seen[random(3, 5)] = true end\n"
+                   "print('range', seen[3], seen[4], seen[5], seen[2], seen[6], random(7, 7))\n"
+                   "print('bad', pcall(random, 5, 4), pcall(random))\n"
+                   "local first\n"
+                   "mod.on('mission_start', function()\n"
+                   "  local now = ten()\n"
+                   "  if first == nil then first = now else print('same again', first == now) end\n"
+                   "end)\n"
+                   "print('track', select(2, music.play('Nope')), music.play('TwilightR_F'), music.stop(), "
+                   "select(2, music.stop()))\n");
+    start();
+    khdays_scripts_field_begins();
+    khdays_scripts_mission_start();
+    khdays_scripts_field_begins();
+    khdays_scripts_mission_start();
+    frames(1);
+    CHECK(log_has("range\ttrue\ttrue\ttrue\tnil\tnil\t7"));
+    CHECK(log_has("bad\tfalse\tfalse"));
+    CHECK(log_has("same again\ttrue"));
+    CHECK(log_has("track\tunknown track\ttrue\ttrue\tnot playing"));
+    CHECK(fake_music == -1 && !fake_music_holding);
+    end_case();
+}
+
+static void test_share(void)
+{
+    begin_case("share");
+    mod_folder_api("Clock", "test.clock", "gameplay", 2,
+                   "mod.on('shared', function(e)\n"
+                   "  print('heard', e.data.wave, e.data.names[2], e.data.done, e.data.deep.x.y)\n"
+                   "end)\n"
+                   "print('shared', mod.share({ wave = 3, names = { 'a', 'b' }, done = false, deep = { x = { y = 1.5 "
+                   "} } }))\n"
+                   "print('bad', pcall(mod.share, { f = print }))\n");
+    mod_folder_api("Other", "test.other", "gameplay", 2, "mod.on('shared', function(e) print('not mine') end)\n");
+    start();
+    CHECK(log_has("test.clock print scripts/main.lua:4 shared\ttrue"));
+    CHECK(log_has("bad\tfalse"));
+    CHECK(fake_share_sent != NULL && strcmp((const char *)fake_share_sent, "test.clock") == 0);
+    if (fake_share_sent != NULL) {
+        fake_share_waiting = malloc(fake_share_sent_size); /* as a guest's copy gets it */
+        memcpy(fake_share_waiting, fake_share_sent, fake_share_sent_size);
+        fake_share_waiting_size = fake_share_sent_size;
+    }
+    frames(1);
+    CHECK(log_has("heard\t3\tb\tfalse\t1.5"));
+    CHECK(!log_has("not mine"));
+    end_case();
+}
+
+static void test_share_guest(void)
+{
+    begin_case("share_guest");
+    mod_folder_api("Clock", "test.clock", "gameplay", 2, "print('guest', select(2, mod.share({})))\n");
+    fake_guest = 1;
+    start();
+    CHECK(log_has("guest\tguest"));
+    CHECK(fake_share_sent == NULL);
+    end_case();
+}
+
+static void test_set_position(void)
+{
+    begin_case("set_position");
+    mod_folder_api(
+        "Edge", "test.edge", "gameplay", 2,
+        "print('title', select(2, player.set_position(1, 2, 3)))\n"
+        "mod.on('scene', function(e)\n"
+        "  if e.to == 2 then print('field', player.set_position(4, 0.5, -6), pcall(player.set_position, 1, 2)) "
+        "end\n"
+        "end)\n");
+    start();
+    frames(1);
+    fake_scene = 2;
+    frames(1);
+    CHECK(log_has("test.edge print scripts/main.lua:1 title\tnot in the field"));
+    CHECK(log_has("test.edge print scripts/main.lua:3 field\ttrue\tfalse"));
+    CHECK(fake_set_at[0] == 4.0f && fake_set_at[1] == 0.5f && fake_set_at[2] == -6.0f);
+    end_case();
+}
+
+static void test_hold_mission(void)
+{
+    begin_case("hold_mission");
+    mod_folder_api("Arena", "test.arena", "gameplay", 2,
+                   "print('hold', enemies.hold_mission(true), pcall(enemies.hold_mission, 'yes'))\n");
+    mod_folder_api("Other", "test.other", "gameplay", 2, "print('other', select(2, enemies.hold_mission(true)))\n");
+    start();
+    CHECK(log_has("test.arena print scripts/main.lua:1 hold\ttrue\tfalse"));
+    CHECK(log_has("test.other print scripts/main.lua:1 other\theld by test.arena"));
+    CHECK(fake_held == 1);
+    khdays_scripts_stop(); /* the holder stopped: the mission's own come back */
+    CHECK(fake_held == 0);
+    remove_all(root);
+}
+
+static void test_leave(void)
+{
+    begin_case("leave");
+    mod_folder_api("Leaver", "test.leaver", "gameplay", 2,
+                   "print('title', mission.leave())\n"
+                   "mod.on('scene', function(e) if e.to == 2 then print('field', mission.leave()) end end)\n");
+    mod_folder("Old", "test.old", "gameplay", "print('old', mission.leave == nil)\n");
+    start();
+    frames(1);
+    fake_scene = 2;
+    frames(1);
+    CHECK(log_has("test.leaver print scripts/main.lua:1 title\tnil\tnot in the field"));
+    CHECK(log_has("test.leaver print scripts/main.lua:2 field\ttrue") && fake_left == 1);
+    CHECK(log_has("test.old print scripts/main.lua:1 old\ttrue"));
+    end_case();
+}
+
+static void test_start(void)
+{
+    begin_case("start");
+    mod_folder_api("Starter", "test.starter", "gameplay", 2,
+                   "print('title', mission.start(10))\n"
+                   "mod.on('scene', function(e)\n"
+                   "  if e.to == 19 then print('camp', mission.start(4000), mission.start(10, {})) end\n"
+                   "end)\n"
+                   "print('bad', pcall(mission.start, 'x'), pcall(mission.start, 10, 5))\n");
+    start();
+    frames(1);
+    fake_scene = 19;
+    frames(1);
+    CHECK(log_has("test.starter print scripts/main.lua:1 title\tnil\tnot in a camp"));
+    CHECK(log_has("test.starter print scripts/main.lua:3 camp\tnil\ttrue") && fake_started == 10);
+    CHECK(log_has("test.starter print scripts/main.lua:5 bad\tfalse"));
+    end_case();
+}
+
+static void test_endings(void)
+{
+    int entity[3] = {0, 50, 1}; /* the player at 0 HP */
+    begin_case("endings");
+    mod_folder_api("Ends", "test.ends", "gameplay", 2,
+                   "mod.on('mission_end', function(e) print('end', e.ending) end)\n");
+    start();
+    frames(1);
+    khdays_scripts_field_begins();
+    khdays_scripts_mission_start();
+    khdays_scripts_hp(entity, 30); /* a fall, then the game over */
+    fake_game_over = 1;
+    frames(1);
+    fake_game_over = 0;
+    khdays_link_set_flag(KHDAYS_LINK_GIVEN_UP, 1);
+    khdays_scripts_mission_end(15, -1, -1);
+    CHECK(log_has("test.ends print scripts/main.lua:1 end\tlost"));
+    khdays_scripts_field_begins(); /* Retry: the next run, given up from the pause through the same sub-flow */
+    khdays_scripts_mission_start();
+    frames(1);
+    fake_game_over = 1;
+    frames(1);
+    fake_game_over = 0;
+    khdays_scripts_mission_end(15, -1, -1);
+    CHECK(log_has("test.ends print scripts/main.lua:1 end\tabandoned"));
+    end_case();
+}
+
+static void test_screens(void)
+{
+    begin_case("screens");
+    mod_folder_api(
+        "Menu", "test.menu", "gameplay", 2,
+        "local h\n"
+        "title.entry{ label = { en = 'Endless', es = 'Sin fin' }, on_select = function()\n"
+        "  h = screen.list{ title = 'Pick', entries = { 'One', { es = 'Dos' }, 'Three' },\n"
+        "    on_choose = function(i) print('chose', i)\n"
+        "      screen.result{ title = 'Done', rows = { { 'Waves', 3 }, { label = 'Time', value = '1:00' } },\n"
+        "        on_close = function() print('result closed') end }\n"
+        "    end,\n"
+        "    on_cancel = function() print('cancelled') end }\n"
+        "  print('second', screen.page{ title = 'x' })\n"
+        "end }\n"
+        "mod.on('frame', function(e)\n"
+        "  if e.frame == 2 then print('late', title.entry{ label = 'Late' }) end\n"
+        "end)\n");
+    start();
+    CHECK(khdays_screens_entry_count() == 1);
+    frames(1);
+    /* the title's prompt: Y chooses the one entry */
+    fake_title_idle = 1;
+    CHECK(khdays_scripts_buttons(0) == 0);
+    CHECK(khdays_scripts_buttons(0x0800) == 0); /* Y: the prompt's, not the game's */
+    frames(1);
+    CHECK(log_has("test.menu print scripts/main.lua:12 late\tnil\tonly while loading"));
+    CHECK(log_has("test.menu print scripts/main.lua:9 second\tnil\tanother screen shows"));
+    CHECK(khdays_screens_shown() != 0);
+    khdays_screens_lock();
+    CHECK(khdays_screens_current()->kind == KHDAYS_SCREEN_LIST && khdays_screens_current()->row_count == 3 &&
+          strcmp(khdays_screens_current()->rows[1].label, "Dos") == 0);
+    khdays_screens_unlock();
+    CHECK(khdays_scripts_buttons(0) == 0);
+    CHECK(khdays_scripts_buttons(0x0080) == 0); /* DOWN */
+    CHECK(khdays_scripts_buttons(0) == 0);
+    CHECK(khdays_scripts_buttons(0x0001) == 0); /* A: chosen */
+    CHECK(khdays_scripts_buttons(0x0001) == 0); /* still held: not the game's */
+    frames(1);
+    CHECK(log_has("test.menu print scripts/main.lua:4 chose\t2"));
+    khdays_screens_lock();
+    CHECK(khdays_screens_current()->kind == KHDAYS_SCREEN_RESULT &&
+          strcmp(khdays_screens_current()->rows[0].value, "3") == 0 &&
+          strcmp(khdays_screens_current()->rows[1].label, "Time") == 0);
+    khdays_screens_unlock();
+    CHECK(khdays_scripts_buttons(0) == 0);
+    CHECK(khdays_scripts_buttons(0x0002) == 0); /* B: a result closes */
+    frames(1);
+    CHECK(log_has("result closed") && khdays_screens_shown() == 0);
+    fake_title_idle = 0;
+    CHECK(khdays_scripts_buttons(0x0001) == 0x0001); /* the game's again */
+    end_case();
+    CHECK(khdays_screens_entry_count() == 0); /* gone with the mods */
+}
+
+static void test_screens_stop(void)
+{
+    begin_case("screens_stop");
+    mod_folder_api("Broken", "test.broken", "gameplay", 2,
+                   "screen.page{ title = 'Hello', text = 'A page' }\n"
+                   "mod.on('frame', function() error('on purpose') end)\n");
+    start();
+    CHECK(khdays_screens_shown() != 0);
+    frames(1);
+    CHECK(mod_by_folder("Broken")->state == KHDAYS_MOD_STOPPED);
+    end_case(); /* its screen goes with its state */
+    CHECK(khdays_screens_shown() == 0);
+}
+
 #define RUN(test) (fprintf(stderr, "%s\n", #test), test())
 
 int main(void)
@@ -876,6 +1616,23 @@ int main(void)
     RUN(test_room_fingerprint);
     RUN(test_reload);
     RUN(test_guest);
+    RUN(test_api_versions);
+    RUN(test_enemies);
+    RUN(test_enemies_guest);
+    RUN(test_defeat);
+    RUN(test_endings);
+    RUN(test_leave);
+    RUN(test_start);
+    RUN(test_screens);
+    RUN(test_screens_stop);
+    RUN(test_deck);
+    RUN(test_deck_busy);
+    RUN(test_timers);
+    RUN(test_draws_and_music);
+    RUN(test_share);
+    RUN(test_share_guest);
+    RUN(test_set_position);
+    RUN(test_hold_mission);
     if (failures != 0) {
         fprintf(stderr, "script_test: %d failures\n", failures);
         return 1;

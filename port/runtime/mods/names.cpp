@@ -3,6 +3,7 @@
 // in it found by their headers, and their TEX0 dictionaries naming each texture and palette
 // (docs/RENDERING.md, "Mods' graphics").
 #include "names.h"
+#include "fonts.h"
 
 #include "../core/rom.h"
 extern "C" {
@@ -11,6 +12,8 @@ extern "C" {
 }
 
 #include "khdays/assets/gltf_export.h"
+#include "khdays/assets/font.h"
+#include <exception>
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h" // lz_decompress
 
@@ -521,12 +524,122 @@ int dump_sheets(const std::vector<u8> &d, const FileNames &names, const std::str
     return written;
 }
 
-} // namespace
+std::string json_quote(const std::string &value)
+{
+    std::string quoted = "\"";
+    for (const unsigned char ch : value) {
+        if (ch == '"' || ch == '\\') {
+            quoted += '\\';
+            quoted += static_cast<char>(ch);
+        } else if (ch < 0x20) {
+            char escape[7];
+            std::snprintf(escape, sizeof(escape), "\\u%04x", static_cast<unsigned>(ch));
+            quoted += escape;
+        } else {
+            quoted += static_cast<char>(ch);
+        }
+    }
+    return quoted + '"';
+}
+// Every NFTR glyph by index, with its metrics and CMAP in adjacent JSON.
+int dump_font(const std::string &label, const std::vector<u8> &data, const std::string &folder)
+{
+    khdays::assets::Font font;
+    try {
+        font = khdays::assets::decode_nftr(data);
+    } catch (const std::exception &e) {
+        std::fprintf(stderr, "graphics dump: cannot decode font %s: %s\n", label.c_str(), e.what());
+        return 0;
+    }
+    constexpr int columns = 16;
+    constexpr int padding = 1;
+    if (font.cell_width <= 0 || font.cell_height <= 0 || font.glyphs.empty() || font.glyphs.size() > 16384) {
+        std::fprintf(stderr, "graphics dump: invalid dimensions or glyph count for %s\n", label.c_str());
+        return 0;
+    }
+    const int pitch_x = font.cell_width + padding * 2;
+    const int pitch_y = font.cell_height + padding * 2;
+    const std::size_t rows = (font.glyphs.size() + columns - 1) / columns;
+    const int w = columns * pitch_x;
+    const int h = static_cast<int>(rows * static_cast<std::size_t>(pitch_y));
+    if (w > 16384 || h > 16384) {
+        std::fprintf(stderr, "graphics dump: font atlas too large for %s\n", label.c_str());
+        return 0;
+    }
+    std::vector<u8> rgba(static_cast<std::size_t>(w) * h * 4, 0);
+    for (std::size_t g = 0; g < font.glyphs.size(); ++g) {
+        const int x0 = static_cast<int>(g % columns) * pitch_x + padding;
+        const int y0 = static_cast<int>(g / columns) * pitch_y + padding;
+        const auto &alpha = font.glyphs[g].alpha;
+        if (alpha.size() != static_cast<std::size_t>(font.cell_width) * font.cell_height)
+            return 0;
+        for (int y = 0; y < font.cell_height; ++y) {
+            for (int x = 0; x < font.cell_width; ++x) {
+                const std::size_t dst = (static_cast<std::size_t>(y0 + y) * w + x0 + x) * 4;
+                rgba[dst] = 255;
+                rgba[dst + 1] = 255;
+                rgba[dst + 2] = 255;
+                rgba[dst + 3] = alpha[static_cast<std::size_t>(y) * font.cell_width + x];
+            }
+        }
+    }
 
+    // Keep the complete original filename, e.g. text/font_eu_10.nftr.png.
+    const std::filesystem::path directory(std::u8string(folder.begin(), folder.end()));
+    const std::u8string filename = std::u8string(label.begin(), label.end()) + u8".png";
+    const std::filesystem::path png = directory / "fonts" / filename;
+    const auto png_utf8 = png.u8string();
+    const std::string png_name(png_utf8.begin(), png_utf8.end());
+    std::error_code ec;
+    std::filesystem::create_directories(png.parent_path(), ec);
+    if (ec || !khdays_textures_write_png(png_name.c_str(), rgba.data(), w, h)) {
+        std::fprintf(stderr, "graphics dump: cannot write font atlas %s\n", png_name.c_str());
+        return 0;
+    }
+    std::filesystem::path json_path = png;
+    json_path.replace_extension(".json");
+    const auto json_utf8 = json_path.u8string();
+    const std::string json_name(json_utf8.begin(), json_utf8.end());
+    std::ofstream json(json_path, std::ios::binary);
+    if (!json) {
+        std::fprintf(stderr, "graphics dump: cannot write font metadata %s\n", json_name.c_str());
+        return 0;
+    }
+    json << "{\n  \"source\": " << json_quote(label) << ",\n  \"format\": \"NFTR\""
+         << ",\n  \"cell_width\": " << font.cell_width << ",\n  \"cell_height\": " << font.cell_height
+         << ",\n  \"baseline\": " << font.baseline << ",\n  \"max_width\": " << font.max_width
+         << ",\n  \"line_feed\": " << font.line_feed << ",\n  \"bpp\": " << font.bpp
+         << ",\n  \"atlas\": {\"width\": " << w << ", \"height\": " << h << ", \"columns\": " << columns
+         << ", \"padding\": " << padding << "}"
+         << ",\n  \"glyphs\": [\n";
+    for (std::size_t i = 0; i < font.glyphs.size(); ++i) {
+        const auto &glyph = font.glyphs[i];
+        const int x = static_cast<int>(i % columns) * pitch_x + padding;
+        const int y = static_cast<int>(i / columns) * pitch_y + padding;
+        json << "    {\"index\": " << i << ", \"x\": " << x << ", \"y\": " << y << ", \"w\": " << font.cell_width
+             << ", \"h\": " << font.cell_height << ", \"left\": " << glyph.left << ", \"width\": " << glyph.width
+             << ", \"advance\": " << glyph.advance << "}" << (i + 1 < font.glyphs.size() ? ",\n" : "\n");
+    }
+    json << "  ],\n  \"charmap\": [\n";
+    std::size_t i = 0;
+    for (const auto &[code, glyph] : font.char_to_glyph) {
+        json << "    {\"codepoint\": " << static_cast<unsigned>(code) << ", \"glyph\": " << glyph << "}"
+             << (++i < font.char_to_glyph.size() ? ",\n" : "\n");
+    }
+    json << "  ]\n}\n";
+    json.flush();
+    if (!json.good()) {
+        std::fprintf(stderr, "graphics dump: failed writing %s\n", json_name.c_str());
+        return 0;
+    }
+    return 1;
+}
+
+} // namespace
 extern "C" int khdays_graphics_dump(const char *directory)
 {
     char full[1024];
-    int written = 0, files = 0, unpaired = 0, models = 0, sheets = 0;
+    int written = 0, files = 0, unpaired = 0, models = 0, sheets = 0, fonts = 0;
     if (!khdays_dump_allowed(directory, full, sizeof(full))) {
         return 1;
     }
@@ -540,6 +653,15 @@ extern "C" int khdays_graphics_dump(const char *directory)
         }
     });
     each_data([&](const std::string &label, const std::vector<u8> &d) {
+        if (d.size() >= 4 && std::memcmp(d.data(), "RTFN", 4) == 0) {
+            if (dump_font(label, d, full)) {
+                ++fonts;
+                ++files;
+                // Smoke-test any matching mod atlas without changing game rendering.
+                khdays::hd_fonts::probe(label);
+            }
+            return;
+        }
         FileNames names;
         names.label = label;
         for (std::size_t at = 0; at + 0x18 <= d.size(); at += 4) {
@@ -600,9 +722,9 @@ extern "C" int khdays_graphics_dump(const char *directory)
             }
         }
     });
-    std::printf("graphics dump: %d textures, %d models and %d tile sheets from %d files into %s (%d textures "
-                "with no known palette, under their names alone)\n",
-                written, models, sheets, files, full, unpaired);
+    std::printf("graphics dump: %d textures, %d models, %d tile sheets and %d fonts from %d files into %s "
+                "(%d textures with no known palette, under their names alone)\n",
+                written, models, sheets, fonts, files, full, unpaired);
     return 0;
 }
 

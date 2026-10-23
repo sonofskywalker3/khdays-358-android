@@ -26,6 +26,16 @@ uint8_t *khdays_png_read(const char *path, int *width, int *height, const char *
     return pixels;
 }
 
+uint8_t *khdays_png_read_memory(const uint8_t *png, int size, int *width, int *height, const char **error)
+{
+    int channels = 0;
+    uint8_t *pixels = stbi_load_from_memory(png, size, width, height, &channels, 4);
+    if (pixels == NULL && error != NULL) {
+        *error = stbi_failure_reason();
+    }
+    return pixels;
+}
+
 void khdays_png_free(uint8_t *pixels)
 {
     stbi_image_free(pixels);

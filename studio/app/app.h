@@ -16,6 +16,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -80,36 +81,40 @@ struct App {
     std::unique_ptr<Job> job;
     std::string job_kind;
 
-    // every 2D sheet written coloured into a folder (sheet_view.cpp), on a
-    // thread of its own
-    struct SheetsExport {
+    // every 2D sheet written coloured into a folder (sheet_view.cpp), or every
+    // 3D texture (image_view.cpp), on a thread of its own
+    struct BulkExport {
+        bool textures = false;  // the 3D textures, not the 2D sheets
         std::thread thread;
         std::filesystem::path folder;
         std::atomic<bool> stop{false}, done{false};
         std::atomic<std::size_t> files_done{0}, files{0};
         std::atomic<int> written{0};
         std::mutex mutex;
-        std::string current;              // the sheet last written
+        std::string current;              // the sheet or texture last written
         std::vector<std::string> failed;  // once done: those not written, with why
         bool told = false;
-        ~SheetsExport() {
+        ~BulkExport() {
             stop = true;
             if (thread.joinable())
                 thread.join();
         }
     };
-    std::unique_ptr<SheetsExport> sheets_export;
+    std::unique_ptr<BulkExport> bulk_export;
+    int texture_scale = 1;  // the size a 3D texture's export writes (texture_size_combo)
 
     // files chosen in a dialog arrive on another thread
     std::mutex dialog_mutex;
     std::vector<std::string> dialog_files;
-    std::vector<std::string> dialog_clips;          // animation clips
-    std::vector<std::string> dialog_exports;        // where an assembled sheet is exported
-    std::vector<std::string> dialog_grids;          // where its tile grid is exported
-    std::vector<std::string> dialog_room_exports;   // where a room is exported
-    std::vector<std::string> dialog_model_exports;  // where a game model is exported
-    std::vector<std::string> dialog_sheet_folders;  // where every 2D sheet is exported
-    std::vector<std::string> dialog_collections;    // the 1.5+2.5 collection's folder (KH2's rooms)
+    std::vector<std::string> dialog_clips;            // animation clips
+    std::vector<std::string> dialog_exports;          // where an assembled sheet is exported
+    std::vector<std::string> dialog_grids;            // where its tile grid is exported
+    std::vector<std::string> dialog_room_exports;     // where a room is exported
+    std::vector<std::string> dialog_model_exports;    // where a game model is exported
+    std::vector<std::string> dialog_sheet_folders;    // where every 2D sheet is exported
+    std::vector<std::string> dialog_texture_exports;  // where a 3D texture is exported
+    std::vector<std::string> dialog_texture_folders;  // where every 3D texture is exported
+    std::vector<std::string> dialog_collections;      // the 1.5+2.5 collection's folder (KH2's rooms)
 
     std::string status;
 
@@ -189,8 +194,13 @@ void choose_export(App& app);
 // Lets go of the model view's pictures before the graphics device goes.
 void model_view_shutdown();
 void draw_dump_panel(App& app);
-void draw_sheets_export(App& app);  // its progress, in the browser (sheet_view.cpp)
+void draw_bulk_export(App& app);  // its progress, in the browser (sheet_view.cpp)
+// The progress a bulk export's thread reports, and its end (sheet_view.cpp).
+std::function<bool(std::size_t, std::size_t, const std::string&)> bulk_progress(App::BulkExport* job);
+void bulk_finish(App::BulkExport* job, int written, std::vector<std::string> failed);
 void sheets_export_to(App& app, const std::filesystem::path& folder);
+void textures_export_to(App& app, const std::filesystem::path& folder);  // image_view.cpp
+void texture_export_to(App& app, const std::filesystem::path& file);
 void draw_candidate_controls(App& app, const Item& item);
 void draw_replacements(App& app, bool* open);
 void draw_settings(App& app, bool* open);

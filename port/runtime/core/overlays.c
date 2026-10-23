@@ -14,7 +14,9 @@
 
 typedef struct Overlay {
     u32 start, end; /* RAM range, BSS included */
+    u32 size;       /* its RAM size, BSS not included (FSOverlayInfo's ram_size) */
     u32 loaded;     /* load order, 0 = not loaded */
+    int ended;      /* the game unloaded it: no longer running, though its code is still there */
 } Overlay;
 
 static Overlay *overlays; /* by id, as many as the ROM's table has */
@@ -40,6 +42,7 @@ static void read_table(void)
         if (entry[0] < entries) {
             overlays[entry[0]].start = entry[1];
             overlays[entry[0]].end = entry[1] + entry[2] + entry[3];
+            overlays[entry[0]].size = entry[2];
             if ((int)entry[0] >= count) {
                 count = (int)entry[0] + 1;
             }
@@ -64,6 +67,7 @@ void khdays_overlay_started(int id)
         }
     }
     overlays[id].loaded = ++loads;
+    overlays[id].ended = 0;
     khdays_function_references_moved(); /* its functions' DS addresses are its now (window.c) */
     khdays_log("overlay %d started", id);
     if (getenv("KHDAYS_TRACE_OVERLAYS") != NULL) {
@@ -75,17 +79,17 @@ void khdays_overlay_started(int id)
 }
 
 /* The game unloaded overlay `id` (FS_UnloadOverlayImage); its bytes stay until another overlay
- * overwrites them. */
+ * overwrites them, and the game may still call them (a mission's end calls ov106's after unloading
+ * it), so its functions stay its own. */
 void khdays_overlay_ended(int id)
 {
     if (count < 0) {
         read_table();
     }
-    if (id < 0 || id >= count || !overlays[id].loaded) {
+    if (id < 0 || id >= count || !overlays[id].loaded || overlays[id].ended) {
         return;
     }
-    overlays[id].loaded = 0;
-    khdays_function_references_moved();
+    overlays[id].ended = 1;
     khdays_log("overlay %d ended", id);
     if (getenv("KHDAYS_TRACE_OVERLAYS") != NULL) {
         fprintf(stderr, "overlay: %d ended (frame %u)\n", id, khdays_events_vblank_count());
@@ -102,13 +106,23 @@ void khdays_overlays_reset(void)
     khdays_function_references_moved();
 }
 
-/* Whether overlay `id` is loaded now (no other started over it since). */
+/* Whether overlay `id` is running now (no other started over it since, and not unloaded). */
 int khdays_overlay_loaded(int id)
 {
     if (count < 0) {
         read_table();
     }
-    return id >= 0 && id < count && overlays[id].loaded != 0;
+    return id >= 0 && id < count && overlays[id].loaded != 0 && !overlays[id].ended;
+}
+
+/* Overlay `id`'s RAM size (its BSS not included), as FS_LoadOverlayInfo gives it; -1 for no such
+ * overlay. */
+int khdays_overlay_size(int id)
+{
+    if (count < 0) {
+        read_table();
+    }
+    return id >= 0 && id < count ? (int)overlays[id].size : -1;
 }
 
 /* The overlay loaded at `address`, or -1. */

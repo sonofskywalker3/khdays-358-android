@@ -18,6 +18,8 @@ struct Font final {
     int cell_height = 0;
     int bpp = 1;
     int line_feed = 0;
+    int baseline = 0;
+    int max_width = 0;
 
     struct Glyph final {
         std::vector<std::uint8_t> alpha;  // cell_width * cell_height, 0..255
@@ -38,6 +40,8 @@ struct Font final {
 // Decode an NFTR font, transparently LZ-decompressing a ".z" blob. Throws
 // std::runtime_error on malformed data.
 Font decode_nftr(const std::filesystem::path& path);
+// Decode an already decompressed NFTR buffer.
+Font decode_nftr(const std::vector<std::uint8_t>& data);
 
 // Render a UTF-16 string to an RGBA image: white, anti-aliased glyphs on a
 // transparent background. Unmapped characters advance by the font's default

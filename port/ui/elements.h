@@ -24,6 +24,9 @@ typedef struct KhdaysUiElement {
  * (which is then left out of its slot). */
 void khdays_ui_register(int part, void (*emit)(void));
 void khdays_ui_emit(int part, const KhdaysUiElement *element);
+/* Move a supplementary image with a queued anchor, including when that anchor
+ * follows a HUD piece rather than a layout line. */
+void khdays_ui_emit_following(int part, const KhdaysUiElement *element, const KhdaysUiElement *anchor);
 
 /* For a part drawn from the port's own state (the pause's Retry cursor): when that state changes, the
  * next VBlank composes the frame again even if the game's picture is the same. */
@@ -44,6 +47,10 @@ int khdays_ui_image_get(int width, int height);
 void khdays_ui_image_put(int image);
 uint32_t *khdays_ui_image_begin(int image);
 void khdays_ui_image_end(int image);
+
+/* Palette utilities for native HD glyph overlays; colors are AABBGGRR. */
+uint32_t khdays_ui_palette_colour(int engine, uint32_t slot, uint32_t indexed);
+uint32_t khdays_ui_palette_hash(int engine);
 
 /* The scale the images are drawn at: the internal resolution's (1 without a window). */
 int khdays_ui_scale(void);

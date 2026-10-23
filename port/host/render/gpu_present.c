@@ -981,12 +981,20 @@ int khdays_present_refresh(void)
     return 1;
 }
 
-/* Whether the frame's 2D has tiles a mod draws instead (runtime/mods/tiles2d.h). */
+/* Whether the frame's 2D has tiles a mod draws instead (runtime/mods/tiles2d.h), or elements
+ * finer than the DS's pixels (KES_FINE: a mod's font). */
 static int has_hd_tiles(const KhdaysFramePackage *p)
 {
     for (size_t i = 0; i < SDL_arraysize(p->hd2d); ++i) {
         if (p->hd2d[i] != 0u) {
             return 1;
+        }
+    }
+    for (int s = 0; s < 2; ++s) {
+        for (uint32_t i = 0; i < p->elements[s].count; ++i) {
+            if (p->elements[s].records[i * KE_WORDS + KE_SLOT] & KES_FINE) {
+                return 1;
+            }
         }
     }
     return 0;

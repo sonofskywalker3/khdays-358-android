@@ -30,7 +30,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL3)
 
-# Dear ImGui (specs/018 research R1), MIT, at the release THIRD_PARTY_NOTICES.md
+# Dear ImGui, MIT, at the release THIRD_PARTY_NOTICES.md
 # records. Only its sources are wanted.
 FetchContent_Declare(
     imgui
@@ -85,7 +85,7 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/filesystem.cpp"            # the game's files, and which mod wins
     "${ROOT}/assets/src/image.cpp"              # images in PNG, JPEG, TGA, BMP (its own stb_image)
     "${ROOT}/assets/src/gltf.cpp"               # a mod's models, as the port imports them
-    "${ROOT}/assets/src/gltf_export.cpp"        # a room written to build on (specs/020)
+    "${ROOT}/assets/src/gltf_export.cpp"        # a room written to build on
     "${ROOT}/assets/src/fbx.cpp"
     "${ROOT}/assets/src/mesh.cpp"               # the game's models
     "${ROOT}/assets/src/animation.cpp"          # and their animations
@@ -142,6 +142,7 @@ add_library(khdays-studio-core STATIC
     core/missions/mission_edit.cpp
     core/missions/enemy_names.cpp
     core/texts/texts.cpp
+    core/models/texture_export.cpp
     core/models/model_export.cpp
     core/models/model_files.cpp
     core/mods/mods.cpp

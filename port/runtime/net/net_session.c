@@ -84,6 +84,13 @@ static const u64 REPORT_EVERY = 5000 * MS;
 /* The port the game's messages use, and the number of "gates" (message types: 5 bits of each
  * message's header). The session log counts messages by gate. */
 enum { GAME_PORT = 12, GATES = 32 };
+/* The mods' own records (runtime/scripts), on a port the game never opens (it opens 12 and ov105's
+ * data port 14), handed to the scripts and never to the game: a kind byte, then
+ *   MODS_SEED: the room's seed (u64), the host's to each member as it joins and whenever it changes;
+ *   MODS_SHARE: a piece of a message the host's mods share, a byte 1 on its last piece, then its bytes;
+ *               a message's pieces come in order, as every port's records do. */
+enum { MODS_PORT = 15, MODS_SEED = 1, MODS_SHARE };
+#define MODS_PIECE 1024 /* a share's bytes in one record: a datagram's worth */
 /* Online: a host registers its room every 2 s (the server forgets it after
  * 10 s of silence), and a guest asks for the rooms every second while the
  * game is looking. To join, a guest first tries to reach the host directly
@@ -256,6 +263,18 @@ static struct {
     volatile int own_level;
     int *levels;
     int level_room;
+    /* the mods' records (MODS_PORT): the room's seed (the host's as its scripts set it; a guest's as
+     * the host sent it) and whether there is one; on a guest, a share being put together and the
+     * shares put together, for the scripts */
+    unsigned long long mods_seed;
+    int mods_seed_known;
+    unsigned char *share_part;
+    int share_size, share_room;
+    struct Shared {
+        unsigned char *data;
+        unsigned int size;
+    } *shares;
+    int share_count, shares_room;
     /* guest: this copy's movement stick (the game's thread sets it), the one sent last and when */
     KhdaysNetStick own_stick, sent_stick;
     u64 stick_sent;
@@ -346,6 +365,8 @@ static u64 since(u64 now, u64 then)
 
 static void ping_levels(Peer *p, const unsigned char *body, unsigned int size);
 static void send_stick(void);
+static void send_seed(Peer *p);
+static void mods_forget(void);
 
 /* Makes room for `need` items, doubling, the new part zeroed. Out of memory,
  * the process stops. */
@@ -752,6 +773,40 @@ static void control_came(Peer *p, unsigned int port, const unsigned char *data, 
 /* A record arrived. If it is the next in order it goes to the game, followed
  * by any early ones that now follow on. An early record waits; one already
  * received is ignored. */
+/* A mods' record from the host (MODS_PORT): the room's seed kept, a share's piece added. */
+static void mods_record(const unsigned char *data, unsigned int size)
+{
+    if (net.role != GUEST || size < 1) {
+        return;
+    }
+    if (data[0] == MODS_SEED && size >= 9) {
+        net.mods_seed = get64(data + 1);
+        net.mods_seed_known = 1;
+    } else if (data[0] == MODS_SHARE && size >= 2) {
+        const int bytes = (int)size - 2;
+        net.share_part = (unsigned char *)grow(net.share_part, &net.share_room, net.share_size + bytes, 1);
+        memcpy(net.share_part + net.share_size, data + 2, (size_t)bytes);
+        net.share_size += bytes;
+        if (data[1] == 1) {
+            net.shares = (struct Shared *)grow(net.shares, &net.shares_room, net.share_count + 1, sizeof(*net.shares));
+            net.shares[net.share_count].data = copy_of(net.share_part, (unsigned int)net.share_size);
+            net.shares[net.share_count++].size = (unsigned int)net.share_size;
+            net.share_size = 0;
+        }
+    }
+}
+
+/* A record in its order: the mods' to the scripts, the others to the game. */
+static void record_in_order(Peer *p, unsigned int port, const unsigned char *data, unsigned int size)
+{
+    if (port == MODS_PORT) {
+        mods_record(data, size);
+        return;
+    }
+    push(KHDAYS_NET_RECORD, p->aid, data, size)->event.port = port;
+    control_came(p, port, data, size);
+}
+
 static void received_record(Peer *p, unsigned int port, unsigned int seq, const unsigned char *data, unsigned int size)
 {
     Stream *s = &p->streams[port];
@@ -773,8 +828,7 @@ static void received_record(Peer *p, unsigned int port, unsigned int seq, const 
         r->data = copy_of(data, size);
         return;
     }
-    push(KHDAYS_NET_RECORD, p->aid, data, size)->event.port = port;
-    control_came(p, port, data, size);
+    record_in_order(p, port, data, size);
     ++s->next_expected;
     for (;;) {
         int found = -1;
@@ -787,8 +841,7 @@ static void received_record(Peer *p, unsigned int port, unsigned int seq, const 
         if (found < 0) {
             break;
         }
-        push(KHDAYS_NET_RECORD, p->aid, s->early.items[found].data, s->early.items[found].size)->event.port = port;
-        control_came(p, port, s->early.items[found].data, s->early.items[found].size);
+        record_in_order(p, port, s->early.items[found].data, s->early.items[found].size);
         free(s->early.items[found].data);
         s->early.items[found] = s->early.items[--s->early.count];
         ++s->next_expected;
@@ -854,7 +907,7 @@ static void announce(int gone)
         return;
     }
     put32(body, net.build);
-    put32(body + 4, 0); /* reserved for a digest of the file mods (T023): 0 for now */
+    put32(body + 4, 0); /* reserved for a digest of the file mods: 0 for now */
     put16(body + 8, khdays_host_udp_port(net.session));
 #pragma warning(suppress : 6386) /* body holds 20 + info_size bytes (size above, in size_t): 12 fit */
     body[10] = (unsigned char)net.open;
@@ -1371,6 +1424,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         for (int i = 0; i < net.level_room; ++i) {
             net.levels[i] = 0; /* this room's come with the host's pings */
         }
+        mods_forget();
         /* from now on, reach the host the way its welcome came: directly or
          * through the server */
         new_peer(peer_slot(0), 0, sender, from);
@@ -1982,6 +2036,7 @@ static void leave_locked(void)
     for (int i = 0; i < net.level_room; ++i) {
         net.levels[i] = 0;
     }
+    mods_forget();
     net.role = NONE;
     net.joining = 0;
     net.join_online = net.join_relayed = 0;
@@ -2033,6 +2088,8 @@ int khdays_net_host(unsigned int ggid, const void *info, unsigned int size, unsi
     SDL_LockMutex(net.lock);
     leave_locked();
     net.role = HOST;
+    khdays_host_random(&net.mods_seed, sizeof(net.mods_seed)); /* the room's first seed */
+    net.mods_seed_known = 1;
     net.ggid = ggid;
     net.max_members = max_members;
     net.open = 1;
@@ -2143,6 +2200,9 @@ void khdays_net_accept(unsigned int aid, int accepted)
             unsigned char welcome[8] = {(unsigned char)aid};
             p->state = MEMBER;
             send_kind(&p->address, WELCOME, welcome, sizeof(welcome));
+            if (net.mods_seed_known) {
+                send_seed(p);
+            }
             push(KHDAYS_NET_JOINED, aid, NULL, 0);
             khdays_log("net: member %u in", aid);
         } else {
@@ -2339,6 +2399,106 @@ int khdays_net_levels(unsigned int *aids, int *levels, int room)
     }
     SDL_UnlockMutex(net.lock);
     return count;
+}
+
+/* --- the mods' records ------------------------------------------------- */
+
+/* The room's seed to member `p` (the caller holds net.lock). */
+static void send_seed(Peer *p)
+{
+    unsigned char record[9] = {MODS_SEED};
+    put64(record + 1, net.mods_seed);
+    queue_record(p, MODS_PORT, record, sizeof(record));
+}
+
+/* The room's seed and the shares waiting, forgotten (the caller holds net.lock). */
+static void mods_forget(void)
+{
+    net.mods_seed_known = 0;
+    net.share_size = 0;
+    for (int i = 0; i < net.share_count; ++i) {
+#pragma warning(suppress : 6001) /* every share below the count was written before the count moved */
+        free(net.shares[i].data);
+    }
+    net.share_count = 0;
+}
+
+void khdays_net_set_seed(unsigned long long seed)
+{
+    if (!net.started) {
+        return;
+    }
+    SDL_LockMutex(net.lock);
+    if (net.role == HOST) {
+        net.mods_seed = seed;
+        net.mods_seed_known = 1;
+        for (int i = 0; i < net.peer_room; ++i) {
+            if (net.peers[i].used && net.peers[i].state == MEMBER) {
+                send_seed(&net.peers[i]);
+            }
+        }
+    }
+    SDL_UnlockMutex(net.lock);
+}
+
+int khdays_net_seed(unsigned long long *seed)
+{
+    int known;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    known = net.role != NONE && net.mods_seed_known;
+    *seed = net.mods_seed;
+    SDL_UnlockMutex(net.lock);
+    return known;
+}
+
+int khdays_net_share(const void *data, unsigned int size)
+{
+    const unsigned char *bytes = (const unsigned char *)data;
+    unsigned char record[2 + MODS_PIECE];
+    int any = 0;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    for (int i = 0; net.role == HOST && i < net.peer_room; ++i) {
+        Peer *p = &net.peers[i];
+        unsigned int at = 0;
+        if (!p->used || p->state != MEMBER) {
+            continue;
+        }
+        do {
+            const unsigned int piece = size - at < MODS_PIECE ? size - at : MODS_PIECE;
+            record[0] = MODS_SHARE;
+            record[1] = at + piece == size;
+            memcpy(record + 2, bytes + at, piece);
+            queue_record(p, MODS_PORT, record, 2 + piece);
+            at += piece;
+        } while (at < size);
+        any = 1;
+    }
+    SDL_UnlockMutex(net.lock);
+    return any;
+}
+
+int khdays_net_shared(unsigned char **data, unsigned int *size)
+{
+    int found = 0;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    if (net.share_count > 0) {
+        *data = net.shares[0].data;
+        *size = net.shares[0].size;
+        memmove(&net.shares[0], &net.shares[1], (size_t)(net.share_count - 1) * sizeof(*net.shares));
+        --net.share_count;
+        found = 1;
+    }
+    SDL_UnlockMutex(net.lock);
+    return found;
 }
 
 int khdays_net_round_trips(unsigned int *aids, int *ms, int room)

@@ -2,6 +2,14 @@
 
 Thank you for helping with the project.
 
+## Branches: open pull requests against `development`
+
+- `development` is where work comes together: open every pull request against it, and start your
+  branch from it (`git switch -c my-change origin/development`).
+- `main` holds the released versions; `development` is merged into it for each release, so a change
+  reaches players in the next one.
+- Keep your branch up to date by merging or rebasing on `development`, not on `main`.
+
 ## Keep the port and decompilation separate
 
 Submit work to the repository that matches its purpose:
@@ -80,6 +88,7 @@ fix: reject unsupported ROM revisions
 
 ## Pull request checklist
 
+- [ ] The pull request targets `development`.
 - [ ] No copyrighted or proprietary content is included.
 - [ ] Third-party code and licenses are documented.
 - [ ] The change builds on each platform claimed by the pull request.

@@ -11,6 +11,7 @@
 #include "core/files/paths.h"
 #include "core/mods/settings.h"
 #include "core/models/clip_import.h"
+#include "core/models/texture_export.h"
 #include "core/models/model_export.h"
 #include "core/models/model_files.h"
 #include "core/rooms/kh2_source.h"
@@ -200,6 +201,38 @@ int export_all_sheets(const fs::path& root, const std::vector<std::string>& args
     for (const auto& f : failed)
         std::fprintf(stderr, "khdays-studio: not written: %s\n", f.c_str());
     std::printf("%d sheets written into %s, %zu not\n", written, args[1].c_str(), failed.size());
+    return failed.empty() ? 0 : 1;
+}
+
+// --export-textures <folder> [scale:<n>]: every 3D texture the dump has, n times its size.
+int export_all_textures(const fs::path& root, const std::vector<std::string>& args) {
+    int scale = 1;
+    for (std::size_t i = 2; i < args.size(); ++i) {
+        if (args[i].rfind("scale:", 0) != 0 || (scale = std::atoi(args[i].c_str() + 6)) < 1 || scale > 8) {
+            std::fprintf(stderr, "khdays-studio: not an option: %s (scale:1 to scale:8)\n", args[i].c_str());
+            return 2;
+        }
+    }
+    std::string note;
+    const Settings settings = load_settings(root, &note);
+    const Catalog catalog = load_catalog(root, settings);
+    std::vector<std::string> failed;
+    if (!catalog.graphics_dump_found) {
+        std::fprintf(stderr, "khdays-studio: no graphics dump (its 3D textures) at %s\n",
+                     u8(resolve(settings, settings.graphics_dump)).c_str());
+        return 1;
+    }
+    const int written = export_textures(
+        catalog.items, scale, path_u8(args[1]),
+        [](std::size_t, std::size_t, const std::string& key) {
+            if (!key.empty())
+                std::printf("%s\n", key.c_str());
+            return true;
+        },
+        &failed);
+    for (const auto& f : failed)
+        std::fprintf(stderr, "khdays-studio: not written: %s\n", f.c_str());
+    std::printf("%d textures written into %s, %zu not\n", written, args[1].c_str(), failed.size());
     return failed.empty() ? 0 : 1;
 }
 
@@ -1269,6 +1302,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         return list_arrangements(root, args[1]);
     if ((args.size() == 2 || args.size() == 3) && args[0] == "--export-sheets")
         return export_all_sheets(root, args);
+    if ((args.size() == 2 || args.size() == 3) && args[0] == "--export-textures")
+        return export_all_textures(root, args);
     if (args.size() >= 5 && args[0] == "--take-back")
         return take_back_sheet(root, args);
     if (args.size() == 5 && args[0] == "--replace-animation")
@@ -1316,6 +1351,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  a 2D sheet assembled as a picture to edit\n"
         "       khdays-studio [--port <dir>] --export-sheets <folder> [mod:<Mod>]\n"
         "                                                  every 2D sheet coloured as the window first shows it\n"
+        "       khdays-studio [--port <dir>] --export-textures <folder> [scale:<n>]\n"
+        "                                                  every 3D texture of the dump, n times its size\n"
         "       khdays-studio [--port <dir>] --arrangements <sheet>\n"
         "                                                  the arrangements that fit a sheet, best first\n"
         "       khdays-studio [--port <dir>] --take-back <Mod> <sheet> screen:N|cells:N|sheet... [row:N] [palette:N]\n"

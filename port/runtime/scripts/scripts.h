@@ -4,6 +4,8 @@
 #ifndef KHDAYS_SCRIPTS_H
 #define KHDAYS_SCRIPTS_H
 
+#include <stdint.h>
+
 /* The frame point, after the game's logic of the frame (main's loop, prepare.py's HOOKS). The first
  * call finds and loads the mods. */
 void khdays_scripts_frame(void);
@@ -24,5 +26,9 @@ void khdays_scripts_mission_start(void);                              /* Ov002_B
 void khdays_scripts_mission_end(int mission, int rank, int complete); /* Ov005_CommitMissionResults */
 void khdays_scripts_hp(void *entity, int before);                     /* Ov022_ActorSetHp, at its end */
 void khdays_scripts_saved(void);                                      /* the save written (runtime/core/arm7.c) */
+
+/* The game's thread, at Pad_Sample (input.c): the buttons the game gets while a mod's screen shows
+ * or the title's mods' prompt is pressed (screens.h). */
+uint16_t khdays_scripts_buttons(uint16_t buttons);
 
 #endif

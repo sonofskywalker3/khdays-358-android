@@ -99,6 +99,8 @@ std::string export_name(const Item& item) {
             name += "_" + n;
         return name + ".png";
     }
+    if (item.kind == Kind::texture)  // `<file>/tex/<texture>@<palette>`
+        return last(item.key) + ".png";
     if (item.kind == Kind::room)  // `<world file>/room/<index>`
         return last(item.group) + "_room" + last(item.key) + ".gltf";
     return last(item.key) + ".gltf";  // a model: `<file>/mdl/<name>`

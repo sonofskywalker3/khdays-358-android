@@ -30,7 +30,7 @@ from .types import (
 )
 
 REF = "khdays_ref"
-PRELUDE = """/* Rewritten by port/tools/references (specs/010): every pointer of the
+PRELUDE = """/* Rewritten by port/tools/references: every pointer of the
  * game's side a 4-byte reference, the DS address it had. */
 #include "khdays_references.h"
 """

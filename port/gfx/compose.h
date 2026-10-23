@@ -1209,7 +1209,7 @@ KD_FN uint kd_pixel(int x, int row)
     return fine != 0u ? kd_bright8(result, KD_DESC(KD_MASTER)) : kd_bright(result, KD_DESC(KD_MASTER));
 }
 
-/* --- Widescreen (from spec 002, gpu2d.h KhdaysGpu2dWide) -------------------------- */
+/* --- Widescreen (as gpu2d.h's KhdaysGpu2dWide had it) ---------------------------- */
 
 /* Where the 8x8 cell under DS column x moved: -1 to the left, 0 nowhere, 1 to the right. */
 KD_FN int kd_side(int x, int row)

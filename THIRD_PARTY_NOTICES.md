@@ -23,7 +23,7 @@ Upstream repository: <https://github.com/libsdl-org/SDL>
 
 Pinned release: **3.4.12** (`release-3.4.12`)
 
-Usage: downloaded by CMake with `FetchContent`, compiled as a static library, and linked into the native runtime and into khdays-studio, the mod tool (`studio/`, specs/018), with the same release and hash.
+Usage: downloaded by CMake with `FetchContent`, compiled as a static library, and linked into the native runtime and into khdays-studio, the mod tool (`studio/`), with the same release and hash.
 
 License: **zlib License**.
 
@@ -58,7 +58,7 @@ Usage: fetched by CMake and compiled in. `khdays-assets` (via
 `assets/src/image.cpp`) reads mods' textures with `stb_image.h`. The native port
 (`port/host/render/png_io.c`) reads PNG files with `stb_image.h` and writes them
 with `stb_image_write.h` (HD screenshots, and the graphics dump to come).
-khdays-studio, the mod tool (`studio/`, specs/018), compiles those same port
+khdays-studio, the mod tool (`studio/`), compiles those same port
 files (`port/host/render/png_io.c`, `assets/src/image.cpp`) as they are, at the same
 commit.
 
@@ -154,7 +154,7 @@ checked by its SHA-256 (`assets/fetch_ufbx.cmake`):
 - `LICENSE`, 2,631 bytes, `0dd48ebadf52273c736256325c8f078c03c8bb4facee22a4122de0ad3f615391`
 
 Usage: downloaded by CMake, compiled unmodified as a static library and linked into the native
-runtime and the asset library, to read a mod's FBX models (`assets/src/fbx.cpp`, specs/014); also
+runtime and the asset library, to read a mod's FBX models (`assets/src/fbx.cpp`); also
 into khdays-studio (`studio/`), which reads them as the port does and lists an FBX's textures.
 
 License: **MIT or Unlicense (public domain)**, the user's choice (its `LICENSE`); this repository
@@ -173,11 +173,11 @@ its SHA-256 `21d8a0a565e85dce943e375db00812c2f3f0ab21f3f0f7964e364a63422d7f99`
 
 Usage: compiled unmodified as static libraries into two programs:
 
-- **khdays-studio** (the mod tool, specs/018): `imgui.cpp` (979,959 bytes), `imgui_draw.cpp`
+- **khdays-studio** (the mod tool): `imgui.cpp` (979,959 bytes), `imgui_draw.cpp`
   (381,779), `imgui_tables.cpp` (270,549), `imgui_widgets.cpp` (555,245),
   `backends/imgui_impl_sdl3.cpp` (44,853), `backends/imgui_impl_sdlgpu3.cpp` (37,443) and
   `misc/cpp/imgui_stdlib.cpp`;
-- **the port** (`khdays-host-imgui`, its settings menu, specs/019): the same four core files and
+- **the port** (`khdays-host-imgui`, its settings menu): the same four core files and
   `backends/imgui_impl_sdlrenderer3.cpp` (17,414), built with `IMGUI_DISABLE_DEFAULT_FONT` (none
   of ImGui's embedded fonts is included).
 
@@ -189,7 +189,7 @@ Font: Roboto Medium, by Christian Robertson (Google), `misc/fonts/Roboto-Medium.
 of the same Dear ImGui archive as above.
 
 Usage: embedded unmodified, as bytes generated at configure time (`port/CMakeLists.txt`), in
-`khdays-native.exe`, for the port's settings menu (specs/019).
+`khdays-native.exe`, for the port's settings menu.
 
 License: **Apache License 2.0** (<https://www.apache.org/licenses/LICENSE-2.0>), as Dear ImGui's
 `docs/FONTS.md` records it.
@@ -205,8 +205,7 @@ by its SHA-256 `ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1
 Usage: 72 of its 128-pixel PNGs (the `Double` folders of `Xbox Series`, `PlayStation Series` and
 `Nintendo Switch`: the buttons, triggers, sticks and D-pads the menu names, and five gamepads' pictures:
 Xbox Series, PlayStation 5, 4 and 3, Switch Pro), embedded unmodified in
-`khdays-native.exe` as bytes generated at configure time, drawn in the settings menu's Controls section
-(specs/019 US5).
+`khdays-native.exe` as bytes generated at configure time, drawn in the settings menu's Controls section.
 
 License: **Creative Commons Zero (CC0 1.0)**, public domain (<http://creativecommons.org/publicdomain/zero/1.0/>),
 as the archive's `License.txt` states; crediting Kenney is not required, and is done here.
@@ -233,7 +232,7 @@ Component: Microsoft Media Foundation, part of Windows (`mfplat.dll`, `mfreadwri
 its import libraries from the Windows SDK (`mfplat.lib`, `mfreadwrite.lib`, `mfuuid.lib`).
 
 Usage: linked by the native runtime and loaded from the system on first use
-(`port/host/movies/movie_hd_win.c`) to decode the player's own HD videos (H.264 and AAC, specs/013).
+(`port/host/movies/movie_hd_win.c`) to decode the player's own HD videos (H.264 and AAC).
 Nothing of it is distributed with this repository; it is the operating system's.
 
 License: part of Windows, under the operating system's license.

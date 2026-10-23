@@ -11,6 +11,9 @@
  * reason in *error. */
 uint8_t *khdays_png_read(const char *path, int *width, int *height, const char **error);
 
+/* The same, from `size` bytes of PNG in memory. */
+uint8_t *khdays_png_read_memory(const uint8_t *png, int size, int *width, int *height, const char **error);
+
 void khdays_png_free(uint8_t *pixels);
 
 /* Writes 8-bit RGBA pixels as a PNG. Returns NULL on success, or the reason

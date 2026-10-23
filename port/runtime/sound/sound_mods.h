@@ -1,7 +1,9 @@
 /* The sounds mods replace: a sequence, a sequence archive's entry, a stream or a wave, played from
  * mods/<Mod>/sounds/<identifier>.<wav|flac|ogg> while the original goes on unheard (what the game reads
  * back stays the original's), each decoded once on a thread of its own and played at its own rate
- * (docs/SOUND.md, "Mods' sounds"). All but the decoding runs under the sound bridge's lock. */
+ * (docs/SOUND.md, "Mods' sounds"): the sequence archives' entries from the first sound on and a wave
+ * archive's waves as it loads, ahead, the others when they are first wanted. All but the decoding runs
+ * under the sound bridge's lock. */
 #ifndef KHDAYS_SOUND_MODS_H
 #define KHDAYS_SOUND_MODS_H
 

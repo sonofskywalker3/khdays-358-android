@@ -181,7 +181,8 @@ shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
 
 # ----------------------------------------------------------------------------
 # The pause: its menu (the upper screen's 72,64-184,140: PAUSA, its lines, the
-# question) at the DS's size in the middle over the 3D, the lower screen's
+# question) in the middle over the 3D at the HUD's size (the DS's at the
+# default), the lower screen's
 # INFORMATION banner at the top left, the map at the top right and the
 # mission's panel at the bottom left, as the field's HUD has them (the
 # maintainer's choice from the pictures, 2026-10-14) -- but in an event's
@@ -194,7 +195,7 @@ shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
 screens upper
 brightness upper
 hide3d hud
-shape upper 72 64 112 76 at centre scale fixed(1)
+shape upper 72 64 112 76 at centre scale 1
 [pause if !event]
 shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 16 16
 shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4

@@ -3,7 +3,7 @@
 The port's native build (`port/`, branch `native-port`) compiles the
 decompilation's C with MSVC for x64 and runs it on a PC -- rewritten at build
 time with every pointer a 4-byte reference, the DS address it had, into a
-range Windows places (specs/010; until 2026-10-03 compiled for 32-bit x86,
+range Windows places (until 2026-10-03 compiled for 32-bit x86,
 the DS memory mapped at its real addresses) -- with what the C asks of the
 DS's hardware answered by the port's own implementations. The
 C matches the ROM byte for byte, yet running it on another CPU shows where the
@@ -142,7 +142,7 @@ the same as the ROM's payload and blit give (RUNTIME_MAP section 9).
   -- a thread switch, an injected interrupt, or the interpreted MobiClip
   decoder the stop destroys -- *not identified*. The game goes on, and the
   walk reaches its scenes.
-  **It is the port's, not the C's** (spec 007, 2026-10-02, Debug, the
+  **It is the port's, not the C's** (2026-10-02, Debug, the
   interpreter long gone): with the port's interrupt watcher on (an
   interrupt injected between two of the game's instructions by suspending
   its thread, `port/runtime/async_irq.c`), 2 of 10 story walks had the
@@ -171,8 +171,7 @@ the port follows its names since. Left open:
   -- because their bodies are encrypted in the ROM; the C defines them as
   functions, several to a file. A tool that goes by the symbols' kinds finds
   no function there (the port's build hooks the file instead,
-  `port/tools/prepare.py` FILE_HOOKS). Found for the port's spec 005,
-  2026-10-01.
+  `port/tools/prepare.py` FILE_HOOKS). Found 2026-10-01.
 - ov008's `Ov008_MainMenu_*` (`Ov008_MainMenu_StateTick` and the functions
   it calls: `_SetupTextSurfaces`, `_UpdateSelectionText`, ...) are the camp's
   screen 1, the holo-missions' world map: its `+0x13fc` table is
@@ -198,13 +197,27 @@ the port follows its names since. Left open:
   Settings for Mission Mode's first two tabs, 2 Universal Settings for the
   others, 0 for the story's list). Found for the port's Preferences page,
   2026-10-10 (`docs/RUNTIME_MAP.md` 16.4).
+- An enemy's level goes by "height": `Ov002_GetEffectiveHeight` is the
+  enemy's level -- the mission's level (root + 0x8bae) plus the marker row's
+  signed adjustment (+4), capped at 0x78 (120) and floored at 1 -- and
+  `Ov002_CreateActorFromMarker` hands it to `pSetHeight` (+0x1ec), which is
+  `Ov107_AiState_LoadStats(self, recordIndex)`: the record is the level,
+  kept at +0x19d. `pActivate` (+0x1f0) is `Ov107_LoadMsUpRecord`. In the same
+  object, what `Ov107_Spawner_Run` calls `pair218` (a "timer", refilled to its
+  maximum) is the enemy's HP (`Ov107_AiState_LoadStats` sets +0x218 and +0x21a
+  from the level's record, `Ov107_AiState_ApplyHit` takes +0x21a down to the
+  defeat); `Ov107_StoreHitInfo` (+0x1f4) stores the enemy's home and its reach
+  (the spawner's point and radius, `field_110`), no hit; `Ov107_StoreSlotEvent`
+  (+0x1d8) stores attack i's power at +0x290 + 6 * i. Found
+  2026-10-22 (`docs/RUNTIME_MAP.md` 22: a level 6 Shadow had HP 93
+  and attacks 6 and 18, a level 1 one 75, 3 and 9).
 
 Taken up (for the record of what the old names were):
 
 - `CARDi_ReadRomSyncCore` (`libs/nitro/card/calls/`) reached the card's
   common state by byte offsets where its siblings declare `CARDiCommon`; it
   declares it now.
-- The wireless layer (found for the port's spec 015, 2026-10-05). The
+- The wireless layer (found 2026-10-05). The
   functions named `*EndKeySharing*` / `*CloseKeySharing*` ended no key
   sharing: each destroys a scene's task object through the veneer to
   `Obj_Destroy` (now `VeneerTo_Obj_Destroy`), e.g. `Ov002_DestroyPartyObject`,
@@ -233,8 +246,7 @@ Taken up (for the record of what the old names were):
   took one; the value is the game's language, stored in `gLangPath`'s first
   halfword (`GetLanguage`, `Msg_BuildLangPath`'s `&`, 1..5 the firmware's
   English .. Spanish). It is `Msg_SetLanguage(int language, int unused)` now,
-  declared as defined. Found for the port's spec 019, 2026-10-07
-  (`docs/RUNTIME_MAP.md` 8.1).
+  declared as defined. Found 2026-10-07 (`docs/RUNTIME_MAP.md` 8.1).
 
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 
@@ -261,7 +273,7 @@ And a name that is Windows' too: NitroSystem's `CreateThread`
 the two collide (the port renames the game's).
 
 What the C assumes of a 4 MB DS, met giving the game's heaps more room than
-the DS's main RAM (the port's specs/022, 2026-10-11):
+the DS's main RAM (2026-10-11):
 
 - Everything the game allocates comes from the two heaps
   `Ov001_CreateMainAndSubHeaps` (ov001 0x0204ce40) makes from the main arena:
@@ -300,7 +312,7 @@ the DS's main RAM (the port's specs/022, 2026-10-11):
   the field's event script's name ("%d" of the field root's +0x8baa, the struct's `wScore`): it is
   the script number, not a score. Group 3 of the script machine's tables is the movie player's
   (`Ov024_MobiClip_OpenPlayer`, ov012's opening): the missions' `_m` sections are the movies'
-  subtitle schedules. Found for the port's spec 029, 2026-10-17 (`docs/RUNTIME_MAP.md` 21).
+  subtitle schedules. Found 2026-10-17 (`docs/RUNTIME_MAP.md` 21).
 
 ## 2. Known, and kept as they are
 

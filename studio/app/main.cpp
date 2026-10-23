@@ -26,7 +26,8 @@ void apply_language(App& app) {
 }
 
 void take_dialog_files(App& app) {
-    std::vector<std::string> files, clips, exports, grids, rooms, models, sheet_folders;
+    std::vector<std::string> files, clips, exports, grids, rooms, models, sheet_folders, texture_folders,
+        texture_exports;
     {
         std::lock_guard lock(app.dialog_mutex);
         files.swap(app.dialog_files);
@@ -36,9 +37,15 @@ void take_dialog_files(App& app) {
         rooms.swap(app.dialog_room_exports);
         models.swap(app.dialog_model_exports);
         sheet_folders.swap(app.dialog_sheet_folders);
+        texture_folders.swap(app.dialog_texture_folders);
+        texture_exports.swap(app.dialog_texture_exports);
     }
     if (!sheet_folders.empty())
         sheets_export_to(app, path_u8(sheet_folders.front()));
+    if (!texture_folders.empty())
+        textures_export_to(app, path_u8(texture_folders.front()));
+    if (!texture_exports.empty())
+        texture_export_to(app, path_u8(texture_exports.front()));
     if (!rooms.empty())
         room_export_to(app, path_u8(rooms.front()));
     if (!models.empty())
@@ -250,7 +257,7 @@ int run_window(App& app) {
     if (app.catalog_thread.joinable())
         app.catalog_thread.join();
     app.job.reset();
-    app.sheets_export.reset();  // stopped and waited for
+    app.bulk_export.reset();  // stopped and waited for
     app.clear_candidate();
     movie_view_leave();
     SDL_WaitForGPUIdle(app.device);

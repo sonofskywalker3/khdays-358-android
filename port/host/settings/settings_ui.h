@@ -118,6 +118,10 @@ int khdays_settings_pad_family(void);
  * the save list's Switch icons (save_screen.c). */
 const unsigned char *khdays_pad_icon_png(const char *name, unsigned *size);
 
+/* The name of that icon for a gamepad input (KhdaysPadInput) on the connected gamepad, as the
+ * Controls section shows it (its family, the letter printed on it); NULL when there is none. */
+const char *khdays_pad_icon_name(int input);
+
 #ifdef __cplusplus
 }
 #endif

@@ -7,5 +7,5 @@
 *.jpeg binary
 *.gif binary
 *.ico binary
-# the commit a server built from git archive says it is (specs/016)
+# the commit a server built from git archive says it is
 port/server/version.h export-subst

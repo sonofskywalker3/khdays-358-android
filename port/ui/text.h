@@ -1,7 +1,6 @@
-/* The text part: each NitroSystem character canvas the game shows becomes an element where the game
- * shows it, its image what VRAM holds of it, drawn at the internal resolution. The functions below are
- * what the game's hooks call (prepare.py UI_HOOKS), handed host pointers to the game's structures in
- * the DS's layout. */
+/* BG canvas text tracking: independent glyph commands and preserved graphics follow
+ * character transfers into the PC compositor. Hook arguments are host pointers to
+ * the rewritten game's 32-bit-reference structures. See docs/HD_FONTS.md. */
 #ifndef KHDAYS_UI_TEXT_H
 #define KHDAYS_UI_TEXT_H
 
@@ -27,5 +26,43 @@ void khdays_ui_text_chars_b2(const void *src, unsigned int offset, unsigned int 
 void khdays_ui_text_chars_b3(const void *src, unsigned int offset, unsigned int size);
 void khdays_ui_text_obj_a(const void *src, uint32_t offset, uint32_t size);
 void khdays_ui_text_obj_b(const void *src, uint32_t offset, uint32_t size);
+
+/* After SDK CPU fills: records write ranges even if their bytes did not change. */
+unsigned int khdays_ui_text_copy_owner(const void *source, const void *destination, unsigned int size);
+void khdays_ui_text_memory_copy(const void *source, void *destination, unsigned int size, unsigned int owner);
+void khdays_ui_text_memory_clear(const void *destination, unsigned int size);
+void khdays_ui_text_scroll_before(const void *window, int amount);
+void khdays_ui_text_scroll(const void *window, int amount);
+
+/* NitroSystem G2D BG canvas hooks (from port/tools/prepare.py). */
+void khdays_ui_text_glyph_before(const void *canvas, const void *font, int x, int y, int cl, const void *glyph);
+void khdays_ui_text_glyph(const void *canvas, const void *font, int x, int y, int cl, const void *glyph);
+void khdays_ui_text_clear(const void *canvas, int cl);
+void khdays_ui_text_clear_area(const void *canvas, int cl, int x, int y, int w, int h);
+void khdays_ui_text_font_init(const void *font, const void *file);
+void khdays_ui_text_font_loaded(void *font, const char *name, int arg2, int arg3, int result);
+void khdays_ui_text_font_bound(void *font, const void *name);
+int khdays_ui_text_metric(const void *font, int glyph, int field, int fallback);
+int khdays_ui_text_kerning(const void *font, int left, int right);
+int khdays_ui_text_extent(const void *font, int glyph, int left, int width, int advance);
+double khdays_ui_text_metric_f(const void *font, int glyph, int field, double fallback);
+double khdays_ui_text_kerning_f(const void *font, int left, int right);
+double khdays_ui_text_extent_f(const void *font, int glyph, int left, int width, int advance);
+int khdays_ui_text_round(double value);
+void khdays_ui_text_position(const void *font, double x, double y);
+double khdays_ui_text_pen_x(int x);
+int khdays_ui_text_numeric(const void *font, int layout);
+double khdays_ui_text_fit_width(const void *font, int layout, double *offset);
+int khdays_ui_text_ink(const void *font, int glyph, int w, int h, int ink, double *bounds);
+void khdays_ui_text_fit_begin(const void *font, double origin, double left, double factor, double offset);
+void khdays_ui_text_fit_end(void);
+void khdays_ui_text_crawl_begin(const void *context, const void *text, int index, int x, int y, double kerning);
+int khdays_ui_text_crawl_advance(double advance);
+void khdays_ui_text_field_tutorial_before(int step, int arg);
+void khdays_ui_text_field_tutorial(int step, int arg);
+void khdays_ui_text_scope_push(const char *scope);
+void khdays_ui_text_scope_pop(void);
+int khdays_ui_text_obtained_wants(unsigned int slot, int obtained);
+void khdays_ui_text_obtained_capture(const void *surface);
 
 #endif

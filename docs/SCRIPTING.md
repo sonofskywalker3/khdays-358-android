@@ -37,7 +37,7 @@ description = Keeps the player's HP full.
 | `id` | required | letters, digits, `.`, `_`, `-`; no two mods may share one |
 | `name`, `version` | required | shown to the player; versions are compared as text |
 | `kind` | required | `gameplay` (it changes the game) or `visual` (it only listens: its changes are refused) |
-| `api` | required | the interface version it needs: this port gives `1` |
+| `api` | required | the interface version it needs: `1`, or `2` for version 1 and what a game mode of its own needs (below) |
 | `main` | optional | the first script, under `scripts/` (default `scripts/main.lua`) |
 | `author`, `description` | optional | shown to the player |
 
@@ -189,11 +189,168 @@ runs again.
 ### Not in version 1
 
 What the decompilation does not explain yet, or what was not yet seen working in the game, is left
-out rather than guessed: warping and the field's current area, the deck and abilities, starting a
-mission (`Ov025_MissionList_StartMission` needs the story camp's list on screen: not yet tried in
-play), making a mission's enemies (`Ov002_CreateActorFromMarker` needs one of its spawners: none was
-there whenever it was tried), who dealt a hit, a loaded save's event, the mission's chests, telling
-a cleared mission from a lost one.
+out rather than guessed: the field's current area, a loaded save's event, the mission's chests.
+Making the field's enemies, holding the player's defeat (with who dealt the hit), how a mission
+ended, starting and leaving missions, placing the player, title entries and screens, the deck,
+timers, the game's music and a room's shared draws are in version 2.
+
+## The interface, version 2
+
+A mod whose `mod.ini` says `api = 2` has everything of version 1 and the names below; a version 1 mod
+has none of them (`enemies` is `nil`, `mod.on` refuses their events). Their calls answer as version
+1's do, and also `"not in the field"` where they act only there.
+
+### `enemies`
+
+The field's enemies, made by the game's own routine from the mission's enemy table: an area that has
+enemies gives some of the table's kinds a place, and a mod makes those kinds and any other of the game
+whose code still has room. The game keeps the enemies' code in six places, and each kind fits only some
+of them: a kind is loaded as its first enemy is made and keeps its place for the field, so the kinds a
+mod can add depend on the area's and on those already made (`enemies.kinds("all")` says which are
+ready); past the six the game would stop, so the port refuses first. A mod's enemies
+fight as the mission's, give none of the mission's tallies or drops (the mod rewards), and are let go
+with the area: a mission that moves on to its next area takes them away (`enemies.list()` empties)
+and offers that area's kinds.
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `enemies.kinds()` | the kinds this area makes | a list of `{kind = <id>, name = <the enemy's name>}`; empty where the area has no enemies |
+| `enemies.kinds("all")` | every kind of the game, `ready` when one can be made here now | a list of `{kind, name, ready}` |
+| `enemies.make{kind, at, count, spread, level, hp, strength}` | makes `count` (default 1) enemies of `kind` at `at` (`{x, y, z}` in the field's units, or `"player"`), round it at `spread` units (default 0); their level the area's for that kind (the mission's for another kind) plus `level` (default 0; the game's levels are 1 to 120), their HP and the power of their attacks times `hp` and `strength` (default 1) | a list of handles (and the reason, when fewer than `count` were made); `"unknown kind"`, `"no room for its kind"`, `"no enemies here"` (an area without enemies), `"not in multiplayer yet"` |
+| `enemies.remove(e)` | sends enemy `e` (a handle, or a list of them) away as the game does when the player leaves its spawner: no defeat | `true`; `"gone"` |
+| `enemies.list()` | the handles of the mod's enemies still standing | |
+| `enemies.info(e)` | `{kind, hp, max_hp, level, x, y, z}` | `nil, "gone"` |
+| `enemies.hold_mission(on)` | while `true`, the mission's own enemies are not set going (their spawners wait), so its areas never end by their enemies and a mod's waves are the only ones; those already standing stay | `true`; `"held by <mod id>"` while another mod holds them |
+
+A handle is the mod's own number for an enemy it made, unique for the session; once the enemy is
+defeated, sent away or let go, it is gone. An enemy that was defeated or sent away is idle in the
+area again and is reused for the next one of its kind, so waves cost no more of the game's memory
+than the most that stood at once.
+
+| Event | Fields | When |
+|---|---|---|
+| `enemy_appeared` | `enemy`, `kind` | an enemy the mod made is in the field (to that mod only) |
+| `enemy_defeated` | `enemy` (the handle; `nil` for the mission's own and other mods'), `kind`, `mine` | any enemy is defeated |
+
+```lua
+-- a wave of three Shadows round the player, tougher, once the mission's first area is built
+mod.on("frame", function()
+  if #enemies.list() == 0 and #enemies.kinds() > 0 then
+    enemies.make{ kind = enemies.kinds()[1].kind, at = "player", count = 3, spread = 4, hp = 2 }
+  end
+end)
+mod.on("enemy_defeated", function(e)
+  if e.mine then game.give_item(1) end
+end)
+```
+
+### The run's end
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `player.take_defeat(on)` | with `true`, the hit that would defeat the player leaves 1 HP and the mod hears `defeat` instead of the game over (what the game itself does for a host's partners in Mission Mode); `false` gives it back to the game | `true`; `"taken by <mod id>"` while another mod holds it |
+| `player.set_position(x, y, z)` | puts the player there (the field's units, as `player.position()` gives them), the way the game's scripts place a player: its motion stops with it; the ground and the walls are the mod's to choose (an arena's edge keeps the player inside by putting it back) | `true`; `"not in the field"`, `"not now"` (before the battle begins), `"guest"` |
+
+One mod holds the defeat at a time, the first that asks; a mod stopped by an error, turned off or
+reloaded gives it back.
+
+| Event | Fields | When |
+|---|---|---|
+| `defeat` | `damage`; `enemy` (the handle, when the mod made the attacker); `kind` (the attacker's kind when an enemy hit, `nil` for a fall or another damage of no enemy's) | a hit would have defeated the player while this mod holds the defeat (to that mod only) |
+| `mission_end` | version 1's, and `ending`: `"cleared"`, `"abandoned"` or `"lost"` | as in version 1 |
+
+`ending` is `"lost"` when the run ended in the game over after the player fell, `"abandoned"` after
+a give-up from the pause, `"cleared"` when the results record the mission cleared (a story mission
+with its objective done, a Mission Mode one ranked), `"lost"` otherwise. In Mission Mode the field
+revives a fallen player a few times before the game over: a mod that wants every fall holds the
+defeat.
+
+### Missions
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `mission.start(number)` | starts mission file `number` (`mi/mi/<number>`, as the studio numbers them: any mission, its field, its areas and enemies) from Mission Mode's camp: the port takes the camp's own way in for the player -- Holo-Missions, the first mission listed, its Yes, START -- holding the player's buttons back for those few seconds, and the field is built with the mod's mission | `true` (it begins a few seconds later: `mission_start` tells it); `"unknown mission"`, `"not in a camp"` (Mission Mode's), `"not now"` (a start already on its way), `"not in multiplayer yet"` |
+| `mission.leave()` | ends the mission as the pause's Give Up does: to the results (`ending` `"abandoned"`), then the camp | `true`; `"not in the field"`, `"not now"` (paused, already leaving, or the mission's opening before its battle) |
+
+The results of a mission a mod started count for the camp's mission it went in by (its name on the
+results screen, its records); a mode of a mod's own shows its own end and leaves with
+`mission.leave()`. A mission file the game made for the story may expect the story's state.
+
+### Title entries and screens
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `title.entry{label, on_select}` | an entry of the mod's at the title: a prompt in its bottom right corner, the player's input for Y and the label (several mods' entries: a list of them); Y calls `on_select` | a handle; `"only while loading"` (entries are made by the main script) |
+| `screen.list{title, entries, on_choose, on_cancel, layout}` | a list to choose from; `on_choose(index)` (1-based) | a handle; `"another screen shows"` |
+| `screen.page{title, text, picture, on_close, layout}` | a page of text (its lines apart by line breaks) and a picture of the mod's folder (PNG) | a handle; `"another screen shows"` |
+| `screen.result{title, rows, on_close, layout}` | a result: `rows` are `{label, value}` pairs (or `{label = ..., value = ...}`) | a handle; `"another screen shows"` |
+| `screen.close(h)` | closes the screen, no function called | `true`; `"not shown"` |
+
+A title, label, entry, text or value is one text or a table of texts by language (`{en = ..., es =
+...}`), taken in the game's language as the screen shows. One screen shows at a time, whichever mod
+made it. While it shows the keys and the pad move it and the game gets none: UP and DOWN go over a
+list, A chooses (or closes a page or a result), B leaves a list. Any answer closes the screen; the
+mod's function is called at the next frame point, and may show the next screen. A mod that stops
+takes its screens and entries with it.
+
+`layout` names a layout of the mod's own (`layouts/<name>.txt` in its folder, in the port's layout
+lines, docs/HD_SCREENS.md) with the pieces `veil`, `help_bar`, `row`, `row_selected`, `square`,
+`glove`, `trough`, `thumb`, the line `rows TOP PITCH SHOWN`, an optional `art` picture, and the text
+styles `heading`, `message`, `single`, `players` and `help`. Without one, the port draws the screen in
+the HD theater's list when the HD PACK is there, else in the game's own font.
+
+### The deck
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `deck.read()` | the deck: `open` (its cells open: the Slot Releasers + 15, at most 120), `panels` (each set panel's `panel`, `page`, `row`, `col`, from 1, in the deck's order), `spare` (`[panel] = copies` owned and not set) | a table; `"no game"` |
+| `deck.info(panel)` | a panel's `category`, `kind`, `link` (whether it is set on another panel's cells) and `cells` (the `{row, col}` it takes from its own cell) | a table; `"unknown panel"` |
+| `deck.give(panel)` | a copy more, as the game's rewards give one: spare, for the camp's Panels | `true`; `"unknown panel"`, `"no room"` (99 copies) |
+| `deck.give(panel, at)` | a copy more, set at `at` (`{page = , row = , col = }`), or with `true` at the first cell it may take | `true`; `"no room"` (the cell taken or closed, or nowhere it may go) |
+| `deck.take(panel, n)` | `n` copies fewer (1): the spare ones first, then the set ones from the deck's last cell | `true`; `"not there"` (fewer owned) |
+| `deck.save()` | the deck as it is: `grid` (its 120 cells' panels, 0 empty) and `owned` (`[panel] = copies`) | a table |
+| `deck.restore(saved)` | puts a saved deck back, its panels' copies too | `true`; `"does not fit"`, `"unknown panel"` (refused whole) |
+
+A panel is an item the camp's Panels list (items, magic, Level Up and its doublers, gears, abilities,
+links, rings and charms; not the synthesis materials, the Slot Releaser or the badges), by its item
+number. The deck holds as the camp lets the player set it: a multi-cell panel within its page, on open
+cells and over no other; a link (marked Ｌ) on a cell of a multi-cell panel of its category; one gear,
+one ring or charm, one multi-cell ability of a kind. A change that would break that, or more copies set
+than owned, is refused whole, nothing changed. The player's stats come from the deck as the camp
+starts a mission: a deck changed in the field counts from the next one. While one of a camp's pages is
+open (the Panels keep their own copy) every change answers `"not now"`; a guest's and a visual mod's
+answer `"guest"` and `"visual mod"`.
+
+### Time, music, chance and sharing
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `timer.after(seconds, fn)` | calls `fn` once, `seconds` of the game's time later | a handle |
+| `timer.every(seconds, fn)` | calls `fn` every `seconds` (above 0) of the game's time, until cancelled | a handle |
+| `timer.cancel(h)` | stops a timer | `true`; `"no such timer"` |
+| `music.play(track, fade)` | plays a track of the game in place of the game's own music: `track` its name in the sound archive (`"TwilightR_F"` or `"seq/TwilightR_F"`, as a mod's `sounds/` names it), `fade` seconds (0.5) | `true`; `"unknown track"` |
+| `music.stop(fade)` | the game's own music again | `true`; `"not playing"` (none of this mod's) |
+| `random(n)`, `random(a, b)` | a whole number, 1 to `n` or `a` to `b`, each as likely | the number |
+| `mod.share(t)` | sends the table `t` (nil, booleans, numbers, texts and tables of them; any size) from the host's mod to the guests' copies of it | `true`; `"guest"` |
+
+| Event | Fields | When |
+|---|---|---|
+| `shared` | `data` (the table) | a guest's copy of the mod: the host's shared one |
+
+The game's time stands still while the game is paused (its pause, its menus that pause it); a timer
+fires at the frame point it falls due, once even after a long frame. Timers of a mod that stops go with
+it.
+
+A track plays on the game's own music player, as the game switches its music (its fades, its sound
+heap): while it plays, the game's own changes of music are kept back and the last of them is made when
+the mod stops its track, else the music it took the place of comes back. It ends by itself as the scene
+changes (the field's end, the title's next screen) and when its mod stops.
+
+`random` draws from a seed every player of a room shares: chosen as the room opens and changed by the
+host as each mission ends, so every copy starts each mission with the same one. Each mod has its own
+run of draws, started again from that seed at each mission's start: the copies of a room draw the same
+numbers in the same order from there, as long as their mods draw alike. Alone, the seed is the copy's
+own.
 
 ## Multiplayer
 
@@ -205,7 +362,9 @@ plays with. Visual mods are each player's own and never keep anyone out.
 In a room, a guest's scripts still run and hear the events, but what they would change in the game
 is refused (`nil, "guest"`): the host's mods make those changes, with the host's option values, and
 they reach the guests as the rest of the game does. A guest's gameplay mods' options are shown locked
-in the Mods page. A mod turned on, off or moved while in a room counts from the next room.
+in the Mods page. A mod turned on, off or moved while in a room counts from the next room. What a guest's
+copy of a mod shows of the run (its screens, its timers, its music) is its own: the host's mod tells
+it what it needs with `mod.share`, and `random` draws the same for both from each mission's start.
 
 ## Examples
 
@@ -219,3 +378,4 @@ in the Mods page. A mod turned on, off or moved while in a room counts from the 
 | `infinite-hp` | `frame`, the player's HP and a toggle |
 | `options` | a choice, a number and a button in the Mods page |
 | `actions` | Mods-page buttons giving a potion, playing a sound and showing the field's notice |
+| `endless-arena` | a whole mode with version 2: its title entry and difficulty list, a loadout set in the deck at Mission Mode's camp and the mission started from there, the mission's own enemies held back and endless waves of the mod's (other missions' kinds among them), an arena's edge, music, a timer, a reward chosen between waves, the defeat held and a result screen, the deck put back; one player |

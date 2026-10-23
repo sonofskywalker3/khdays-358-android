@@ -114,10 +114,7 @@ void khdays_autosave_set_mode(int value)
     InterlockedExchange(&mode, value);
 }
 
-/* Whether the results being recorded record the mission cleared, by Ov005_CommitMissionResults' own
- * branches: the story's (reward mode 255) with flag 0x2086, mode 8 ranked 0-3, the others ranked 0-2;
- * a configuration that only marks the mission seen records nothing. */
-static int recorded_cleared(void)
+int khdays_autosave_results_cleared(void)
 {
     const int reward_mode = *(volatile u16 *)KHDAYS_W(RESULTS + RESULTS_REWARD_MODE);
     const int rank = *(volatile int *)KHDAYS_W(RESULTS + RESULTS_RANK);
@@ -134,7 +131,7 @@ static int recorded_cleared(void)
 
 void khdays_autosave_mission_end(void)
 {
-    const int cleared = recorded_cleared() || testing();
+    const int cleared = khdays_autosave_results_cleared() || testing();
     if (trace()) {
         fprintf(stderr, "autosave: results recorded, %s (setting %ld)\n", cleared ? "cleared" : "not cleared", mode);
     }

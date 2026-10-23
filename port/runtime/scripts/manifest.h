@@ -6,8 +6,9 @@
 
 enum KhdaysModKind { KHDAYS_MOD_GAMEPLAY, KHDAYS_MOD_VISUAL };
 
-/* The interface version this port gives the mods. */
-#define KHDAYS_MODS_API 1
+/* The interface version this port gives the mods: a mod asks for 1 or 2 (2: version 1 and the game's
+ * modes' parts, api_v2.h). */
+#define KHDAYS_MODS_API 2
 
 typedef struct KhdaysManifest {
     char *id, *name, *version, *author, *description;

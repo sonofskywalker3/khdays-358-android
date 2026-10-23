@@ -283,7 +283,7 @@ void draw_dump_panel(App& app) {
         offer_dump("graphics", S::no_graphics_dump, app.settings.graphics_dump);
     if (!app.catalog.sounds_dump_found)
         offer_dump("sounds", S::no_sounds_dump, app.settings.sounds_dump);
-    draw_sheets_export(app);
+    draw_bulk_export(app);
 
     if (app.job) {
         const std::string last = app.job->last_line();

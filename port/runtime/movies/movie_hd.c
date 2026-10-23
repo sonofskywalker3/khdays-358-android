@@ -61,8 +61,9 @@ static uint16_t stuck;     /* ... until they are let go */
 static int pause_start_given, pause_seen, pause_frames, pause_press;
 static uint16_t pause_stuck;
 #define PAUSE_WAIT_FRAMES 90 /* a pause the game does not open within this: the video goes on */
-static int credits_scene;  /* the credits scene runs (khdays_movie_hd_credits) */
-static int course_credits; /* the course is its movie's */
+#define FADE_SECONDS 0.5     /* the game and the HD videos go down and come up over this */
+static int credits_scene;    /* the credits scene runs (khdays_movie_hd_credits) */
+static int course_credits;   /* the course is its movie's */
 /* The player's own HD video (its stem) shown for the last of the game's movies; "" when that movie
  * was the game's, or a mod's video. */
 static char shown[64];
@@ -333,6 +334,9 @@ static int movie_part_open(int index)
     const MoviePart *p = &parts[index];
     KhdaysHdInfo info;
     char why[320];
+    /* as a scene's: the first comes up from black and silence, the last goes down to them (a part cut
+     * out of a longer video ends so, not mid-picture) */
+    khdays_hd_fades(index == 0 ? FADE_SECONDS : 0.0, index == part_count - 1 ? FADE_SECONDS : 0.0);
     if (!khdays_hd_open_part(p->file, p->from, p->until, &info, why, sizeof(why))) {
         if (tell_once(p->file)) {
             khdays_log("movie %s: %s cannot be played (%s)", id, p->file, why);
@@ -533,7 +537,6 @@ int khdays_movie_hd_running(void)
 /* --- The theater's HD scenes, its chapters, the monologues' voice --------------------------------- */
 
 #define SCENE_SKIP_REQUEST 0x588u /* the event machine's skip request (Game_UnwindActionStack) */
-#define FADE_SECONDS 0.5          /* the game and a scene's videos go down and come up over this */
 
 void SoundMgr_StopAllSePlayers(void); /* the game's: what the event pause's Skip stops */
 

@@ -115,6 +115,7 @@ typedef struct Entry {
     uint32_t dslot;       /* its slot as given */
     int placed;           /* a layout line placed it */
     int leader;           /* the first element of its id the layout placed, which it moves with; -1: none */
+    int follows;          /* explicit earlier anchor, even without a matching layout line */
 } Entry;
 
 static Entry *entries;
@@ -173,7 +174,24 @@ void khdays_ui_emit(int part, const KhdaysUiElement *element)
     entries[entry_count].part = part;
     entries[entry_count].order = 0;
     entries[entry_count].seq = entry_count;
+    entries[entry_count].follows = -1;
     ++entry_count;
+}
+
+void khdays_ui_emit_following(int part, const KhdaysUiElement *element, const KhdaysUiElement *anchor)
+{
+    const int at = entry_count;
+    khdays_ui_emit(part, element);
+    if (entry_count == at || !anchor->id)
+        return;
+    for (int i = 0; i < at; ++i) {
+        if (entries[i].part == part && entries[i].e.screen == anchor->screen && entries[i].e.id &&
+            strcmp(entries[i].e.id, anchor->id) == 0 && entries[i].e.image == anchor->image &&
+            entries[i].e.x == anchor->x && entries[i].e.y == anchor->y) {
+            entries[at].follows = i;
+            break;
+        }
+    }
 }
 
 void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy)
@@ -323,6 +341,20 @@ static uint32_t colour_of(int engine, uint32_t slot, uint32_t t)
     return rgb_of((uint32_t)(pal[(t & 0xffu) * 2u] | pal[(t & 0xffu) * 2u + 1u] << 8) & 0x7fffu);
 }
 
+uint32_t khdays_ui_palette_colour(int engine, uint32_t slot, uint32_t indexed)
+{
+    return colour_of(engine, slot, indexed);
+}
+
+uint32_t khdays_ui_palette_hash(int engine)
+{
+    /* Extended palette selectors can change colors without changing palette bytes. */
+    const uint32_t io = engine ? 0x1000u : 0u;
+    const uint32_t selectors =
+        ((IO32(io) >> 30) & 1u) | ((IO16(io + 0x08u) & 0x2000u) >> 12) | ((IO16(io + 0x0au) & 0x2000u) >> 11);
+    return (palettes_of(engine) ^ selectors) * 16777619u;
+}
+
 /* The image element `n` draws on the other screen: its own, in direct colour. */
 static int direct_image(const Entry *n)
 {
@@ -396,7 +428,7 @@ static int find_groups(void)
     }
     for (int i = 0; i < entry_count; ++i) {
         const Entry *n = &entries[i];
-        const int alone = n->e.screen != 0 || n->e.w <= 0.0f || n->e.h <= 0.0f ||
+        const int alone = n->follows >= 0 || n->e.screen != 0 || n->e.w <= 0.0f || n->e.h <= 0.0f ||
                           khdays_ui_mode(n->part) != KHDAYS_UI_ON || khdays_ui_layout_names(n->e.id);
         group_of[i] = alone ? -1 : i;
     }
@@ -466,7 +498,9 @@ void khdays_ui_collect(int wide_margin, int upper)
         n->dx = n->e.x, n->dy = n->e.y, n->dw = n->e.w, n->dh = n->e.h;
         n->dslot = n->e.slot;
         n->placed = 0;
-        n->leader = -1;
+        n->leader = n->follows;
+        if (n->leader >= 0)
+            continue;
         if (khdays_ui_mode(n->part) == KHDAYS_UI_ON) {
             /* if one with its id is placed already (a piece's other layers), it goes the same way */
             for (int k = 0; k < i && n->leader < 0; ++k) {

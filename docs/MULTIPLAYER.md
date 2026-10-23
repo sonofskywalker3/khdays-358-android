@@ -31,6 +31,24 @@ controls, when the stick changed or a fifth of a second after the last; the
 host moves that guest's actor with it (its exact angle, and its walk when the
 stick is pushed less than the run threshold), as it does its own.
 
+### The mods' records
+
+The scripted mods (`docs/SCRIPTING.md`) have records of their own on port 15,
+which the game never opens (it opens 12, and ov105's data port 14): the session
+hands them to the scripts and never to the game. Each starts with a kind byte:
+
+- **the room's seed** (1, then a u64): chosen as the room opens, sent to each
+  member as it joins and to all of them whenever the host changes it (as each
+  mission ends), so the next mission starts with the same seed on every copy;
+  the mods' `random` draws from it, every mod its own run, started again at
+  each mission's start.
+- **a shared message** (2, then a byte 1 on its last piece, then its bytes):
+  what a host's mod shares (`mod.share`), in pieces of up to 1 KB, put together
+  again on the guest; the pieces come in order as every port's records do, so a
+  message of any size arrives whole. It starts with the mod's id, then the table
+  (nil, booleans, numbers, texts and tables of them), heard as `shared` by the
+  guest's copy of that mod.
+
 ### The playout store
 
 The network delivers a guest's controls unevenly (two in one tick, none in the

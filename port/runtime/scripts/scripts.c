@@ -3,11 +3,15 @@
 #include "scripts.h"
 
 #include "api.h"
+#include "api_v2.h"
 #include "events.h"
 #include "folders.h"
+#include "enemies_link.h"
 #include "game_link.h"
 #include "mod.h"
 #include "mods_log.h"
+#include "screens.h"
+#include "time_link.h"
 #include "order.h"
 #include "queue.h"
 #include "sandbox.h"
@@ -32,6 +36,12 @@ static void reload(KhdaysMod *m);
 static int started;
 static int tracing = -1;
 static int field_begun; /* the field was made: its first run is the mission's start */
+/* The run lost: the game over's sub-flow (ov027) also takes a give-up from the pause, so a run is lost
+ * when it comes up soon after the local player fell to 0 HP (in Mission Mode after the last of the
+ * falls the field revives). */
+#define FALL_TO_GAME_OVER 600 /* game frames */
+static unsigned fell_at;      /* the game frame the local player last fell, + 1; 0 for none this run */
+static int game_over_up, lost;
 static unsigned looked; /* frame points since the mods' files were last looked at */
 static char *user_folder;
 static KhdaysOrder order;
@@ -130,6 +140,7 @@ static long long newest_file(const KhdaysMod *m)
 
 static void unload(KhdaysMod *m)
 {
+    khdays_api_v2_release(m);
     khdays_api_menus_free(m);
     khdays_sandbox_close(m);
     free(m->handlers);
@@ -140,6 +151,7 @@ static void unload(KhdaysMod *m)
 static void load(KhdaysMod *m)
 {
     char note[64];
+    int ran;
     if (!khdays_sandbox_open(m)) {
         khdays_mods_log(name_of(m), "refused", NULL, 0, m->reason);
         return;
@@ -148,11 +160,18 @@ static void load(KhdaysMod *m)
     khdays_api_state_open(m);
     khdays_api_menus_open(m);
     khdays_api_actions_open(m);
+    if (m->manifest.api >= 2) {
+        khdays_api_v2_open(m);
+    }
     m->stamp = newest_file(m);
     m->spent = 0;
     m->allowance = khdays_sandbox_frame_allowance;
     khdays_script_events_hold();
-    if (khdays_sandbox_run_main(m)) {
+    ran = khdays_sandbox_run_main(m);
+    if (m->v2 != NULL) {
+        m->v2->loading = 0; /* its title entries made */
+    }
+    if (ran) {
         snprintf(note, sizeof(note), "started, api %d", m->manifest.api);
         khdays_mods_log(m->manifest.id, "loaded", NULL, 0, note);
     }
@@ -177,6 +196,10 @@ static int examine(KhdaysMod *m)
         return 0;
     }
     free(text);
+    if (m->manifest.api < 1) {
+        refused(m, "mod.ini: api missing or not valid");
+        return 0;
+    }
     if (m->manifest.api > KHDAYS_MODS_API) {
         snprintf(reason, sizeof(reason), "needs mod interface %d, this port has %d", m->manifest.api, KHDAYS_MODS_API);
         refused(m, reason);
@@ -620,9 +643,15 @@ void khdays_scripts_frame(void)
     if (tracing < 0) {
         tracing = getenv("KHDAYS_TRACE_MODS") != NULL;
     }
-    if (tracing) {
-        khdays_link_trace_frame();
+    {
+        const int up = khdays_link_game_over();
+        if (up && !game_over_up && fell_at != 0 && khdays_link_frame() + 1u - fell_at <= FALL_TO_GAME_OVER) {
+            lost = 1;
+        }
+        game_over_up = up;
     }
+    khdays_enemies_frame();
+    khdays_api_screens_frame();
     if (!started) {
         const char *mods_path, *user;
         khdays_link_folders(&mods_path, &user);
@@ -641,6 +670,7 @@ void khdays_scripts_frame(void)
         look_at_files();
     }
     khdays_script_events_frame();
+    khdays_api_time_frame();
     if (tracing > 0) {
         trace_time();
     }
@@ -664,16 +694,26 @@ void khdays_scripts_mission_start(void)
         return;
     }
     field_begun = 0;
+    lost = 0;
+    fell_at = 0;
     if (tracing > 0) {
         fprintf(stderr, "mods-trace: mission start: mission %d\n", khdays_link_mission());
     }
     if (count == 0) {
         return;
     }
+    khdays_api_time_mission_start(); /* every player of a room draws the same from here */
     memset(&e, 0, sizeof(e));
     e.id = KHDAYS_EVENT_MISSION_START;
     e.a = khdays_link_mission();
     khdays_script_events_raise(&e);
+}
+
+/* How the run ended: lost after the game over of a fall (its give-up sets flag 0x2087 too), abandoned
+ * with flag 0x2087, cleared as the results record it, lost otherwise. */
+static const char *ending(int given_up)
+{
+    return lost ? "lost" : given_up ? "abandoned" : khdays_link_results_cleared() ? "cleared" : "lost";
 }
 
 void khdays_scripts_mission_end(int mission, int rank, int complete)
@@ -681,9 +721,10 @@ void khdays_scripts_mission_end(int mission, int rank, int complete)
     KhdaysEvent e;
     const int given_up = khdays_link_flag(KHDAYS_LINK_GIVEN_UP);
     khdays_autosave_mission_end(); /* the port's autosave hears the same moment (runtime/menus/autosave.h) */
+    khdays_link_next_seed();
     if (tracing > 0) {
-        fprintf(stderr, "mods-trace: mission end: mission %d, rank %d, complete %d, given up %d\n", mission, rank,
-                complete, given_up);
+        fprintf(stderr, "mods-trace: mission end: mission %d, rank %d, complete %d, given up %d, %s\n", mission, rank,
+                complete, given_up, ending(given_up));
     }
     if (count == 0) {
         return;
@@ -694,6 +735,7 @@ void khdays_scripts_mission_end(int mission, int rank, int complete)
     e.b = rank;
     e.c = complete;
     e.d = given_up;
+    e.text = ending(given_up); /* api 2's `ending` */
     khdays_script_events_raise(&e);
 }
 
@@ -701,13 +743,13 @@ void khdays_scripts_hp(void *entity, int before)
 {
     KhdaysEvent e;
     int hp, max;
-    if (tracing > 0) {
-        khdays_link_trace_hp(entity, before);
+    khdays_link_entity_hp(entity, &hp, &max);
+    if (hp == 0 && before > 0 && khdays_link_is_player(entity)) {
+        fell_at = khdays_link_frame() + 1u;
     }
     if (count == 0) {
         return;
     }
-    khdays_link_entity_hp(entity, &hp, &max);
     if (hp == before) {
         return;
     }
@@ -718,6 +760,14 @@ void khdays_scripts_hp(void *entity, int before)
     e.c = max;
     e.text = khdays_link_is_player(entity) ? "player" : "other";
     khdays_script_events_raise(&e);
+}
+
+uint16_t khdays_scripts_buttons(uint16_t buttons)
+{
+    if (khdays_screens_shown() == 0 && khdays_screens_entry_count() == 0) {
+        return buttons;
+    }
+    return khdays_screens_buttons(buttons, khdays_link_title_idle(), khdays_link_language());
 }
 
 void khdays_scripts_saved(void)

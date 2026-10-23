@@ -152,7 +152,7 @@ bool save_settings(const Settings& s, std::string* why) {
                 *why = "cannot write " + u8(tmp);
             return false;
         }
-        out << "# khdays-studio's settings (specs/018); paths are relative to the port's folder\n"
+        out << "# khdays-studio's settings; paths are relative to the port's folder\n"
             << "port = " << s.port << "\n"
             << "graphics_dump = " << s.graphics_dump << "\n"
             << "sounds_dump = " << s.sounds_dump << "\n"

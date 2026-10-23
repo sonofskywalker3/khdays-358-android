@@ -1,6 +1,7 @@
 """hd_inputs.txt (the collection files the HD tools read, traced by `setup_steps.py trace-inputs`) is
 not stale: it was traced with the HD tools as they are now, and every line names a known archive."""
 
+import ast
 import sys
 import unittest
 from pathlib import Path
@@ -34,6 +35,20 @@ class Inputs(unittest.TestCase):
             self.assertTrue(path and not path.startswith("/"), line)
         # the glove's sheet newgame_dialog takes from KH2
         self.assertIn(f"kh2_first {s.HAND}", entries)
+        self.assertIn("kh2_first msg/us/fontinfo.bar", entries)
+        self.assertIn("kh2_first msg/us/fontimage.bar", entries)
+
+    def test_font_generator_wiring(self):
+        self.assertIn(("kh2_fonts.py", ["{kh2}"]), s.HD_MENU_TOOLS)
+        self.assertIn("kh2_fonts.py", s.DATA_TOOLS)
+        self.assertEqual(s.tool_arguments(["{kh2}"], {"kh2": Path("extracted-kh2")}), ["extracted-kh2"])
+        source = ast.parse((HERE.parent / "build_installer.py").read_text(encoding="utf-8"))
+        tools = next(
+            node.value
+            for node in source.body
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "TOOLS" for t in node.targets)
+        )
+        self.assertIn("tools/hd/kh2_fonts.py", ast.literal_eval(tools))
 
 
 if __name__ == "__main__":

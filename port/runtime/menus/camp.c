@@ -10,6 +10,7 @@
 #include "../core/window.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <windows.h>
 
@@ -617,6 +618,49 @@ int khdays_camp_screen(int *story)
     }
     *story = 0;
     return KHDAYS_CAMP_NONE;
+}
+
+void khdays_camp_font_scope(uint32_t font, char *scope, int size)
+{
+    if (size <= 0)
+        return;
+    scope[0] = 0;
+    const struct {
+        int overlay;
+        u32 global;
+    } shops[] = {{8, 0x02090facu}, {26, 0x02091368u}};
+    for (int i = 0; i < 2; ++i) {
+        if (!khdays_overlay_loaded(shops[i].overlay))
+            continue;
+        const u32 context = rd32(shops[i].global);
+        if (in_ram(context) && font >= context + 0xc13cu && font <= context + 0xc154u &&
+            (font - context - 0xc13cu) % 12u == 0) {
+            snprintf(scope, (size_t)size, "shop");
+            return;
+        }
+    }
+    for (int i = 0; i < CAMPS; ++i) {
+        if (!khdays_overlay_loaded(camps[i].overlay))
+            continue;
+        const u32 context = rd32(camps[i].camp + 4);
+        if (!in_ram(context) || font < context + 0x9680u || font > context + 0x96a4u ||
+            (font - context - 0x9680u) % 12u != 0)
+            continue;
+        const int screen = (int)rd32(camps[i].screen_index);
+        if (screen == 7)
+            snprintf(scope, (size_t)size, "camp.%s.screen.7.mode.%u", camps[i].story ? "story" : "mission",
+                     rd32(context + 0x9768u));
+        else
+            snprintf(scope, (size_t)size, "camp.%s.screen.%d", camps[i].story ? "story" : "mission", screen);
+        return;
+    }
+    /* Standalone camp save uses the same four slots in ov009's context. */
+    if (khdays_overlay_loaded(9)) {
+        const u32 context = rd32(0x020563e8u);
+        if (in_ram(context) && font >= context + 0x9680u && font <= context + 0x96a4u &&
+            (font - context - 0x9680u) % 12u == 0)
+            snprintf(scope, (size_t)size, "camp.save");
+    }
 }
 
 /* ---- The Preferences page's buttons ----------------------------------------------------------- */

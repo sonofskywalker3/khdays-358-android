@@ -291,7 +291,7 @@ int main(int argc, char **argv)
     }
     khdays_log_open();
     khdays_log("%s", working_folder_note);
-    khdays_log("the game's memory at %p (its references from there, specs/010)", (void *)khdays_window);
+    khdays_log("the game's memory at %p (its references from there)", (void *)khdays_window);
     {
         /* The game runs on a context whose stack is in its memory (memory.c), so its locals are reached
          * by reference too. */

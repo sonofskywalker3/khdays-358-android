@@ -105,6 +105,8 @@ void khdays_camp_view(KhdaysCampView *out);
  * camp; KHDAYS_CAMP_NONE with no camp loaded. */
 #define KHDAYS_CAMP_NONE (-2)
 int khdays_camp_screen(int *story);
+/* HD routing for the camp's four handles and the shops' three, never a shared NFTR file. */
+void khdays_camp_font_scope(uint32_t font, char *scope, int size);
 /* The window's thread: whether the port drew the Preferences page this frame (host/screens/camp_screen.c):
  * only then the page's directions and L and R are the port's (khdays_camp_buttons). */
 void khdays_camp_set_page_drawn(int drawn);

@@ -1,7 +1,6 @@
 # khdays-server
 
-The meeting point of the native port's Mission Mode multiplayer over the internet
-(specs/015, `contracts/server.md`). Players on one PC or one local network need no server: the
+The meeting point of the native port's Mission Mode multiplayer over the internet. Players on one PC or one local network need no server: the
 game finds their rooms by itself. Players in different places need one machine everyone can reach
 running this program:
 
@@ -22,7 +21,7 @@ internet address of its own.
 The server keeps everything in memory and writes no address anywhere -- its window and its log
 say how many rooms and relayed sessions there are, never who.
 
-It is open to anyone who can reach it, so it bounds what anyone can make it do (specs/016):
+It is open to anyone who can reach it, so it bounds what anyone can make it do:
 
 - **Memory.** Every room and relayed session it holds counts against a budget -- by default an
   eighth of the machine's memory, `--memory MB` to set it. A new one past the budget pushes out

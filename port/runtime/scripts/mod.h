@@ -63,6 +63,7 @@ typedef struct KhdaysMod {
     long long stamp;                 /* the newest time among its files when it was loaded */
     uint64_t traced_sum, traced_max; /* KHDAYS_TRACE_MODS: its time per frame since the last report */
     unsigned traced_frames;
+    struct KhdaysModV2 *v2; /* what the interface's version 2 holds for it (api_v2.h); NULL for api 1 */
 } KhdaysMod;
 
 /* The mods, in load order (scripts.c). */

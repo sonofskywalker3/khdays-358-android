@@ -16,6 +16,7 @@
 #include "../core/events.h"
 #include "../core/session_log.h"
 #include "../core/window.h"
+#include "../menus/mission_start.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,6 +112,7 @@ void khdays_scene_field_record(void *record, int from_argument)
 {
     static int test = -1, mission, script;
     uint8_t *r = (uint8_t *)record;
+    khdays_mission_start_record(record); /* a mod's mission.start (runtime/menus/mission_start.h) */
     if (test < 0) {
         const char *v = getenv("KHDAYS_TEST_EVENT");
         test = v != NULL && sscanf(v, "%d/%d", &mission, &script) == 2;

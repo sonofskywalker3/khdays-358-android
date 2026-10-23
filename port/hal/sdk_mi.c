@@ -7,16 +7,23 @@
 #include "../runtime/core/origin.h"
 #include "../runtime/core/runtime.h"
 
+extern unsigned int khdays_ui_text_copy_owner(const void *source, const void *destination, unsigned int size);
+extern void khdays_ui_text_memory_copy(const void *source, void *destination, unsigned int size, unsigned int owner);
+extern void khdays_ui_text_memory_clear(const void *destination, unsigned int size);
+
 void MI_CpuFill8(void *dest, u8 data, u32 size)
 {
+    const u32 written = size;
     u8 *d = (u8 *)dest;
     while (size-- != 0) {
         *d++ = data;
     }
+    khdays_ui_text_memory_clear(dest, written);
 }
 
 void MI_CpuCopy8(const void *src, void *dest, u32 size)
 {
+    const u32 owner = khdays_ui_text_copy_owner(src, dest, size);
     const u8 *s = (const u8 *)src;
     u8 *d = (u8 *)dest;
     /* the bytes' origin followed for a tile or more (the field HUD's portraits are
@@ -26,9 +33,11 @@ void MI_CpuCopy8(const void *src, void *dest, u32 size)
         khdays_origin_copy((u32)src, (u32)dest, size);
     }
     /* Byte by byte, forward, like the assembly (overlap behaves the same). */
+    const u32 written = size;
     while (size-- != 0) {
         *d++ = *s++;
     }
+    khdays_ui_text_memory_copy(src, dest, written, owner);
 }
 
 void MIi_CpuClear16(u16 data, void *dest, u32 size)
@@ -38,6 +47,7 @@ void MIi_CpuClear16(u16 data, void *dest, u32 size)
     for (u32 i = 0; i < size / 2; ++i) {
         d[i] = data;
     }
+    khdays_ui_text_memory_clear(dest, size & ~1u);
 }
 
 /* The port's geometry takes GXFIFO's words as a block (gfx/g3d.h). */
@@ -48,6 +58,7 @@ static void copy_registers(u32 src, u32 dest, u32 size, int unit);
 
 void MIi_CpuCopy16(const void *src, void *dest, u32 size)
 {
+    const u32 owner = khdays_ui_text_copy_owner(src, dest, size & ~1u);
     const volatile u16 *s = (const volatile u16 *)src;
     volatile u16 *d = (volatile u16 *)dest;
     khdays_origin_copy((u32)src, (u32)dest, size);
@@ -58,6 +69,7 @@ void MIi_CpuCopy16(const void *src, void *dest, u32 size)
     for (u32 i = 0; i < size / 2; ++i) {
         d[i] = s[i];
     }
+    khdays_ui_text_memory_copy(src, dest, size & ~1u, owner);
 }
 
 /* A copy from or to registers (a matrix to the geometry's command ports, the
@@ -101,6 +113,7 @@ static void copy_registers(u32 src, u32 dest, u32 size, int unit)
 
 void MIi_CpuCopy32(const void *src, void *dest, u32 size)
 {
+    const u32 owner = khdays_ui_text_copy_owner(src, dest, size & ~3u);
     const volatile u32 *s = (const volatile u32 *)src;
     volatile u32 *d = (volatile u32 *)dest;
     if ((u32)src >= 0xffff0000u) {
@@ -116,6 +129,7 @@ void MIi_CpuCopy32(const void *src, void *dest, u32 size)
     for (u32 i = 0; i < size / 4; ++i) {
         d[i] = s[i];
     }
+    khdays_ui_text_memory_copy(src, dest, size & ~3u, owner);
 }
 
 /* Writes every word to the same destination: a FIFO port. GXFIFO's words go
@@ -147,6 +161,7 @@ void MIi_CpuClearFast(u32 data, void *dest, u32 size)
     for (u32 i = 0; i < size / 4; ++i) {
         d[i] = data;
     }
+    khdays_ui_text_memory_clear(dest, size & ~3u);
 }
 
 void MIi_CpuCopyFast(const void *src, void *dest, u32 size)
@@ -190,6 +205,7 @@ static void clear32(u32 data, void *dest, u32 size)
     for (u32 i = 0; i < size / 4; ++i) {
         d[i] = data;
     }
+    khdays_ui_text_memory_clear(dest, size & ~3u);
 }
 
 void INITi_CpuClear32(u32 data, void *dest, u32 size)

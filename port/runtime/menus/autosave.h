@@ -11,6 +11,12 @@ void khdays_autosave_set_mode(int mode);
  * owed when the routine records the mission cleared. */
 void khdays_autosave_mission_end(void);
 
+/* Whether the results being recorded record the mission cleared, by Ov005_CommitMissionResults' own
+ * branches: the story's (reward mode 255) with flag 0x2086, mode 8 ranked 0-3, the others ranked 0-2;
+ * never after a give-up (flag 0x2087); a configuration that only marks the mission seen records
+ * nothing. */
+int khdays_autosave_results_cleared(void);
+
 /* At Pad_Sample (runtime/input/input.c), before the save list maps the game's slots: the owed
  * autosave written once a camp's menu waits for the player. */
 void khdays_autosave_frame(void);

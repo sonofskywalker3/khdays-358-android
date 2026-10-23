@@ -101,6 +101,17 @@ void khdays_net_set_level(int level);
  * aids and levels. Returns how many are known. */
 int khdays_net_levels(unsigned int *aids, int *levels, int room);
 
+/* The mods' records (runtime/scripts), never the game's. The room's seed: chosen as the room opens,
+ * changed by the host (khdays_net_set_seed; a guest's call does nothing), sent to each member, as it
+ * joins too. khdays_net_seed gives it, 0 when there is none (not in a room, or not come yet). */
+void khdays_net_set_seed(unsigned long long seed);
+int khdays_net_seed(unsigned long long *seed);
+/* The host: `size` bytes the mods share, to every member (in pieces, in order; any size). Returns 1 if
+ * anyone is there to get them. A guest: the next message the host shared, whole, in a block the caller
+ * frees (free). Returns 0 when none waits. */
+int khdays_net_share(const void *data, unsigned int size);
+int khdays_net_shared(unsigned char **data, unsigned int *size);
+
 /* Whether we are in a room or joining one (the settings menu does not pause the game then). */
 int khdays_net_in_session(void);
 

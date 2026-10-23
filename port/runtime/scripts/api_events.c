@@ -3,6 +3,7 @@
  * frame) and the game's routines the build joins (scripts.c). */
 #include "events.h"
 
+#include "api_v2.h"
 #include "game_link.h"
 #include "mod.h"
 #include "sandbox.h"
@@ -15,9 +16,9 @@
 
 #define SCENE_TITLE 1
 
-static const char *const NAMES[KHDAYS_EVENT_COUNT] = {"frame",       "scene",      "title", "mission_start",
-                                                      "mission_end", "hp",         "item",  "munny",
-                                                      "menu_open",   "menu_close", "save"};
+static const char *const NAMES[KHDAYS_EVENT_COUNT] = {
+    "frame",     "scene",      "title", "mission_start",  "mission_end",    "hp",     "item",  "munny",
+    "menu_open", "menu_close", "save",  "enemy_appeared", "enemy_defeated", "defeat", "shared"};
 
 static int depth; /* scripts running now */
 static KhdaysEvent *waiting;
@@ -46,7 +47,7 @@ int khdays_script_events_on(lua_State *L)
     int id = -1;
     luaL_checktype(L, 2, LUA_TFUNCTION);
     for (int i = 0; i < KHDAYS_EVENT_COUNT; ++i) {
-        if (strcmp(name, NAMES[i]) == 0) {
+        if (strcmp(name, NAMES[i]) == 0 && (i < KHDAYS_EVENT_FIRST_V2 || m->manifest.api >= 2)) {
             id = i;
         }
     }
@@ -96,7 +97,19 @@ static void set_text(lua_State *L, const char *key, const char *value)
     lua_setfield(L, -2, key);
 }
 
-static void push_event(lua_State *L, const KhdaysEvent *e)
+/* Whether `m` hears `e`: an enemy appeared is told only to the mod that made it, a defeat to the mod
+ * holding it. */
+static int hears(const KhdaysMod *m, const KhdaysEvent *e)
+{
+    switch (e->id) {
+    case KHDAYS_EVENT_ENEMY_APPEARED: return khdays_api_enemies_handle(m, (unsigned)e->a) != 0;
+    case KHDAYS_EVENT_DEFEAT: return m == khdays_api_run_holder();
+    case KHDAYS_EVENT_SHARED: return khdays_api_time_shared_for(m, e->a);
+    default: return 1;
+    }
+}
+
+static void push_event(lua_State *L, const KhdaysMod *m, const KhdaysEvent *e)
 {
     lua_createtable(L, 0, 4);
     set_text(L, "event", NAMES[e->id]);
@@ -121,6 +134,9 @@ static void push_event(lua_State *L, const KhdaysEvent *e)
             lua_pushboolean(L, e->c);
             lua_setfield(L, -2, "complete");
         }
+        if (m->manifest.api >= 2 && e->text != NULL) {
+            set_text(L, "ending", e->text);
+        }
         break;
     case KHDAYS_EVENT_HP:
         set_text(L, "who", e->text);
@@ -139,6 +155,32 @@ static void push_event(lua_State *L, const KhdaysEvent *e)
         break;
     case KHDAYS_EVENT_MENU_OPEN:
     case KHDAYS_EVENT_MENU_CLOSE: set_text(L, "menu", e->text); break;
+    case KHDAYS_EVENT_ENEMY_APPEARED:
+    case KHDAYS_EVENT_ENEMY_DEFEATED: {
+        const int handle = khdays_api_enemies_handle(m, (unsigned)e->a);
+        if (handle != 0) {
+            set_int(L, "enemy", handle); /* nil for the mission's own, or another mod's */
+        }
+        set_int(L, "kind", e->b);
+        lua_pushboolean(L, handle != 0);
+        lua_setfield(L, -2, "mine");
+        break;
+    }
+    case KHDAYS_EVENT_DEFEAT: {
+        const int handle = e->b != 0 ? khdays_api_enemies_handle(m, (unsigned)e->b) : 0;
+        set_int(L, "damage", e->a);
+        if (handle != 0) {
+            set_int(L, "enemy", handle);
+        }
+        if (e->c >= 0) {
+            set_int(L, "kind", e->c);
+        }
+        break;
+    }
+    case KHDAYS_EVENT_SHARED:
+        khdays_api_time_push_shared(L, e->a);
+        lua_setfield(L, -2, "data");
+        break;
     default: break;
     }
 }
@@ -161,11 +203,11 @@ static void deliver(const KhdaysEvent *e)
         KhdaysMod *m = khdays_scripts_mod(i);
         const int n = m->handler_count; /* not the ones its handlers add now */
         for (int h = 0; h < n && m->state == KHDAYS_MOD_LOADED; ++h) {
-            if (m->handlers[h].event != e->id || m->handlers[h].ref == LUA_NOREF) {
+            if (m->handlers[h].event != e->id || m->handlers[h].ref == LUA_NOREF || !hears(m, e)) {
                 continue;
             }
             lua_rawgeti(m->L, LUA_REGISTRYINDEX, m->handlers[h].ref);
-            push_event(m->L, e);
+            push_event(m->L, m, e);
             khdays_sandbox_call(m, 1, 0);
         }
         tidy(m);

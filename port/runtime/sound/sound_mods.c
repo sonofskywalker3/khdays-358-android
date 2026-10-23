@@ -34,8 +34,8 @@ static Entry *entries;
 static u64 uses;
 static SRWLOCK queue_lock = SRWLOCK_INIT;
 static CONDITION_VARIABLE queue_filled = CONDITION_VARIABLE_INIT;
-static Entry *queue[64];
-static int queued;
+static Entry **queue; /* the decoder's, the first next (grows) */
+static int queued, queue_room;
 
 static DWORD WINAPI decoder(LPVOID unused)
 {
@@ -60,20 +60,41 @@ static DWORD WINAPI decoder(LPVOID unused)
     }
 }
 
-static void enqueue(Entry *e)
+/* Puts a file that was let go in the decoder's queue: first when it is wanted now, last when it is
+ * decoded ahead (what plays now does not wait behind those); one already queued and wanted now goes
+ * first. */
+static void enqueue(Entry *e, int now)
 {
     static int started;
+    int at = -1;
     if (!started) {
         started = 1;
         CreateThread(NULL, 0, decoder, NULL, 0, NULL);
     }
     AcquireSRWLockExclusive(&queue_lock);
-    if (queued < (int)(sizeof(queue) / sizeof(queue[0]))) {
+    if (e->state == LET_GO) {
+        if (queued == queue_room) {
+            const int room = queue_room ? queue_room * 2 : 64;
+            Entry **grown = (Entry **)realloc(queue, (size_t)room * sizeof(*grown));
+            if (grown == NULL) {
+                ReleaseSRWLockExclusive(&queue_lock);
+                return; /* asked again at its next start */
+            }
+            queue = grown;
+            queue_room = room;
+        }
         InterlockedExchange(&e->state, QUEUED);
-        queue[queued++] = e;
+        queue[queued] = e;
+        at = queued++;
         WakeConditionVariable(&queue_filled);
     } else {
-        InterlockedExchange(&e->state, LET_GO); /* asked again at its next start */
+        for (int i = 0; i < queued && at < 0; ++i) {
+            at = queue[i] == e ? i : -1;
+        }
+    }
+    if (now && at > 0) {
+        memmove(queue + 1, queue, (size_t)at * sizeof(queue[0]));
+        queue[0] = e;
     }
     ReleaseSRWLockExclusive(&queue_lock);
 }
@@ -176,11 +197,11 @@ static Entry *entry_want(Entry *e, const KhdaysOriginalLoop *loop)
     if (e == NULL || e->state == NO_FILE || e->state == FAILED) {
         return NULL;
     }
-    if (e->state == LET_GO) {
-        if (loop != NULL) {
-            e->loop = *loop;
-        }
-        enqueue(e);
+    if (e->state == LET_GO && loop != NULL) {
+        e->loop = *loop;
+    }
+    if (e->state == LET_GO || e->state == QUEUED) {
+        enqueue(e, 1);
     }
     e->used = ++uses;
     return e;
@@ -189,6 +210,79 @@ static Entry *entry_want(Entry *e, const KhdaysOriginalLoop *loop)
 static Entry *entry_for(const char *identifier, const KhdaysOriginalLoop *loop)
 {
     return entry_want(entry_find(identifier), loop);
+}
+
+/* Whether a found file is a folder of its own (not "." or ".."). */
+static int is_folder(const WIN32_FIND_DATAA *found)
+{
+    return (found->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && found->cFileName[0] != '.';
+}
+
+/* A mod's sequence archive's entries (mods/<mod>/sounds/seqarc/<archive>/<entry>.*), queued to decode. */
+static void decode_archive_ahead(const char *mod, const char *archive)
+{
+    char pattern[600];
+    WIN32_FIND_DATAA file;
+    HANDLE found;
+    snprintf(pattern, sizeof(pattern), "mods\\%s\\sounds\\seqarc\\%s\\*", mod, archive);
+    found = FindFirstFileA(pattern, &file);
+    if (found == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    do {
+        char identifier[160];
+        const char *dot = strrchr(file.cFileName, '.');
+        Entry *e;
+        if ((file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || dot == NULL) {
+            continue;
+        }
+        /* the mods' order picks the file (entry_find), whichever mod it was seen in */
+        snprintf(identifier, sizeof(identifier), "seqarc/%s/%.*s", archive, (int)(dot - file.cFileName),
+                 file.cFileName);
+        e = entry_find(identifier);
+        if (e != NULL && e->state == LET_GO) {
+            enqueue(e, 0);
+        }
+    } while (FindNextFileA(found, &file));
+    FindClose(found);
+}
+
+/* The sequence archives' entries the mods have (sounds/seqarc/<archive>/<entry>): the game's sound
+ * effects and voices, short, decoded ahead so that even their first play is the mod's (they take no
+ * loop of the original's). Once, under the bridge's lock. */
+static void decode_entries_ahead(void)
+{
+    static int done;
+    WIN32_FIND_DATAA mod;
+    HANDLE mods;
+    if (done) {
+        return;
+    }
+    done = 1;
+    mods = FindFirstFileA("mods\\*", &mod);
+    if (mods == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    do {
+        char pattern[600];
+        WIN32_FIND_DATAA archive;
+        HANDLE archives;
+        if (!is_folder(&mod)) {
+            continue;
+        }
+        snprintf(pattern, sizeof(pattern), "mods\\%s\\sounds\\seqarc\\*", mod.cFileName);
+        archives = FindFirstFileA(pattern, &archive);
+        if (archives == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+        do {
+            if (is_folder(&archive)) {
+                decode_archive_ahead(mod.cFileName, archive.cFileName);
+            }
+        } while (FindNextFileA(archives, &archive));
+        FindClose(archives);
+    } while (FindNextFileA(mods, &mod));
+    FindClose(mods);
 }
 
 /* --- The waves --------------------------------------------------------------------- */
@@ -296,6 +390,29 @@ static struct {
     u32 rate; /* the original's */
 } wave_channel[16];
 
+/* Where wave `w` of the SWAR at `address` is; 0 while it is not loaded. */
+static u32 wave_of(u32 address, int w)
+{
+    const u32 at = rd32(address + 0x3c + 4u * (u32)w);
+    return at == 0 ? 0 : at < 0x02000000u ? address + at : at;
+}
+
+/* The original's loop of the wave at `wave`. */
+static void wave_loop(u32 wave, KhdaysOriginalLoop *loop)
+{
+    /* SNDWaveParam: +0 format, +1 loop, +2 rate, +4 timer, +6 the loop's start and +8 its length,
+     * in words */
+    const u8 *param = (const u8 *)KHDAYS_W(wave);
+    const u32 per_word = param[0] == 0 ? 4 : param[0] == 1 ? 2 : 8;
+    const u32 header = param[0] == 2 ? 8 : 0;
+    const u32 loop_words = (u32)(param[6] | param[7] << 8);
+    const u32 words = loop_words + rd32(wave + 8);
+    loop->rate = (u32)(param[2] | param[3] << 8);
+    loop->looped = param[1] != 0;
+    loop->start = loop_words * per_word >= header ? loop_words * per_word - header : 0;
+    loop->end = words * per_word - header;
+}
+
 void khdays_sound_mods_wave_archive(const KhdaysSoundArchive *archive, int number, u32 address)
 {
     int slot = 0, waves;
@@ -348,6 +465,16 @@ void khdays_sound_mods_wave_archive(const KhdaysSoundArchive *archive, int numbe
     wave_archive[slot].waves = waves;
     wave_archive[slot].entry = entry;
     wave_archive[slot].used = ++uses;
+    /* its replaced waves decoded ahead (the voices of a character loaded with it), so that even
+     * their first play is the mod's: those already in memory, with their loop */
+    decode_entries_ahead();
+    for (int w = 0; w < waves; ++w) {
+        const u32 wave = entry[w] != NULL && entry[w]->state == LET_GO ? wave_of(address, w) : 0;
+        if (wave != 0) {
+            wave_loop(wave, &entry[w]->loop);
+            enqueue(entry[w], 0);
+        }
+    }
 }
 
 int khdays_sound_mods_bind_wave(int channel, uint32_t sad, uint32_t len, int format)
@@ -369,24 +496,15 @@ int khdays_sound_mods_bind_wave(int channel, uint32_t sad, uint32_t len, int for
             continue;
         }
         for (int w = 0; w < wave_archive[i].waves; ++w) {
-            const u32 at = rd32(address + 0x3c + 4u * (u32)w);
-            const u32 wave = at < 0x02000000u ? address + at : at;
-            if (at == 0 || wave + 12 != sad) {
+            KhdaysOriginalLoop loop;
+            const u32 wave = wave_of(address, w);
+            if (wave == 0 || wave + 12 != sad) {
                 continue;
             }
             {
-                /* SNDWaveParam: +0 format, +1 loop, +2 rate, +4 timer, +6 the
-                 * loop's start and +8 its length, in words */
-                const u8 *param = (const u8 *)KHDAYS_W(wave);
-                const u32 per_word = param[0] == 0 ? 4 : param[0] == 1 ? 2 : 8;
-                const u32 header = param[0] == 2 ? 8 : 0;
-                const u32 loop_words = (u32)(param[6] | param[7] << 8);
-                const u32 words = loop_words + rd32(wave + 8);
-                const KhdaysOriginalLoop loop = {(u32)(param[2] | param[3] << 8), param[1] != 0,
-                                                 loop_words * per_word >= header ? loop_words * per_word - header : 0,
-                                                 words * per_word - header};
+                wave_loop(wave, &loop);
                 Entry *e = entry_want(wave_archive[i].entry[w], &loop);
-                if (e == NULL || e->state != READY || (int)param[0] != format) {
+                if (e == NULL || e->state != READY || (int)*(const u8 *)KHDAYS_W(wave) != format) {
                     return -1; /* the original, until its file is decoded */
                 }
                 set_entry(&wave_channel[channel].entry, e);
@@ -464,6 +582,7 @@ void khdays_sound_mods_sequence(const KhdaysSoundArchive *archive, int arm7_play
         !khdays_sound_archive_identifier(archive, kind, number, entry, identifier, sizeof(identifier))) {
         return;
     }
+    decode_entries_ahead();
     set_entry(&sequence[arm7_player].entry, entry_for(identifier, NULL));
     sequence[arm7_player].state = sequence[arm7_player].entry != NULL ? ARMED : IDLE;
     sequence[arm7_player].tag = command_tag;

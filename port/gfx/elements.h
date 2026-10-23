@@ -15,6 +15,7 @@
                                * elements and the picture under them -- gfx/compose.h kd_element_layer;
                                * in the sprites' from half their alpha), else palette indices */
 #define KES_SEMI_SHIFT 4 /* sprites: 1 drawn as a semi-transparent sprite (the DS's mode 1) */
+#define KES_FINE 0x20u   /* its image is finer than the DS's pixels (a mod's font): the frame is drawn at full size */
 
 #define KE_X 1     /* float bits: its left edge, DS pixels (fractions allowed) */
 #define KE_Y 2     /* its top */

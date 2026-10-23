@@ -1,4 +1,4 @@
-# FBX in (a mod's models, specs/014): ufbx v0.23.1 (tag object
+# FBX in (a mod's models): ufbx v0.23.1 (tag object
 # 35a37776ee1163a74609f4ee75d162b7ada099ac), MIT or Unlicense. Only the three
 # files the port compiles and its license are fetched, at the commit
 # THIRD_PARTY_NOTICES.md records, each checked by its SHA-256 -- the

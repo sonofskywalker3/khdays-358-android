@@ -678,7 +678,7 @@ void draw_sheet_assembled(App& app, const Item& item) {
     if (ImGui::Button(tr(app.language, S::sheet_bring_back)))
         choose_file(app, app.catalog.items[static_cast<std::size_t>(v.item)]);
     same_line_if_room(button_width(tr(app.language, S::sheets_export_all)));
-    ImGui::BeginDisabled(app.sheets_export != nullptr && !app.sheets_export->done);
+    ImGui::BeginDisabled(app.bulk_export != nullptr && !app.bulk_export->done);
     if (ImGui::Button(tr(app.language, S::sheets_export_all))) {
         SDL_ShowOpenFolderDialog(
             [](void* user, const char* const* folders, int) {
@@ -755,41 +755,46 @@ void draw_sheet_assembled(App& app, const Item& item) {
     ImGui::EndDisabled();
 }
 
+std::function<bool(std::size_t, std::size_t, const std::string&)> bulk_progress(App::BulkExport* job) {
+    return [job](std::size_t done, std::size_t files, const std::string& key) {
+        job->files_done = done;
+        job->files = files;
+        if (!key.empty()) {
+            ++job->written;
+            std::lock_guard lock(job->mutex);
+            job->current = key;
+        }
+        return !job->stop.load();
+    };
+}
+
+void bulk_finish(App::BulkExport* job, int written, std::vector<std::string> failed) {
+    {
+        std::lock_guard lock(job->mutex);
+        job->failed = std::move(failed);
+    }
+    job->written = written;
+    job->done = true;
+}
+
 void sheets_export_to(App& app, const fs::path& folder) {
-    if (app.sheets_export != nullptr && !app.sheets_export->done)
+    if (app.bulk_export != nullptr && !app.bulk_export->done)
         return;
-    app.sheets_export = std::make_unique<App::SheetsExport>();
-    App::SheetsExport* job = app.sheets_export.get();
+    app.bulk_export = std::make_unique<App::BulkExport>();
+    App::BulkExport* job = app.bulk_export.get();
     job->folder = folder;
     const fs::path dump = resolve(app.settings, app.settings.graphics_dump), mod = mod_dir(app), game = nitrofs();
     job->thread = std::thread([job, dump, mod, game]() {
         std::vector<std::string> failed;
-        const int written = export_sheets(
-            game, dump, mod, job->folder,
-            [job](std::size_t done, std::size_t files, const std::string& key) {
-                job->files_done = done;
-                job->files = files;
-                if (!key.empty()) {
-                    ++job->written;
-                    std::lock_guard lock(job->mutex);
-                    job->current = key;
-                }
-                return !job->stop.load();
-            },
-            &failed);
-        {
-            std::lock_guard lock(job->mutex);
-            job->failed = std::move(failed);
-        }
-        job->written = written;
-        job->done = true;
+        const int written = export_sheets(game, dump, mod, job->folder, bulk_progress(job), &failed);
+        bulk_finish(job, written, std::move(failed));
     });
 }
 
-void draw_sheets_export(App& app) {
-    if (app.sheets_export == nullptr)
+void draw_bulk_export(App& app) {
+    if (app.bulk_export == nullptr)
         return;
-    App::SheetsExport& job = *app.sheets_export;
+    App::BulkExport& job = *app.bulk_export;
     std::string current;
     std::vector<std::string> failed;
     {
@@ -798,8 +803,10 @@ void draw_sheets_export(App& app) {
         failed = job.failed;
     }
     const std::string written = std::to_string(job.written.load()), folder = u8(job.folder);
+    const S exported = job.textures ? S::textures_exported : S::sheets_exported;
     if (!job.done) {
-        ImGui::TextUnformatted(fmt(app.language, S::sheets_exporting, {written}).c_str());
+        ImGui::TextUnformatted(
+            fmt(app.language, job.textures ? S::textures_exporting : S::sheets_exporting, {written}).c_str());
         const std::size_t files = job.files.load();
         ImGui::ProgressBar(files > 0 ? static_cast<float>(job.files_done.load()) / static_cast<float>(files) : 0.0f,
                            ImVec2(-1, 0));
@@ -810,9 +817,9 @@ void draw_sheets_export(App& app) {
     } else {
         if (!job.told) {
             job.told = true;
-            app.tell(fmt(app.language, S::sheets_exported, {written, folder}), failed.empty());
+            app.tell(fmt(app.language, exported, {written, folder}), failed.empty());
         }
-        ImGui::TextWrapped("%s", fmt(app.language, S::sheets_exported, {written, folder}).c_str());
+        ImGui::TextWrapped("%s", fmt(app.language, exported, {written, folder}).c_str());
         if (!failed.empty()) {
             ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.3f, 1), "%s",
                                fmt(app.language, S::sheets_not_written, {std::to_string(failed.size())}).c_str());
@@ -827,7 +834,7 @@ void draw_sheets_export(App& app) {
             SDL_OpenURL(("file:///" + folder).c_str());
         same_line_if_room(button_width(tr(app.language, S::close)));
         if (ImGui::Button(tr(app.language, S::close))) {
-            app.sheets_export.reset();
+            app.bulk_export.reset();
             return;
         }
     }

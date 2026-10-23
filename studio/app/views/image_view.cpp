@@ -2,14 +2,17 @@
 // and for pictures the original beside the replacement, checked and saved as
 // the port reads it.
 #include "../app.h"
+#include "../save_dialog.h"
 
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
+#include "core/models/texture_export.h"
 
 #include "imgui.h"
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 
 namespace studio {
 
@@ -122,7 +125,72 @@ void save(App& app, const Item& item) {
     app.clear_candidate();
 }
 
+// A 3D texture's export, as a 2D sheet's: its size, then it alone or every one into a folder.
+void draw_texture_export(App& app, const Item& item) {
+    ImGui::SetNextItemWidth(70.0f * ImGui::GetStyle().FontScaleDpi);
+    if (ImGui::BeginCombo(tr(app.language, S::texture_export_size),
+                          (std::to_string(app.texture_scale) + "x").c_str())) {
+        for (int k = 1; k <= 8; ++k) {
+            if (ImGui::Selectable((std::to_string(k) + "x").c_str(), app.texture_scale == k))
+                app.texture_scale = k;
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tr(app.language, S::texture_export_size_note));
+    same_line_if_room(button_width(tr(app.language, S::texture_export)));
+    if (ImGui::Button(tr(app.language, S::texture_export)))
+        choose_save_file(app, export_name(item), "PNG", "png", app.dialog_texture_exports);
+    same_line_if_room(button_width(tr(app.language, S::textures_export_all)));
+    ImGui::BeginDisabled(app.bulk_export != nullptr && !app.bulk_export->done);
+    if (ImGui::Button(tr(app.language, S::textures_export_all))) {
+        SDL_ShowOpenFolderDialog(
+            [](void* user, const char* const* folders, int) {
+                if (folders == nullptr || folders[0] == nullptr)
+                    return;
+                App* a = static_cast<App*>(user);
+                std::lock_guard lock(a->dialog_mutex);
+                a->dialog_texture_folders.emplace_back(folders[0]);
+            },
+            &app, app.window, nullptr, false);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", tr(app.language, S::textures_export_all_note));
+}
+
 }  // namespace
+
+void texture_export_to(App& app, const fs::path& file) {
+    if (app.selected < 0 || app.selected >= static_cast<int>(app.catalog.items.size()))
+        return;
+    const Item& item = app.catalog.items[static_cast<std::size_t>(app.selected)];
+    if (item.kind != Kind::texture)
+        return;
+    fs::path out = file;
+    if (lower(u8(out.extension())) != ".png")
+        out += ".png";
+    std::string why;
+    if (!copy_texture(item.original, out, app.texture_scale, &why)) {
+        app.tell(fmt(app.language, S::save_failed, {why}), false);
+        return;
+    }
+    app.tell(fmt(app.language, S::sheet_exported, {u8(out)}), true);
+}
+
+void textures_export_to(App& app, const fs::path& folder) {
+    if (app.bulk_export != nullptr && !app.bulk_export->done)
+        return;
+    app.bulk_export = std::make_unique<App::BulkExport>();
+    App::BulkExport* job = app.bulk_export.get();
+    job->textures = true;
+    job->folder = folder;
+    job->thread = std::thread([job, items = app.catalog.items, scale = app.texture_scale]() {
+        std::vector<std::string> failed;
+        const int written = export_textures(items, scale, job->folder, bulk_progress(job), &failed);
+        bulk_finish(job, written, std::move(failed));
+    });
+}
 
 void choose_file(App& app, const Item& item) {
     static const SDL_DialogFileFilter pictures[] = {{"PNG, JPEG, TGA, BMP", "png;jpg;jpeg;tga;bmp"}};
@@ -266,6 +334,8 @@ void draw_image_view(App& app, const Item& item) {
             ImGui::Dummy(ImVec2(half, box_h + ImGui::GetTextLineHeightWithSpacing()));
         ImGui::EndTable();
     }
+    if (item.kind == Kind::texture)
+        draw_texture_export(app, item);
     ImGui::Separator();
     draw_candidate_controls(app, item);
 }
