@@ -9,8 +9,20 @@
 #include <jni.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #define FOLDER "cache/update/" /* in the game's folder (the working directory), as the title frame's */
+
+/* FOLDER as a whole path: SDL takes a relative one on Android as the app's internal storage, not the
+ * working directory, and Updates.kt would look for the APK in the game's folder */
+static int whole_folder(char *out, size_t size)
+{
+    char here[1024];
+    if (getcwd(here, sizeof(here)) == NULL) {
+        return 0;
+    }
+    return SDL_snprintf(out, size, "%s/%s", here, FOLDER) < (int)size;
+}
 #define UPDATES_CLASS "com.sonofskywalker3.khdays358.Updates"
 
 int khdays_update_install_possible(void)
@@ -20,11 +32,8 @@ int khdays_update_install_possible(void)
 
 int khdays_update_install_folder(char *out, size_t size)
 {
-    if (!SDL_CreateDirectory("cache") || !SDL_CreateDirectory(FOLDER) || strlen(FOLDER) + 1 > size) {
-        return 0;
-    }
-    SDL_strlcpy(out, FOLDER, size);
-    return 1;
+    /* SDL_CreateDirectory makes the folders above it too */
+    return whole_folder(out, size) && SDL_CreateDirectory(out);
 }
 
 static SDL_EnumerationResult SDLCALL remove_one(void *unused, const char *folder, const char *name)
@@ -38,8 +47,11 @@ static SDL_EnumerationResult SDLCALL remove_one(void *unused, const char *folder
 
 void khdays_update_install_clean(void)
 {
+    char folder[1024];
     /* the APK an earlier update installed, or a download given up */
-    SDL_EnumerateDirectory(FOLDER, remove_one, NULL);
+    if (whole_folder(folder, sizeof(folder))) {
+        SDL_EnumerateDirectory(folder, remove_one, NULL);
+    }
 }
 
 int khdays_update_install_run(const char *file, char *why, size_t size)
