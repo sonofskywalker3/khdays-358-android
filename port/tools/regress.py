@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Play the native build through scripted input, without touching anyone's save: the regression
 walks (port/tools/regress_walks/: --walk-save OLD.sav [--only NAME] [--record]) or one script for
-traces (--input FILE --save PATH --log PATH). Each run is in a temporary directory with a link to
+traces (--input FILE --save PATH --log PATH), or a recording of the player's input played back
+(--replay saves/logs/session-*.input --log PATH: from the saves copied beside it). Each run is in a temporary directory with a link to
 data/ and a copy of the save. docs/BUILD.md, "The regression walks".
 """
 
@@ -91,6 +92,7 @@ def make_workdir(
     settings: Path | None = None,
     player: int = 1,
     data: Path = ROOT / "data",
+    saves: Path | None = None,
 ) -> Path:
     """A fresh directory with data/ (`data`) linked in and, if given, a copy of the save
     (where player `player` keeps it), the mods folder linked in as mods/ and a
@@ -105,8 +107,11 @@ def make_workdir(
         subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(work / "mods"), str(mods.resolve())], check=True, capture_output=True
         )
+    if saves is not None:
+        # a recording's saves (runtime/input/replay.h): khdays.sav and slots/
+        shutil.copytree(saves, player_saves(work, player))
     if save is not None:
-        player_saves(work, player).mkdir(parents=True)
+        player_saves(work, player).mkdir(parents=True, exist_ok=True)
         shutil.copy2(save, player_saves(work, player) / "khdays.sav")
     if settings is not None:
         (work / "saves").mkdir(exist_ok=True)
@@ -356,9 +361,17 @@ def extra_env_of(args: argparse.Namespace) -> dict[str, str]:
 
 
 def run_script(args: argparse.Namespace) -> int:
-    script = " ".join(args.input.read_text(encoding="utf-8").split())
     extra_env = extra_env_of(args)
-    work = make_workdir(args.save, args.mods, args.settings, data=args.data)
+    saves = None
+    if args.replay is not None:
+        script = ""
+        extra_env["KHDAYS_REPLAY"] = str(args.replay.resolve())
+        saves = args.replay.with_suffix(".saves")
+        if not saves.is_dir():
+            sys.exit(f"{saves} does not exist: the saves a recording starts from are copied beside it")
+    else:
+        script = " ".join(args.input.read_text(encoding="utf-8").split())
+    work = make_workdir(args.save, args.mods, args.settings, data=args.data, saves=saves)
     try:
         exit_code = run_game(args.exe, work, script, extra_env, args.timeout, args.log, args.window)
         keep_session_log(work, args.log.with_suffix(".session.log"))
@@ -417,6 +430,9 @@ def main() -> int:
     )
     one = parser.add_argument_group("one script")
     one.add_argument("--input", type=Path, help="a file holding a KHDAYS_INPUT script")
+    one.add_argument(
+        "--replay", type=Path, help="a recording of the player's input (saves/logs/session-*.input) to play back"
+    )
     one.add_argument("--save", type=Path, help="the save to start from (copied; none = a new game)")
     one.add_argument("--log", type=Path, help="where the game's output goes")
 
@@ -428,9 +444,9 @@ def main() -> int:
     if not args.exe.exists():
         sys.exit(f"{args.exe} does not exist")
     args.exe = args.exe.resolve()
-    if args.input is not None:
+    if args.input is not None or args.replay is not None:
         if args.log is None:
-            sys.exit("--input needs --log")
+            sys.exit("--input and --replay need --log")
         return run_script(args)
     if args.walk_save is None:
         sys.exit("the walks need --walk-save (the old save the first three walks start from)")

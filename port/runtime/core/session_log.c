@@ -14,6 +14,7 @@ static LARGE_INTEGER started, frequency;
 static volatile LONG frame;
 static u32 flushed_frame;
 static u32 marks;
+static char log_path[160]; /* the open log's */
 static volatile LONG wanted;   /* the settings ask for it */
 static int opened_for_setting; /* this log was opened because they did */
 
@@ -35,6 +36,7 @@ static void open_now(void)
         fprintf(stderr, "log: cannot write %s\n", path);
         return;
     }
+    snprintf(log_path, sizeof(log_path), "%s", path);
     QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&started);
     fprintf(stderr, "log: this session's log is %s (F12 marks it)\n", path);
@@ -85,6 +87,11 @@ void khdays_log_want(int on)
 int khdays_log_on(void)
 {
     return file != NULL;
+}
+
+const char *khdays_log_path(void)
+{
+    return file != NULL ? log_path : NULL;
 }
 
 void khdays_log_frame(u32 value)

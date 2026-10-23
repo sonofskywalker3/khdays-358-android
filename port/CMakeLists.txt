@@ -473,6 +473,7 @@ target_sources(khdays-native PRIVATE
     runtime/display/display.c
     runtime/core/events.c
     runtime/input/input.c
+    runtime/input/replay.c
     runtime/core/language.c           # the game's language changed while it runs
     runtime/menus/newgame.c            # the new game's dialogs and the port's subtitles question
     runtime/menus/saveslots.c          # the save files beyond the DS's three

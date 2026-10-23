@@ -24,6 +24,9 @@ void khdays_log_want(int on);
 /* Whether the log is on and open. */
 int khdays_log_on(void);
 
+/* The open log's path (saves/logs/session-<time>.log), NULL when none is open. */
+const char *khdays_log_path(void);
+
 /* The frame the lines carry (the host's, once a frame); flushes once a
  * second. */
 void khdays_log_frame(u32 frame);

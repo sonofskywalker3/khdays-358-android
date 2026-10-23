@@ -4,6 +4,7 @@
 #include "clock.h"
 #include "events.h"
 #include "../input/input.h"
+#include "../input/replay.h"
 #include "io.h"
 #include "pxi.h"
 #include "runtime.h"
@@ -204,7 +205,7 @@ static void rtc_service(u32 data, u32 err)
     (void)err;
     if (command == 0x12) {
         int hour, minute, second;
-        khdays_host_local_time(&hour, &minute, &second);
+        khdays_replay_time(&hour, &minute, &second); /* the PC's, written down or played back */
         RTC_BUF[1] = bcd((u32)hour) | bcd((u32)minute) << 8 | bcd((u32)second) << 16;
         khdays_arm7_reply(TAG_RTC, command << 8, 0);
         return;

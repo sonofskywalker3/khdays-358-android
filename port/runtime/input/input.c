@@ -3,6 +3,7 @@
  * enhancements taking their part. */
 #include "../core/language.h"
 #include "input.h"
+#include "replay.h"
 #include "../../host/app/press_edges.h"
 #include "../menus/autosave.h"
 #include "../menus/camp.h"
@@ -166,6 +167,7 @@ void khdays_input_init(void)
     khdays_lock_sequencer_reset(&lock);
     trace = getenv("KHDAYS_TRACE_INPUT") != NULL;
     trace_pad = getenv("KHDAYS_TRACE_PAD") != NULL;
+    khdays_replay_init();
     if (text == NULL) {
         return;
     }
@@ -294,7 +296,8 @@ void khdays_input_frame(u32 frame)
  * aside, runtime/movies/movie_hd.h). */
 static u16 pressed(void)
 {
-    return khdays_movie_hd_game_buttons((u16)(script_keys | khdays_host_buttons()));
+    const u16 player = khdays_replay_playing() ? khdays_replay_buttons() : khdays_host_buttons();
+    return khdays_movie_hd_game_buttons((u16)(script_keys | player));
 }
 
 /* The player's DS buttons for this game frame. With the command menu on the D-pad, while the player
@@ -365,6 +368,7 @@ void khdays_input_pad_sample(void)
     }
     previous = snapshot;
     khdays_host_input_take(&snapshot); /* a press let go since the last game frame counts too */
+    khdays_replay_snapshot(pad_samples, &snapshot, script_keys); /* written down, or the recording's played back */
     /* The script's sticks and controls, for the enhancements' runs without
      * a gamepad. */
     snapshot.actions |= script_actions;
@@ -420,6 +424,7 @@ u16 khdays_input_keyinput(void)
         latched_unread = 0; /* Pad_Sample's own read (it reads KEYINPUT once) */
         return (u16)(~latched & 0x03ff);
     }
+    khdays_replay_read(khdays_replay_playing() ? 0 : (u16)(script_keys | khdays_host_buttons()));
     return (u16)(~pressed() & 0x03ff);
 }
 
@@ -438,5 +443,5 @@ int khdays_input_touch(int *x, int *y)
         *y = script_touch_y;
         return 1;
     }
-    return khdays_host_touch(x, y);
+    return khdays_replay_playing() ? khdays_replay_touch(x, y) : khdays_host_touch(x, y);
 }
