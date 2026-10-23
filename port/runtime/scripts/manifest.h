@@ -15,6 +15,7 @@ typedef struct KhdaysManifest {
     char *main; /* under scripts/; scripts/main.lua when not given */
     int kind;   /* KhdaysModKind */
     int api;
+    int memory_write; /* memory = write: it may write in the game's memory (api_memory.c) */
 } KhdaysManifest;
 
 /* Reads mod.ini's text into `out` (its strings to khdays_manifest_free). Returns 1, or 0 with the

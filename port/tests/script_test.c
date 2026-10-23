@@ -272,6 +272,38 @@ int khdays_link_guest(void)
     return fake_guest;
 }
 
+/* The game's memory: 64 KB of main RAM, nothing else. */
+#define FAKE_RAM 0x02000000u
+static unsigned char fake_ram[0x10000];
+
+int khdays_link_reachable(unsigned address, unsigned long long size)
+{
+    return address >= FAKE_RAM && address + size <= FAKE_RAM + sizeof(fake_ram);
+}
+
+int khdays_link_read(unsigned address, void *out, size_t size)
+{
+    if (!khdays_link_reachable(address, size)) {
+        return 0;
+    }
+    memcpy(out, fake_ram + (address - FAKE_RAM), size);
+    return 1;
+}
+
+int khdays_link_write(unsigned address, const void *in, size_t size)
+{
+    if (!khdays_link_reachable(address, size)) {
+        return 0;
+    }
+    memcpy(fake_ram + (address - FAKE_RAM), in, size);
+    return 1;
+}
+
+int khdays_link_overlay_loaded(int id)
+{
+    return id == 22; /* the battle's */
+}
+
 int khdays_link_where(void)
 {
     return fake_scene == 2    ? KHDAYS_WHERE_FIELD
@@ -481,6 +513,7 @@ static void reset_game(void)
     memset(fake_items, 0, sizeof(fake_items));
     memset(fake_flags, 0, sizeof(fake_flags));
     memset(fake_deck, 0, sizeof(fake_deck));
+    memset(fake_ram, 0, sizeof(fake_ram));
     fake_deck_busy = 0;
     fake_paused = 0;
     fake_vblanks = 0;
@@ -635,8 +668,16 @@ static void test_manifest(void)
                        "kind = gameplay\napi = 1\nextra = kept\n";
     CHECK(khdays_manifest_parse(good, strlen(good), &m, reason, sizeof(reason)));
     CHECK(strcmp(m.id, "a.b-c_1") == 0 && strcmp(m.name, "A mod") == 0 && strcmp(m.main, "scripts/main.lua") == 0);
-    CHECK(m.kind == KHDAYS_MOD_GAMEPLAY && m.api == 1 && strcmp(m.author, "me") == 0);
+    CHECK(m.kind == KHDAYS_MOD_GAMEPLAY && m.api == 1 && strcmp(m.author, "me") == 0 && !m.memory_write);
     khdays_manifest_free(&m);
+    {
+        const char *writes = "id = a\nname = x\nversion = 1\nkind = gameplay\napi = 2\nmemory = write\n";
+        const char *reads = "id = a\nname = x\nversion = 1\nkind = gameplay\napi = 2\nmemory = read\n";
+        CHECK(khdays_manifest_parse(writes, strlen(writes), &m, reason, sizeof(reason)) && m.memory_write);
+        khdays_manifest_free(&m);
+        CHECK(khdays_manifest_parse(reads, strlen(reads), &m, reason, sizeof(reason)) && !m.memory_write);
+        khdays_manifest_free(&m);
+    }
     {
         static const struct {
             const char *text, *reason;
@@ -654,6 +695,8 @@ static void test_manifest(void)
              "mod.ini: main missing or not valid"},
             {"id = a\nname = x\nversion = 1\nkind = visual\napi = 1\nmain = C:/x.lua\n",
              "mod.ini: main missing or not valid"},
+            {"id = a\nname = x\nversion = 1\nkind = visual\napi = 2\nmemory = all\n",
+             "mod.ini: memory missing or not valid"},
         };
         for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
             CHECK(!khdays_manifest_parse(bad[i].text, strlen(bad[i].text), &m, reason, sizeof(reason)));
@@ -1598,6 +1641,62 @@ static void test_screens_stop(void)
 
 #define RUN(test) (fprintf(stderr, "%s\n", #test), test())
 
+static void test_memory(void)
+{
+    static const unsigned char word[] = {0xef, 0xcd, 0xab, 0x89};
+    begin_case("memory");
+    put("mods/Poke/mod.ini", "id = test.poke\nname = Poke\nversion = 1.0\nkind = gameplay\napi = 2\nmemory = write\n");
+    put("mods/Poke/scripts/main.lua",
+        "local n = 0\n"
+        "local function ok(c, what) if c then n = n + 1 else print('not ok', what) end end\n"
+        "local function says(want, a, b) return a == nil and b == want end\n"
+        "local R, out = 0x02000000, \"not the game's memory\"\n"
+        "ok(memory.u32(R + 0x10) == 0x89abcdef and memory.s32(R + 0x10) == 0x89abcdef - 0x100000000, '32')\n"
+        "ok(memory.u16(R + 0x10) == 0xcdef and memory.s16(R + 0x10) == 0xcdef - 0x10000, '16')\n"
+        "ok(memory.u8(R + 0x13) == 0x89 and memory.s8(R + 0x13) == 0x89 - 0x100, '8')\n"
+        "ok(memory.bytes(R + 0x10, 4) == '\\xef\\xcd\\xab\\x89' and memory.bytes(R, 0) == '', 'bytes')\n"
+        "ok(says(out, memory.u32(R + 0xfffe)) and says(out, memory.u8(-1)) and says(out, memory.u8(R - 1)), 'out')\n"
+        "ok(says(out, memory.bytes(R + 0xff00, 0x200)), 'bytes out')\n"
+        "ok(memory.set_u16(R + 0x20, 0xbeef) == true and memory.set_u8(R + 0x22, -1) == true, 'set')\n"
+        "ok(memory.set_u32(R + 0x24, -2) == true and memory.u32(R + 0x24) == 0xfffffffe, 'set negative')\n"
+        "ok(memory.set_bytes(R + 0x30, 'hi') == true and memory.bytes(R + 0x30, 2) == 'hi', 'set_bytes')\n"
+        "ok(says(out, memory.set_u32(R + 0xfffe, 1)) and says(out, memory.set_bytes(R - 1, 'x')), 'set out')\n"
+        "ok(not pcall(memory.set_u8, R, 256) and not pcall(memory.set_u16, R, -32769), 'does not fit')\n"
+        "ok(not pcall(memory.bytes, R, -1) and not pcall(memory.u8, 'x'), 'bad arguments')\n"
+        "ok(memory.loaded(22) and not memory.loaded(23) and not memory.loaded(2^40), 'loaded')\n"
+        "print('memory', n)\n");
+    mod_folder_api("Look", "test.look", "gameplay", 2,
+                   "print('look', memory.u8(0x02000010), select(2, memory.set_u8(0x02000010, 1)))\n");
+    put("mods/Glance/mod.ini",
+        "id = test.glance\nname = Glance\nversion = 1.0\nkind = visual\napi = 2\nmemory = write\n");
+    put("mods/Glance/scripts/main.lua",
+        "print('glance', memory.u8(0x02000011), select(2, memory.set_u8(0x02000011, 1)))\n");
+    mod_folder("Old", "test.old", "gameplay", "print('old', memory == nil)\n");
+    memcpy(fake_ram + 0x10, word, sizeof(word));
+    start();
+    CHECK(log_has("test.poke print scripts/main.lua:18 memory\t13"));
+    CHECK(fake_ram[0x20] == 0xef && fake_ram[0x21] == 0xbe && fake_ram[0x22] == 0xff);
+    CHECK(fake_ram[0x24] == 0xfe && fake_ram[0x25] == 0xff && fake_ram[0x27] == 0xff && fake_ram[0x30] == 'h');
+    CHECK(log_has("test.look print scripts/main.lua:1 look\t239\tmod.ini has no memory = write"));
+    CHECK(log_has("test.glance print scripts/main.lua:1 glance\t205\tvisual mod"));
+    CHECK(log_has("test.old print scripts/main.lua:1 old\ttrue"));
+    CHECK(fake_ram[0x10] == 0xef && fake_ram[0x11] == 0xcd);
+    end_case();
+}
+
+static void test_memory_guest(void)
+{
+    begin_case("memory_guest");
+    put("mods/Poke/mod.ini", "id = test.poke\nname = Poke\nversion = 1.0\nkind = gameplay\napi = 2\nmemory = write\n");
+    put("mods/Poke/scripts/main.lua",
+        "print('poke', memory.u8(0x02000000), select(2, memory.set_u8(0x02000000, 7)))\n");
+    fake_guest = 1;
+    start();
+    CHECK(log_has("test.poke print scripts/main.lua:1 poke\t0\tguest"));
+    CHECK(fake_ram[0] == 0);
+    end_case();
+}
+
 int main(void)
 {
     RUN(test_sha256);
@@ -1633,6 +1732,8 @@ int main(void)
     RUN(test_share_guest);
     RUN(test_set_position);
     RUN(test_hold_mission);
+    RUN(test_memory);
+    RUN(test_memory_guest);
     if (failures != 0) {
         fprintf(stderr, "script_test: %d failures\n", failures);
         return 1;

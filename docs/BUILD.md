@@ -254,7 +254,8 @@ by the walk that saves, whose file must hold every copy it signed whole
 produce are in `port/tools/regress_walks/`. The second form runs one script,
 for traces and experiments. `EXE` is the Release build's unless given;
 `--settings FILE` starts the game with a copy of FILE as its settings, `--mods
-DIR` with DIR as its mods.
+DIR` with DIR as its mods (or, when DIR is one mod's own folder, with that mod
+alone).
 
 ### The input scripts
 

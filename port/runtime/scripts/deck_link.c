@@ -20,10 +20,14 @@ static unsigned rd32(KhdaysRef at)
 #define DB_ROW 0x14u      /* data_0204c238's rows (MsgDb_InitTable): +8 the records, +0xc their count */
 #define DB_RECORDS 0x8u
 #define DB_COUNT 0xcu
-#define DB_PANELS 0x15      /* the items' records, from id 1 (MsgDb_LoadRecord15) */
-#define DB_SHAPES 0x1b      /* the panels' shapes, a 64-bit cell mask each (MsgDb_FetchEntryPair0x1b) */
-#define DB_SLOT 0xe         /* where the game loads them (Ov008_BuildMenuGrid) */
-#define PANEL_BYTES 0x64u   /* +0 category, +6 kind, +8 shape (signed), +9 / +0xa the panel's cell in it */
+#define DB_PANELS 0x15     /* the items' records, from id 1 (MsgDb_LoadRecord15) */
+#define DB_SHAPES 0x1b     /* the panels' shapes, a 64-bit cell mask each (MsgDb_FetchEntryPair0x1b) */
+#define DB_PARAMETERS 0x13 /* the battle's parameters, from 1: 4 bytes each, +2 the highest level (MsgDb_DecodeDb13) */
+#define DB_SLOT 0xe        /* where the game loads them (Ov008_BuildMenuGrid) */
+#define PANEL_BYTES 0x64u  /* +0 category, +6 kind, +8 shape (signed), +9 / +0xa the panel's cell in it, */
+#define PANEL_MAGIC 0x18u  /* its magics from +0x18: 3 bytes each, the magic's battle index, level, casts */
+#define PARAMETER_BYTES 4u
+#define PARAMETER_CAP 2u
 #define CAMP_MENU 0         /* khdays_camp_screen's menu */
 #define CATEGORY_MATERIAL 2 /* the synthesis materials, recipes and techs: no panels of the deck */
 
@@ -34,6 +38,8 @@ extern int Ov008_IsGridItemEligible(int itemId);
 
 static KhdaysLinkPanel *panels; /* by id - 1 */
 static int panel_count, panels_read;
+static unsigned char *caps; /* each parameter's highest level, by its number - 1 */
+static int cap_count;
 
 static unsigned rd16(KhdaysRef at)
 {
@@ -45,17 +51,18 @@ static unsigned rd8(KhdaysRef at)
     return *(const volatile unsigned char *)KHDAYS_W(at);
 }
 
-/* The panels' records, read once from the game's databases (loaded for it when they are not). */
+/* The panels' records and the parameters' highest levels, read once from the game's databases (loaded for it when
+ * they are not). */
 static void read_panels(void)
 {
     const unsigned table = rd32(KHDAYS_DS_data_0204c238);
-    const int dbs[2] = {DB_PANELS, DB_SHAPES};
-    int loaded[2] = {0, 0};
+    const int dbs[3] = {DB_PANELS, DB_SHAPES, DB_PARAMETERS};
+    int loaded[3] = {0, 0, 0};
     if (table == 0 || khdays_link_state() == 0) {
         return; /* the game is not up yet: another time */
     }
     panels_read = 1;
-    for (int d = 0; d < 2; ++d) {
+    for (int d = 0; d < 3; ++d) {
         if (!MsgDb_IsLoaded(dbs[d])) {
             MsgDb_LoadDb(dbs[d], DB_SLOT);
             loaded[d] = 1;
@@ -76,6 +83,8 @@ static void read_panels(void)
             p->shape = (signed char)rd8(r + 8u);
             p->col = (int)rd8(r + 9u);
             p->row = (int)rd8(r + 0xau);
+            p->level = (int)rd8(r + PANEL_MAGIC + 1u);
+            p->casts = (int)rd8(r + PANEL_MAGIC + 2u);
             if (p->shape >= shape_count) {
                 p->shape = -1;
             }
@@ -85,12 +94,29 @@ static void read_panels(void)
             }
         }
     }
-    for (int d = 1; d >= 0; --d) {
+    if (MsgDb_IsLoaded(DB_PARAMETERS)) {
+        const unsigned records = rd32(table + DB_PARAMETERS * DB_ROW + DB_RECORDS);
+        const int count = (int)rd16(table + DB_PARAMETERS * DB_ROW + DB_COUNT);
+        caps = count > 0 ? calloc((size_t)count, 1) : NULL;
+        cap_count = caps != NULL ? count : 0;
+        for (int i = 0; i < cap_count; ++i) {
+            caps[i] = (unsigned char)rd8(records + (unsigned)i * PARAMETER_BYTES + PARAMETER_CAP);
+        }
+    }
+    for (int d = 2; d >= 0; --d) {
         if (loaded[d]) {
             ResSlot_Release_2(dbs[d]);
         }
     }
     khdays_log("mods: %d panels' records read", panel_count);
+}
+
+int khdays_link_magic_cap(int magic)
+{
+    if (!panels_read) {
+        read_panels();
+    }
+    return magic >= 1 && magic <= cap_count ? caps[magic - 1] : 0;
 }
 
 int khdays_link_panel(int id, KhdaysLinkPanel *out)

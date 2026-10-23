@@ -665,11 +665,16 @@ static const char *const texts[TXT_COUNT][5] = {
                                "La música y las voces de los vídeos."},
     [TXT_SOUND_DS_EXACT] = {"DS-exact sound", "Son exact de la DS", "Ton genau wie der DS", "Audio esatto del DS",
                             "Sonido exacto de la DS"},
-    [TXT_SOUND_DS_EXACT_NOTE] = {"The DS's own output: 32,728 Hz and 10 bits, as the handheld made it.",
-                                 "La sortie de la DS : 32 728 Hz et 10 bits, comme la console la produisait.",
-                                 "Die Ausgabe des DS: 32.728 Hz und 10 Bit, wie das Handheld sie erzeugte.",
-                                 "L'uscita del DS: 32.728 Hz e 10 bit, come la produceva la console.",
-                                 "La salida de la DS: 32.728 Hz y 10 bits, tal como la producía la consola."},
+    [TXT_SOUND_DS_EXACT_NOTE] = {"The DS's own output: 32,728 Hz and 10 bits, each sample held, as the handheld made "
+                                 "it. Off: the PC's, smoothed between the samples.",
+                                 "La sortie de la DS : 32 728 Hz et 10 bits, chaque échantillon maintenu, comme la "
+                                 "console la produisait. Désactivé : celle du PC, lissée entre les échantillons.",
+                                 "Die Ausgabe des DS: 32.728 Hz und 10 Bit, jedes Sample gehalten, wie das Handheld "
+                                 "sie erzeugte. Aus: die des PCs, zwischen den Samples geglättet.",
+                                 "L'uscita del DS: 32.728 Hz e 10 bit, ogni campione mantenuto, come la produceva la "
+                                 "console. Disattivato: quella del PC, levigata tra i campioni.",
+                                 "La salida de la DS: 32.728 Hz y 10 bits, cada muestra mantenida, tal como la "
+                                 "producía la consola. Desactivado: la del PC, suavizada entre las muestras."},
     [TXT_RESTORE_SOUND] = {"Restore the sound settings", "Rétablir le son", "Ton zurücksetzen", "Ripristina l'audio",
                            "Restablecer el sonido"},
     /* %d: the internal resolution asked for; %s: why it cannot be made. */
@@ -968,6 +973,15 @@ static const char *const texts[TXT_COUNT][5] = {
                            "In einem Raum gelten die Optionen des Hosts.",
                            "In una stanza contano le opzioni dell'host.",
                            "En una sala cuentan las opciones del anfitrión."},
+    [TXT_MOD_WRITES_MEMORY] = {"Writes in the game's memory: a mistake of its own can stop the game or reach a save.",
+                               "Écrit dans la mémoire du jeu : une erreur de sa part peut arrêter le jeu ou "
+                               "atteindre une sauvegarde.",
+                               "Schreibt in den Speicher des Spiels: ein Fehler darin kann das Spiel anhalten "
+                               "oder einen Spielstand erreichen.",
+                               "Scrive nella memoria del gioco: un suo errore può fermare il gioco o finire in un "
+                               "salvataggio.",
+                               "Escribe en la memoria del juego: un error suyo puede detener el juego o llegar a una "
+                               "partida guardada."},
     [TXT_AUTOSAVE] = {"Autosave", "Sauvegarde auto", "Automatisch speichern", "Salvataggio automatico", "Autoguardado"},
     [TXT_AUTOSAVE_FILE99] = {"In file 99", "Dans le fichier 99", "In Datei 99", "Nel file 99", "En el archivo 99"},
     [TXT_AUTOSAVE_PLAYED] = {"In the file being played", "Dans le fichier en cours", "In der gespielten Datei",
@@ -1001,6 +1015,31 @@ static const char *const texts[TXT_COUNT][5] = {
                              "pagine da tre, o i tre file del DS.",
                              "Las listas de guardado del propio juego (sin las pantallas HD): los 99 archivos del port "
                              "en páginas de tres, o los tres archivos de la DS."},
+    [TXT_STOP_MAGIC] = {"Stop magic", "Magie Stop", "Stopp-Magie", "Magia Stop", "Magia Paro"},
+    [TXT_STOP_MAGIC_NOTE] = {"The magic Days left unfinished, restored: its panels, its recipes at the moogle's and "
+                             "its casts. Off, the game is the DS's; a save's Stop panels are kept, unseen. In a room, "
+                             "every player must have it the same.",
+                             "La magie que Days a laissée inachevée, restaurée : ses panneaux, ses recettes chez le "
+                             "Mog et ses sorts. Désactivée, le jeu est celui de la DS ; les panneaux Stop d'une "
+                             "sauvegarde sont gardés, invisibles. Dans un salon, tous les joueurs doivent l'avoir "
+                             "pareil.",
+                             "Die Magie, die Days unvollendet ließ, wiederhergestellt: ihre Felder, ihre Rezepte beim "
+                             "Mogry und ihre Zauber. Aus ist das Spiel das des DS; Stopp-Felder eines Spielstands "
+                             "bleiben erhalten, unsichtbar. In einem Raum müssen es alle Spieler gleich haben.",
+                             "La magia che Days ha lasciato incompiuta, ripristinata: i suoi pannelli, le sue ricette "
+                             "dal moguri e i suoi incantesimi. Disattivata, il gioco è quello del DS; i pannelli Stop "
+                             "di un salvataggio restano, nascosti. In una stanza tutti i giocatori devono averla "
+                             "uguale.",
+                             "La magia que Days dejó sin terminar, restaurada: sus paneles, sus recetas en el moguri y "
+                             "sus lanzamientos. Desactivada, el juego es el de la DS; los paneles de Paro de una "
+                             "partida se conservan, ocultos. En una sala todos los jugadores deben tenerla igual."},
+    [TXT_STOP_MAGIC_ON] = {"Stop magic on", "Magie Stop activée", "Stopp-Magie an", "Magia Stop attiva",
+                           "Magia Paro activada"},
+    [TXT_STOP_MAGIC_OFF] = {"Stop magic off", "Magie Stop désactivée", "Stopp-Magie aus", "Magia Stop disattivata",
+                            "Magia Paro desactivada"},
+    [TXT_TAKES_NEXT_START] = {"Takes effect the next time the game starts.", "S'applique au prochain lancement du jeu.",
+                              "Gilt beim nächsten Start des Spiels.", "Vale al prossimo avvio del gioco.",
+                              "Se aplica la próxima vez que se inicie el juego."},
     [TXT_AUTOSAVE_DONE] = {"Autosaved: file %d", "Sauvegarde auto : fichier %d", "Automatisch gespeichert: Datei %d",
                            "Salvataggio automatico: file %d", "Autoguardado: archivo %d"},
     [TXT_AUTOSAVE_FAILED] = {"Autosave failed: file %d", "Échec de la sauvegarde auto : fichier %d",

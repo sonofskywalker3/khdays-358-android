@@ -316,6 +316,7 @@ enum {
     TXT_MOD_ORDER_NOTE,
     TXT_ROOM_NEEDS_MODS,
     TXT_MOD_HOST_SETS,
+    TXT_MOD_WRITES_MEMORY,
     TXT_AUTOSAVE,
     TXT_AUTOSAVE_FILE99,
     TXT_AUTOSAVE_PLAYED,
@@ -324,6 +325,11 @@ enum {
     TXT_SAVE_FILES_ALL,
     TXT_SAVE_FILES_DS,
     TXT_SAVE_FILES_NOTE,
+    TXT_STOP_MAGIC,
+    TXT_STOP_MAGIC_NOTE,
+    TXT_STOP_MAGIC_ON, /* a room's mods when a join was refused (runtime/net/roomlist.c) */
+    TXT_STOP_MAGIC_OFF,
+    TXT_TAKES_NEXT_START,
     /* The notice of an autosave, in the game's font (ui/autosave_notice.cpp): %d the file */
     TXT_AUTOSAVE_DONE,
     TXT_AUTOSAVE_FAILED,

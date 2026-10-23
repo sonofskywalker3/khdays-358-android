@@ -450,6 +450,8 @@ set(KHDAYS_PORT_COMPOSITIONS "${CMAKE_CURRENT_SOURCE_DIR}/ui/compositions/port_d
 khdays_embed_text(compositions_port "${KHDAYS_PORT_COMPOSITIONS}")
 # The theater's HD scenes in place of the game's (movies/hd_scenes.txt), compiled in the same way.
 khdays_embed_text(scenes_port "${CMAKE_CURRENT_SOURCE_DIR}/movies/hd_scenes.txt")
+# The Stop magic's numbers and words the game never made (runtime/battle/stop_magic.txt), the same way.
+khdays_embed_text(stop_magic_text "${CMAKE_CURRENT_SOURCE_DIR}/runtime/battle/stop_magic.txt")
 
 if(ANDROID)
     # the app's libmain.so, which SDLActivity loads and calls SDL_main in (android/)
@@ -503,12 +505,16 @@ target_sources(khdays-native PRIVATE
     runtime/scripts/api_screens.c      # ... their title entries and screens
     runtime/scripts/api_deck.c         # ... the deck they read and change
     runtime/scripts/api_time.c         # ... their timers, music, draws and shares
+    runtime/scripts/api_memory.c       # ... the game's memory they read and write
     runtime/scripts/screens.c          # ... shared with the window that draws them
     runtime/scripts/game_link.c        # ... the game's side of their interface
     runtime/scripts/deck_link.c        # ... the deck, the game's side
     runtime/scripts/time_link.c        # ... music, the room's seed and the shares, the game's side
     runtime/scripts/enemies_link.c     # ... the field's enemies, the game's side
     runtime/scripts/enemy_names.c
+    runtime/battle/stop_data.c         # the Stop magic: its data file
+    runtime/battle/stop_hold.c         # ... the enemies it holds and the damage they keep
+    runtime/battle/stop_magic.c        # ... and its records, words and hold in the game
     runtime/core/sha256.c             # SHA-256: the mods' fingerprints
     runtime/core/io_regs.c
     runtime/core/threads.c
@@ -589,6 +595,7 @@ target_sources(khdays-native PRIVATE
     ui/composition.c
     "${CMAKE_CURRENT_BINARY_DIR}/compositions_port.c"
     "${CMAKE_CURRENT_BINARY_DIR}/scenes_port.c"
+    "${CMAKE_CURRENT_BINARY_DIR}/stop_magic_text.c"
     host/render/gpu_hd.c
     "${KHDAYS_GEN}/ds_functions.c"  # the native function at each DS address
     ../assets/src/mesh.cpp         # DS models decoded, for the graphics dump's glTF
@@ -684,6 +691,11 @@ add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
 add_executable(khdays-scenes-test tests/scenes_test.c runtime/movies/scene_map.c)
 target_compile_options(khdays-scenes-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-scenes COMMAND khdays-scenes-test)
+# The Stop magic (runtime/battle/): its data file as compiled in, the records, the hold and the stored damage.
+add_executable(khdays-stop-magic-test tests/stop_magic_test.c runtime/battle/stop_data.c runtime/battle/stop_hold.c
+               "${CMAKE_CURRENT_BINARY_DIR}/stop_magic_text.c")
+target_compile_options(khdays-stop-magic-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-stop-magic COMMAND khdays-stop-magic-test)
 # A replaced room's own animation (runtime/mods/room_animation.cpp): keys, loops, scrolls, frames.
 add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/mods/room_animation.cpp)
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
@@ -805,7 +817,8 @@ add_executable(khdays-script-test tests/script_test.c runtime/scripts/scripts.c 
                runtime/scripts/api_mod.c runtime/scripts/api_state.c runtime/scripts/api_menus.c
                runtime/scripts/api_actions.c runtime/scripts/api_v2.c runtime/scripts/api_enemies.c
                runtime/scripts/api_run.c runtime/scripts/api_screens.c runtime/scripts/api_deck.c
-               runtime/scripts/api_time.c runtime/scripts/screens.c runtime/scripts/view.c runtime/core/sha256.c)
+               runtime/scripts/api_time.c runtime/scripts/api_memory.c runtime/scripts/screens.c
+               runtime/scripts/view.c runtime/core/sha256.c)
 target_link_libraries(khdays-script-test PRIVATE khdays-lua SDL3::SDL3)
 target_compile_options(khdays-script-test PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>

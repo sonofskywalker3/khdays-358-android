@@ -186,10 +186,18 @@ static void window_stack_release(void *stack, size_t size)
 static SRWLOCK heaps_lock = SRWLOCK_INIT;
 static volatile LONG64 heaps_committed;
 static DWORD heaps_granule;
+static volatile LONG *heaps_touched; /* a bit per granule: committed */
 
 unsigned long long khdays_heaps_committed(void)
 {
     return (unsigned long long)heaps_committed;
+}
+
+int khdays_heaps_touched(KhdaysRef reference, unsigned *rest)
+{
+    const unsigned offset = reference - KHDAYS_HEAPS_BASE, granule = offset / heaps_granule;
+    *rest = heaps_granule - offset % heaps_granule;
+    return (heaps_touched[granule / 32] >> (granule % 32) & 1) != 0;
 }
 
 static DWORD WINAPI refused_box(LPVOID text)
@@ -260,9 +268,18 @@ static LONG CALLBACK heaps_commit(EXCEPTION_POINTERS *info)
             heaps_refused(address, error);
         }
         heaps_committed += heaps_granule;
+        {
+            const unsigned n = (granule - KHDAYS_HEAPS_BASE) / heaps_granule;
+            InterlockedOr(&heaps_touched[n / 32], (LONG)(1u << n % 32));
+        }
     }
     ReleaseSRWLockExclusive(&heaps_lock);
     return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+static size_t heaps_touched_words(void)
+{
+    return ((KHDAYS_HEAPS_END - KHDAYS_HEAPS_BASE) / heaps_granule + 31) / 32;
 }
 
 void khdays_heaps_reset(void)
@@ -271,6 +288,7 @@ void khdays_heaps_reset(void)
 #pragma warning(suppress : 6250) /* decommitted on purpose: the range stays reserved */
     VirtualFree(at(KHDAYS_HEAPS_BASE), KHDAYS_HEAPS_END - KHDAYS_HEAPS_BASE, MEM_DECOMMIT);
     heaps_committed = 0;
+    memset((void *)heaps_touched, 0, heaps_touched_words() * sizeof(*heaps_touched));
     ReleaseSRWLockExclusive(&heaps_lock);
 }
 
@@ -279,7 +297,8 @@ static int reserve_heaps(void)
     SYSTEM_INFO system;
     GetSystemInfo(&system);
     heaps_granule = system.dwAllocationGranularity;
-    if (!carve("the game's heaps", KHDAYS_HEAPS_BASE, KHDAYS_HEAPS_END - KHDAYS_HEAPS_BASE)) {
+    heaps_touched = calloc(heaps_touched_words(), sizeof(*heaps_touched));
+    if (heaps_touched == NULL || !carve("the game's heaps", KHDAYS_HEAPS_BASE, KHDAYS_HEAPS_END - KHDAYS_HEAPS_BASE)) {
         return 0;
     }
     if (virtual_alloc2(GetCurrentProcess(), at(KHDAYS_HEAPS_BASE), KHDAYS_HEAPS_END - KHDAYS_HEAPS_BASE,

@@ -86,6 +86,7 @@ static void start(KhdaysSoundHw *hw, int n)
     c->busy = 1;
     c->playing = 1;
     c->sample = 0;
+    memset(c->history, 0, sizeof(c->history));
     c->loop_saved = 0;
     c->played = 0;
     ++c->starts;
@@ -195,6 +196,9 @@ static void advance(KhdaysSoundHw *hw, int n)
     int32_t total, loop_start;
     const uint8_t *data;
 
+    c->history[2] = c->history[1];
+    c->history[1] = c->history[0];
+    c->history[0] = c->sample;
     ++c->position;
     if (format == PSG) {
         if (n >= 8 && n <= 13) {
@@ -309,6 +313,25 @@ void khdays_sound_hw_write(KhdaysSoundHw *hw, uint32_t offset, int size, uint32_
     if (offset <= 0x109 && offset + (uint32_t)size > 0x108 && ((REG8(0x108) | REG8(0x109)) & 0x80)) {
         report("a sound capture started (not modelled)", -1);
     }
+}
+
+float khdays_sound_hw_between(const KhdaysSoundHw *hw, int n)
+{
+    const uint32_t reload = REG16(n * 16 + 8);
+    const float t = (float)((int64_t)hw->channels[n].counter - reload) / (float)(0x10000u - reload);
+    return t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+}
+
+float khdays_sound_hw_smooth_sample(const KhdaysSoundHw *hw, int n)
+{
+    const KhdaysSoundChannel *c = &hw->channels[n];
+    if (!c->playing || ((control(hw, n) >> 29) & 3) == PSG) {
+        return (float)c->sample;
+    }
+    const float t = khdays_sound_hw_between(hw, n);
+    const float p0 = (float)c->history[2], p1 = (float)c->history[1], p2 = (float)c->history[0];
+    const float p3 = (float)c->sample;
+    return p1 + 0.5f * t * (p2 - p0 + t * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 + t * (3.0f * (p1 - p2) + p3 - p0)));
 }
 
 /* --- Time ------------------------------------------------------------------------ */

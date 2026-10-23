@@ -362,6 +362,7 @@ static void publish(void)
         v->kind = m->manifest.id != NULL ? m->manifest.kind : -1;
         v->state = m->state;
         v->enabled = m->enabled;
+        v->memory_write = m->manifest.memory_write;
         v->options = m->option_count > 0 ? calloc((size_t)m->option_count, sizeof(*v->options)) : NULL;
         v->option_count = v->options != NULL ? m->option_count : 0;
         for (int o = 0; o < v->option_count; ++o) {

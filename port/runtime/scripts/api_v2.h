@@ -69,6 +69,9 @@ void khdays_api_time_mission_start(void);
 int khdays_api_time_shared_for(const KhdaysMod *mod, int share);
 void khdays_api_time_push_shared(struct lua_State *L, int share);
 
+/* The game's memory by address (api_memory.c). */
+void khdays_api_memory_open(KhdaysMod *mod);
+
 /* The run's end (api_run.c): the player's defeat a mod holds. */
 void khdays_api_run_open(KhdaysMod *mod);
 void khdays_api_run_release(KhdaysMod *mod);

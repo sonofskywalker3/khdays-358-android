@@ -77,6 +77,10 @@ typedef struct Route {
 static const u64 ANNOUNCE_EVERY = 500 * MS;
 static const u64 ROOM_SILENT = 3000 * MS;
 static const u64 PING_EVERY = 250 * MS;
+/* A member's Stop, known: STOP_KNOWN with STOP_BYTES bytes, the most casts of each of its three levels, then each
+ * level's Magic LV. */
+#define STOP_KNOWN (1ull << 48)
+#define STOP_BYTES 6u
 static const u64 JOIN_EVERY = 250 * MS;
 static const u64 JOIN_SILENT = 5000 * MS;
 static u64 member_silent = 5000 * MS;
@@ -145,6 +149,7 @@ typedef struct Peer {
     double rtt_ms;        /* round trip; < 0 until measured */
     double loss;          /* share of pings unanswered in the last report period */
     int level;            /* host: this guest's level as its pings give it (0 not known) */
+    u64 stop;             /* host: this guest's Stop as its pings give it (STOP_KNOWN; 0 not known) */
     KhdaysNetStick stick; /* host: this guest's movement stick as it last sent it, */
     u64 stick_at;         /* and when (0 never) */
     unsigned int pings, pongs;
@@ -263,6 +268,11 @@ static struct {
     volatile int own_level;
     int *levels;
     int level_room;
+    /* each player's Stop (STOP_KNOWN with its casts and Magic LVs, from its deck; 0 not known): this copy's, set by
+     * the game's thread; on a guest, the members' as the host's pings list them, by aid */
+    volatile u64 own_stop;
+    u64 *stops;
+    int stop_room;
     /* the mods' records (MODS_PORT): the room's seed (the host's as its scripts set it; a guest's as
      * the host sent it) and whether there is one; on a guest, a share being put together and the
      * shares put together, for the scripts */
@@ -325,6 +335,7 @@ static struct {
     unsigned int last_refusal;
     char *refusal_mods;
     int refusal_more;
+    int refusal_stop_off; /* that host plays without the Stop magic */
     /* host only: guests the server introduced, to punch toward until they join */
     struct Introduced {
         unsigned int token;
@@ -389,6 +400,14 @@ static void *grow(void *items, int *room, int need, size_t item)
         memset((char *)more + (size_t)*room * item, 0, (size_t)(bigger - *room) * item);
         *room = bigger;
         return more;
+    }
+}
+
+/* The members' Stop forgotten: a room joined or left (the host's pings bring them again). */
+static void forget_stops(void)
+{
+    for (int i = 0; i < net.stop_room; ++i) {
+        net.stops[i] = 0;
     }
 }
 
@@ -506,6 +525,17 @@ void khdays_net_set_mods(unsigned int fingerprint, const unsigned char *list, un
     SDL_UnlockMutex(mods_lock);
 }
 
+/* The Stop magic ([gameplay] stop_magic), set before any session: off, it counts in the fingerprint as
+ * a gameplay mod would, so that a room takes only copies that agree. */
+#define STOP_OFF_NAME "\x01stop"
+#define STOP_OFF_MARK 0x504f5453u
+static int stop_magic = 1;
+
+void khdays_net_set_stop_magic(int on)
+{
+    stop_magic = on != 0;
+}
+
 static unsigned int own_mods_fingerprint(void)
 {
     unsigned int fingerprint;
@@ -513,7 +543,7 @@ static unsigned int own_mods_fingerprint(void)
     SDL_LockMutex(mods_lock);
     fingerprint = mods_fingerprint;
     SDL_UnlockMutex(mods_lock);
-    return fingerprint;
+    return stop_magic ? fingerprint : fingerprint ^ STOP_OFF_MARK;
 }
 
 static void send_kind(const Route *to, int kind, const unsigned char *body, unsigned int size)
@@ -1239,12 +1269,19 @@ static int password_proven(const unsigned char *sender, const unsigned char *bod
 }
 
 /* The refusal for other gameplay mods: the reason, how many the host plays with (u16), then as many of
- * them as one datagram holds, each its name and version as a u8 size and the bytes. */
+ * them as one datagram holds, each its name and version as a u8 size and the bytes; first, a host
+ * without the Stop magic names STOP_OFF_NAME with no version. */
 static void refuse_for_mods(const Route *to)
 {
     unsigned char body[DATAGRAM_RECORDS];
     unsigned int at = 3, read = 0, listed = 0;
     body[0] = KHDAYS_NET_REFUSE_MODS;
+    if (!stop_magic) {
+        body[at++] = (unsigned char)(sizeof(STOP_OFF_NAME) - 1);
+        memcpy(body + at, STOP_OFF_NAME, sizeof(STOP_OFF_NAME) - 1);
+        at += (unsigned int)sizeof(STOP_OFF_NAME) - 1;
+        body[at++] = 0;
+    }
     mods_ready();
     SDL_LockMutex(mods_lock);
     while (listed < mods_count && read < mods_size) {
@@ -1260,31 +1297,41 @@ static void refuse_for_mods(const Route *to)
         read += entry;
         ++listed;
     }
-    put16(body + 1, (unsigned short)mods_count);
+    put16(body + 1, (unsigned short)(mods_count + !stop_magic));
     SDL_UnlockMutex(mods_lock);
     send_kind(to, REFUSE, body, at);
 }
 
-/* A guest's reading of that refusal: "name version, ..." and how many were left out. */
+/* A guest's reading of that refusal: "name version, ..." and how many were left out; the host's being
+ * without Stop apart (khdays_net_last_refusal_stop_off). */
 static void take_refusal_mods(const unsigned char *body, unsigned int size)
 {
     const unsigned int count = size >= 3 ? get16(body + 1) : 0;
-    unsigned int at = 3, shown = 0, length = 0;
+    unsigned int at = 3, shown = 0, written = 0, length = 0;
     char *text = (char *)malloc(size * 2 + 1);
     free(net.refusal_mods);
     net.refusal_mods = text;
     net.refusal_more = 0;
+    net.refusal_stop_off = 0;
     if (text == NULL) {
         return;
     }
     while (at < size && shown < count) {
+        const unsigned int name = body[at];
+        if (name == sizeof(STOP_OFF_NAME) - 1 && at + 2 + name <= size &&
+            memcmp(body + at + 1, STOP_OFF_NAME, name) == 0 && body[at + 1 + name] == 0) {
+            net.refusal_stop_off = 1;
+            at += 2 + name;
+            ++shown;
+            continue;
+        }
         for (int part = 0; part < 2; ++part) {
             const unsigned int n = at < size ? body[at] : 0;
             if (at + 1 + n > size) {
                 at = size;
                 break;
             }
-            if (part == 0 && shown > 0) {
+            if (part == 0 && written > 0) {
                 text[length++] = ',';
                 text[length++] = ' ';
             } else if (part == 1) {
@@ -1295,6 +1342,7 @@ static void take_refusal_mods(const unsigned char *body, unsigned int size)
             at += 1 + n;
         }
         ++shown;
+        ++written;
     }
     text[length] = 0;
     net.refusal_more = (int)(count - shown);
@@ -1424,6 +1472,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
         for (int i = 0; i < net.level_room; ++i) {
             net.levels[i] = 0; /* this room's come with the host's pings */
         }
+        forget_stops();
         mods_forget();
         /* from now on, reach the host the way its welcome came: directly or
          * through the server */
@@ -1741,24 +1790,50 @@ static void join_step(u64 now)
     }
 }
 
+/* A member's Stop (STOP_KNOWN with its bytes) as its STOP_BYTES bytes, and back. */
+static void put_stop(unsigned char *at, u64 stop)
+{
+    for (unsigned int i = 0; i < STOP_BYTES; ++i) {
+        at[i] = (unsigned char)(stop >> 8 * (STOP_BYTES - 1 - i));
+    }
+}
+
+static u64 get_stop(const unsigned char *at)
+{
+    u64 stop = STOP_KNOWN;
+    for (unsigned int i = 0; i < STOP_BYTES; ++i) {
+        stop |= (u64)at[i] << 8 * (STOP_BYTES - 1 - i);
+    }
+    return stop;
+}
+
 /* A ping's body, and its size: when it was sent (the pong gives it back), then the players' levels
- * for the members' screen. A guest sends its own (u16); the host a count (u8), then an aid (u8) and a
- * level (u16) for each member whose level it knows, itself included. */
+ * for the members' screen and their Stop for the battle. A guest sends its own level (u16) and, when
+ * known, its own Stop (STOP_BYTES); the host a count (u8), then an aid (u8) and a level (u16) for each
+ * member whose level it knows, itself included, then a count (u8) and an aid and a Stop for each member
+ * whose Stop it knows. */
 static unsigned int ping_body(u64 now, unsigned char **body, int *room)
 {
     const int own = net.own_level;
-    unsigned int size, count = 0;
+    const u64 own_stop = net.own_stop;
+    unsigned int size, count = 0, stops = 0;
     if (net.role == HOST) {
         for (int i = 0; i < net.peer_room; ++i) {
             count += net.peers[i].used && net.peers[i].state == MEMBER && net.peers[i].level > 0;
+            stops += net.peers[i].used && net.peers[i].state == MEMBER && net.peers[i].stop != 0;
         }
         count += own > 0;
+        stops += own_stop != 0;
     }
-    *body = (unsigned char *)grow(*body, room, (int)(8 + 3 + 3 * count), 1);
+    *body = (unsigned char *)grow(*body, room, (int)(8 + 3 + 3 * count + 1 + (1 + STOP_BYTES) * stops + STOP_BYTES), 1);
     put64(*body, now);
     if (net.role == GUEST) {
         put16(*body + 8, (unsigned int)(own > 0 ? own : 0));
-        return 10;
+        if (own_stop == 0) {
+            return 10;
+        }
+        put_stop(*body + 10, own_stop);
+        return 10 + STOP_BYTES;
     }
     (*body)[8] = (unsigned char)count;
     size = 9;
@@ -1775,16 +1850,32 @@ static unsigned int ping_body(u64 now, unsigned char **body, int *room)
             size += 3;
         }
     }
+    (*body)[size++] = (unsigned char)stops;
+    if (own_stop != 0) {
+        (*body)[size] = 0;
+        put_stop(*body + size + 1, own_stop);
+        size += 1 + STOP_BYTES;
+    }
+    for (int i = 0; i < net.peer_room; ++i) {
+        const Peer *q = &net.peers[i];
+        if (q->used && q->state == MEMBER && q->stop != 0) {
+            (*body)[size] = (unsigned char)q->aid;
+            put_stop(*body + size + 1, q->stop);
+            size += 1 + STOP_BYTES;
+        }
+    }
     return size;
 }
 
-/* A member's ping: on the host a guest's level, on a guest the members' levels (ping_body). */
+/* A member's ping: on the host a guest's level and Stop, on a guest the members' (ping_body). */
 static void ping_levels(Peer *p, const unsigned char *body, unsigned int size)
 {
     if (net.role == HOST && size >= 10) {
         p->level = (int)get16(body + 8);
+        p->stop = size >= 10 + STOP_BYTES ? get_stop(body + 10) : 0;
     } else if (net.role == GUEST && size >= 9) {
         const unsigned int count = body[8];
+        unsigned int at = 9 + 3 * count;
         for (int i = 0; i < net.level_room; ++i) {
             net.levels[i] = 0;
         }
@@ -1792,6 +1883,15 @@ static void ping_levels(Peer *p, const unsigned char *body, unsigned int size)
             const unsigned int aid = body[9 + 3 * k];
             net.levels = (int *)grow(net.levels, &net.level_room, (int)aid + 1, sizeof(*net.levels));
             net.levels[aid] = (int)get16(body + 9 + 3 * k + 1);
+        }
+        forget_stops();
+        if (at < size) {
+            const unsigned int stops = body[at++];
+            for (unsigned int k = 0; k < stops && at + 1 + STOP_BYTES <= size; ++k, at += 1 + STOP_BYTES) {
+                const unsigned int aid = body[at];
+                net.stops = (u64 *)grow(net.stops, &net.stop_room, (int)aid + 1, sizeof(*net.stops));
+                net.stops[aid] = get_stop(body + at + 1);
+            }
         }
     }
 }
@@ -2036,6 +2136,7 @@ static void leave_locked(void)
     for (int i = 0; i < net.level_room; ++i) {
         net.levels[i] = 0;
     }
+    forget_stops();
     mods_forget();
     net.role = NONE;
     net.joining = 0;
@@ -2399,6 +2500,44 @@ int khdays_net_levels(unsigned int *aids, int *levels, int room)
     }
     SDL_UnlockMutex(net.lock);
     return count;
+}
+
+void khdays_net_set_stop_casts(const unsigned char most[3], const unsigned char level[3])
+{
+    unsigned char bytes[STOP_BYTES];
+    if (most == NULL) {
+        net.own_stop = 0;
+        return;
+    }
+    memcpy(bytes, most, 3);
+    memcpy(bytes + 3, level, 3);
+    net.own_stop = get_stop(bytes);
+}
+
+int khdays_net_stop_casts(unsigned int aid, unsigned char most[3], unsigned char level[3])
+{
+    unsigned char bytes[STOP_BYTES];
+    u64 stop = 0;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    if ((net.role == HOST && aid == 0) || (net.role == GUEST && aid == net.own_aid)) {
+        stop = net.own_stop;
+    } else if (net.role == HOST) {
+        const Peer *q = peer_by_aid(aid);
+        stop = q != NULL && q->state == MEMBER ? q->stop : 0;
+    } else if (net.role == GUEST && (int)aid < net.stop_room) {
+        stop = net.stops[aid];
+    }
+    SDL_UnlockMutex(net.lock);
+    if (stop == 0) {
+        return 0;
+    }
+    put_stop(bytes, stop);
+    memcpy(most, bytes, 3);
+    memcpy(level, bytes + 3, 3);
+    return 1;
 }
 
 /* --- the mods' records ------------------------------------------------- */
@@ -3110,6 +3249,18 @@ void khdays_net_last_refusal_mods(char *text, int room, int *more)
         *more = net.refusal_more;
     }
     SDL_UnlockMutex(net.lock);
+}
+
+int khdays_net_last_refusal_stop_off(void)
+{
+    int off;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    off = net.refusal_stop_off;
+    SDL_UnlockMutex(net.lock);
+    return off;
 }
 
 int khdays_net_own_aid(void)

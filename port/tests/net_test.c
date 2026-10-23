@@ -543,6 +543,7 @@ static int host_modded(void)
     int joined = 0;
     const Uint64 until = SDL_GetTicks() + 60000;
     host_mods();
+    khdays_net_set_stop_magic(0); /* and without the Stop magic */
     if (!khdays_net_begin() || !khdays_net_host(GGID, info, sizeof(info), 3)) {
         fprintf(stderr, "host: no room\n");
         return 2;
@@ -565,14 +566,15 @@ static int host_modded(void)
     return 5;
 }
 
-/* The guest: with other gameplay mods refused, told the host's; with the same, taken. */
+/* The guest: with other gameplay mods refused, told the host's; with the same but the Stop magic on, refused
+ * and told the host plays without it; with the same and Stop off, taken. */
 static int guest_modded(void)
 {
     KhdaysNetEvent e;
     KhdaysNetRoomView room = {0};
     char name[64], told[2048];
     unsigned int frame = 0;
-    int stage = 0, more = 0; /* 0 looking, 1 sent with other mods, 2 sent with the host's */
+    int stage = 0, more = 0; /* 0 looking, 1 sent with other mods, 2 with the host's and Stop, 3 without Stop */
     const Uint64 until = SDL_GetTicks() + 60000;
     khdays_net_set_mods(0x5678u, (const unsigned char *)"\x01x\x01y", 4, 1);
     if (!khdays_net_begin()) {
@@ -585,9 +587,20 @@ static int guest_modded(void)
         while (khdays_net_next(&e, data, sizeof(data), frame)) {
             if (e.kind == KHDAYS_NET_REFUSED) {
                 int shown = 1;
-                if (stage != 1 || e.reason != KHDAYS_NET_REFUSE_MODS) {
+                if ((stage != 1 && stage != 2) || e.reason != KHDAYS_NET_REFUSE_MODS) {
                     fprintf(stderr, "guest: refused (reason %u) at stage %d\n", e.reason, stage);
                     return 3;
+                }
+                if (!khdays_net_last_refusal_stop_off()) {
+                    fprintf(stderr, "guest: not told the host plays without Stop (stage %d)\n", stage);
+                    return 8;
+                }
+                if (stage == 2) {
+                    khdays_net_set_stop_magic(0);
+                    khdays_net_scan(GGID, 1);
+                    stage = 3;
+                    khdays_net_join(room.id, "ssid", 4);
+                    continue;
                 }
                 khdays_net_last_refusal_mods(told, sizeof(told), &more);
                 for (const char *c = told; *c; ++c) {
@@ -603,12 +616,12 @@ static int guest_modded(void)
                 stage = 2;
                 khdays_net_join(room.id, "ssid", 4);
             } else if (e.kind == KHDAYS_NET_JOINED) {
-                if (stage != 2) {
-                    fprintf(stderr, "guest: joined with other gameplay mods\n");
+                if (stage != 3) {
+                    fprintf(stderr, "guest: joined with other gameplay mods or the Stop magic (stage %d)\n", stage);
                     return 4;
                 }
                 printf("net: a guest with other gameplay mods refused and told the host's (%d of them left "
-                       "out of one answer), one with the same taken\n",
+                       "out of one answer), one with the same but Stop refused and told, one without Stop taken\n",
                        more);
                 khdays_net_end();
                 return 0;

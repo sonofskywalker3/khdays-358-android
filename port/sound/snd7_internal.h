@@ -221,6 +221,7 @@ void snd7_seq_track_param(int player, uint32_t tracks, uint32_t offset, uint32_t
 void snd7_seq_set_local_variable(int player, int variable, int16_t value);                        /* 0x03801c50 */
 void snd7_seq_set_global_variable(int variable, int16_t value);                                   /* 0x03801c70 */
 int snd7_seq_channel_player(int channel); /* the player whose note a channel plays, -1 none */
+uint32_t snd7_seq_player_stops(int n);    /* the ARM9's stops of player n so far */
 
 /* The banks (snd7_bank.c): an instrument as a program of a bank gives it
  * for a key -- the 10 bytes of its settings, and its type. */

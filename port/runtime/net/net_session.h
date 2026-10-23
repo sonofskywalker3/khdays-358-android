@@ -100,6 +100,11 @@ void khdays_net_set_level(int level);
 /* The members' levels known, this copy's too (the host's pings give a guest everyone's): up to `room`
  * aids and levels. Returns how many are known. */
 int khdays_net_levels(unsigned int *aids, int *levels, int room);
+/* The game's thread: this copy's Stop casts (the most of each of its three levels and each one's Magic LV, from
+ * its deck; `most` NULL: none known), which its pings carry to the room; and member `aid`'s as the room knows
+ * them (the host's pings give a guest everyone's): 1 with `most` and `level` set when known. */
+void khdays_net_set_stop_casts(const unsigned char most[3], const unsigned char level[3]);
+int khdays_net_stop_casts(unsigned int aid, unsigned char most[3], unsigned char level[3]);
 
 /* The mods' records (runtime/scripts), never the game's. The room's seed: chosen as the room opens,
  * changed by the host (khdays_net_set_seed; a guest's call does nothing), sent to each member, as it
@@ -199,9 +204,15 @@ int khdays_net_last_refusal(void);
  * copied. */
 void khdays_net_set_mods(unsigned int fingerprint, const unsigned char *list, unsigned int size, unsigned int count);
 
+/* Whether this copy plays with the Stop magic ([gameplay] stop_magic, set before any session): rooms
+ * take only copies that agree, its being off counting as a gameplay mod in the fingerprint. */
+void khdays_net_set_stop_magic(int on);
+
 /* After a KHDAYS_NET_REFUSE_MODS: the host's gameplay mods as "name version, name version" (cut to
- * `room` bytes, ended), and how many of them the host's answer could not hold. */
+ * `room` bytes, ended), and how many of them the host's answer could not hold; and whether that host
+ * plays without the Stop magic (not in the text: the guest says it in its own language). */
 void khdays_net_last_refusal_mods(char *text, int room, int *more);
+int khdays_net_last_refusal_stop_off(void);
 
 /* How many rooms of the group being scanned are known now. */
 int khdays_net_room_count(void);

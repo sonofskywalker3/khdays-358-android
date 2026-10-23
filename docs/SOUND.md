@@ -77,9 +77,16 @@ The mixers read the channels' current samples:
   instant of each output sample at the PC's rate, their divider (1, 2, 4 or
   16), volume and each side's share of the pan (N/128, 127 as 128/128) applied
   at full precision, channels 1 and 3 routed as SOUNDCNT says, mixed in floating
-  point and clipped only at full scale; no interpolation between a channel's
-  samples, as on the DS. Its scale is the DS mixer's before rounding, divided
-  by 32768.
+  point. A channel is read between its samples (`khdays_sound_hw_smooth_sample`:
+  a Catmull-Rom cubic over its last four, so two of its samples late, from how
+  far its timer is towards the next), where the DS holds each sample until the
+  next -- whose steps a PC's output makes heard as a metallic edge; a square
+  wave or noise stays as it is. A mix louder than full scale is turned down at
+  once, both sides alike, just enough to stay under 0.98, and back up over a
+  tenth of a second (`KhdaysSoundLimiter`), rather than clipped; below it
+  nothing changes. Its scale is the DS mixer's before rounding, divided by
+  32768. Seen: a walk's 148 seconds through the field peaked at the limiter's
+  0.98 in 26 samples, none clipped.
 
 ## The categories
 
@@ -121,24 +128,36 @@ A mod replaces a sequence, a sequence archive's entry, a stream or a wave with
 the identifiers: `seq/<name>`, `seqarc/<archive>/<entry>`,
 `wave/<archive>/<index>`, `strm/<name>`). The file is decoded once, on a thread
 of its own, to 16 bits with its loop: a WAV's `smpl` loop, else the Vorbis
-comments `LOOPSTART` and `LOOPLENGTH` of a FLAC or Ogg file, else the
-original's loop scaled to the file's rate; a sound the original plays once
-plays once (`port/sound/replace.c`). A file not decoded yet when its sound
-starts leaves the original heard, so the short ones are decoded ahead: the
-sequence archives' entries (sound effects, voices) from the game's first sound
-on, a wave archive's replaced waves as it loads; a sequence or stream (music)
-when it is first wanted, and what is wanted now goes before those. It plays at
-its own rate while the original goes on unheard (what the game reads back stays
+comments `LOOPSTART` and `LOOPLENGTH` of a FLAC or Ogg file, else the original's
+loop scaled to the file's rate; a sound the original plays once plays once
+(`port/sound/replace.c`). A file not decoded yet when its sound starts leaves
+the original heard, so the short ones are decoded ahead: the sequence archives'
+entries (sound effects, voices) from the game's first sound on, a wave archive's
+replaced waves as it loads; a sequence or stream (music) when it is first
+wanted, and what is wanted now goes before those. It plays at its own rate
+(below). A file above 48,000 Hz (the PC's usual rate) is brought down to it as
+it is decoded, through a low-pass filter (a sinc of 16 zero crossings each side
+under a Blackman window), so that what it holds above half that rate does not
+fold back as noise. The original goes on unheard (what the game reads back stays
 the original's):
 
 - a sequence or entry from when its ARM7 player starts, under that player's
   volume;
 - a stream at the sample its channels play, through their volume and pan;
 - a wave by each channel that plays it, at its pitch, through its envelope,
-  volume and pan.
+  volume and pan -- at the PC's output read from the file at each output
+  sample, the channel itself silent (it would have brought the file down to
+  its own rate, often 16,000-32,000 Hz, and held each sample); a stereo file
+  mixed down, the channel being one side.
 
-At the original's rate the samples are held as the channel holds its own (a
-dumped original put back plays the same); at another they are interpolated.
+The file is read between its samples (cubic). Only for the DS's output, at the
+original's rate, are they held as the channel holds its own. A file longer than
+its original plays on to its end, at the volume and pan it had, once the
+original ends by itself: a sequence whose player no stop reached
+(`KhdaysSnd7Driver.player_stops`, SND_StopSeq's count), a stream that reached
+its last block; stopped by the game, it stops with it. The voices' streams
+(those of a voices' stream player, PLAYER_STRM_V01's lines) are decoded ahead
+with the sequence archives' entries.
 
 ## The originals, to make replacements from
 

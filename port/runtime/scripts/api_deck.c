@@ -49,30 +49,6 @@ static int is_link(const KhdaysLinkPanel *p)
     return p->shape < 0 && (p->category == 4 || p->category == 5);
 }
 
-/* Multi-cell panel `p` laid at cell `at`: `under` gets `at` on each cell it covers; 0 when one is off
- * its page, closed or under another already. */
-static int cover(const KhdaysLinkPanel *p, int at, int open, short *under)
-{
-    const int page = at / KHDAYS_LINK_DECK_PAGE, left = at % KHDAYS_LINK_DECK_COLS - p->col,
-              top = at % KHDAYS_LINK_DECK_PAGE / KHDAYS_LINK_DECK_COLS - p->row;
-    for (int bit = 0; bit < 64; ++bit) {
-        const int col = left + bit % 8, row = top + bit / 8;
-        int cell;
-        if (!(p->cells >> bit & 1u)) {
-            continue;
-        }
-        if (col < 0 || col >= KHDAYS_LINK_DECK_COLS || row < 0 || row >= KHDAYS_LINK_DECK_ROWS) {
-            return 0;
-        }
-        cell = page * KHDAYS_LINK_DECK_PAGE + row * KHDAYS_LINK_DECK_COLS + col;
-        if (cell >= open || under[cell] >= 0) {
-            return 0;
-        }
-        under[cell] = (short)at;
-    }
-    return 1;
-}
-
 static int is_gear(int id)
 {
     return id >= GEAR_FIRST && id <= GEAR_LAST;
@@ -114,7 +90,7 @@ static const char *check(const Deck *d, short *under)
         if (id >= KHDAYS_LINK_ITEMS || !khdays_link_panel(id, &p)) {
             return "unknown panel";
         }
-        if (++set[id] > d->owned[id] || c >= open || (p.shape >= 0 && !cover(&p, c, open, under))) {
+        if (++set[id] > d->owned[id] || c >= open || (p.shape >= 0 && !khdays_link_cover(&p, c, open, under))) {
             return "does not fit";
         }
     }
@@ -145,7 +121,7 @@ static int may_set(const Deck *d, int id, const KhdaysLinkPanel *p, int at, cons
     if (p->shape >= 0) {
         short trial[KHDAYS_LINK_DECK_CELLS];
         memcpy(trial, under, sizeof(trial));
-        if (!cover(p, at, open, trial)) {
+        if (!khdays_link_cover(p, at, open, trial)) {
             return 0;
         }
         for (int c = 0; c < KHDAYS_LINK_DECK_CELLS; ++c) {

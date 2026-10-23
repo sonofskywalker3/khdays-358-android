@@ -4,6 +4,8 @@
  * once idle again, the next one of its kind reuses it. docs/RUNTIME_MAP.md, "The field's enemies". */
 #include "enemies_link.h"
 
+#include "../battle/stop_magic.h"
+
 #include "api_v2.h"
 #include "../core/window.h"
 
@@ -48,10 +50,28 @@ const char *khdays_enemy_name(int id); /* enemy_names.c */
 #define ROW_BOOST 0x2u
 #define ROW_PROFILE 0x3u
 #define ROW_PARAM 0x5u
-#define SOURCE_FLAGS 0x40u /* bit 1: enabled (Ov107_Region_SetEnabled) */
-#define STATE_FLAT 2000    /* Ov002_GetStateWord: enemies made without their level */
+/* bit 0 shown: as a source is shown or hidden it tells each of its enemies (Ov107_Region_SetVisible,
+ * Ov107_BroadcastValueToChildren: their AI_SHOW); bit 1 enabled (Ov107_Region_SetEnabled) */
+#define SOURCE_FLAGS 0x40u
+#define STATE_FLAT 2000 /* Ov002_GetStateWord: enemies made without their level */
+
+/* A spawner (Ov107_Spawner_Run): its slots, an enemy each -- its row in the spawners' table of kinds and how it
+ * enters (its first action; -1 the enemy's own) -- and that table (Ov107_Spawner_FindFreeActor: 4 bytes a row, +1 the
+ * kind) */
+#define SPAWNER_OWNER 0x4u
+#define OWNER_TABLE 0x4u
+#define SPAWNER_COUNT 0x4cu
+#define SPAWNER_SLOTS 0x50u
+#define SPAWNER_SLOT_BYTES 12u
+#define SLOT_ROW 0u
+#define SLOT_ENTRY 3u
+#define TABLE_KINDS 0x94u
+#define TABLE_ROW_BYTES 4u
+#define TABLE_ROW_KIND 1u
+#define KIND_VALUES 256 /* an enemy's kind is a byte */
 
 /* An enemy (ov107's AI state) */
+#define AI_SHOW 0x18u     /* shown or hidden by its source (Ov107_AiState_SetVisible): its model drawn or not */
 #define AI_FLAGS 0x60u    /* 0x100 standing: set going (event 0), cleared at the defeat and once away */
 #define AI_POSITION 0xb0u /* 20.12 fixed point */
 #define AI_KIND 0x19cu
@@ -60,6 +80,7 @@ const char *khdays_enemy_name(int id); /* enemy_names.c */
 #define AI_POOLED 0x1acu /* bit 7 */
 #define AI_FLAGS_1AE 0x1aeu
 #define AI_FLAGS_1C5 0x1c5u
+#define AI_ENTRY 0x1c9u /* its first action once active (a spawner slot's entry; 1 when made) */
 #define AI_EVENT 0x1ccu /* 0 set going, 1 sent away, 2 settled once away */
 #define AI_RETIRE 0x1e8u
 #define AI_LOAD_STATS 0x1ecu
@@ -89,6 +110,7 @@ const char *khdays_enemy_name(int id); /* enemy_names.c */
 #define FIRST_BUILD 114 /* FS_OVERLAY_ID_ov113 + 1 */
 
 typedef void (*PlaceFn)(KhdaysRef self, KhdaysRef at, int reach);
+typedef void (*ShowFn)(KhdaysRef self, int shown);
 typedef int (*EventFn)(KhdaysRef self, int event);
 typedef void (*StatsFn)(KhdaysRef self, int level);
 typedef void (*ActivateFn)(KhdaysRef self, int param);
@@ -103,6 +125,10 @@ typedef struct Pooled {
 
 static Pooled *pool;
 static int pool_count, pool_room;
+/* How the area's spawners let each kind enter (a slot's entry + 1; 0 none seen), learnt as they run: the made actor's
+ * own is the game's first one (a Shadow rises from a flat shape in a second), the area's may differ (mission 94's
+ * Shadows come standing). */
+static unsigned char entry_of[KIND_VALUES];
 static unsigned made; /* the actor Ov002_CreateActorFromMarker made last (its join) */
 
 static int tracing = -1;
@@ -362,6 +388,9 @@ static int set_going(unsigned actor, unsigned source, const float at[3])
     wr8(actor + AI_FLAGS_1C5, rd8(actor + AI_FLAGS_1C5) & ~0x17u);
     wr32(actor + AI_RETIRE, 0);
     wr32(actor + AI_SPAWNER, source);
+    if (entry_of[rd8(actor + AI_KIND)] != 0) {
+        wr8(actor + AI_ENTRY, entry_of[rd8(actor + AI_KIND)] - 1u);
+    }
     Ov107_SetStatusAndEmit(actor, 0);
     wr16(actor + AI_FLAGS_1AE, rd16(actor + AI_FLAGS_1AE) & ~0x100u);
     if (place_fn != 0) {
@@ -370,6 +399,10 @@ static int set_going(unsigned actor, unsigned source, const float at[3])
     Ov107_MoveNodeAndRelayout(actor, place);
     ((EventFn)KHDAYS_FN(event_fn))(actor, 0);
     NNSi_FndFreeFromDefaultHeap(place);
+    /* the source showed its enemies before this one was made, which would stand undrawn (hit, targeted, unseen) */
+    if (rd32(actor + AI_SHOW) != 0) {
+        ((ShowFn)KHDAYS_FN(rd32(actor + AI_SHOW)))(actor, (int)(rd32(source + SOURCE_FLAGS) & 1u));
+    }
     return 1;
 }
 
@@ -390,10 +423,10 @@ static void ids_again(void)
 
 static void trace_actor(const char *what, unsigned actor)
 {
-    fprintf(stderr, "enemies: f%u %s %08x kind 0x%02x level %u HP %d/%d flags %04x at %d %d %d attacks",
+    fprintf(stderr, "enemies: f%u %s %08x kind 0x%02x level %u HP %d/%d flags %04x entry %d at %d %d %d attacks",
             khdays_link_frame(), what, actor, rd8(actor + AI_KIND), rd8(actor + AI_LEVEL), (short)rd16(actor + AI_HP),
-            (short)rd16(actor + AI_HP_MAX), rd16(actor + AI_FLAGS), (int)rd32(actor + AI_POSITION),
-            (int)rd32(actor + AI_POSITION + 4), (int)rd32(actor + AI_POSITION + 8));
+            (short)rd16(actor + AI_HP_MAX), rd16(actor + AI_FLAGS), (signed char)rd8(actor + AI_ENTRY),
+            (int)rd32(actor + AI_POSITION), (int)rd32(actor + AI_POSITION + 4), (int)rd32(actor + AI_POSITION + 8));
     for (int i = 0; i < ATTACKS; ++i) {
         fprintf(stderr, " %d", (short)rd16(actor + AI_ATTACKS + 6u * (unsigned)i));
     }
@@ -541,17 +574,40 @@ void khdays_enemies_hold_mission(int on)
     mission_held = on;
 }
 
+/* Spawner `s`'s slots: how each lets its kind enter. */
+static void learn_entries(unsigned s)
+{
+    const unsigned owner = rd32(s + SPAWNER_OWNER), table = owner != 0 ? rd32(owner + OWNER_TABLE) : 0;
+    const unsigned kinds = table != 0 ? rd32(table + TABLE_KINDS) : 0;
+    for (int i = 0; kinds != 0 && i < (short)rd16(s + SPAWNER_COUNT); ++i) {
+        const unsigned slot = s + SPAWNER_SLOTS + SPAWNER_SLOT_BYTES * (unsigned)i;
+        const int entry = (signed char)rd8(slot + SLOT_ENTRY);
+        if (entry >= 0) {
+            entry_of[rd8(kinds + TABLE_ROW_BYTES * rd8(slot + SLOT_ROW) + TABLE_ROW_KIND)] = (unsigned char)(entry + 1);
+        }
+    }
+}
+
 int khdays_enemies_spawner_run(void *spawner, int op)
 {
+    const unsigned s = ref_of(spawner);
     if (traced() && op != 1) {
-        fprintf(stderr, "enemies: f%u spawner %08x op %d%s\n", khdays_link_frame(), ref_of(spawner), op,
+        fprintf(stderr, "enemies: f%u spawner %08x op %d%s, entries", khdays_link_frame(), s, op,
                 op == 0 && mission_held ? ", held" : "");
+        for (int i = 0; i < (short)rd16(s + SPAWNER_COUNT); ++i) {
+            fprintf(stderr, " %d", (signed char)rd8(s + SPAWNER_SLOTS + SPAWNER_SLOT_BYTES * (unsigned)i + SLOT_ENTRY));
+        }
+        fprintf(stderr, "\n");
+    }
+    if (op == 0) {
+        learn_entries(s);
     }
     return op == 0 && mission_held;
 }
 
 void khdays_enemies_retired(void *actor)
 {
+    khdays_stop_enemy_gone(actor);
     if (traced()) {
         fprintf(stderr, "enemies: f%u actor %08x retired\n", khdays_link_frame(), ref_of(actor));
     }
@@ -574,11 +630,13 @@ static void forget(void)
         fprintf(stderr, "enemies: f%u the area's %d enemies for mods let go\n", khdays_link_frame(), pool_count);
     }
     pool_count = 0;
+    memset(entry_of, 0, sizeof(entry_of));
     khdays_api_enemies_field_left();
 }
 
 void khdays_enemies_area_left(void)
 {
+    khdays_stop_area_left();
     forget();
 }
 

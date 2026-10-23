@@ -19,6 +19,7 @@ void khdays_api_v2_open(KhdaysMod *m)
     khdays_api_screens_open(m);
     khdays_api_deck_open(m);
     khdays_api_time_open(m);
+    khdays_api_memory_open(m);
 }
 
 void khdays_api_v2_release(KhdaysMod *m)

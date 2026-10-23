@@ -2,8 +2,9 @@
 
 A mod can change how the game plays with scripts in Lua 5.4. The port runs each scripted mod in its
 own sandboxed interpreter, on the game's thread, once per game frame and when the game does something
-a script listens to. Scripts read and change the game's state by name, never by address: the names
-below stay the same across port updates of the same interface version.
+a script listens to. Scripts read and change the game's state by name: the names below stay the same
+across port updates of the same interface version. For what the names do not cover, version 2 also
+reaches the game's memory by address ("The game's memory", below).
 
 Content mods (textures, models, 2D, sounds, texts, movies, rooms) are unchanged by this; a scripted
 mod may carry content too.
@@ -38,6 +39,7 @@ description = Keeps the player's HP full.
 | `name`, `version` | required | shown to the player; versions are compared as text |
 | `kind` | required | `gameplay` (it changes the game) or `visual` (it only listens: its changes are refused) |
 | `api` | required | the interface version it needs: `1`, or `2` for version 1 and what a game mode of its own needs (below) |
+| `memory` | optional | `read` (when not given) or `write`: whether its scripts may write in the game's memory (version 2's `memory`); the Mods page tells the player a mod that does |
 | `main` | optional | the first script, under `scripts/` (default `scripts/main.lua`) |
 | `author`, `description` | optional | shown to the player |
 
@@ -157,8 +159,9 @@ font has every character of a notice is not checked.
 ### Options in the Mods page
 
 The settings menu has a Mods page while a scripted mod is present: each mod with its state (running,
-off, stopped by an error, paused, not loaded and why), a switch to turn it on or off, its place in the
-load order, Resume for a paused mod, and its options while it runs. The pause and the camp have no
+off, stopped by an error, paused, not loaded and why), whether it writes in the game's memory, a
+switch to turn it on or off, its place in the load order, Resume for a paused mod, and its options
+while it runs. The pause and the camp have no
 mod entries; the settings menu opens from anywhere with its own key.
 
 ```lua
@@ -216,7 +219,7 @@ and offers that area's kinds.
 |---|---|---|
 | `enemies.kinds()` | the kinds this area makes | a list of `{kind = <id>, name = <the enemy's name>}`; empty where the area has no enemies |
 | `enemies.kinds("all")` | every kind of the game, `ready` when one can be made here now | a list of `{kind, name, ready}` |
-| `enemies.make{kind, at, count, spread, level, hp, strength}` | makes `count` (default 1) enemies of `kind` at `at` (`{x, y, z}` in the field's units, or `"player"`), round it at `spread` units (default 0); their level the area's for that kind (the mission's for another kind) plus `level` (default 0; the game's levels are 1 to 120), their HP and the power of their attacks times `hp` and `strength` (default 1) | a list of handles (and the reason, when fewer than `count` were made); `"unknown kind"`, `"no room for its kind"`, `"no enemies here"` (an area without enemies), `"not in multiplayer yet"` |
+| `enemies.make{kind, at, count, spread, level, hp, strength}` | makes `count` (default 1) enemies of `kind` at `at` (`{x, y, z}` in the field's units, or `"player"`), round it at `spread` units (default 0), entering as the area's own of that kind do (once its spawners have run; else as the game makes them, a Shadow rising from the ground); their level the area's for that kind (the mission's for another kind) plus `level` (default 0; the game's levels are 1 to 120), their HP and the power of their attacks times `hp` and `strength` (default 1) | a list of handles (and the reason, when fewer than `count` were made); `"unknown kind"`, `"no room for its kind"`, `"no enemies here"` (an area without enemies), `"not in multiplayer yet"` |
 | `enemies.remove(e)` | sends enemy `e` (a handle, or a list of them) away as the game does when the player leaves its spawner: no defeat | `true`; `"gone"` |
 | `enemies.list()` | the handles of the mod's enemies still standing | |
 | `enemies.info(e)` | `{kind, hp, max_hp, level, x, y, z}` | `nil, "gone"` |
@@ -313,7 +316,8 @@ the HD theater's list when the HD PACK is there, else in the game's own font.
 
 A panel is an item the camp's Panels list (items, magic, Level Up and its doublers, gears, abilities,
 links, rings and charms; not the synthesis materials, the Slot Releaser or the badges), by its item
-number. The deck holds as the camp lets the player set it: a multi-cell panel within its page, on open
+number; the port's Stop magic adds three, 628 Stop, 629 Stopra and 630 Stopga, magic panels as the
+game's (`"unknown panel"` while the player has Stop turned off). The deck holds as the camp lets the player set it: a multi-cell panel within its page, on open
 cells and over no other; a link (marked Ｌ) on a cell of a multi-cell panel of its category; one gear,
 one ring or charm, one multi-cell ability of a kind. A change that would break that, or more copies set
 than owned, is refused whole, nothing changed. The player's stats come from the deck as the camp
@@ -351,6 +355,46 @@ host as each mission ends, so every copy starts each mission with the same one. 
 run of draws, started again from that seed at each mission's start: the copies of a room draw the same
 numbers in the same order from there, as long as their mods draw alike. Alone, the seed is the copy's
 own.
+
+### The game's memory
+
+For what the names above do not reach, `memory` reads and writes the game's memory by address, as the
+decompilation (khdays-decomp) describes it. Numbers are little-endian, as on the DS.
+
+| Name | Does | Returns / refused |
+|---|---|---|
+| `memory.u8(a)`, `memory.u16(a)`, `memory.u32(a)` | the unsigned number of 1, 2 or 4 bytes at `a` | the number; `"not the game's memory"` |
+| `memory.s8(a)`, `memory.s16(a)`, `memory.s32(a)` | the same, signed | the same |
+| `memory.bytes(a, n)` | `n` bytes from `a` | a string; `"not the game's memory"` |
+| `memory.set_u8(a, v)`, `memory.set_u16(a, v)`, `memory.set_u32(a, v)` | writes `v`, unsigned or signed (a value that fits neither is an error) | `true`; `"visual mod"`, `"guest"`, `"mod.ini has no memory = write"`, `"not the game's memory"` |
+| `memory.set_bytes(a, s)` | writes the string `s`'s bytes from `a` | the same |
+| `memory.loaded(n)` | whether overlay `n` is loaded and running | `true` or `false` |
+
+```lua
+local state = memory.u32(0x0204be18)          -- gGameState: where the game's state is
+print(memory.u32(state + 0xc) == game.munny)  -- its munny (+0xc), as game.munny reads it
+```
+
+Where things are:
+
+- **Main RAM** (0x02000000 to 0x02400000) holds the game's objects at the addresses the decompilation
+  gives them: `gGameState` at 0x0204be18, `data_0204c23c` at 0x0204c23c. An overlay's objects are
+  there only while it is loaded (`memory.loaded`); other overlays use the same addresses.
+- **The game's heaps** are the port's own: the main heap from 0x20000000, the sub heap from 0x30000000,
+  the headers' heaps from 0x02800000. A block is not where it would be on a DS or an emulator, but the
+  game's pointers lead to it: a pointer read with `memory.u32` is an address to read from. Blocks may
+  lie elsewhere in another run or another port version, so follow the game's pointers rather than
+  keeping addresses. A part of the heaps the game never used reads as 0, and reading it costs the PC
+  no memory.
+- **The port's data area** (from 0x0b200000) holds what the DS names nowhere: a file's statics and
+  texts.
+- Anything else (the DS's I/O, VRAM, the stacks) is refused.
+
+Writing needs a gameplay mod whose `mod.ini` says `memory = write`; the Mods page tells the player
+such a mod writes in the game's memory. A write changes the game's memory as it is, with none of the
+checks the names above make: a wrong one can stop the game or end up in a save. In a room, the host's
+writes change the host's game, and reach the guests only where the game itself sends them (the
+battle's actors); `mod.share` carries the rest.
 
 ## Multiplayer
 

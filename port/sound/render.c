@@ -255,7 +255,7 @@ int khdays_render_sequence(const KhdaysRenderRequest *q, KhdaysRendered *out)
             break;
         }
         driver->advance(now);
-        khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, mixed);
+        khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, NULL, mixed);
         if (2 * k + 2 > capacity) {
             uint64_t bigger_capacity = capacity != 0 ? 2 * capacity : (uint64_t)q->rate * 2 * 8;
             int16_t *bigger;

@@ -1371,6 +1371,8 @@ HOOKS = {
             "    { extern void khdays_origin_loaded(unsigned top, unsigned bottom, const void *buffer, unsigned size,\n"
             "                                       int compressed);\n"
             "      khdays_origin_loaded(file.top, file.bottom, buf, buf != 0 ? size : 0, compressed != 0); }\n"
+            "    { extern void khdays_stop_file_loaded(unsigned top, void *buffer, unsigned size);\n"
+            "      if (buf != 0) khdays_stop_file_loaded(file.top, buf, size); }\n"
             "    gFileLoader[5] = 0;\n    FS_CloseFile(&file);\n    return buf;\n",
         )
     ],
@@ -1678,6 +1680,316 @@ HOOKS["ov006@02050360"] = _ov006_list  # Ov006_UpdateMissionMenuOptionScreen
 HOOKS["ov008@0207c248"] = _ov008_list  # Ov008_UpdateMissionMenuOptionScreen
 HOOKS["ov006@020508e0"] = _ov006_members  # Ov006_UpdateMissionMenuSelectionScreen
 HOOKS["ov008@0207c7c8"] = _ov008_members  # Ov008_UpdateMissionMenuSelectionScreen
+
+# The Stop magic (runtime/battle/stop_magic.c): Days's unfinished sixth magic made whole on what the game
+# left. Its three panels are written over three blank records as the panels' table loads, the camp lets
+# them in, and the battle's list of magic names gets the names the game left empty.
+HOOKS["main@02034150"] = [
+    (  # MsgDb_LoadDb: a database loaded whole
+        "            ResSlot_Release_2(id);\n            return 0;\n        }\n    }\n    return 1;\n}\n",
+        "            ResSlot_Release_2(id);\n            return 0;\n        }\n    }\n"
+        "    { extern void khdays_stop_db_loaded(int id); khdays_stop_db_loaded(id); }\n"
+        "    return 1;\n}\n",
+    )
+]
+for _eligible in ("ov008@0205ccd8", "ov025@0208f26c"):  # Ov008_IsGridItemEligible, Ov025_IsGridItemEligible
+    HOOKS[_eligible] = [
+        (
+            "    if (513 <= itemId && itemId <= 630) {\n",
+            "    { extern int khdays_stop_panel(int id); if (khdays_stop_panel(itemId)) { return 1; } }\n"
+            "    if (513 <= itemId && itemId <= 630) {\n",
+        )
+    ]
+HOOKS["ov002@0205cf54"] = [
+    (  # Ov002_CreatePanelSession: Stop's levels take the magic submenu's free cells (15-17 by name)
+        "    } while (k < 0xf);\n",
+        "    } while (k < 0xf);\n"
+        "    { extern int khdays_stop_cells(void *session, int count); nCount = khdays_stop_cells(s, nCount); }\n",
+    ),
+    (
+        "    *(int *)((char *)s + 0x4a8) = pReq->nCellMask;\n",
+        "    { extern int khdays_stop_cell_mask(void);\n"
+        "      *(int *)((char *)s + 0x4a8) = pReq->nCellMask | khdays_stop_cell_mask(); }\n",
+    ),
+    (  # the battle's magic names loaded
+        "    Ov002_InitResourceRecord((char *)s + 0x5e8, gOv002UiBtlMagicTextPath);\n",
+        "    Ov002_InitResourceRecord((char *)s + 0x5e8, gOv002UiBtlMagicTextPath);\n"
+        "    { extern void khdays_stop_magic_names(void *record); khdays_stop_magic_names((char *)s + 0x5e8); }\n",
+    ),
+]
+# The Stop magic's battle (runtime/battle/stop_magic.c). An actor's pool of magic slots has 15 places from +0x18
+# and kept the cast's level animation (its grid entry: Ov022_BuildEntryLabelText) in the word after them, +0x54:
+# that word is the port's now (khdays_magic_track), so the place after the 15 is Stop's, 15. Stop's slot is Cure's
+# constructor over Stop's model and takes Cure's handlers (its effect stands round its caster, as Cure's does);
+# its levels are the magic submenu's cells 15-17. docs/RUNTIME_MAP.md "The magic".
+HOOKS["ov022@0209016c"] = [
+    (  # Ov022_InitEntryState: the pool cleared, Stop's place with the 15, and the level animation's entry
+        "    *(int *)(obj + 0x54) = 0;\n",
+        "    *(int *)(obj + 0x54) = 0;\n"
+        "    { extern void khdays_magic_track_set(unsigned int pool, int entry);\n"
+        "      khdays_magic_track_set((unsigned)obj, 0); }\n",
+    )
+]
+HOOKS["ov022@0208a830"] = [
+    (  # Ov022_BuildEntryLabelText: Stop's level's animation
+        "    OS_SPrintf(f.tmp, (const char *)&gOv022BaMaMoPackPathFmt, f.buf.w[arg1]);\n",
+        "    OS_SPrintf(f.tmp, (const char *)&gOv022BaMaMoPackPathFmt, f.buf.w[arg1]);\n"
+        "    { extern void khdays_stop_animation(unsigned int pool, char *path);\n"
+        "      khdays_stop_animation((unsigned)arg0, f.tmp); }\n",
+    ),
+    (  # the level animation's entry to the port
+        "    *(int *)(arg0 + 0x54) = Ov022_AcquireGridSlot(\n"
+        "        f.tmp, *(unsigned char *)(*(int *)(arg0 + 0x58) + 9), 1,\n"
+        "        *(int *)(arg0 + arg1 * 4 + 0x18) + 8);\n",
+        "    { extern void khdays_magic_track_set(unsigned int pool, int entry);\n"
+        "      khdays_magic_track_set((unsigned)arg0, Ov022_AcquireGridSlot(\n"
+        "          f.tmp, *(unsigned char *)(*(int *)(arg0 + 0x58) + 9), 1,\n"
+        "          *(int *)(arg0 + arg1 * 4 + 0x18) + 8)); }\n",
+    ),
+]
+
+
+def _magic_track_reads(signature: str, field: str, as_type: str = "") -> list[tuple[str, str]]:
+    """A handler of the magics reading the pool's level animation entry (its `pCtx->nTrack`, `->pOwner` or
+    `->pTrack`, of type `as_type`): the port's."""
+    read = "khdays_magic_track((unsigned)pCtx)"
+    return [
+        (signature, "extern int khdays_magic_track(unsigned int pool);\n" + signature),
+        (f"pCtx->{field}", f"(({as_type}){read})" if as_type else read),
+    ]
+
+
+for _key, _signature, _field, _type in (
+    ("ov022@0208e404", "void Ov022_ArmSlotAtActor(struct ReactionCtx *pCtx)\n", "nTrack", ""),
+    ("ov022@0208f888", "void Ov022_EnterBlockReaction(struct ReactionCtx *pCtx)\n", "nTrack", ""),
+    ("ov022@0208de14", "void Ov022_EnterReactionAtActor(struct ReactionCtx *pCtx)\n", "nTrack", ""),
+    ("ov022@0208c9b4", "void Ov022_EnterReactionAtOffset(struct ReactionCtx *pCtx)\n", "nTrack", ""),
+    ("ov022@0208fe40", "int Ov022_StepReaction(struct ReactionCtx *pCtx, int nDelta)\n", "nTrack", ""),
+    ("ov022@0208eee8", "void Ov022_EnterChainReaction(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208f2d4", "void Ov022_EnterGroundReaction(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208b848", "void Ov022_LaunchSlotPart(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208be38", "void Ov022_LaunchSlotPartArc(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208d764", "void Ov022_LaunchSlotPartFlat(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208cfbc", "void Ov022_LaunchSlotPartTracked(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+):
+    HOOKS[_key] = _magic_track_reads(_signature, _field, _type)
+# The panels' pictures loaded (the camp's two menus, the results): the clock Stop's panels show, in the magics' purple.
+_STOP_PICTURES = (
+    "    {{ extern void khdays_stop_pictures(unsigned int archive); khdays_stop_pictures((unsigned){0}); }}\n"
+)
+HOOKS["ov008@0205f98c"] = [  # Ov008_InitGridMenuTextures
+    (
+        "    Obj_RelocateSections(pCtx->pIconArchive, 0);\n",
+        "    Obj_RelocateSections(pCtx->pIconArchive, 0);\n" + _STOP_PICTURES.format("pCtx->pIconArchive"),
+    )
+]
+HOOKS["ov025@02091edc"] = [  # Ov025_InitGridMenuTextures
+    (
+        "    Obj_RelocateSections(pCtx->pIconArchive, 0);\n",
+        "    Obj_RelocateSections(pCtx->pIconArchive, 0);\n" + _STOP_PICTURES.format("pCtx->pIconArchive"),
+    )
+]
+HOOKS["ov005@02052a7c"] = [  # Ov005_AllocateResultTextures
+    (
+        "    Obj_RelocateSections(context->textureSet.archive,0);\n",
+        "    Obj_RelocateSections(context->textureSet.archive,0);\n"
+        + _STOP_PICTURES.format("context->textureSet.archive"),
+    )
+]
+# The cast's message (kind 0xc, its slot in five bits) carries the cell, Stop's level with it: a copy that receives
+# it takes Stop's place and that level, as the caster's does (Ov022_SetRecordValue).
+HOOKS["ov022@0208a2b4"] = _magic_track_reads("void Ov022_OnEndMessage(struct EndMessage *pMsg)\n", "pTrack", "u8 *") + [
+    (  # Ov022_OnEndMessage, a cast begun on another copy: its slot
+        "        pCtx->nSlot = pMsg->nSlot;\n",
+        "        { extern int khdays_stop_record(unsigned int pool, int value);\n"
+        "          pCtx->nSlot = khdays_stop_record((unsigned)pCtx, pMsg->nSlot); }\n",
+    )
+]
+HOOKS["ov022@0208a464"] = [
+    (  # Ov022_MarshalStateHalf12: the cast's message with the cell (Stop's level) for its slot
+        "    if (param_2 == 0) buf.f5 = *param_3;\n",
+        "    if (param_2 == 0) {\n"
+        "        extern int khdays_stop_message_slot(unsigned int pool, int slot);\n"
+        "        buf.f5 = khdays_stop_message_slot((unsigned)obj, *param_3);\n"
+        "    }\n",
+    )
+]
+# A player another's Stop holds (friendly fire on) stands still: on the host its input, state and motion (the
+# guests' copies follow the host's), on every copy its animation.
+HOOKS["ov022@020a0008"] = [
+    (  # Ov022_ActorUpdate
+        "    void *pNext;\n\n    VEC_COPY(&pActor->vecPrevPos, &pActor->vecPos);\n",
+        "    void *pNext;\n"
+        "    int khdays_held;\n\n"
+        "    { extern int khdays_stop_player_holding(void *actor); khdays_held = khdays_stop_player_holding(pActor); }\n"
+        "    VEC_COPY(&pActor->vecPrevPos, &pActor->vecPos);\n",
+    ),
+    (
+        "    Ov022_StepScaledAnimTracks(pActor);\n",
+        "    if (!khdays_held) {\n        Ov022_StepScaledAnimTracks(pActor);\n    }\n",
+    ),
+    (
+        "    if (Session_GetLocalPlayerIndex() == 0) {\n        pActor->nAnimHandle = Anim_GetFrame(&pActor->pNode->anim, 0);\n",
+        "    if (Session_GetLocalPlayerIndex() == 0 && khdays_held) {\n"
+        "        /* held by Stop */\n"
+        "    } else if (Session_GetLocalPlayerIndex() == 0) {\n"
+        "        pActor->nAnimHandle = Anim_GetFrame(&pActor->pNode->anim, 0);\n",
+    ),
+]
+HOOKS["ov022@0208cbf8"] = [
+    (  # func_ov022_0208cbf8: the level animation's entry from the port
+        "int func_ov022_0208cbf8(int arg0, int arg1) {\n",
+        "extern int khdays_magic_track(unsigned int pool);\nint func_ov022_0208cbf8(int arg0, int arg1) {\n",
+    ),
+    ("*(int *)(arg0 + 0x54)", "khdays_magic_track((unsigned)arg0)"),
+]
+HOOKS["ov022@020901d4"] = [
+    (  # Ov022_BuildSlotPool: Stop's slot, Cure's constructor over Stop's model, moved to Stop's place with a
+        # kind of its own (not Cure's heal: Ov022_ApplyReactionHit), Cure's place given back
+        "    NNSi_FndFreeFromDefaultHeap(pTemplates);\n",
+        "    {\n"
+        "        extern int khdays_stop_slot_wanted(int actor, char *path, int *parts, int *template_index);\n"
+        "        int khdays_parts, khdays_template;\n"
+        "        if (khdays_stop_slot_wanted(pActor->nId, szModel, &khdays_parts, &khdays_template)) {\n"
+        "            struct Slot *khdays_cure = pPool->apSlots[12];\n"
+        "            data_ov022_020b29e4[12](pPool, szModel, khdays_parts, &pTemplates[khdays_template + khdays_parts - 1]);\n"
+        "            pPool->apSlots[15] = pPool->apSlots[12];\n"
+        "            pPool->apSlots[12] = khdays_cure;\n"
+        "            *(u8 *)pPool->apSlots[15] = 15;\n"
+        "            pPool->apSlots[15]->nCount = 0;\n"
+        "            pPool->apSlots[15]->nMark = -1;\n"
+        "            pPool->nKindMask |= 1 << 15;\n"
+        "        }\n"
+        "    }\n"
+        "    NNSi_FndFreeFromDefaultHeap(pTemplates);\n",
+    ),
+]
+HOOKS["ov022@02090198"] = [
+    (  # func_ov022_02090198, the pool's teardown: Stop's slot freed with the 15 (Cure's, whose handlers it takes,
+        # has no destructor either); the level animation's entry forgotten
+        "    if ((*slot & 1) != 0) {\n",
+        "    { extern void khdays_magic_track_set(unsigned int pool, int entry); khdays_magic_track_set((unsigned)slot, 0); }\n"
+        "    if ((*slot & 1) != 0) {\n"
+        "        int khdays_slots = (*(unsigned *)((char *)slot + 8) & (1 << 15)) != 0 ? 0x10 : 0xf;\n",
+    ),
+    ("} while (i < 0xf);", "} while (i < khdays_slots);"),
+]
+# The magics' handler tables (begin, step, update) hold 15, laid where the DS has them: Stop's slot takes Cure's.
+HOOKS["ov022@0209093c"] = [
+    (  # func_ov022_0209093c: the cast slot's update
+        "((void (**)(short *))&data_ov022_020b2a98)[idx](arg0);",
+        "((void (**)(short *))&data_ov022_020b2a98)[idx == 15 ? 12 : idx](arg0);",
+    )
+]
+HOOKS["ov022@020902d4"] = [
+    (  # Ov022_SetRecordValue: a cast's slot -- each of Stop's levels (cells 15-17) casts Stop's slot
+        "void Ov022_SetRecordValue(unsigned short *record, int value) {\n",
+        "void Ov022_SetRecordValue(unsigned short *record, int value) {\n"
+        "    { extern int khdays_stop_record(unsigned int pool, int value); value = khdays_stop_record((unsigned)record, value); }\n",
+    )
+]
+HOOKS["ov022@02090978"] = [
+    (  # Ov022_GetSlotMoveMode: Stop's levels stand still to cast, as Cure's do
+        "    case 14:\n        nMode = MODE_STILL;\n",
+        "    case 14:\n    case 15:\n    case 16:\n    case 17:\n        nMode = MODE_STILL;\n",
+    )
+]
+HOOKS["ov022@0209038c"] = [
+    (  # Ov022_IsSlotActionAllowed: Stop's levels are its slot and the port's casts (the party record's 16th pair is
+        # Dodge Roll's)
+        "    if (func_ov022_0209029c(obj, idx) == 0) return 0;\n"
+        "    if (Load2DArrayU8(*(unsigned char *)(*(int *)(obj + 0x58) + 9), idx) <= 0) return 0;\n",
+        "    if (idx >= 15 && idx <= 17) {\n"
+        "        extern int khdays_stop_casts_left(unsigned int pool, int level);\n"
+        "        if (func_ov022_0209029c(obj, 15) == 0 || khdays_stop_casts_left((unsigned)obj, idx - 15) <= 0) return 0;\n"
+        "    } else {\n"
+        "        if (func_ov022_0209029c(obj, idx) == 0) return 0;\n"
+        "        if (Load2DArrayU8(*(unsigned char *)(*(int *)(obj + 0x58) + 9), idx) <= 0) return 0;\n"
+        "    }\n",
+    )
+]
+HOOKS["ov022@0208a6d0"] = [
+    (  # Ov022_BeginSubStateDispatch: the cast slot's begin, Stop's Cure's
+        "data_ov022_020b2a20[*(int *)(obj + 0xc)]",
+        "data_ov022_020b2a20[*(int *)(obj + 0xc) == 15 ? 12 : *(int *)(obj + 0xc)]",
+    ),
+    (  # Stop's cast spends the port's count and marks its zone
+        "    r = Load2DArrayU8(*(unsigned char *)(e + 9), *(int *)(obj + 0xc));\n",
+        "    { extern int khdays_stop_cast(unsigned int pool); if (khdays_stop_cast((unsigned)obj)) return; }\n"
+        "    r = Load2DArrayU8(*(unsigned char *)(e + 9), *(int *)(obj + 0xc));\n",
+    ),
+]
+HOOKS["ov022@020a2978"] += [
+    (  # Ov022_UpdateCommandInput: Stop's cells, their casts and whether each may be cast
+        "    if (GameState_IsFlagSet(0x20e0) != 0) {\n",
+        "    { extern void khdays_stop_hud(int actor, int *mask); khdays_stop_hud(pActor->nId, &uMask); }\n"
+        "    if (GameState_IsFlagSet(0x20e0) != 0) {\n",
+    )
+]
+HOOKS["ov022@0209045c"] = [
+    (  # Ov022_StepReactionState: the level animation's entry from the port
+        "void Ov022_StepReactionState(struct ReactionCtx *pCtx, int nDelta)\n",
+        "extern int khdays_magic_track(unsigned int pool);\n"
+        "void Ov022_StepReactionState(struct ReactionCtx *pCtx, int nDelta)\n",
+    ),
+    ("pCtx->pOwner", "((void *)khdays_magic_track((unsigned)pCtx))"),
+    (  # the cast slot's step, Stop's Cure's
+        "data_ov022_020b2a5c[pCtx->nSlot]",
+        "data_ov022_020b2a5c[pCtx->nSlot == 15 ? 12 : pCtx->nSlot]",
+    ),
+]
+HOOKS["ov107@020c5cfc"] = [
+    (  # Ov107_AiState_ApplyHit: an enemy's hit, its damage worked out
+        "    amount = Ov107_CalcHitDamage(obj, packet);\n",
+        "    { extern void khdays_stop_measure(int on); khdays_stop_measure(1); }\n"
+        "    amount = Ov107_CalcHitDamage(obj, packet);\n"
+        "    { extern void khdays_stop_measure(int on); khdays_stop_measure(0); }\n"
+        "    { extern int khdays_stop_store(void *enemy, int amount); amount = khdays_stop_store(obj, amount); }\n",
+    ),
+]
+HOOKS["ov107@020c6980"] = [
+    (  # Ov107_ProcessObjectTick: a held enemy updated as a frozen one is (its tasks with no time, no motion)
+        "void Ov107_ProcessObjectTick(struct AiState *self, int delta)\n{\n",
+        "int khdays_stop_holding(void *enemy);\nint khdays_stop_held(void *enemy);\n"
+        "void Ov107_ProcessObjectTick(struct AiState *self, int delta)\n{\n",
+    ),
+    (
+        "        if (((self->field_1c4 & 2) != 0 || (self->field_1c4 & 8) != 0) &&\n",
+        "        if (((self->field_1c4 & 2) != 0 || (self->field_1c4 & 8) != 0 || khdays_stop_holding(self)) &&\n",
+    ),
+    (
+        "            } else if ((self->field_1c4 & 2) == 0) {\n",
+        "            } else if ((self->field_1c4 & 2) == 0 && !khdays_stop_held(self)) {\n",
+    ),
+    (  # a held enemy moving again takes the damage it kept, as one timed hit (a burn's, above)
+        "    if (self->field_1c8 != 1 && self->currentAction == 1) {\n",
+        "    {\n"
+        "        extern int khdays_stop_release(void *enemy, int *amount);\n"
+        "        extern void khdays_stop_released(void *enemy);\n"
+        "        int khdays_amount;\n"
+        "        if (khdays_stop_release(self, &khdays_amount)) {\n"
+        "            struct HitPacket khdays_hit = {0};\n"
+        "            khdays_hit.flags00 = 0x88;\n"
+        "            khdays_hit.flags02 = 0x80;\n"
+        "            khdays_hit.amount = khdays_amount;\n"
+        "            Ov107_AiState_ApplyHit(self, self->field_25c, &khdays_hit);\n"
+        "            khdays_stop_released(self);\n"
+        "        }\n"
+        "    }\n"
+        "    if (self->field_1c8 != 1 && self->currentAction == 1) {\n",
+    ),
+]
+HOOKS["ov107@020c89e8"] = [
+    (  # Ov107_CalcHitDamage: none on a held enemy (its own hit handler asks too), the damage being kept
+        "int Ov107_CalcHitDamage(Actor *self, struct HitEvent *hit)\n{\n",
+        "static int khdays_calc_hit_damage(Actor *self, struct HitEvent *hit);\n"
+        "int Ov107_CalcHitDamage(Actor *self, struct HitEvent *hit)\n{\n"
+        "    extern int khdays_stop_damage(void *enemy, int amount);\n"
+        "    return khdays_stop_damage(self, khdays_calc_hit_damage(self, hit));\n"
+        "}\n"
+        "static int khdays_calc_hit_damage(Actor *self, struct HitEvent *hit)\n{\n",
+    )
+]
 
 
 # The routines whose drawing the port takes over: (function, part, the port's function, kind).
@@ -2472,6 +2784,8 @@ PORT_DS_SYMBOLS = (
     "gObjSystem",
     "data_0204c23c",
     "gSoundMgr",
+    # the room's rules, friendly fire first (runtime/battle/stop_magic.c)
+    "data_0204c248",
 )
 
 

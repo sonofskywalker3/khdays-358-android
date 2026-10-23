@@ -211,6 +211,25 @@ the port follows its names since. Left open:
   (+0x1d8) stores attack i's power at +0x290 + 6 * i. Found
   2026-10-22 (`docs/RUNTIME_MAP.md` 22: a level 6 Shadow had HP 93
   and attacks 6 and 18, a level 1 one 75, 3 and 9).
+- `Ov022_BuildSlotPool.c`'s `struct SlotPool` gives the actor's magic pool
+  16 slot places (`apSlots[16]` from +0x18). It has 15, one for each magic
+  `Ov022_BuildSlotPool` walks: `Ov022_InitEntryState` clears 15 words from
+  +0x18 and +0x54 apart, and +0x54 is the cast's level animation (its grid
+  entry, written by `Ov022_BuildEntryLabelText`), which the other files'
+  `struct ReactionCtx` call `nTrack` (`Ov022_ArmSlotAtActor`,
+  `Ov022_EnterBlockReaction`, ...) or `pOwner` (`Ov022_StepReactionState`,
+  `Ov022_LaunchSlotPart`, ...). Found 2026-10-23: a 16th slot written there
+  was overwritten as the level animation loaded (`docs/RUNTIME_MAP.md` 28).
+- The Shadow's `+0x390` (ov114) is its model's height scale, not an alpha or
+  a speed: `Ov114_HandleMessage` passes it as the Y of `Srt_SetScaleXYZ`, and
+  the files that set it (`Ov114_AiFadeInTick`, `Ov114_FadeInSubObject`,
+  `Ov114_AiFadeOutTick`, `Ov114_InitNodeAndRegisterHandlers`: "the alpha";
+  `Ov114_EasePursuitSpeed`: "the speed field") flatten the Shadow into the
+  ground and raise it again. Found 2026-10-23 (`docs/RUNTIME_MAP.md` 22).
+- `MsgDb_LoadRecord15`'s `DbObject` copies the panels' record `+4` as `a4`:
+  it is the panel's picture + 1 in `ui/pnl/3d_&.pak.z` and the shop's 2D sheet
+  (`Ov026_DrawShopRowMarks` reads it as `nIconId`, 1-based). Found 2026-10-23
+  (`docs/RUNTIME_MAP.md` 28).
 
 Taken up (for the record of what the old names were):
 

@@ -41,6 +41,10 @@ static inline int khdays_game_ram(KhdaysRef reference)
 /* How many bytes of the heaps' region the PC has given the game so far. */
 unsigned long long khdays_heaps_committed(void);
 
+/* Whether the heaps' granule holding `reference` has memory (the game touched it); `*rest` the bytes
+ * from `reference` to its end. A granule without reads as 0, and a reader that asks first gives it none. */
+int khdays_heaps_touched(KhdaysRef reference, unsigned *rest);
+
 /* A host address in the window as a reference; one outside it stops the game,
  * naming the caller. */
 KhdaysRef khdays_reference(const void *host);

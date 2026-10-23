@@ -3,6 +3,8 @@
 #ifndef KHDAYS_SCRIPTS_GAME_LINK_H
 #define KHDAYS_SCRIPTS_GAME_LINK_H
 
+#include <stddef.h>
+
 #define KHDAYS_LINK_ITEMS 0x8d0  /* gGameState->aItemCount's entries */
 #define KHDAYS_LINK_FLAGS 0x4000 /* flags from *gGameState + 0x10 up to aItemCount at +0x810 */
 #define KHDAYS_LINK_MUNNY_MAX 999999
@@ -102,5 +104,16 @@ int khdays_link_menu_open(int menu);
 
 /* A guest in a multiplayer session: the host alone changes the game. */
 int khdays_link_guest(void);
+
+/* The game's memory by its references (docs/SCRIPTING.md, "The game's memory"): `size` bytes from
+ * `address`, all of them in main RAM, the headers' heaps, the data area or the heaps' region, else 0
+ * and nothing read or written. A heaps' granule the game never touched reads as 0 and is given no
+ * memory by a read; a write gives it memory, as the game's own first touch does. */
+int khdays_link_reachable(unsigned address, unsigned long long size);
+int khdays_link_read(unsigned address, void *out, size_t size);
+int khdays_link_write(unsigned address, const void *in, size_t size);
+
+/* Whether overlay `id` is loaded and running (its data then in main RAM). */
+int khdays_link_overlay_loaded(int id);
 
 #endif

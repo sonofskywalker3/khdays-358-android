@@ -9,6 +9,8 @@
 #include "../core/rom.h"
 #include "../core/window.h"
 #include "../menus/savelist.h"
+#include "../battle/stop_magic.h"
+#include "../../host/screens/ui_text.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,6 +95,18 @@ static int host_view, self_view, proceed_view;
 static int mode = KHDAYS_ROOMS_NONE, cursor, editing, wrong_password;
 static char mods_needed[1024]; /* the host's gameplay mods when the last join was refused for them */
 static int mods_more;
+
+/* The Stop magic among them, in this copy's language: the host's off, or this copy's off and the host's on. */
+static void stop_needed(void)
+{
+    const int host_off = khdays_net_last_refusal_stop_off();
+    const size_t n = strlen(mods_needed);
+    if (!host_off && khdays_stop_enabled()) {
+        return; /* both on: not why */
+    }
+    snprintf(mods_needed + n, sizeof(mods_needed) - n, "%s%s", n > 0 ? ", " : "",
+             khdays_text(host_off ? TXT_STOP_MAGIC_OFF : TXT_STOP_MAGIC_ON));
+}
 /* Without the HD screens' pieces the game's own screens draw the list (ui/rooms2d.c): its rows in
  * the game's order, the action last on the game's button, the others on its four plates from `top` */
 static int look_game, top;
@@ -799,6 +813,7 @@ uint16_t khdays_roomlist_buttons(uint16_t buttons)
         wrong_password = khdays_net_last_refusal() == KHDAYS_NET_REFUSE_PASSWORD;
         if (khdays_net_last_refusal() == KHDAYS_NET_REFUSE_MODS) {
             khdays_net_last_refusal_mods(mods_needed, sizeof(mods_needed), &mods_more);
+            stop_needed();
         } else {
             mods_needed[0] = 0;
             mods_more = 0;

@@ -38,6 +38,9 @@ typedef struct KhdaysSnd7Driver {
      * bit 0 active, 1 started, 2 paused -- +5 its volume, +6 the ARM9's
      * volume in tenths of a dB, SND_SetPlayerVolume's). */
     const uint8_t *(*player_record)(int player);
+    /* How many times the ARM9 has asked sequence player n to stop (SND_StopSeq): a sequence that ended
+     * by itself counts none. NULL: not known. */
+    uint32_t (*player_stops)(int player);
 } KhdaysSnd7Driver;
 
 #endif

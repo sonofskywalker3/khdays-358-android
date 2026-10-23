@@ -210,6 +210,7 @@ void khdays_profile_default(KhdaysProfile *p)
     khdays_sound_default(&p->sound);
     khdays_network_default(&p->network);
     khdays_save_default(&p->save);
+    p->gameplay.stop_magic = 1;
 }
 
 void khdays_sound_default(KhdaysSound *s)
@@ -657,6 +658,7 @@ enum Section {
     SEC_SOUND,
     SEC_NETWORK,
     SEC_SAVE,
+    SEC_GAMEPLAY,
     SEC_UNKNOWN
 };
 
@@ -706,6 +708,8 @@ static void enter_section(Reader *r, const char *name)
         r->section = SEC_NETWORK;
     } else if (SDL_strcasecmp(name, "save") == 0) {
         r->section = SEC_SAVE;
+    } else if (SDL_strcasecmp(name, "gameplay") == 0) {
+        r->section = SEC_GAMEPLAY;
     } else {
         r->section = SEC_UNKNOWN;
         say(r->notice, "settings: section [%s] is not understood by this version; kept as it is", name);
@@ -1206,6 +1210,23 @@ static void read_save(Reader *r, const char *key, const char *value, const char 
     }
 }
 
+/* [gameplay]: stop_magic. */
+static void read_gameplay(Reader *r, const char *key, const char *value, const char *line)
+{
+    KhdaysGameplay *g = &r->profile->gameplay;
+    if (SDL_strcasecmp(key, "stop_magic") == 0) {
+        if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
+            g->stop_magic = SDL_strcasecmp(value, "on") == 0;
+        } else {
+            say(r->notice, "settings: [gameplay] stop_magic = \"%s\" is neither on nor off; on is used", value);
+            g->stop_magic = 1;
+        }
+    } else {
+        say(r->notice, "settings: [gameplay] has no setting \"%s\"; kept as it is", key);
+        keep_unknown("gameplay", line);
+    }
+}
+
 static void read_top(Reader *r, const char *key, const char *value, const char *line)
 {
     if (SDL_strcasecmp(key, "version") == 0) {
@@ -1292,6 +1313,7 @@ static int read_text(Reader *r, char *text, size_t size)
         case SEC_SOUND: read_sound(r, key, value, original); break;
         case SEC_NETWORK: read_network(r, key, value, original); break;
         case SEC_SAVE: read_save(r, key, value, original); break;
+        case SEC_GAMEPLAY: read_gameplay(r, key, value, original); break;
         case SEC_UNKNOWN: keep_unknown(r->section_name, original); break;
         }
         SDL_free(original);
@@ -1587,13 +1609,20 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             autosaves[s->autosave >= 0 && s->autosave < KHDAYS_AUTOSAVE_MODES ? s->autosave : KHDAYS_AUTOSAVE_FILE99]);
     }
     add_unknown(&t, "save");
+    add(&t,
+        "\n[gameplay]\n"
+        "# stop_magic: on, the Stop magic Days left unfinished, restored (its panels, its recipes at the\n"
+        "# moogle's, its casts); off, the game as the DS's. Read as the game starts\n"
+        "stop_magic = %s\n",
+        p->gameplay.stop_magic ? "on" : "off");
+    add_unknown(&t, "gameplay");
     for (int i = 0; i < unknown_count; ++i) {
         /* whole sections this version does not know, written back as they were */
         const char *s = unknown[i].section;
         if (*s == '\0' || SDL_strcasecmp(s, "sticks") == 0 || SDL_strcasecmp(s, "enhancements") == 0 ||
             SDL_strcasecmp(s, "video") == 0 || SDL_strcasecmp(s, "sound") == 0 || SDL_strcasecmp(s, "network") == 0 ||
-            SDL_strcasecmp(s, "save") == 0 || SDL_strncasecmp(s, "keyboard", 8) == 0 ||
-            SDL_strncasecmp(s, "gamepad", 7) == 0) {
+            SDL_strcasecmp(s, "save") == 0 || SDL_strcasecmp(s, "gameplay") == 0 ||
+            SDL_strncasecmp(s, "keyboard", 8) == 0 || SDL_strncasecmp(s, "gamepad", 7) == 0) {
             continue;
         }
         if (i == 0 || SDL_strcasecmp(unknown[i - 1].section, s) != 0) {

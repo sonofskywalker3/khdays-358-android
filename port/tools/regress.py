@@ -41,6 +41,9 @@ class Walk:
     # PC (the one next to EXE), not the local network; "relay" never tries
     # the host straight
     server: str | None = None
+    mods: str | None = None  # one mod's folder (from the repository's root) it plays with, alone
+    window: bool = False  # in a window (a mission's opening dialogs wait for the window's picture)
+    marks: tuple[str, ...] = ()  # what each player's session log must say (KHDAYS_LOG on)
 
 
 # The routes: the Mission Mode loop, Story Mode, a mission in play, challenge 07, a save (the camp
@@ -59,6 +62,49 @@ WALKS = [
     Walk("relayed", 240, player_save=False, players=2, script="multiplayer", server="relay"),
     # four players: a host and three guests through a server of this PC
     Walk("multiplayer4", 300, player_save=False, players=4, script="multiplayer4", server="direct"),
+    # the Stop magic (port/tests/mods_v2/stop): its three levels cast on held Shadows, their damage kept; Stop on a
+    # Doublecast, Stopga on a Magic LV2
+    Walk(
+        "stop",
+        150,
+        player_save=False,
+        mods="port/tests/mods_v2/stop",
+        window=True,
+        marks=(
+            "casts 2 1 1, Magic LV 1 1 2",
+            "stop: Stopga cast",
+            "Magic LV 2 (300 ticks)",
+            "stop: Stopra cast",
+            "stop: Stop cast",
+            "took its kept",
+        ),
+    ),
+    # ... in a room of two (port/tests/mods_v2/stop_room): the host's casts and a guest's, on every copy; the room's
+    # friendly fire on, each holds the other player
+    Walk(
+        "stop_room",
+        300,
+        player_save=False,
+        players=2,
+        mods="port/tests/mods_v2/stop_room",
+        window=True,
+        marks=(
+            "Magic LV 1 1 1 (the room's)",
+            "stop: player 1 held for 120 ticks",
+            "stop: player 0 held for 120 ticks",
+            "stop: player 1 held for 240 ticks",
+            "stop: player 0 held for 180 ticks",
+        ),
+    ),
+    # ... at the moogle (port/tests/mods_v2/stop_shop): its recipe listed and Stop synthesised at Mission Mode's camp
+    Walk(
+        "stop_shop",
+        110,
+        player_save=False,
+        mods="port/tests/mods_v2/stop_shop",
+        window=True,
+        marks=("stop: recipes 101-103 added after the game's 101", "Stop synthesised\t1"),
+    ),
 ]
 
 # The runtime reports the current scene once a second, and at each change,
@@ -103,7 +149,15 @@ def make_workdir(
     # A junction, not a copy: data/ is gigabytes. `mklink /J` needs no
     # administrator rights.
     subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(data.resolve())], check=True, capture_output=True)
-    if mods is not None:
+    if mods is not None and (mods / "mod.ini").exists():
+        # one mod's own folder: alone in a mods/ of the run's
+        (work / "mods").mkdir()
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(work / "mods" / mods.resolve().name), str(mods.resolve())],
+            check=True,
+            capture_output=True,
+        )
+    elif mods is not None:
         subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(work / "mods"), str(mods.resolve())], check=True, capture_output=True
         )
@@ -122,10 +176,22 @@ def make_workdir(
 def remove_workdir(work: Path) -> None:
     """Delete the directory, removing the data/ and mods/ links first so that
     nothing they point to can ever be deleted with it."""
-    for link in (work / "data", work / "mods"):
+    mods = work / "mods"
+    for link in (work / "data", mods):
         if link.exists() or os.path.lexists(link):
+            if link == mods and not _is_link(mods):
+                for one in mods.iterdir():
+                    os.rmdir(one)  # one mod's link alone in mods/ (make_workdir)
             os.rmdir(link)  # removes the junction itself, never its target
     shutil.rmtree(work)
+
+
+def _is_link(path: Path) -> bool:
+    """Whether `path` is a junction or a symbolic link (not a folder of its own)."""
+    try:
+        return bool(os.lstat(path).st_file_attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+    except (OSError, AttributeError):
+        return os.path.islink(path)
 
 
 def keep_session_log(work: Path, to: Path) -> None:
@@ -135,6 +201,16 @@ def keep_session_log(work: Path, to: Path) -> None:
     if (work / "saves").exists():
         for session in sorted((work / "saves").rglob("session-*.log")):
             shutil.copy2(session, to)
+
+
+def session_text(work: Path) -> str:
+    """Every session log the game wrote in `work` (KHDAYS_LOG), as one text."""
+    if not (work / "saves").exists():
+        return ""
+    return "".join(
+        session.read_text(encoding="utf-8", errors="replace")
+        for session in sorted((work / "saves").rglob("session-*.log"))
+    )
 
 
 def start_server(exe: Path, log: Path) -> tuple[subprocess.Popen, int]:
@@ -267,17 +343,20 @@ def run_walks(args: argparse.Namespace) -> int:
         server = None
         try:
             players = []
+            mods = ROOT / walk.mods if walk.mods is not None else args.mods
             for player, (name, script_name) in enumerate(zip(names, scripts), start=1):
-                works.append(make_workdir(save, args.mods, args.settings, player, args.data))
+                works.append(make_workdir(save, mods, args.settings, player, args.data))
                 script = (WALKS_DIR / f"{script_name}.input").read_text(encoding="utf-8").strip()
                 players.append((works[-1], script, works[-1] / "game.log"))
             env = extra_env_of(args)
+            if walk.marks:
+                env["KHDAYS_LOG"] = "1"
             if walk.server is not None:
                 server, port = start_server(args.exe, works[0] / "server.log")
                 env.update({"KHDAYS_NET_SERVER": f"127.0.0.1:{port}", "KHDAYS_NET_LAN": "0"})
                 if walk.server == "relay":
                     env["KHDAYS_NET_PUNCH"] = "0"
-            exit_codes = run_games(args.exe, players, env, walk.timeout, window=False)
+            exit_codes = run_games(args.exe, players, env, walk.timeout, window=walk.window)
             outcomes = []
             if server is not None:
                 server.kill()
@@ -289,7 +368,9 @@ def run_walks(args: argparse.Namespace) -> int:
                 log = work / "game.log"
                 kept_save = player_saves(work, player) / "khdays.sav"
                 scenes, trouble = scenes_and_trouble(log)
-                outcomes.append((name, scenes, trouble, exit_code, save_check(walk, save, kept_save)))
+                missing = [mark for mark in walk.marks if mark not in session_text(work)]
+                verdict = save_check(walk, save, kept_save) or (f"MISSING {missing[0]!r}" if missing else None)
+                outcomes.append((name, scenes, trouble, exit_code, verdict))
                 if args.logs is not None:
                     args.logs.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(log, args.logs / f"{name}.log")
@@ -415,7 +496,10 @@ def main() -> int:
     )
     walks.add_argument("--logs", type=Path, help="keep each walk's log in this directory")
     parser.add_argument(
-        "--mods", type=Path, help="a mods folder to play with, linked in as mods/ (the walks or the script)"
+        "--mods",
+        type=Path,
+        help="a mods folder to play with, linked in as mods/, or one mod's own folder, alone in mods/ (the walks or the "
+        "script)",
     )
     parser.add_argument(
         "--settings",

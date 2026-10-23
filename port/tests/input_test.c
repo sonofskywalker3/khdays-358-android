@@ -438,6 +438,16 @@ static void test_settings_file(void)
     khdays_profile_load(&p, path, count_notice);
     CHECK(memcmp(&p.network, &q.network, sizeof(p.network)) == 0);
 
+    /* The Stop magic: on unless turned off; a bad value says so and is on; written back. */
+    CHECK(load_text("", &q) == 0 && q.gameplay.stop_magic);
+    CHECK(load_text("[gameplay]\nstop_magic = off\n", &q) == 0 && !q.gameplay.stop_magic);
+    CHECK(load_text("[gameplay]\nstop_magic = sometimes\n", &q) == 1 && q.gameplay.stop_magic);
+    load_text("[gameplay]\nstop_magic = off\n", &q);
+    path_of("gameplay.ini", path, sizeof(path));
+    khdays_profile_save(&q, path, count_notice);
+    khdays_profile_load(&p, path, count_notice);
+    CHECK(!p.gameplay.stop_magic);
+
     /* Unknown sections, keys and inputs: ignored with a notice each. */
     CHECK(load_text("[future]\nport = 3\n", &q) == 1);
     CHECK(load_text("[video]\nscale = 3\n", &q) == 1);
@@ -935,6 +945,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_SHOW_PING, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_CHECK_UPDATES, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_LANGUAGE, KHDAYS_ROW_CHOICE, 0, KHDAYS_LANGUAGE_LAST, 0},
+        {KHDAYS_SET_STOP_MAGIC, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_SESSION_LOG, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_RESTORE_BOTH, KHDAYS_ROW_COMMAND, 0, 0, 0},
     };

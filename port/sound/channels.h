@@ -18,6 +18,7 @@ typedef struct KhdaysSoundChannel {
     int32_t position;       /* the sample from SAD (ADPCM: the nibble); < 0 while starting */
     uint32_t counter;       /* the timer: a sample each time it passes 0xffff */
     int32_t sample;         /* what the channel outputs, PCM16 */
+    int32_t history[3];     /* the samples before it, the last first (khdays_sound_hw_smooth_sample) */
     int32_t pcm, index;     /* ADPCM */
     int32_t loop_pcm, loop_index;
     int loop_saved;
@@ -47,6 +48,7 @@ typedef struct KhdaysSoundHw {
     KhdaysSoundMemory memory;
     const KhdaysSoundSource *source; /* NULL: every channel reads its memory */
     int trace;                       /* each channel start, on stderr */
+    int smooth;                      /* the PC's mixer reads each channel between its samples */
     uint64_t clock;                  /* the cycle the trace prints, kept by the owner */
     uint32_t half;                   /* a cycle left over: the timers count at half the clock */
 } KhdaysSoundHw;
@@ -76,6 +78,14 @@ static inline int32_t khdays_sound_hw_sample(const KhdaysSoundHw *hw, int n)
 {
     return hw->channels[n].sample;
 }
+
+/* How far channel `n`'s timer is towards its next sample, 0 to 1. */
+float khdays_sound_hw_between(const KhdaysSoundHw *hw, int n);
+
+/* A channel's output now read between its samples, as a PC plays sound rather than holding each sample
+ * as the DS does: cubic (Catmull-Rom) from its last four, so two of its samples late; a square wave or
+ * noise as it is. */
+float khdays_sound_hw_smooth_sample(const KhdaysSoundHw *hw, int n);
 
 static inline uint32_t khdays_sound_hw_control(const KhdaysSoundHw *hw, int n)
 {

@@ -158,7 +158,7 @@ static void test_channels_golden(void)
         golden_step(s);
         khdays_sound_hw_step(&golden_hw, KHDAYS_SOUND_CYCLES_PER_SAMPLE);
         khdays_sound_mix_ds(&golden_hw, NULL, 1.0f, out[s]);
-        khdays_sound_mix_pc(&golden_hw, NULL, 1.0f, NULL, pc);
+        khdays_sound_mix_pc(&golden_hw, NULL, 1.0f, NULL, NULL, pc);
         for (int side = 0; side < 2; ++side) {
             const int32_t ds10 = out[s][side] / 64 + bias; /* the DS's 10 bits */
             float steps;
@@ -526,14 +526,14 @@ static void test_volumes(void)
     khdays_sound_hw_write(&hw, 5 * 16 + 0xc, 4, 128);
     khdays_sound_hw_write(&hw, 5 * 16, 4, 0x80000000u | 127u | 64u << 16 | 1u << 27 | 1u << 29);
     khdays_sound_hw_step(&hw, 4 * KHDAYS_SOUND_CYCLES_PER_SAMPLE);
-    khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, full);
+    khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, NULL, full);
     CHECK(full[0] > 0.1f && full[0] == full[1]);
     gain[5] = 0.5f;
-    khdays_sound_mix_pc(&hw, gain, 1.0f, NULL, half);
+    khdays_sound_mix_pc(&hw, gain, 1.0f, NULL, NULL, half);
     CHECK(half[0] == full[0] * 0.5f && half[1] == full[1] * 0.5f);
-    khdays_sound_mix_pc(&hw, gain, 0.5f, NULL, quiet);
+    khdays_sound_mix_pc(&hw, gain, 0.5f, NULL, NULL, quiet);
     CHECK(quiet[0] == full[0] * 0.25f);
-    khdays_sound_mix_pc(&hw, unity, 1.0f, NULL, same);
+    khdays_sound_mix_pc(&hw, unity, 1.0f, NULL, NULL, same);
     CHECK(same[0] == full[0] && same[1] == full[1]);
     khdays_sound_mix_ds(&hw, NULL, 1.0f, ds_full);
     khdays_sound_mix_ds(&hw, unity, 1.0f, ds_same);
@@ -1155,11 +1155,86 @@ static void test_render(const char *arm7)
     free(r.samples);
 }
 
+/* --- The PC's output: between the samples, the limiter, a file brought down ------------- */
+
+static void test_smoothing(void)
+{
+    static KhdaysSoundHw hw, quiet_hw;
+    KhdaysSoundLimiter limiter;
+    float held[2], smooth[2], out[2];
+    for (int i = 0; i < 128; ++i) {
+        bus_data[i] = (int16_t)(i * 0x100); /* a ramp */
+    }
+    khdays_sound_hw_reset(&hw, bus_memory);
+    khdays_sound_hw_write(&hw, 0x100, 2, 0x807f);
+    /* channel 5: PCM16, one sample every 0x200 timer counts (0x400 cycles), centred */
+    khdays_sound_hw_write(&hw, 5 * 16 + 4, 4, 0x02000000u);
+    khdays_sound_hw_write(&hw, 5 * 16 + 8, 2, 0xfe00);
+    khdays_sound_hw_write(&hw, 5 * 16 + 0xa, 2, 0);
+    khdays_sound_hw_write(&hw, 5 * 16 + 0xc, 4, 64);
+    khdays_sound_hw_write(&hw, 5 * 16, 4, 0x80000000u | 127u | 64u << 16 | 2u << 27 | 1u << 29);
+    khdays_sound_hw_step(&hw, 20 * 0x400 + 0x200); /* half way to the next sample */
+    {
+        const KhdaysSoundChannel *c = &hw.channels[5];
+        const float between = khdays_sound_hw_smooth_sample(&hw, 5);
+        /* on a ramp the cubic is the line: half way between the samples two before */
+        CHECK(c->history[0] - c->history[1] == 0x100 && c->history[1] - c->history[2] == 0x100);
+        CHECK(fabsf(between - ((float)c->history[1] + 0.5f * (float)(c->history[0] - c->history[1]))) < 0.5f);
+        CHECK(between < (float)c->sample);
+    }
+    hw.smooth = 0;
+    khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, NULL, held);
+    hw.smooth = 1;
+    khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, NULL, smooth);
+    CHECK(smooth[0] > 0.0f && smooth[0] < held[0]);
+
+    /* the limiter: too loud turned down to just under full scale, both sides alike, then back up */
+    khdays_sound_hw_reset(&quiet_hw, bus_memory);
+    khdays_sound_hw_write(&quiet_hw, 0x100, 2, 0x807f);
+    khdays_sound_limiter_init(&limiter, 48000);
+    {
+        const float loud[2] = {2.0f, -1.0f}, soft[2] = {0.5f, 0.5f};
+        khdays_sound_mix_pc(&quiet_hw, NULL, 1.0f, loud, &limiter, out);
+        CHECK(out[0] > 0.97f && out[0] <= 0.98f && fabsf(out[1] + out[0] / 2.0f) < 1e-6f);
+        khdays_sound_mix_pc(&quiet_hw, NULL, 1.0f, soft, &limiter, out);
+        CHECK(out[0] < 0.3f);
+        for (int i = 0; i < 48000; ++i) {
+            khdays_sound_mix_pc(&quiet_hw, NULL, 1.0f, soft, &limiter, out);
+        }
+        CHECK(fabsf(out[0] - 0.5f) < 0.001f);
+        khdays_sound_mix_pc(&quiet_hw, NULL, 1.0f, loud, NULL, out);
+        CHECK(out[0] == 1.0f); /* without it, the clip */
+    }
+
+    /* a 96 kHz file: brought down to 48 kHz, its 1 kHz tone kept, its 30 kHz one gone */
+    {
+        enum { FRAMES = 9600 };
+        static int16_t samples[FRAMES];
+        KhdaysReplacement r;
+        char why[160];
+        float worst = 0.0f;
+        for (int i = 0; i < FRAMES; ++i) {
+            samples[i] = (int16_t)lrint(16000.0 * sin(2.0 * 3.14159265358979 * 1000.0 * i / 96000.0) +
+                                        8000.0 * sin(2.0 * 3.14159265358979 * 30000.0 * i / 96000.0));
+        }
+        CHECK(khdays_replacement_write_wav(temp_file("khdays_96k.wav"), 96000, 1, samples, FRAMES, 1, 960, 8640));
+        CHECK(khdays_replacement_load(&r, temp_file("khdays_96k.wav"), NULL, why, sizeof(why)));
+        CHECK(r.rate == 48000 && r.frames == FRAMES / 2 && r.looped && r.loop_start == 480 && r.loop_end == 4320);
+        for (int j = 64; j < FRAMES / 2 - 64; ++j) {
+            const float want = (float)(16000.0 * sin(2.0 * 3.14159265358979 * 1000.0 * j / 48000.0));
+            worst = fmaxf(worst, fabsf((float)r.samples[j] - want));
+        }
+        CHECK(worst < 100.0f);
+        khdays_replacement_free(&r);
+    }
+}
+
 int main(int argc, char **argv)
 {
     test_channels_golden();
     test_bridge();
     test_volumes();
+    test_smoothing();
     test_stream_reader();
     test_native_driver(argc > 1 ? argv[1] : NULL);
     test_loops();

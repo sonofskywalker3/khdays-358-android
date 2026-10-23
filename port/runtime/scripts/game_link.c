@@ -10,10 +10,12 @@
 #include "../menus/camp.h"
 #include "../menus/mission_start.h"
 #include "../sound/sound_bridge.h"
+#include "khdays_data_area.h"
 #include "khdays_ds_symbols.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern int GameState_IsFlagSet(int flag);
 extern int GameState_SetFlag(int flag);
@@ -376,4 +378,59 @@ int khdays_link_guest(void)
 {
     /* the game's own test for the host: player 0 (Ov022_ActorSetHp, Ov022_ApplyDamageAndFlagHit) */
     return Session_GetLocalPlayerIndex() != 0;
+}
+
+int khdays_link_reachable(unsigned address, unsigned long long size)
+{
+    static const unsigned memories[][2] = {{0x02000000u, 0x02400000u}, /* main RAM */
+                                           {KHDAYS_HEADERS_BASE, KHDAYS_HEADERS_END},
+                                           {KHDAYS_DATA_AREA, KHDAYS_DATA_AREA_END},
+                                           {KHDAYS_HEAPS_BASE, KHDAYS_HEAPS_END}};
+    const unsigned long long end = address + size;
+    for (size_t i = 0; i < sizeof(memories) / sizeof(memories[0]); ++i) {
+        if (address >= memories[i][0] && end <= memories[i][1]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int khdays_link_read(unsigned address, void *out, size_t size)
+{
+    unsigned char *to = out;
+    if (!khdays_link_reachable(address, size)) {
+        return 0;
+    }
+    while (size > 0) {
+        size_t n = size;
+        int untouched = 0;
+        if (address >= KHDAYS_HEAPS_BASE) { /* a granule at a time */
+            unsigned rest;
+            untouched = !khdays_heaps_touched(address, &rest);
+            n = rest < size ? rest : size;
+        }
+        if (untouched) {
+            memset(to, 0, n);
+        } else {
+            memcpy(to, KHDAYS_W(address), n);
+        }
+        to += n;
+        address += (unsigned)n;
+        size -= n;
+    }
+    return 1;
+}
+
+int khdays_link_write(unsigned address, const void *in, size_t size)
+{
+    if (!khdays_link_reachable(address, size)) {
+        return 0;
+    }
+    memcpy(KHDAYS_W(address), in, size);
+    return 1;
+}
+
+int khdays_link_overlay_loaded(int id)
+{
+    return khdays_overlay_loaded(id);
 }

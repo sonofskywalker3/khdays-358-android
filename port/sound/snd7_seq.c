@@ -929,9 +929,19 @@ void snd7_seq_start(int n, uint32_t sequence, uint32_t offset, uint32_t bank)
 }
 
 /* 0x03800340 */
+static uint32_t stops[16]; /* snd7_seq_player_stops */
+
+uint32_t snd7_seq_player_stops(int n)
+{
+    return n >= 0 && n < 16 ? stops[n] : 0;
+}
+
 void snd7_seq_stop(int n)
 {
     Player *p = player_at(n);
+    if (n >= 0 && n < 16) {
+        ++stops[n];
+    }
     if (!(p->flags & PLAYER_ACTIVE)) {
         return;
     }

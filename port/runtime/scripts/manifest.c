@@ -78,7 +78,7 @@ static void refuse(char *reason, size_t size, const char *key)
 
 int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, char *reason, size_t reason_size)
 {
-    char *kind = NULL, *api = NULL;
+    char *kind = NULL, *api = NULL, *memory = NULL;
     const char *p = text, *end = text + size;
     memset(out, 0, sizeof(*out));
     if (size >= 3 && (unsigned char)p[0] == 0xef && (unsigned char)p[1] == 0xbb && (unsigned char)p[2] == 0xbf) {
@@ -130,6 +130,8 @@ int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, ch
             slot = &kind;
         } else if (KEY("api")) {
             slot = &api;
+        } else if (KEY("memory")) {
+            slot = &memory;
         }
 #undef KEY
         if (slot != NULL) {
@@ -153,6 +155,13 @@ int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, ch
                 bad = "kind";
             }
         }
+        if (bad == NULL && memory != NULL) {
+            if (strcmp(memory, "write") == 0) {
+                out->memory_write = 1;
+            } else if (strcmp(memory, "read") != 0) {
+                bad = "memory";
+            }
+        }
         if (bad == NULL && out->main == NULL) {
             out->main = copy_span("scripts/main.lua", 16);
         }
@@ -161,6 +170,7 @@ int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, ch
         }
         free(kind);
         free(api);
+        free(memory);
         if (bad != NULL) {
             refuse(reason, reason_size, bad);
             khdays_manifest_free(out);

@@ -115,6 +115,7 @@ static int output_pc; /* the PC's mixer is in use */
 static u32 output_rate = KHDAYS_SOUND_RATE;
 static u64 output_phase;    /* PC mixer: KHDAYS_CLOCK_HZ x how far into a cycle the next sample is */
 static int pending_pc = -1; /* a change asked for (-1: none) */
+static KhdaysSoundLimiter limiter = {1.0f, 1.0f}; /* the PC's output's (mix_pc.h), set again with the output */
 static u32 pending_rate;
 
 /* How many cycles until the next output sample. */
@@ -184,6 +185,7 @@ static void flush_output(void)
         output_rate = pending_rate;
         output_phase = 0;
         pending_pc = -1;
+        khdays_sound_limiter_init(&limiter, output_rate);
     }
 }
 
@@ -406,6 +408,7 @@ static void run(void *context, u64 cycle)
         const int mods = khdays_sound_mods_present() || movie;
         const int unity = khdays_sound_bus_unity(&bus) && !mods;
         float extra[2] = {0.0f, 0.0f};
+        hw.smooth = output_pc; /* the PC's output reads the channels between their samples */
         khdays_sound_hw_step(&hw, cycles);
         if (!unity && (frame_count & 63) == 0) {
             update_gains(); /* what a channel plays changes when its notes start: check every 64 samples */
@@ -413,13 +416,13 @@ static void run(void *context, u64 cycle)
         if (mods && khdays_sound_mods_present()) {
             khdays_sound_mods_mix(&hw, driver, output_rate,
                                   shared_work != 0 ? *(volatile u32 *)KHDAYS_W(shared_work) : 0, player_gain,
-                                  stream_gain, extra);
+                                  stream_gain, channel_gain, extra);
         }
         if (movie) {
             khdays_video_mod_mix(output_rate, bus.category[KHDAYS_SOUND_MOVIES], extra);
         }
         if (output_pc) {
-            khdays_sound_mix_pc(&hw, unity ? NULL : channel_gain, bus.volume, mods ? extra : NULL,
+            khdays_sound_mix_pc(&hw, unity ? NULL : channel_gain, bus.volume, mods ? extra : NULL, &limiter,
                                 &pc_frames[2 * frame_count]);
         } else {
             int16_t *out = &frames[2 * frame_count];
@@ -716,7 +719,7 @@ void khdays_sound_stream_prepared(int player, int stream_number, int channels, c
         AcquireSRWLockExclusive(&lock);
         stream_category[player] = category;
         if (khdays_sound_mods_present()) {
-            khdays_sound_mods_stream(a, player, stream_number, start_sample, loop.rate, &loop);
+            khdays_sound_mods_stream(a, player, stream_number, start_sample, loop.rate, &loop, block_samples);
         }
     }
     if (streams == NULL) {

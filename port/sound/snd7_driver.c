@@ -137,5 +137,11 @@ static uint64_t next_event(void)
     return snd7_os_next_event();
 }
 
-const KhdaysSnd7Driver khdays_snd7_native = {
-    "native", start, word, advance, next_event, snd7_seq_channel_player, khdays_snd7_native_player_record};
+const KhdaysSnd7Driver khdays_snd7_native = {"native",
+                                             start,
+                                             word,
+                                             advance,
+                                             next_event,
+                                             snd7_seq_channel_player,
+                                             khdays_snd7_native_player_record,
+                                             snd7_seq_player_stops};
