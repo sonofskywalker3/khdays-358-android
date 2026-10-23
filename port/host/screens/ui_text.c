@@ -804,25 +804,15 @@ static const char *const texts[TXT_COUNT][5] = {
                                 "Tienes la %s; ha salido la %s. Descargar la instala: el juego se cierra, el "
                                 "instalador actualiza esta copia conservando tus partidas, ajustes y mods, y vuelve a "
                                 "abrir el juego."},
-    [TXT_UPDATE_DETAIL_ANDROID] = {"You have %s; %s is out. Download fetches it and Android asks you to install it, "
-                                   "keeping your saves, settings and game files; then open the game again. The first "
-                                   "time, Android asks you to let this app install updates.",
-                                   "Vous avez la %s ; la %s est sortie. Télécharger la récupère et Android vous propose "
-                                   "de l'installer, en gardant vos sauvegardes, réglages et fichiers du jeu ; rouvrez "
-                                   "ensuite le jeu. La première fois, Android vous demande d'autoriser cette appli à "
-                                   "installer des mises à jour.",
-                                   "Du hast %s; %s ist erschienen. Herunterladen lädt sie, und Android bietet dir an, "
-                                   "sie zu installieren; Spielstände, Einstellungen und Spieldateien bleiben. Öffne "
-                                   "das Spiel danach wieder. Beim ersten Mal fragt Android, ob diese App Updates "
-                                   "installieren darf.",
-                                   "Hai la %s; è uscita la %s. Scarica la prende e Android ti chiede di installarla, "
-                                   "conservando salvataggi, impostazioni e file del gioco; poi riapri il gioco. La "
-                                   "prima volta Android ti chiede di consentire a questa app di installare "
-                                   "aggiornamenti.",
-                                   "Tienes la %s; ha salido la %s. Descargar la obtiene y Android te ofrece "
-                                   "instalarla, conservando tus partidas, ajustes y archivos del juego; luego vuelve a "
-                                   "abrir el juego. La primera vez, Android te pide permitir que esta app instale "
-                                   "actualizaciones."},
+    [TXT_UPDATE_DETAIL_ANDROID] = {"You have %s; %s is out. Android installs it, keeping your saves and settings.",
+                                   "Vous avez la %s ; la %s est sortie. Android l'installe en gardant vos sauvegardes "
+                                   "et rÃ©glages.",
+                                   "Du hast %s; %s ist erschienen. Android installiert sie; SpielstÃ¤nde und "
+                                   "Einstellungen bleiben.",
+                                   "Hai la %s; Ã¨ uscita la %s. Android la installa conservando salvataggi e "
+                                   "impostazioni.",
+                                   "Tienes la %s; ha salido la %s. Android la instala y conserva tus partidas y "
+                                   "ajustes."},
     [TXT_UPDATE_GETTING] = {"Downloading %s", "TÃ©lÃ©chargement de la %s", "%s wird heruntergeladen", "Download della %s",
                             "Descargando la %s"},
     [TXT_UPDATE_PROGRESS] = {"%d%% (%.1f of %.1f MB)", "%d %% (%.1f sur %.1f Mo)", "%d %% (%.1f von %.1f MB)",

@@ -309,7 +309,7 @@ namespace {
 // Lays a state's parts over `min`-`max` as the piece's shown parts lie over it: along x (a
 // left, a middle and a right part) or along y (top, middle, bottom), or stretched (whole).
 bool lay(ImDrawList *dl, const char *piece, const char *state, ImVec2 min, ImVec2 max, bool draw,
-         std::vector<std::pair<const Part *, ImRect>> *placed)
+         std::vector<std::pair<const Part *, ImRect>> *placed, float title_h = 0)
 {
     std::vector<const Part *> ref = parts_of(piece, "shown"), mine = parts_of(piece, state);
     if (ref.empty()) {
@@ -335,7 +335,12 @@ bool lay(ImDrawList *dl, const char *piece, const char *state, ImVec2 min, ImVec
     std::vector<std::pair<const Part *, ImRect>> out;
     for (const Part *p : mine) {
         ImRect r;
-        if (along_x) {
+        if (p->role == "title" && title_h > 0) {
+            // not with the window's height: a tall window's would grow down into its words
+            const float kt = title_h / (p->y + p->h - y0);
+            r.Min = ImVec2(min.x + (p->x - x0) * kt, min.y + (p->y - y0) * kt);
+            r.Max = ImVec2(r.Min.x + p->w * kt, r.Min.y + p->h * kt);
+        } else if (along_x) {
             r.Min.y = min.y + (p->y - y0) * k;
             r.Max.y = r.Min.y + p->h * k;
             if (p->role == "right") {
@@ -394,9 +399,9 @@ bool khdays_skin_piece(ImDrawList *dl, const char *piece, const char *state, ImV
     return lay(dl, piece, state, min, max, true, nullptr);
 }
 
-bool khdays_skin_question(ImDrawList *dl, ImVec2 min, ImVec2 max)
+bool khdays_skin_question(ImDrawList *dl, ImVec2 min, ImVec2 max, float title_h)
 {
-    return lay(dl, "question", "shown", min, max, true, nullptr);
+    return lay(dl, "question", "shown", min, max, true, nullptr, title_h);
 }
 
 bool khdays_skin_slider(ImDrawList *dl, const char *state, ImVec2 min, ImVec2 max, float t)

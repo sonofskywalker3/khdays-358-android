@@ -35,8 +35,9 @@ bool khdays_skin_place(ImDrawList *dl, const char *piece, ImVec2 size);
 // stretched over it. Whether the piece is there.
 bool khdays_skin_piece(ImDrawList *dl, const char *piece, const char *state, ImVec2 min, ImVec2 max);
 
-// The question's window over a rectangle, and its title where it lies.
-bool khdays_skin_question(ImDrawList *dl, ImVec2 min, ImVec2 max);
+// The question's window over a rectangle, and its title where it lies, sized so it ends
+// `title_h` below the top however tall the window is.
+bool khdays_skin_question(ImDrawList *dl, ImVec2 min, ImVec2 max, float title_h);
 
 // A number's slider across a rectangle (its track's), `t` 0 to 1 along it.
 bool khdays_skin_slider(ImDrawList *dl, const char *state, ImVec2 min, ImVec2 max, float t);

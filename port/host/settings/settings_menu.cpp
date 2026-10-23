@@ -1976,7 +1976,7 @@ void draw_prompt(float w, float h, float row_h, float pad)
     if (m.skin) {
         // behind the words: drawn first, in the window's own list
         ImGui::PushClipRect(box_at, box_end, false);
-        khdays_skin_question(ImGui::GetWindowDrawList(), box_at, box_end);
+        khdays_skin_question(ImGui::GetWindowDrawList(), box_at, box_end, title);
         ImGui::PopClipRect();
         ImGui::Dummy(ImVec2(0, title - ImGui::GetStyle().ItemSpacing.y));
     }
@@ -2095,7 +2095,7 @@ void khdays_settings_offer_update(const KhdaysProfile *current, const char *have
     m.update_hooks = hooks != nullptr ? *hooks : KhdaysUpdateHooks{};
     m.update_why[0] = '\0';
     SDL_snprintf(m.update_have, sizeof(m.update_have), "%s%s", have[0] == 'v' ? "" : "v", have);
-    SDL_strlcpy(m.update_new, latest, sizeof(m.update_new));
+    SDL_snprintf(m.update_new, sizeof(m.update_new), "%s%s", latest[0] == 'v' ? "" : "v", latest);
 }
 
 int khdays_settings_take_update_answer(void)

@@ -67,6 +67,12 @@ object Updates {
         }
     }
 
+    /** `path` as native code means it: relative to the game's folder (its working directory), not Java's. */
+    private fun inGameFolder(context: Context, path: String): File {
+        val file = File(path)
+        return if (file.isAbsolute) file else File(context.getExternalFilesDir(null), path)
+    }
+
     /** `url` into the file `path`, each piece told to native code (`handle`), which can give it up. */
     @JvmStatic
     fun download(url: String, agent: String, path: String, timeoutMs: Int, handle: Long): Boolean {
@@ -77,10 +83,11 @@ object Updates {
                 Log.w(TAG, "updates: $url answered ${connection.responseCode}")
                 return false
             }
+            val context = SDL.getContext() ?: return false
             var done = 0L
             val buffer = ByteArray(CHUNK)
             connection.inputStream.use { input ->
-                FileOutputStream(path).use { output ->
+                FileOutputStream(inGameFolder(context, path)).use { output ->
                     while (true) {
                         val n = input.read(buffer)
                         if (n < 0) {
@@ -111,10 +118,7 @@ object Updates {
     @JvmStatic
     fun install(path: String): String? {
         val context = SDL.getContext() ?: return "the app is not there"
-        var file = File(path)
-        if (!file.isAbsolute) {
-            file = File(context.getExternalFilesDir(null), path)
-        }
+        val file = inGameFolder(context, path)
         if (!file.isFile) {
             return "the downloaded file is gone"
         }
