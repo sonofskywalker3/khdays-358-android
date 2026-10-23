@@ -531,7 +531,11 @@ extern "C" int khdays_mods_find(const char *relative, char *path, int size)
     if (!found) {
         return 0;
     }
-    const auto utf8 = found->u8string();
+    // the whole path: SDL on Android opens a relative one from the app's private folder or its
+    // package, never from the working folder the mods are in
+    std::error_code ec;
+    const auto whole = fs::absolute(*found, ec);
+    const auto utf8 = (ec ? *found : whole).u8string();
     const std::string text(utf8.begin(), utf8.end());
     if (text.size() + 1 > static_cast<std::size_t>(size)) {
         return 0;
