@@ -200,6 +200,10 @@ void khdays_situation_decide(const KhdaysSituationFrame *frame, KhdaysSituation 
  * thread that took them). */
 int khdays_situation_widens(const KhdaysSituationInputs *in);
 
+/* Whether the field shows a dialog (an event's text, a person's words): KHDAYS_ST_DIALOG's test,
+ * from the inputs alone. */
+int khdays_situation_dialog(const KhdaysSituationInputs *in);
+
 /* Whether a frame decided again may decide otherwise (a picture standing still is then decided
  * again as its VBlanks pass): never, as the decision reads the game's state, not its pictures'
  * history. */

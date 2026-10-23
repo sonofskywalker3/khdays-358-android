@@ -469,11 +469,21 @@ static void emit_sprites(int index)
     }
 }
 
+static int dialog;
+
+void khdays_ui_hud_set_dialog(int on)
+{
+    dialog = on;
+}
+
 static void emit(void)
 {
     int party_there = 0;
     for (int n = 0; n < PIECE_COUNT; ++n) {
         int there = 0;
+        if (dialog && pieces_table[n].screen == 0) {
+            continue; /* the dialog's face and name plate, not the HUD's: cut off by it (2026-10-23) */
+        }
         for (int bg = 0; bg < 4; ++bg) {
             KhdaysBgLayer l;
             if (((pieces_table[n].layers >> bg) & 1u) && khdays_bg_text_layer(pieces_table[n].screen, bg, &l)) {

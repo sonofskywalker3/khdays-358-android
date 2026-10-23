@@ -884,6 +884,15 @@ static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int refere
      * whether the situation is wanted: on Android with the lower screen on a second display the
      * situation is taken on two screens too (gpu_present.c title_one), and the HUD's pieces stayed at
      * their DS places while the game's own cells went to the sides (the portrait shown twice). */
+    {
+        static KhdaysSituationInputs now;
+        const KhdaysSituationInputs *in_now = &p->situation;
+        if (!p->situation.taken) {
+            khdays_situation_take(&now, frame);
+            in_now = &now;
+        }
+        khdays_ui_hud_set_dialog(khdays_situation_dialog(in_now));
+    }
     khdays_ui_collect((khdays_host_graphics_flags() & KHDAYS_HOST_ONE_SCREEN) ? 0 : (int)p->desc2d[0][KD_WIDE],
                       p->upper);
     for (int e = 0; e < 2; ++e) {

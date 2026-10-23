@@ -185,19 +185,25 @@ int khdays_situation_widens(const KhdaysSituationInputs *in)
     return in->scene == SCENE_FIELD || in->scene == SCENE_TITLE;
 }
 
+/* A dialog: an event's text (ov023's status bit 1) or a person talking. The event's status counts
+ * only while Ov023_SceneRun runs and before the event closes (bit 3): a finished event leaves its last
+ * status behind, which hid the day's panel and the map. The mission's information at its start comes
+ * first. */
+int khdays_situation_dialog(const KhdaysSituationInputs *in)
+{
+    const int event_text = in->event_status >= 0 && (in->event_status & 2) != 0 && (in->event_status & 8) == 0 &&
+                           ran(in, KHDAYS_UPD_Ov023_SceneRun);
+    return !mission_start_info(in) && (event_text || field_talk(in));
+}
+
 static uint32_t states_of(const KhdaysSituationInputs *in, int scene)
 {
     uint32_t s = 0;
 #define ST(n) (1u << KHDAYS_ST_##n)
     if (scene == KHDAYS_SIT_FIELD || scene == KHDAYS_SIT_FIELD_3D_BOTH || scene == KHDAYS_SIT_TUTORIAL) {
-        /* a dialog: an event's text (ov023's status bit 1) or a person talking. The event's status
-         * counts only while Ov023_SceneRun runs and before the event closes (bit 3): a finished event
-         * leaves its last status behind, which hid the day's panel and the map. */
-        const int event_text = in->event_status >= 0 && (in->event_status & 2) != 0 && (in->event_status & 8) == 0 &&
-                               ran(in, KHDAYS_UPD_Ov023_SceneRun);
         if (mission_start_info(in)) {
             s |= ST(INFO_UPPER);
-        } else if (event_text || field_talk(in)) {
+        } else if (khdays_situation_dialog(in)) {
             s |= ST(DIALOG);
         } else if (hud_mode != KHDAYS_HUD_NONE) {
             s |= ST(HUD);
