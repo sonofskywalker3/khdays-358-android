@@ -1,5 +1,7 @@
 # khdays-port
 
+https://github.com/user-attachments/assets/cf4f4c99-220c-4a11-9ce0-7cd8a10f9d3b
+
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/rVeTPhPbsx)
 
 A native PC port of **Kingdom Hearts 358/2 Days**, built on
