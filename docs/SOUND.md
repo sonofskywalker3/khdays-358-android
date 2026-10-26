@@ -155,7 +155,11 @@ original's rate, are they held as the channel holds its own. A file longer than
 its original plays on to its end, at the volume and pan it had, once the
 original ends by itself: a sequence whose player no stop reached
 (`KhdaysSnd7Driver.player_stops`, SND_StopSeq's count), a stream that reached
-its last block; stopped by the game, it stops with it. The voices' streams
+its last block, a wave whose one-shot sample ran to its end (the channel's
+`ended`; the rest plays apart from the channel, which the driver may give to
+another note, until the game stops the note's player); stopped by the game, it
+stops with it. Seen: a voice of 1.24 s over se_vex_WAVE's 0.69 s wave 1 was cut there;
+a 2 s tone over a 0.08 s menu click now plays its 2 s. The voices' streams
 (those of a voices' stream player, PLAYER_STRM_V01's lines) are decoded ahead
 with the sequence archives' entries.
 

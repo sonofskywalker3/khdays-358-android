@@ -410,10 +410,16 @@ static int has_folder(const KhdaysSoundArchive *archive, int number)
     return known[number] > 0;
 }
 
-/* What each channel bound to a wave plays. */
+/* What each channel bound to a wave plays, and how it was last heard. */
 static struct {
     Entry *entry;
-    u32 rate; /* the original's */
+    u32 rate;      /* the original's */
+    double at;     /* where its file was last heard, in its samples */
+    float side[2]; /* its share of left and right then */
+    u32 starts;    /* the channel's start it was heard in */
+    int player;    /* the sequence player of that start's note (-1 none), and that player's stops then */
+    u32 stops;
+    int heard; /* at the last output sample */
 } wave_channel[16];
 
 /* Where wave `w` of the SWAR at `address` is; 0 while it is not loaded. */
@@ -545,6 +551,13 @@ int khdays_sound_mods_bind_wave(int channel, uint32_t sad, uint32_t len, int for
     return -1;
 }
 
+/* A wave's file at `at` of its samples, a stereo file mixed down (a channel plays one side). */
+static float wave_value(const KhdaysReplacement *r, double at)
+{
+    return r->channels == 2 ? 0.5f * (khdays_replacement_sample(r, at, 0) + khdays_replacement_sample(r, at, 1))
+                            : khdays_replacement_sample(r, at, 0);
+}
+
 int khdays_sound_mods_wave_sample(int handle, uint64_t index, int32_t *sample)
 {
     const int channel = handle & 15;
@@ -561,8 +574,7 @@ int khdays_sound_mods_wave_sample(int handle, uint64_t index, int32_t *sample)
     at = r->rate == wave_channel[channel].rate || wave_channel[channel].rate == 0
              ? (double)index
              : (double)index * (double)r->rate / (double)wave_channel[channel].rate;
-    v = r->channels == 2 ? 0.5f * (khdays_replacement_sample(r, at, 0) + khdays_replacement_sample(r, at, 1))
-                         : khdays_replacement_sample(r, at, 0);
+    v = wave_value(r, at);
     s = lrintf(v * 32768.0f);
     *sample = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
     return 1;
@@ -670,7 +682,7 @@ static float channel_pan(const KhdaysSoundHw *hw, int n)
 
 static u32 stops_of(const KhdaysSnd7Driver *driver, int p)
 {
-    return driver->player_stops != NULL ? driver->player_stops(p) : 0;
+    return driver->player_stops != NULL && p >= 0 ? driver->player_stops(p) : 0;
 }
 
 /* Whether a file still has to play at `at` of its samples once its original is over: one that plays once. */
@@ -828,28 +840,95 @@ static void mix_streams_on(uint32_t rate, const int heard[4], float out[2])
     }
 }
 
-/* The waves at the PC's output: each at this instant, between its file's samples, through its channel's volume
- * and pan (a channel plays one side: a stereo file mixed down). */
-static void mix_waves(const KhdaysSoundHw *hw, const float channel_gain[16], float master, float out[2])
+/* A wave's file playing on past its original, apart from the channel, which may play something else meanwhile. */
+typedef struct WaveTail {
+    Entry *entry;
+    double at;     /* in the file's samples */
+    float side[2]; /* its share of left and right, as last heard */
+    int player;    /* its note's sequence player (-1 none), and that player's stops then */
+    u32 stops;
+} WaveTail;
+
+static WaveTail *tails;
+static int tail_count, tail_room;
+
+static void tail_add(Entry *e, int n)
+{
+    if (tail_count == tail_room) {
+        const int room = tail_room > 0 ? 2 * tail_room : 8;
+        WaveTail *grown = realloc(tails, (size_t)room * sizeof(*tails));
+        if (grown == NULL) {
+            return; /* the rest of the file is not heard */
+        }
+        tails = grown;
+        tail_room = room;
+    }
+    WaveTail *t = &tails[tail_count++];
+    t->entry = NULL;
+    set_entry(&t->entry, e);
+    t->at = wave_channel[n].at;
+    t->side[0] = wave_channel[n].side[0];
+    t->side[1] = wave_channel[n].side[1];
+    t->player = wave_channel[n].player;
+    t->stops = wave_channel[n].stops;
+    if (trace) {
+        fprintf(stderr, "sound: %s plays on past its original\n", e->identifier);
+    }
+}
+
+/* The waves. At the PC's output each is read from its file at this instant, between its samples, through its
+ * channel's volume and pan; at the DS's the channel reads it itself. A file longer than its original plays on to its
+ * end once the original ended by itself, at its last volume and pan, unless the game stops its note's player. */
+static void mix_waves(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driver, uint32_t rate,
+                      const float channel_gain[16], float master, float out[2])
 {
     for (int n = 0; n < 16; ++n) {
         const KhdaysSoundChannel *c = &hw->channels[n];
-        const Entry *e = wave_channel[n].entry;
-        if (c->source < 0 || !(c->source & KHDAYS_WAVE_HANDLE) || !c->playing || c->played == 0 || e == NULL ||
-            e->state != READY) {
+        Entry *e = wave_channel[n].entry;
+        const int bound = e != NULL && e->state == READY && c->source >= 0 && (c->source & KHDAYS_WAVE_HANDLE);
+        if (!bound || !c->playing || c->played == 0) {
+            if (wave_channel[n].heard) {
+                wave_channel[n].heard = 0;
+                if (bound && c->ended && plays_on(e, wave_channel[n].at)) {
+                    tail_add(e, n);
+                }
+            }
             continue;
         }
+        if (wave_channel[n].starts != c->starts) {
+            wave_channel[n].starts = c->starts;
+            wave_channel[n].player = driver->channel_player != NULL ? driver->channel_player(n) : -1;
+            wave_channel[n].stops = stops_of(driver, wave_channel[n].player);
+        }
         const KhdaysReplacement *r = &e->file;
-        const double position = (double)(c->played - 1) + khdays_sound_hw_between(hw, n);
+        const double position = (double)(c->played - 1) + (smooth ? khdays_sound_hw_between(hw, n) : 0.0);
         const double at =
             wave_channel[n].rate == 0 ? position : position * (double)r->rate / (double)wave_channel[n].rate;
-        const float mono = r->channels == 2
-                               ? 0.5f * (khdays_replacement_sample(r, at, 0) + khdays_replacement_sample(r, at, 1))
-                               : khdays_replacement_sample(r, at, 0);
-        const float v = mono * channel_level(hw, n, master) * (channel_gain != NULL ? channel_gain[n] : 1.0f);
+        const float level = channel_level(hw, n, master) * (channel_gain != NULL ? channel_gain[n] : 1.0f);
         const float pan = channel_pan(hw, n);
-        out[0] += v * (1.0f - pan);
-        out[1] += v * pan;
+        wave_channel[n].at = at;
+        wave_channel[n].side[0] = level * (1.0f - pan);
+        wave_channel[n].side[1] = level * pan;
+        wave_channel[n].heard = 1;
+        if (smooth) {
+            const float v = wave_value(r, at);
+            out[0] += v * wave_channel[n].side[0];
+            out[1] += v * wave_channel[n].side[1];
+        }
+    }
+    for (int i = 0; i < tail_count;) {
+        WaveTail *t = &tails[i];
+        const KhdaysReplacement *r = &t->entry->file;
+        t->at += (double)r->rate / (double)rate;
+        if (stops_of(driver, t->player) != t->stops || !plays_on(t->entry, t->at)) {
+            set_entry(&t->entry, NULL);
+            *t = tails[--tail_count];
+            continue;
+        }
+        const float v = wave_value(r, t->at);
+        out[0] += v * t->side[0];
+        out[1] += v * t->side[1];
+        ++i;
     }
 }
 
@@ -864,7 +943,5 @@ void khdays_sound_mods_mix(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driv
     mix_sequences(driver, rate, finished_tag, player_gain, master, out);
     mix_streams(hw, stream_gain, master, heard, out);
     mix_streams_on(rate, heard, out);
-    if (smooth) {
-        mix_waves(hw, channel_gain, master, out);
-    }
+    mix_waves(hw, driver, rate, channel_gain, master, out);
 }

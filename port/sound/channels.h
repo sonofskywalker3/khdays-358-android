@@ -15,6 +15,7 @@ typedef struct KhdaysSoundChannel {
     uint32_t sad, pnt, len; /* as they were when the channel started */
     int busy;               /* the status bit */
     int playing;            /* still producing samples (the last one outlives busy) */
+    int ended;              /* a one-shot sound that ran to its end (not stopped by the driver) */
     int32_t position;       /* the sample from SAD (ADPCM: the nibble); < 0 while starting */
     uint32_t counter;       /* the timer: a sample each time it passes 0xffff */
     int32_t sample;         /* what the channel outputs, PCM16 */

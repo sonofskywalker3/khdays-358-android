@@ -1188,6 +1188,14 @@ static void test_smoothing(void)
     khdays_sound_mix_pc(&hw, NULL, 1.0f, NULL, NULL, smooth);
     CHECK(smooth[0] > 0.0f && smooth[0] < held[0]);
 
+    /* a one-shot sound run to its end is marked so (a mod's longer wave plays on); one the driver stops is not */
+    khdays_sound_hw_step(&hw, 120 * 0x400);
+    CHECK(!hw.channels[5].playing && hw.channels[5].ended);
+    khdays_sound_hw_write(&hw, 5 * 16, 4, 0x80000000u | 127u | 64u << 16 | 2u << 27 | 1u << 29);
+    CHECK(hw.channels[5].playing && !hw.channels[5].ended);
+    khdays_sound_hw_write(&hw, 5 * 16, 4, 127u | 64u << 16 | 2u << 27 | 1u << 29);
+    CHECK(!hw.channels[5].playing && !hw.channels[5].ended);
+
     /* the limiter: too loud turned down to just under full scale, both sides alike, then back up */
     khdays_sound_hw_reset(&quiet_hw, bus_memory);
     khdays_sound_hw_write(&quiet_hw, 0x100, 2, 0x807f);

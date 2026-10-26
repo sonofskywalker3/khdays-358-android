@@ -85,6 +85,7 @@ static void start(KhdaysSoundHw *hw, int n)
     c->counter = REG16(n * 16 + 8);
     c->busy = 1;
     c->playing = 1;
+    c->ended = 0;
     c->sample = 0;
     memset(c->history, 0, sizeof(c->history));
     c->loop_saved = 0;
@@ -223,6 +224,7 @@ static void advance(KhdaysSoundHw *hw, int n)
     loop_start = (int32_t)(c->pnt * per_word);
     if (c->position >= total) {
         if (((cnt >> 27) & 3) != LOOP) {
+            c->ended = 1;
             silence(hw, n);
             return;
         }
