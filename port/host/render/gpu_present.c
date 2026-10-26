@@ -59,6 +59,9 @@ static int hd_upper;                       /* engine A is the upper screen */
 static int hd_columns;                     /* its width in DS pixels (256 is the DS's) */
 static int columns;                        /* the picture's width now, in DS pixels (the logical presentation's) */
 static int refused_scale;                  /* a scale the device could not make (reported once) */
+static int window_scale_cap;               /* the most "window" makes on this device (0: no limit) */
+#define OLDER_ADRENO_BELOW 700             /* window_cap_for: Adreno models below this are capped */
+#define OLDER_ADRENO_WINDOW_CAP 2
 
 /* The graphics card stopped answering (a driver reset: D3D12's device removed, hung or reset, Vulkan's
  * lost). SDL's renderer does not notice on D3D12, so the port notices from its own calls' errors and
@@ -170,6 +173,33 @@ static int under_wine(void)
     return wine;
 }
 
+/* The most "window" (the default internal resolution) makes on this graphics card: on Android an Adreno
+ * older than the 700s (the AYN Odin's 630, a Snapdragon 845) draws the port's own 2D and the 3D at 2x
+ * at about 45 pictures a second, at 3x about 21 and at the window's 5x about 8 (measured 2026-10-26), so
+ * "window" stops at 2x there; a number chosen in the settings is kept as it is. 0: no limit. */
+static int window_cap_for(SDL_GPUDevice *gpu)
+{
+#if defined(__ANDROID__)
+    const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(gpu), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
+    const char *adreno = SDL_strstr(name, "Adreno");
+    int model = 0;
+    while (adreno != NULL && *adreno != '\0' && (*adreno < '0' || *adreno > '9')) {
+        ++adreno;
+    }
+    if (adreno != NULL) {
+        model = SDL_atoi(adreno);
+    }
+    fprintf(stderr, "host: the graphics card is %s\n", name[0] != '\0' ? name : "unnamed");
+    if (model > 0 && model < OLDER_ADRENO_BELOW) {
+        fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
+        return OLDER_ADRENO_WINDOW_CAP;
+    }
+#else
+    (void)gpu;
+#endif
+    return 0;
+}
+
 /* Makes a renderer on a new GPU device. Returns NULL with the reason in `why`. */
 static SDL_Renderer *gpu_renderer(char *why, size_t size)
 {
@@ -197,6 +227,7 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
         SDL_snprintf(why, size, "no GPU device: %s", SDL_GetError());
         return NULL;
     }
+    window_scale_cap = window_cap_for(device);
     r = SDL_CreateGPURenderer(device, window);
     if (r == NULL) {
         SDL_snprintf(why, size, "no renderer on the %s device: %s", SDL_GetGPUDeviceDriver(device), SDL_GetError());
@@ -395,6 +426,9 @@ static int scale_now(void)
         n = video.smooth_scaling ? (int)SDL_ceilf(s * (float)antialiasing_now() - 0.01f)
                                  : (int)SDL_floorf(s) * antialiasing_now();
         n = n < 1 ? 1 : n;
+        if (window_scale_cap > 0 && n > window_scale_cap) {
+            n = window_scale_cap; /* an older handheld's graphics card (window_cap_for) */
+        }
     } else {
         n *= antialiasing_now();
     }
