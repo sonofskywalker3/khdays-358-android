@@ -24,6 +24,7 @@ import java.io.File
  */
 object MediaFolder {
     const val KEPT_IN = "media_folder.txt" // media_folder.c's KEPT_IN
+    private const val PENDING_IN = "media_folder.pending" // chosen, waiting for the access to all files
     private const val TAG = "khdays"
     private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
     private const val PRIMARY_VOLUME = "primary"
@@ -38,6 +39,24 @@ object MediaFolder {
     fun keep(context: Context, folder: File) {
         File(context.filesDir, KEPT_IN).writeText(folder.absolutePath + "\n")
         Log.i(TAG, "setup: mods and HD videos from ${folder.absolutePath} from the next start")
+    }
+
+    /**
+     * A folder chosen while Android's page for the access to all files is open: kept in a file, since
+     * the app may be closed meanwhile (the player turns to another app, Android ends it).
+     */
+    fun keepPending(context: Context, folder: File) {
+        File(context.filesDir, PENDING_IN).writeText(folder.absolutePath + "\n")
+    }
+
+    fun hasPending(context: Context): Boolean = File(context.filesDir, PENDING_IN).isFile
+
+    /** The folder waiting for the access, once (null when none). */
+    fun takePending(context: Context): File? {
+        val pending = File(context.filesDir, PENDING_IN)
+        val path = if (pending.isFile) pending.readText().trim() else ""
+        pending.delete()
+        return if (path.isEmpty()) null else File(path)
     }
 
     fun forget(context: Context) {

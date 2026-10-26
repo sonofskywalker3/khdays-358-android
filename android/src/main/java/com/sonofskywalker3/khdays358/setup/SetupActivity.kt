@@ -45,9 +45,10 @@ class SetupActivity : Activity() {
     private lateinit var supported: List<SupportedRom>
 
     @Volatile private var cancel = false
+    private var askingAccess = false // Android's page for the access to all files was asked for
+    private var leftForAccess = false // ... and this screen went behind it
     private var working = false
     private var lastHd: Pair<HdImport, HdImport.Found>? = null
-    private var pendingMedia: java.io.File? = null // a folder chosen, waiting for the access to all files
 
     private lateinit var gameStatus: TextView
     private lateinit var gameButton: Button
@@ -76,16 +77,26 @@ class SetupActivity : Activity() {
         (if (game.extraction() == null) gameButton else playButton).requestFocus()
     }
 
-    // Back from Android's page for the access to all files (or its question, Android 10)
+    // Back from Android's page for the access to all files (or its question, Android 10). The screen is
+    // also resumed once between the picker and that page, before the player has seen it: then the
+    // folder waits.
     override fun onResume() {
         super.onResume()
-        val folder = pendingMedia ?: return
-        pendingMedia = null
+        if (!MediaFolder.hasPending(this) || (askingAccess && !leftForAccess)) {
+            return
+        }
+        val folder = MediaFolder.takePending(this) ?: return
+        askingAccess = false
         if (MediaFolder.hasAccess(this)) {
             useMedia(folder)
         } else {
             progressText.text = getString(R.string.setup_media_denied)
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        leftForAccess = askingAccess
     }
 
     override fun onDestroy() {
@@ -239,7 +250,9 @@ class SetupActivity : Activity() {
             useMedia(folder)
             return
         }
-        pendingMedia = folder
+        MediaFolder.keepPending(this, folder)
+        askingAccess = true
+        leftForAccess = false
         progressText.text = getString(R.string.setup_media_asking)
         MediaFolder.askAccess(this, PICK_MEDIA)
     }
