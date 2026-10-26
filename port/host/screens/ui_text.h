@@ -135,6 +135,7 @@ enum {
     TXT_OPEN_SETUP_NOTE,
     TXT_HINTS_GAMEPAD,
     TXT_HINTS_MOUSE,
+    TXT_HINTS_TOUCH, /* Android: a touch screen's taps come as the mouse's clicks */
     TXT_HINTS_KEYBOARD,
     TXT_PRESS_KEY,
     TXT_PRESS_BUTTON,

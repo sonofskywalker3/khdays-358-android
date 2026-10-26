@@ -1202,7 +1202,11 @@ const char *hints()
                      names[FACE_ACCEPT], names[FACE_CLEAR], names[FACE_BACK]);
         return pad;
     }
+#if defined(__ANDROID__)
+    case 2: return khdays_text(TXT_HINTS_TOUCH); // a tap comes as a click; the system's Back steps back
+#else
     case 2: return khdays_text(TXT_HINTS_MOUSE);
+#endif
     default: return khdays_text(TXT_HINTS_KEYBOARD);
     }
 }
