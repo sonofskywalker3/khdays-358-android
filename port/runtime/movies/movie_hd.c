@@ -7,6 +7,7 @@
 #include "../core/clock.h"
 #include "../input/input.h"
 #include "../core/rom.h"
+#include "../core/folders.h"
 #include "../core/session_log.h"
 #include "../../host/app/host.h"
 #include "../../host/movies/movie_hd.h"
@@ -118,12 +119,12 @@ static int movie_id(const char *path, char *out, size_t size)
 static void player_video(const char *name, char *file, size_t size)
 {
     if (khdays_host_graphics_flags() & KHDAYS_HOST_MOVIES_SMOOTH) {
-        snprintf(file, size, "data/cutscenes/cinematics60/%s.mp4", name);
+        snprintf(file, size, "%s/cinematics60/%s.mp4", khdays_cutscenes_folder(), name);
         if (GetFileAttributesA(file) != INVALID_FILE_ATTRIBUTES) {
             return;
         }
     }
-    snprintf(file, size, "data/cutscenes/cinematics/%s.mp4", name);
+    snprintf(file, size, "%s/cinematics/%s.mp4", khdays_cutscenes_folder(), name);
 }
 
 static const char *skippable_text(void)

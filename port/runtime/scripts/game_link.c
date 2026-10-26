@@ -5,6 +5,7 @@
 #include "../core/session_log.h"
 #include "../core/window.h"
 #include "../core/events.h"
+#include "../core/folders.h"
 #include "../../host/app/instance.h"
 #include "../menus/autosave.h"
 #include "../menus/camp.h"
@@ -70,7 +71,7 @@ static unsigned rd32(KhdaysRef at)
 
 void khdays_link_folders(const char **mods, const char **user)
 {
-    *mods = "mods";
+    *mods = khdays_mods_folder();
     *user = khdays_host_user_folder();
 }
 

@@ -261,6 +261,19 @@ static const char *const texts[TXT_COUNT][5] = {
                              "Ripristina il controller", "Restablecer el mando"},
     [TXT_RESTORE_BOTH] = {"Restore everything", "Tout rétablir", "Alles zurücksetzen", "Ripristina tutto",
                           "Restablecer todo"},
+    /* Android: the app's setup screen (android/.../setup/SetupActivity.kt) */
+    [TXT_OPEN_SETUP] = {"Game files and folders", "Fichiers du jeu et dossiers", "Spieldateien und Ordner",
+                        "File del gioco e cartelle", "Archivos del juego y carpetas"},
+    [TXT_OPEN_SETUP_NOTE] = {"The setup screen: another ROM, the HD files, and a folder of your own (a memory card's) "
+                             "for the mods and HD cutscenes.",
+                             "L'écran d'installation : une autre ROM, les fichiers HD, et un dossier à vous (sur une "
+                             "carte mémoire) pour les mods et les cinématiques HD.",
+                             "Der Einrichtungsbildschirm: ein anderes ROM, die HD-Dateien und ein eigener Ordner "
+                             "(auf einer Speicherkarte) für Mods und HD-Zwischensequenzen.",
+                             "La schermata di configurazione: un'altra ROM, i file HD e una cartella tua (su una "
+                             "scheda di memoria) per le mod e i filmati HD.",
+                             "La pantalla de configuración: otra ROM, los archivos HD y una carpeta propia (en una "
+                             "tarjeta de memoria) para los mods y las cinemáticas HD."},
     /* the buttons the player's DS A, Y and B are on (settings_menu.cpp face_buttons) */
     [TXT_HINTS_GAMEPAD] = {"D-pad: choose   %s: change   %s: clear   %s: back",
                            "Croix : choisir   %s : modifier   %s : effacer   %s : retour",

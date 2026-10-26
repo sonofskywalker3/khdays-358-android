@@ -9,6 +9,8 @@ import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.WindowManager
+import com.sonofskywalker3.khdays358.setup.GameFolder
+import com.sonofskywalker3.khdays358.setup.MediaFolder
 import org.libsdl.app.SDLActivity
 import org.libsdl.app.SDLSurface
 import java.io.File
@@ -73,7 +75,7 @@ class MainActivity : SDLActivity() {
      * when the video is newer; nothing when there is none.
      */
     private fun saveTitleFrame(root: File) {
-        val video = File(root, OPENING_VIDEO)
+        val video = File(GameFolder(root, MediaFolder.chosen(this)).cutscenes, OPENING_VIDEO)
         val out = File(root, TITLE_FRAME)
         if (!video.isFile || (out.isFile && out.lastModified() >= video.lastModified())) {
             return
@@ -147,7 +149,7 @@ class MainActivity : SDLActivity() {
         private const val TAG = "khdays"
         private const val FRAME_RATE = 120f
         private const val REFRESH_RATE_EPSILON = 0.5f
-        private const val OPENING_VIDEO = "data/cutscenes/cinematics/hd802.mp4"
+        private const val OPENING_VIDEO = "cinematics/hd802.mp4" // in the HD videos' folder (GameFolder.cutscenes)
         const val TITLE_FRAME = "cache/title_frame.png" // read by bottom_screen.c (TITLE_FRAME there)
         private const val LAST_FRAME_BACK_MS = 200L // how far before its end the last picture is taken
     }

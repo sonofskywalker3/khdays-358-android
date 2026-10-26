@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:installLocation="auto">
 
     <!-- Vulkan: the port draws through SDL's GPU API -->
@@ -24,14 +25,26 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- No storage permission: the game's data, mods and saves live in the app's own folder on the
-         shared storage (Android/data/<package>/files). -->
+    <!-- The game's data, mods and saves live in the app's own folder on the shared storage
+         (Android/data/<package>/files). Only a folder of the player's own for the mods and HD videos
+         (setup/MediaFolder.kt) needs these, asked for when one is chosen: access to all files from
+         Android 11, the storage permissions on Android 10 (with the legacy storage below). -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
 
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme"
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true">

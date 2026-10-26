@@ -7,6 +7,7 @@
 extern "C" {
 #include "../../host/app/host.h" // khdays_host_tell_no_data
 #include "origin.h"
+#include "folders.h"
 }
 
 #include "khdays/assets/message.h" // lz_decompress
@@ -225,6 +226,7 @@ void read_region(KhdaysRomReader &reader, const Region &r, u32 offset, u8 *out, 
 
 extern "C" int khdays_rom_init(void)
 {
+    khdays::vfs::set_mods_root(khdays_mods_folder()); // "mods", or the folder the player chose
     if (!khdays::vfs::autodetect_data_root()) {
         std::error_code ec;
         const fs::path searched = fs::absolute("data/extracted", ec);

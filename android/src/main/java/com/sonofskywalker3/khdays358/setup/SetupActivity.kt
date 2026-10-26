@@ -47,12 +47,16 @@ class SetupActivity : Activity() {
     @Volatile private var cancel = false
     private var working = false
     private var lastHd: Pair<HdImport, HdImport.Found>? = null
+    private var pendingMedia: java.io.File? = null // a folder chosen, waiting for the access to all files
 
     private lateinit var gameStatus: TextView
     private lateinit var gameButton: Button
     private lateinit var hdStatus: TextView
     private lateinit var hdButton: Button
     private lateinit var deleteButton: Button
+    private lateinit var mediaStatus: TextView
+    private lateinit var mediaButton: Button
+    private lateinit var mediaResetButton: Button
     private lateinit var progressBar: ProgressBar
     private lateinit var progressText: TextView
     private lateinit var cancelButton: Button
@@ -60,7 +64,7 @@ class SetupActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        game = GameFolder(getExternalFilesDir(null) ?: filesDir)
+        game = gameFolder()
         supported = assets.open(SupportedRoms.ASSET_NAME).use { SupportedRoms.load(it) }
         if (game.extraction() != null && !intent.getBooleanExtra(EXTRA_SETUP, false)) {
             play()
@@ -70,6 +74,18 @@ class SetupActivity : Activity() {
         setContentView(build())
         refresh()
         (if (game.extraction() == null) gameButton else playButton).requestFocus()
+    }
+
+    // Back from Android's page for the access to all files (or its question, Android 10)
+    override fun onResume() {
+        super.onResume()
+        val folder = pendingMedia ?: return
+        pendingMedia = null
+        if (MediaFolder.hasAccess(this)) {
+            useMedia(folder)
+        } else {
+            progressText.text = getString(R.string.setup_media_denied)
+        }
     }
 
     override fun onDestroy() {
@@ -87,6 +103,7 @@ class SetupActivity : Activity() {
         when (requestCode) {
             PICK_ROM -> importRom(uri)
             PICK_HD -> importHd(uri)
+            PICK_MEDIA -> pickMedia(uri)
         }
     }
 
@@ -183,8 +200,9 @@ class SetupActivity : Activity() {
             if (plan.files == 0) {
                 return@work getString(R.string.setup_hd_already)
             }
-            game.root.mkdirs()
-            val free = StatFs(game.root.path).availableBytes
+            val into = game.media ?: game.root
+            into.mkdirs()
+            val free = StatFs(into.path).availableBytes
             if (free < plan.bytes + SPACE_MARGIN) {
                 lastHd = null
                 return@work getString(R.string.setup_hd_no_space, size(plan.bytes), size(free))
@@ -201,6 +219,46 @@ class SetupActivity : Activity() {
             setProgress(getString(R.string.setup_hd_looking), 0, 0)
             getString(if (import.deleteSources(found)) R.string.setup_hd_deleted else R.string.setup_hd_delete_failed)
         }
+    }
+
+    // --- The mods' and HD videos' folder --------------------------------------------------------------
+
+    private fun gameFolder(): GameFolder = GameFolder(getExternalFilesDir(null) ?: filesDir, MediaFolder.chosen(this))
+
+    private fun chooseMedia() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_MEDIA)
+    }
+
+    private fun pickMedia(tree: Uri) {
+        val folder = MediaFolder.pathOf(tree)
+        if (folder == null) {
+            progressText.text = getString(R.string.setup_media_not_local)
+            return
+        }
+        if (MediaFolder.hasAccess(this)) {
+            useMedia(folder)
+            return
+        }
+        pendingMedia = folder
+        progressText.text = getString(R.string.setup_media_asking)
+        MediaFolder.askAccess(this, PICK_MEDIA)
+    }
+
+    private fun useMedia(folder: java.io.File) {
+        MediaFolder.keep(this, folder)
+        lastHd = null
+        game = gameFolder()
+        progressText.text = getString(R.string.setup_media_done, folder.path)
+        refresh()
+    }
+
+    private fun resetMedia() {
+        MediaFolder.forget(this)
+        lastHd = null
+        game = gameFolder()
+        progressText.text = getString(R.string.setup_media_reset_done)
+        refresh()
+        mediaButton.requestFocus()
     }
 
     // --- The work and the screen -------------------------------------------------------------------
@@ -276,6 +334,16 @@ class SetupActivity : Activity() {
         gameButton.isEnabled = !working
         hdButton.isEnabled = !working && ready
         playButton.isEnabled = !working && ready
+        val chosen = MediaFolder.chosen(this)
+        mediaStatus.text = when {
+            chosen == null -> getString(R.string.setup_media_app, game.root.path)
+            game.media == null -> getString(R.string.setup_media_unreadable, chosen.path)
+            else -> getString(R.string.setup_media_own, chosen.path)
+        }
+        mediaButton.text = getString(if (chosen == null) R.string.setup_media_choose else R.string.setup_media_choose_other)
+        mediaButton.isEnabled = !working
+        mediaResetButton.isEnabled = !working
+        mediaResetButton.visibility = if (chosen != null) View.VISIBLE else View.GONE
         val hd = lastHd
         deleteButton.visibility = if (!working && hd != null) View.VISIBLE else View.GONE
         if (hd != null) {
@@ -322,6 +390,14 @@ class SetupActivity : Activity() {
             }
             hdButton = button(R.string.setup_hd_choose) { chooseHd() }.also { addView(it) }
             deleteButton = button(R.string.setup_hd_delete_source) { deleteHdSource() }.also { addView(it) }
+        })
+
+        column.addView(section().apply {
+            addView(text(R.string.setup_media_heading, HEADING_SP, bold = true))
+            mediaStatus = text(0, BODY_SP, color = ACCENT).spaced(dp(8)).also { addView(it) }
+            addView(text(R.string.setup_media_help, BODY_SP).spaced(dp(8)))
+            mediaButton = button(R.string.setup_media_choose) { chooseMedia() }.also { addView(it) }
+            mediaResetButton = button(R.string.setup_media_reset) { resetMedia() }.also { addView(it) }
         })
 
         progressText = text(0, BODY_SP).spaced(dp(16)).also { column.addView(it) }
@@ -400,6 +476,7 @@ class SetupActivity : Activity() {
         private const val TAG = "khdays"
         private const val PICK_ROM = 1
         private const val PICK_HD = 2
+        private const val PICK_MEDIA = 3
         // the unpacked game takes about 1.1 times its ROM: 1.5 asked for
         private const val SPACE_PER_ROM_BYTE_NUMERATOR = 3L
         private const val SPACE_PER_ROM_BYTE_DENOMINATOR = 2L

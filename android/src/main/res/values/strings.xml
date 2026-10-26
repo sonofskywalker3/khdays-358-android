@@ -43,6 +43,20 @@
     <string name="setup_hd_deleted">The copy you made was deleted.</string>
     <string name="setup_hd_delete_failed">Some of the copy could not be deleted; you can delete it with a file manager.</string>
 
+    <string name="setup_media_heading">3  Mods and HD folder (optional)</string>
+    <string name="setup_media_help">Mods and the HD cutscenes take a lot of space. You can keep them in a folder of your own instead, such as one on a memory card, which a file manager also reaches more easily than Android/data. The game reads the mods from its mods folder and the HD cutscenes from its data\\cutscenes (or cutscenes) folder, so the PC installer\'s folder, copied whole, can be chosen as it is. HD files added above go there too. Android asks you to allow this app access to all files first.</string>
+    <string name="setup_media_app">Kept in the app\'s folder: %1$s</string>
+    <string name="setup_media_own">Kept in: %1$s</string>
+    <string name="setup_media_unreadable">Chosen: %1$s, but it cannot be read now (the memory card is out, or access to all files is not allowed). The app\'s folder is used meanwhile.</string>
+    <string name="setup_media_choose">Use a folder of my own</string>
+    <string name="setup_media_choose_other">Choose another folder</string>
+    <string name="setup_media_reset">Keep them in the app\'s folder again</string>
+    <string name="setup_media_not_local">The game cannot open that folder. Choose a folder on this device\'s storage or its memory card, not a cloud folder or a Downloads shortcut.</string>
+    <string name="setup_media_asking">Allow this app access to all files, then come back here.</string>
+    <string name="setup_media_denied">Access to all files was not allowed, so the folder was not changed.</string>
+    <string name="setup_media_done">Mods and HD cutscenes are read from %1$s from the next time the game starts. If it is running now, close it from the recent apps and start it again.</string>
+    <string name="setup_media_reset_done">Mods and HD cutscenes are read from the app\'s folder again from the next time the game starts.</string>
+
     <string name="setup_play">Play</string>
     <string name="setup_cancel">Cancel</string>
     <string name="setup_cancelled">Cancelled.</string>

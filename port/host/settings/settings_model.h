@@ -56,7 +56,8 @@ enum KhdaysCommand {
     KHDAYS_CMD_RESTORE_VIDEO,
     KHDAYS_CMD_RESTORE_SOUND,
     KHDAYS_CMD_PRESET_DS,
-    KHDAYS_CMD_PRESET_KH2
+    KHDAYS_CMD_PRESET_KH2,
+    KHDAYS_CMD_OPEN_SETUP /* Android: the app's setup screen */
 };
 
 /* A stable name for each row, for the tests (binding rows are told apart by
@@ -124,6 +125,7 @@ enum KhdaysSettingId {
     KHDAYS_SET_SESSION_LOG,
     KHDAYS_SET_STOP_MAGIC,
     KHDAYS_SET_RESTORE_BOTH,
+    KHDAYS_SET_OPEN_SETUP,
     KHDAYS_SET_AUTOSAVE,
     KHDAYS_SET_SAVE_FILES,
     /* the Mods section's rows: `layer` the mod (its place in the list), `action` its option */

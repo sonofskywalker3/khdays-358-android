@@ -5,13 +5,20 @@ import java.io.File
 /**
  * The game's folder on the shared storage (Android/data/<package>/files) and what is set up in it: the
  * extracted ROM (data/extracted/<hash>), the HD collection's videos (data/cutscenes) and mods (mods/),
- * where the game itself looks for them.
+ * where the game itself looks for them. With a folder of the player's own for the mods and HD videos
+ * ([media], [MediaFolder]) those two are its mods/ and its data/cutscenes (the PC installer's folder
+ * copied whole) or cutscenes/, as port/runtime/core/folders.c reads them; the app's own while it cannot
+ * be read.
  */
-class GameFolder(val root: File) {
+class GameFolder(val root: File, media: File? = null) {
+
+    /** The player's folder for the mods and HD videos, when one is chosen and can be read. */
+    val media: File? = media?.takeIf { it.isDirectory }
 
     val extracted: File get() = File(root, "data/extracted")
-    val cutscenes: File get() = File(root, "data/cutscenes")
-    val mods: File get() = File(root, "mods")
+    val cutscenes: File get() = media?.let { m -> File(m, "data/cutscenes").takeIf { it.isDirectory } ?: File(m, "cutscenes") }
+        ?: File(root, "data/cutscenes")
+    val mods: File get() = File(media ?: root, "mods")
 
     /** The complete extraction the game will play (one that is still being made ends in .partial). */
     fun extraction(): File? = extracted.listFiles()

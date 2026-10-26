@@ -5,6 +5,9 @@
 #include "../app/host.h"
 #include "../app/instance.h"
 #include "../screens/ui_text.h"
+#ifdef __ANDROID__
+#include "../android/media_folder.h"
+#endif
 #include "../../runtime/scripts/queue.h"
 #include "../../runtime/scripts/view.h"
 
@@ -501,6 +504,9 @@ static void build_general(Builder *b, KhdaysProfile *w)
     r->apply = KHDAYS_APPLY_NEXT;
     r->takes = TXT_TAKES_NEXT_START;
     add_switch(b, KHDAYS_SET_SESSION_LOG, TXT_SESSION_LOG, &w->session_log, 1, khdays_text(TXT_SESSION_LOG_NOTE));
+    if (HANDHELD) {
+        add_command(b, KHDAYS_SET_OPEN_SETUP, TXT_OPEN_SETUP, KHDAYS_CMD_OPEN_SETUP)->note = khdays_text(TXT_OPEN_SETUP_NOTE);
+    }
     add_command(b, KHDAYS_SET_RESTORE_BOTH, TXT_RESTORE_BOTH, KHDAYS_CMD_RESTORE_BOTH);
 }
 
@@ -805,6 +811,9 @@ void khdays_model_command(KhdaysProfile *work, int command)
     case KHDAYS_CMD_RESTORE_VIDEO: khdays_video_default(&work->video); break;
     case KHDAYS_CMD_RESTORE_SOUND: khdays_sound_default(&work->sound); break;
     case KHDAYS_CMD_RESTORE_BOTH: khdays_profile_default(work); break;
+#ifdef __ANDROID__
+    case KHDAYS_CMD_OPEN_SETUP: khdays_media_folder_open_setup(); break;
+#endif
     case KHDAYS_CMD_PRESET_DS:
         khdays_profile_apply_preset(work, KHDAYS_PRESET_DS, KHDAYS_AVAILABLE_ENHANCEMENTS);
         break;

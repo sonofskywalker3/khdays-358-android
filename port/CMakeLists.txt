@@ -375,7 +375,8 @@ else()
             host/app/update_install_android.c    # the update's APK put in place by Android's installer
             host/android/app_class.c
             host/android/game_surface.c          # frames presented only while the game's surface is there
-            host/android/touch_gear.c)           # the settings key a touch screen taps
+            host/android/touch_gear.c            # the settings key a touch screen taps
+            host/android/media_folder.c)         # the player's folder for the mods and HD videos
     else()
         list(APPEND KHDAYS_PLATFORM_SOURCES
             host/movies/movie_hd_none.c
@@ -531,6 +532,7 @@ target_sources(khdays-native PRIVATE
     runtime/sound/sound_dump.c
     runtime/sound/sound_mods.c
     runtime/core/start.c
+    runtime/core/folders.c             # where the mods and the HD videos are read from
     runtime/core/vram.c
     host/app/window.c
     host/app/updates.c                 # a newer release, told of on the title,
@@ -685,7 +687,7 @@ target_compile_options(khdays-input-test PRIVATE
 add_test(NAME khdays-input COMMAND khdays-input-test)
 # The course of an HD movie against a scripted game and video.
 add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/movies/scene_map.c
-               runtime/core/clock.c)
+               runtime/core/clock.c runtime/core/folders.c)
 target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
@@ -830,7 +832,7 @@ add_test(NAME khdays-script COMMAND khdays-script-test)
 # bridge's queues, and (to come) the drivers, the stream reader and the
 # replacements; no game data needed.
 add_executable(khdays-sound-test tests/sound_test.c runtime/sound/sound_bridge.c runtime/sound/sound_mods.c
-    runtime/core/session_log.c host/app/instance_win.c)
+    runtime/core/session_log.c runtime/core/folders.c host/app/instance_win.c)
 target_link_libraries(khdays-sound-test PRIVATE khdays-sound)
 target_compile_options(khdays-sound-test PRIVATE /W4 /std:c17)
 # The native driver's part reads its tables from the ROM's ARM7 binary

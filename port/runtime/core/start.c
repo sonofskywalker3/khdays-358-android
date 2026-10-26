@@ -25,7 +25,9 @@
 #if defined(__ANDROID__)
 #include <SDL3/SDL_main.h> /* main becomes SDL_main, which SDLActivity calls */
 void khdays_android_log_streams(void); /* host/posix/android_log.c */
+#include "../../host/android/media_folder.h"
 #endif
+#include "folders.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -201,6 +203,7 @@ static void take_working_folder(void)
             fclose(f);
         }
     }
+    khdays_folders_choose(khdays_media_folder_chosen()); /* mods and HD videos from the player's folder */
 #else
     const char *own = SDL_GetBasePath();
     if (SDL_GetPathInfo("data/extracted", NULL)) {

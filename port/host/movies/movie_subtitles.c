@@ -7,6 +7,7 @@
 
 #include "../render/png_io.h"
 #include "../../runtime/core/rom.h"
+#include "../../runtime/core/folders.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -107,7 +108,8 @@ void khdays_movie_subtitles_load(const char *movie, int language)
     if (language >= 1 && language <= 5) {
         snprintf(relative, sizeof(relative), "movies/subtitles/%s/hd%s.txt", codes[language], movie);
         if (!khdays_mods_find(relative, path, (int)sizeof(path))) {
-            snprintf(path, sizeof(path), "data/cutscenes/cinematics/subtitles/%s/hd%s.txt", codes[language], movie);
+            snprintf(path, sizeof(path), "%s/cinematics/subtitles/%s/hd%s.txt", khdays_cutscenes_folder(),
+                     codes[language], movie);
         }
         found = read_file(path, &s);
         if (found) {

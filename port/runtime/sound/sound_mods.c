@@ -2,6 +2,7 @@
 #include "sound_mods.h"
 #include "../core/window.h"
 #include "../core/rom.h"
+#include "../core/folders.h"
 #include "../../sound/categories.h"
 #include "../../sound/stream_reader.h"
 
@@ -130,6 +131,16 @@ void khdays_sound_mods_trace(int on)
     trace = on;
 }
 
+/* The mods' folder listed: each of its mods ("mods\\*", or the chosen folder's, core/folders.h). */
+static const char *mods_pattern(void)
+{
+    static char pattern[1100];
+    if (pattern[0] == '\0') { /* the folder is chosen as the game starts, never again */
+        snprintf(pattern, sizeof(pattern), "%s\\*", khdays_mods_folder());
+    }
+    return pattern;
+}
+
 /* mods/<Mod>/sounds, in the folder the mods' order reads (the VFS's mods
  * root, "mods" beside the game). */
 int khdays_sound_mods_present(void)
@@ -137,7 +148,7 @@ int khdays_sound_mods_present(void)
     static int present = -1;
     if (present < 0) {
         WIN32_FIND_DATAA found;
-        HANDLE h = FindFirstFileA("mods\\*", &found);
+        HANDLE h = FindFirstFileA(mods_pattern(), &found);
         present = 0;
         if (h != INVALID_HANDLE_VALUE) {
             do {
@@ -146,7 +157,7 @@ int khdays_sound_mods_present(void)
                 if (!(found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || found.cFileName[0] == '.') {
                     continue;
                 }
-                snprintf(sounds, sizeof(sounds), "mods\\%s\\sounds", found.cFileName);
+                snprintf(sounds, sizeof(sounds), "%s\\%s\\sounds", khdays_mods_folder(), found.cFileName);
                 attributes = GetFileAttributesA(sounds);
                 present = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
             } while (!present && FindNextFileA(h, &found));
@@ -226,7 +237,7 @@ static void decode_archive_ahead(const char *mod, const char *archive)
     char pattern[600];
     WIN32_FIND_DATAA file;
     HANDLE found;
-    snprintf(pattern, sizeof(pattern), "mods\\%s\\sounds\\seqarc\\%s\\*", mod, archive);
+    snprintf(pattern, sizeof(pattern), "%s\\%s\\sounds\\seqarc\\%s\\*", khdays_mods_folder(), mod, archive);
     found = FindFirstFileA(pattern, &file);
     if (found == INVALID_HANDLE_VALUE) {
         return;
@@ -285,7 +296,7 @@ static void decode_entries_ahead(const KhdaysSoundArchive *sdat)
     }
     done = 1;
     decode_voice_streams_ahead(sdat);
-    mods = FindFirstFileA("mods\\*", &mod);
+    mods = FindFirstFileA(mods_pattern(), &mod);
     if (mods == INVALID_HANDLE_VALUE) {
         return;
     }
@@ -296,7 +307,7 @@ static void decode_entries_ahead(const KhdaysSoundArchive *sdat)
         if (!is_folder(&mod)) {
             continue;
         }
-        snprintf(pattern, sizeof(pattern), "mods\\%s\\sounds\\seqarc\\*", mod.cFileName);
+        snprintf(pattern, sizeof(pattern), "%s\\%s\\sounds\\seqarc\\*", khdays_mods_folder(), mod.cFileName);
         archives = FindFirstFileA(pattern, &archive);
         if (archives == INVALID_HANDLE_VALUE) {
             continue;
@@ -321,13 +332,13 @@ static int wave_folders(void)
     static int found = -1;
     if (found < 0) {
         WIN32_FIND_DATAA mod;
-        HANDLE h = FindFirstFileA("mods\\*", &mod);
+        HANDLE h = FindFirstFileA(mods_pattern(), &mod);
         found = 0;
         if (h != INVALID_HANDLE_VALUE) {
             do {
                 char wave[600];
                 DWORD attributes;
-                snprintf(wave, sizeof(wave), "mods\\%s\\sounds\\wave", mod.cFileName);
+                snprintf(wave, sizeof(wave), "%s\\%s\\sounds\\wave", khdays_mods_folder(), mod.cFileName);
                 attributes = GetFileAttributesA(wave);
                 found = mod.cFileName[0] != '.' && attributes != INVALID_FILE_ATTRIBUTES &&
                         (attributes & FILE_ATTRIBUTE_DIRECTORY);
@@ -393,12 +404,12 @@ static int has_folder(const KhdaysSoundArchive *archive, int number)
         return 0;
     }
     *slash = '\0'; /* wave/<archive> */
-    h = FindFirstFileA("mods\\*", &mod);
+    h = FindFirstFileA(mods_pattern(), &mod);
     if (h != INVALID_HANDLE_VALUE) {
         do {
             char folder[600];
             DWORD attributes;
-            snprintf(folder, sizeof(folder), "mods\\%s\\sounds\\%s", mod.cFileName, identifier);
+            snprintf(folder, sizeof(folder), "%s\\%s\\sounds\\%s", khdays_mods_folder(), mod.cFileName, identifier);
             attributes = GetFileAttributesA(folder);
             if (mod.cFileName[0] != '.' && attributes != INVALID_FILE_ATTRIBUTES &&
                 (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
