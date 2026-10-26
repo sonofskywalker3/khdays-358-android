@@ -205,16 +205,29 @@ static inline DWORD GetLastError(void)
 }
 #define ExitProcess(code) exit((int)(code))
 
-/* Folders and files */
+/* Folders and files. The port's paths are Windows's, "mods\<Mod>\sounds": each backslash a slash
+ * here (FindFirstFileA's pattern too, shim.c), or the whole path would be one name. */
+static inline void posix_path(const char *path, char out[MAX_PATH])
+{
+    size_t i;
+    for (i = 0; path[i] != '\0' && i < MAX_PATH - 1; ++i) {
+        out[i] = path[i] == '\\' ? '/' : path[i];
+    }
+    out[i] = '\0';
+}
 static inline BOOL CreateDirectoryA(const char *path, void *attributes)
 {
+    char posix[MAX_PATH];
     (void)attributes;
-    return mkdir(path, 0777) == 0;
+    posix_path(path, posix);
+    return mkdir(posix, 0777) == 0;
 }
 static inline DWORD GetFileAttributesA(const char *path)
 {
+    char posix[MAX_PATH];
     struct stat s;
-    if (stat(path, &s) != 0) {
+    posix_path(path, posix);
+    if (stat(posix, &s) != 0) {
         return INVALID_FILE_ATTRIBUTES;
     }
     return S_ISDIR(s.st_mode) ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;

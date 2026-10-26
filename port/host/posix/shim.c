@@ -2,7 +2,9 @@
  * thread's handle is signalled when it ends, an event's when set, as WaitForSingleObject sees them. */
 #include <windows.h>
 
+#include <fcntl.h>
 #include <fnmatch.h>
+#include <sys/stat.h>
 
 enum { KIND_THREAD = 1, KIND_EVENT, KIND_FIND };
 
@@ -162,7 +164,12 @@ static BOOL next_match(Handle *h, WIN32_FIND_DATAA *found)
         if (fnmatch(h->pattern, entry->d_name, 0) == 0) {
             strncpy(found->cFileName, entry->d_name, MAX_PATH - 1);
             found->cFileName[MAX_PATH - 1] = '\0';
-            found->dwFileAttributes = entry->d_type == DT_DIR ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
+            int folder = entry->d_type == DT_DIR;
+            struct stat s;
+            if (entry->d_type == DT_UNKNOWN && fstatat(dirfd(h->dir), entry->d_name, &s, 0) == 0) {
+                folder = S_ISDIR(s.st_mode); /* a file system that leaves the kind out of its listing */
+            }
+            found->dwFileAttributes = folder ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
             return TRUE;
         }
     }
