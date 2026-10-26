@@ -6,6 +6,7 @@
 #if defined(__ANDROID__)
 #include "../android/bottom_screen.h"
 #include "../android/game_surface.h"
+#include "../android/touch_gear.h"
 #endif
 #include "devices.h"
 #include "press_edges.h"
@@ -312,6 +313,9 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     for (int i = 0; i < mod_notice_count; ++i) {
         khdays_settings_corner_draw(renderer, mod_notices[i].line, corner_rows + i);
     }
+#if defined(__ANDROID__)
+    khdays_touch_gear_draw(renderer); /* the settings key a touch screen taps */
+#endif
     khdays_settings_draw(renderer, window);
     SDL_RenderPresent(renderer);
 #if defined(__ANDROID__)
@@ -530,6 +534,17 @@ static int opens_settings(const SDL_Event *event, SDL_Window *window)
     if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat && event->key.scancode == SDL_SCANCODE_ESCAPE) {
         return 1;
     }
+#if defined(__ANDROID__)
+    if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat && event->key.scancode == SDL_SCANCODE_AC_BACK) {
+        return 1; /* the system's Back (SDLActivity hands it to the game as a key) */
+    }
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT) {
+        const float density = SDL_GetWindowPixelDensity(window) > 0 ? SDL_GetWindowPixelDensity(window) : 1.0f;
+        if (khdays_touch_gear_at(event->button.x * density, event->button.y * density)) {
+            return 1; /* the gear a touch screen taps */
+        }
+    }
+#endif
     (void)window;
     if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT &&
         khdays_present_settings_button() && khdays_present_settings_button_at(event->button.x, event->button.y)) {
@@ -757,6 +772,13 @@ static int host_thread(void *unused)
              * refresh -- left the menu behind the player's presses. At least a picture a frame
              * while they keep coming. */
             static Uint64 drawn_at;
+#if defined(__ANDROID__)
+            if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
+                event.key.scancode == SDL_SCANCODE_AC_BACK) {
+                event.key.scancode = SDL_SCANCODE_ESCAPE; /* the system's Back steps out of the menu as Esc does */
+                event.key.key = SDLK_ESCAPE;
+            }
+#endif
             khdays_devices_handle(&event, renderer);
             if (khdays_settings_handle(&event, window)) {
                 settings_closed(window, renderer);
