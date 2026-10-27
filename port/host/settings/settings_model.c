@@ -521,10 +521,9 @@ static void build_general(Builder *b, KhdaysProfile *w)
 static char files_status[2048];
 static char files_game[400], files_hd[400], files_hd_folder[600], files_mods_folder[600], files_mods[600];
 
-/* The line `key=` of the status, or "". */
-static const char *files_line(const char *key)
+/* The line `key=` of the status into `line` ("" without). */
+static void files_line(const char *key, char *line, size_t size)
 {
-    static char line[600];
     const size_t n = strlen(key);
     const char *p = files_status;
     line[0] = '\0';
@@ -532,39 +531,66 @@ static const char *files_line(const char *key)
         const char *eol = strchr(p, '\n');
         const size_t len = eol != NULL ? (size_t)(eol - p) : strlen(p);
         if (len > n && strncmp(p, key, n) == 0 && p[n] == '=') {
-            snprintf(line, sizeof(line), "%.*s", (int)(len - n - 1), p + n + 1);
+            snprintf(line, size, "%.*s", (int)(len - n - 1), p + n + 1);
             break;
         }
         p = eol != NULL ? eol + 1 : NULL;
     }
-    return line;
+}
+
+/* A long line as rows of at most FILES_ROW_CHARS, broken at spaces (the rows do not wrap). */
+#define FILES_ROW_CHARS 76
+static char files_rows[8][FILES_ROW_CHARS + 4];
+
+static void add_files_lines(Builder *b, const char *text, int *row)
+{
+    const char *p = text;
+    while (*p != '\0' && *row < 8) {
+        size_t n = strlen(p);
+        if (n > FILES_ROW_CHARS) {
+            n = FILES_ROW_CHARS;
+            while (n > 0 && p[n] != ' ') {
+                --n;
+            }
+            if (n == 0) {
+                n = FILES_ROW_CHARS;
+            }
+        }
+        snprintf(files_rows[*row], sizeof(files_rows[*row]), "%.*s", (int)n, p);
+        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_rows[*row]);
+        ++*row;
+        p += n;
+        while (*p == ' ') {
+            ++p;
+        }
+    }
 }
 
 static void build_files(Builder *b)
 {
     KhdaysRow *r;
-    const char *hd_folder, *mods_folder;
+    char hd_folder[600], mods_folder[600], text[1200];
+    int row = 0;
     khdays_media_folder_status(files_status, sizeof(files_status));
-    snprintf(files_game, sizeof(files_game), "%s", files_line("game"));
-    snprintf(files_hd, sizeof(files_hd), "%s", files_line("hd"));
-    hd_folder = files_line("hd_folder");
+    files_line("game", files_game, sizeof(files_game));
+    files_line("hd", files_hd, sizeof(files_hd));
+    files_line("hd_folder", hd_folder, sizeof(hd_folder));
+    files_line("mods_folder", mods_folder, sizeof(mods_folder));
+    files_line("mods", files_mods, sizeof(files_mods));
     snprintf(files_hd_folder, sizeof(files_hd_folder), khdays_text(TXT_FILES_HD_FOLDER_IS),
              hd_folder[0] != '\0' ? hd_folder : khdays_text(TXT_FILES_APPS_OWN));
-    mods_folder = files_line("mods_folder");
     snprintf(files_mods_folder, sizeof(files_mods_folder), khdays_text(TXT_FILES_MODS_FOLDER_IS),
              mods_folder[0] != '\0' ? mods_folder : khdays_text(TXT_FILES_APPS_OWN));
-    snprintf(files_mods, sizeof(files_mods), "%s", files_line("mods"));
 
     if (files_game[0] != '\0') {
         add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_game);
     }
     add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_ROM, KHDAYS_CMD_FILES_ROM);
-    if (files_hd[0] != '\0') {
-        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_hd);
-    }
+    add_files_lines(b, files_hd, &row);
     r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_HD_IMPORT, KHDAYS_CMD_FILES_HD_IMPORT);
     r->note = khdays_text(TXT_FILES_HD_IMPORT_NOTE);
-    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_hd_folder);
+    snprintf(text, sizeof(text), "%s", files_hd_folder);
+    add_files_lines(b, text, &row);
     r = add_command(b, KHDAYS_SET_FILES_ACT, hd_folder[0] != '\0' ? TXT_FILES_OTHER_FOLDER : TXT_FILES_HD_FOLDER,
                     KHDAYS_CMD_FILES_HD_FOLDER);
     r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
@@ -572,10 +598,9 @@ static void build_files(Builder *b)
         r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_APP_FOLDER, KHDAYS_CMD_FILES_HD_APP);
         r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
     }
-    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_mods_folder);
-    if (files_mods[0] != '\0') {
-        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_mods);
-    }
+    snprintf(text, sizeof(text), "%s", files_mods_folder);
+    add_files_lines(b, text, &row);
+    add_files_lines(b, files_mods, &row);
     r = add_command(b, KHDAYS_SET_FILES_ACT, mods_folder[0] != '\0' ? TXT_FILES_OTHER_FOLDER : TXT_FILES_MODS_FOLDER,
                     KHDAYS_CMD_FILES_MODS_FOLDER);
     r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
@@ -676,6 +701,7 @@ static void build_mods(Builder *b)
     const int language = khdays_ui_language();
     mods_take();
     add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_NOTE, khdays_text(TXT_MOD_ORDER_NOTE));
+    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_NOTE, khdays_text(TXT_MOD_FILES_NOTE));
     for (int i = 0; i < mods_view.count && mod_enabled != NULL; ++i) {
         const KhdaysModView *v = &mods_view.mods[i];
         KhdaysRow *r = add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_MOD_HEADING, mod_heads[i]);

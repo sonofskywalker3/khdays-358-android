@@ -157,16 +157,18 @@ void khdays_mods_scan(const char *mods_path, const char *user)
             break;
         }
     }
+    /* said on stderr too: the scan comes before the session log opens */
     if (count == 0) {
         khdays_log("mods: none in %s", mods_path);
+        fprintf(stderr, "mods: none in %s\n", mods_path);
     }
     for (int i = 0; i < count; ++i) {
         const KhdaysModEntry *e = &mods[i].entry;
-        khdays_log("mods: %d. %s: %s%s", i + 1, e->folder,
-                   e->ignored ? "off by hand (" IGNORE_FILE ", or a name beginning with a dot)"
-                   : e->on    ? "on, its files replace the game's"
-                              : "off (order.ini)",
-                   e->scripted ? "; scripted" : "");
+        const char *how = e->ignored ? "off by hand (" IGNORE_FILE ", or a name beginning with a dot)"
+                          : e->on    ? "on, its files replace the game's"
+                                     : "off (order.ini)";
+        khdays_log("mods: %d. %s: %s%s", i + 1, e->folder, how, e->scripted ? "; scripted" : "");
+        fprintf(stderr, "mods: %d. %s: %s%s\n", i + 1, e->folder, how, e->scripted ? "; scripted" : "");
     }
     changed();
 }

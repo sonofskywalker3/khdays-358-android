@@ -1009,16 +1009,16 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_MOD_PAUSED] = {"Paused: %s", "En pause : %s", "Pausiert: %s", "In pausa: %s", "En pausa: %s"},
     [TXT_MOD_REFUSED] = {"Not loaded: %s", "Non chargé : %s", "Nicht geladen: %s", "Non caricato: %s",
                          "No cargado: %s"},
-    [TXT_MOD_ORDER_NOTE] = {"Mods later in the list run after the earlier ones: their changes stand. A file two "
-                            "mods both replace comes from the earlier one.",
-                            "Les mods plus bas dans la liste passent après les autres : leurs changements "
-                            "l'emportent. Un fichier remplacé par deux mods vient du premier.",
-                            "Spätere Mods der Liste laufen nach den früheren: ihre Änderungen gelten. Eine Datei, "
-                            "die zwei Mods ersetzen, kommt vom früheren.",
-                            "I mod più in basso nell'elenco vengono dopo gli altri: valgono le loro modifiche. Un "
-                            "file sostituito da due mod viene dal primo.",
-                            "Los mods más abajo en la lista van después de los demás: sus cambios prevalecen. Un "
-                            "archivo que dos mods reemplazan viene del primero."},
+    [TXT_MOD_ORDER_NOTE] = {"Mods later in the list run after the earlier ones: their changes stand.",
+                            "Les mods plus bas dans la liste passent après les autres : leurs changements l'emportent.",
+                            "Spätere Mods der Liste laufen nach den früheren: ihre Änderungen gelten.",
+                            "I mod più in basso nell'elenco vengono dopo gli altri: valgono le loro modifiche.",
+                            "Los mods más abajo en la lista van después de los demás: sus cambios prevalecen."},
+    [TXT_MOD_FILES_NOTE] = {"A file two mods both replace comes from the earlier one.",
+                            "Un fichier remplacé par deux mods vient du premier.",
+                            "Eine Datei, die zwei Mods ersetzen, kommt vom früheren.",
+                            "Un file sostituito da due mod viene dal primo.",
+                            "Un archivo que dos mods reemplazan viene del primero."},
     [TXT_ROOM_NEEDS_MODS] = {"This room plays with these mods: %s", "Ce salon joue avec ces mods : %s",
                              "Dieser Raum spielt mit diesen Mods: %s", "Questa stanza gioca con questi mod: %s",
                              "Esta sala juega con estos mods: %s"},
