@@ -23,6 +23,10 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
  * one is attached. A picture of that size is copied as it is, without scaling. */
 int khdays_bottom_fit_size(int *width, int *height);
 
+/* What fills the display around the picture: 0 black, 1 the picture's own edge rows and columns drawn
+ * on (the video settings' lower_fill). */
+void khdays_bottom_set_fill(int extend);
+
 /* Shows the title's logo from the HD menu (else the app's crown mark) alone, on black, on the second
  * display: while it has nothing to show (the title on the upper display), so that it is seen to be in
  * use. Drawn once; again only after something else was shown there or the display came back. */
