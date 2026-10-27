@@ -153,7 +153,6 @@ typedef struct KhdaysVideo {
     int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
-    int lower_fill;          /* a second display's lower screen: 0 black bars around it, 1 its edges extended over them */
     int texture_smoothing;
     int hd_graphics;   /* use the replacements in mods/ */
     int dump_graphics; /* write the graphics shown to saves/dump/ */

@@ -256,7 +256,6 @@ void khdays_video_default(KhdaysVideo *v)
     v->antialiasing = 1;            /* off: 2x is four times the 3D's work */
     v->aspect = KHDAYS_ASPECT_16_9; /* for one screen; two screens use 4:3 */
     v->smooth_scaling = 0;
-    v->lower_fill = 1;
     v->texture_smoothing = 0;
     v->movies = KHDAYS_MOVIES_HD; /* the maintainer's choice */
     v->picture_ds = 0;            /* the maintainer's choice */
@@ -1062,15 +1061,6 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         }
         return;
     }
-    if (SDL_strcasecmp(key, "lower_fill") == 0) {
-        if (SDL_strcasecmp(value, "bars") == 0 || SDL_strcasecmp(value, "extended") == 0) {
-            v->lower_fill = SDL_strcasecmp(value, "extended") == 0;
-        } else {
-            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "extended");
-            v->lower_fill = defaults.lower_fill;
-        }
-        return;
-    }
     {
         static const struct {
             const char *name;
@@ -1543,9 +1533,6 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "aspect = %s\n"
             "# scaling: sharp (the DS's pixels) or smooth\n"
             "scaling = %s\n"
-            "# lower_fill: the lower screen on a second display of another shape -- bars (black around\n"
-            "#             it) or extended (its edges drawn on over them)\n"
-            "lower_fill = %s\n"
             "texture_smoothing = %s\nhd_graphics = %s\ndump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), hd-smooth (hd, their 60 fps versions in data/cutscenes/cinematics60\n"
@@ -1565,8 +1552,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
             v->one_screen ? "one" : "two", v->hud_size, v->menu_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
-            v->smooth_scaling ? "smooth" : "sharp", v->lower_fill ? "extended" : "bars",
-            v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
+            v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
             v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS          ? "ds"
             : v->movies == KHDAYS_MOVIES_PC        ? "pc"

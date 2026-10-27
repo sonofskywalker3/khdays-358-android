@@ -543,22 +543,6 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "La de la ventana"},
 #endif
     [TXT_VIDEO_SCALING] = {"Screen scaling", "Mise à l'échelle", "Bildskalierung", "Ridimensionamento", "Escalado"},
-    [TXT_VIDEO_LOWER_FILL] = {"Lower screen's bars", "Bandes de l'écran inférieur", "Ränder des unteren Bildschirms",
-                              "Bande dello schermo inferiore", "Bandas de la pantalla inferior"},
-    [TXT_VIDEO_LOWER_FILL_NOTE] = {"The lower display is not the shape of a DS screen: what fills the bands beside the "
-                                   "picture, black or the picture's own edges drawn on, never stretched.",
-                                   "L'écran inférieur n'a pas la forme d'un écran DS : ce qui remplit les bandes à "
-                                   "côté de l'image, du noir ou les bords de l'image prolongés, jamais étirée.",
-                                   "Der untere Bildschirm hat nicht die Form eines DS-Bildschirms: was die Ränder "
-                                   "neben dem Bild füllt, Schwarz oder die fortgeführten Bildränder, nie gestreckt.",
-                                   "Lo schermo inferiore non ha la forma di uno schermo DS: cosa riempie le bande "
-                                   "accanto all'immagine, nero o i bordi dell'immagine prolungati, mai stirata.",
-                                   "La pantalla inferior no tiene la forma de una pantalla DS: lo que rellena las "
-                                   "bandas junto a la imagen, negro o los bordes de la imagen prolongados, nunca "
-                                   "estirada."},
-    [TXT_VIDEO_LOWER_BARS] = {"Black", "Noires", "Schwarz", "Nere", "Negras"},
-    [TXT_VIDEO_LOWER_EXTENDED] = {"The picture's edges", "Les bords de l'image", "Die Bildränder",
-                                  "I bordi dell'immagine", "Los bordes de la imagen"},
 #if defined(__ANDROID__)
     [TXT_VIDEO_SCALING_NOTE] = {"How the DS's screens are stretched to fit the display.",
                                 "Comment les écrans de la DS s'étirent à la taille de l'affichage.",

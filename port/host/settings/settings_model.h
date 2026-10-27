@@ -105,7 +105,6 @@ enum KhdaysSettingId {
     KHDAYS_SET_HUD_SIZE,
     KHDAYS_SET_MENU_SIZE,
     KHDAYS_SET_SCALING,
-    KHDAYS_SET_LOWER_FILL, /* a second display: the lower screen's bars */
     KHDAYS_SET_TEXTURES,
     KHDAYS_SET_HD_GRAPHICS,
     KHDAYS_SET_DUMP_GRAPHICS,

@@ -1514,7 +1514,6 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
     if ((w != bottom_w || h != bottom_h) && !bottom_make(w, h)) {
         return;
     }
-    khdays_bottom_set_fill(video.lower_fill);
     bottom_show_finished();
     if (port_screen) {
         /* the port's screen on the upper display stands for the game's lower one under it: the lower

@@ -137,47 +137,6 @@ static void fill(uint8_t *bits, int stride, int x0, int y0, int w, int h)
     }
 }
 
-static int fill_extended; /* khdays_bottom_set_fill */
-
-void khdays_bottom_set_fill(int extend)
-{
-    fill_extended = extend != 0;
-}
-
-/* The bands around the picture (at x, y, w x h in the buffer) filled: black, or the picture's edge rows
- * copied up and down and its edge columns left and right (the corners from the corner pixels), once
- * the picture is in place. */
-static void fill_bands(uint8_t *bits, int stride, int bw, int bh, int x, int y, int w, int h)
-{
-    if (!fill_extended || w <= 0 || h <= 0) {
-        fill(bits, stride, 0, 0, bw, y);
-        fill(bits, stride, 0, y + h, bw, bh - (y + h));
-        fill(bits, stride, 0, y, x, h);
-        fill(bits, stride, x + w, y, bw - (x + w), h);
-        return;
-    }
-    for (int dy = y; dy < y + h; ++dy) { /* the columns beside each picture row */
-        uint32_t *row = (uint32_t *)(bits + (size_t)dy * (size_t)stride * 4u);
-        const uint32_t left = row[x], right = row[x + w - 1];
-        for (int dx = 0; dx < x; ++dx) {
-            row[dx] = left;
-        }
-        for (int dx = x + w; dx < bw; ++dx) {
-            row[dx] = right;
-        }
-    }
-    {
-        const uint32_t *top = (const uint32_t *)(bits + (size_t)y * (size_t)stride * 4u);
-        const uint32_t *bottom = (const uint32_t *)(bits + (size_t)(y + h - 1) * (size_t)stride * 4u);
-        for (int dy = 0; dy < y; ++dy) {
-            memcpy(bits + (size_t)dy * (size_t)stride * 4u, top, (size_t)bw * 4u);
-        }
-        for (int dy = y + h; dy < bh; ++dy) {
-            memcpy(bits + (size_t)dy * (size_t)stride * 4u, bottom, (size_t)bw * 4u);
-        }
-    }
-}
-
 void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch)
 {
     ANativeWindow_Buffer buffer;
@@ -208,6 +167,10 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     surface_h = buffer.height;
     fit(buffer.width, buffer.height, &x, &y, &w, &h);
     bits = (uint8_t *)buffer.bits;
+    fill(bits, buffer.stride, 0, 0, buffer.width, y);
+    fill(bits, buffer.stride, 0, y + h, buffer.width, buffer.height - (y + h));
+    fill(bits, buffer.stride, 0, y, x, h);
+    fill(bits, buffer.stride, x + w, y, buffer.width - (x + w), h);
     if (columns_src != width || columns_dst != w) {
         int *grown = (int *)realloc(columns, sizeof(int) * (size_t)w);
         if (grown == NULL) {
@@ -234,7 +197,6 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
             }
         }
     }
-    fill_bands(bits, buffer.stride, buffer.width, buffer.height, x, y, w, h);
     ANativeWindow_unlockAndPost(window);
     pthread_mutex_unlock(&lock);
 }
@@ -533,11 +495,6 @@ int khdays_bottom_fit_size(int *width, int *height)
     (void)width;
     (void)height;
     return 0;
-}
-
-void khdays_bottom_set_fill(int extend)
-{
-    (void)extend;
 }
 
 void khdays_bottom_present_mark(void)

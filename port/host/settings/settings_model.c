@@ -29,7 +29,7 @@ static const char *languages[KHDAYS_LANGUAGE_LAST + 1];
  * (one screen even shrinks the HUD's pieces below it). A profile that holds it (written by
  * hand, for comparing with the DS) shows it first, so the menu says what it is. */
 enum { RESOLUTION_CHOICES = 17 };
-static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT], *scalings[2], *lower_fills[2],
+static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT], *scalings[2],
     *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2], *backends[KHDAYS_BACKEND_COUNT],
     *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
 static const int antialiasing_values[4] = {1, 2, 3, 4};
@@ -77,8 +77,6 @@ void khdays_model_refresh(const KhdaysProfile *work)
     aspects[KHDAYS_ASPECT_WINDOW] = khdays_text(TXT_VIDEO_ASPECT_WINDOW);
     scalings[0] = khdays_text(TXT_VIDEO_SHARP);
     scalings[1] = khdays_text(TXT_VIDEO_SMOOTH);
-    lower_fills[0] = khdays_text(TXT_VIDEO_LOWER_BARS);
-    lower_fills[1] = khdays_text(TXT_VIDEO_LOWER_EXTENDED);
     movies[KHDAYS_MOVIES_HD] = khdays_text(TXT_VIDEO_MOVIES_HD);
     movies[KHDAYS_MOVIES_HD_SMOOTH] = khdays_text(TXT_VIDEO_MOVIES_HD_SMOOTH);
     movies[KHDAYS_MOVIES_PC] = khdays_text(TXT_VIDEO_MOVIES_PC);
@@ -372,11 +370,6 @@ static void build_video(Builder *b, KhdaysProfile *w)
         khdays_text(TXT_VIDEO_MENU_SIZE_NOTE);
     add_choice(b, KHDAYS_SET_SCALING, TXT_VIDEO_SCALING, &v->smooth_scaling, scalings, 2)->note =
         khdays_text(TXT_VIDEO_SCALING_NOTE);
-    if (b->context->second_display) { /* the lower display's shape is not the DS screen's */
-        r = add_choice(b, KHDAYS_SET_LOWER_FILL, TXT_VIDEO_LOWER_FILL, &v->lower_fill, lower_fills, 2);
-        r->note = khdays_text(TXT_VIDEO_LOWER_FILL_NOTE);
-        r->apply = KHDAYS_APPLY_NOW;
-    }
     needs_graphics_card(b, add_switch(b, KHDAYS_SET_TEXTURES, TXT_VIDEO_TEXTURES, &v->texture_smoothing, 1, NULL),
                         TXT_VIDEO_TEXTURES_NOTE);
     /* HD graphics and dumping work with either renderer */
