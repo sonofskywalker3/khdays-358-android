@@ -16,7 +16,7 @@ class SetupStatus(
 ) {
     /** The lines the settings menu reads (port/host/settings/settings_model.c). */
     fun lines(): String = listOf("game" to game, "hd" to hd, "hd_folder" to hdFolder, "mods_folder" to modsFolder, "mods" to mods)
-        .joinToString("\n") { (key, value) -> key + "=" + value.replace('\n', ' ').replace(" ✓", "") } // no tick in the game's font
+        .joinToString("\n") { (key, value) -> key + "=" + value.replace("\n", ". ").replace(" ✓", "") } // no tick in the game's font
 
     companion object {
         fun of(context: Context, game: GameFolder, supported: List<SupportedRom>): SetupStatus {

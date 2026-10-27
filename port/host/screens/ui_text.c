@@ -264,16 +264,11 @@ static const char *const texts[TXT_COUNT][5] = {
     /* Android: the app's setup screen (android/.../setup/SetupActivity.kt) */
     [TXT_OPEN_SETUP] = {"Game files and folders", "Fichiers du jeu et dossiers", "Spieldateien und Ordner",
                         "File del gioco e cartelle", "Archivos del juego y carpetas"},
-    [TXT_OPEN_SETUP_NOTE] = {"The setup screen: another ROM, the HD files, and a folder of your own (a memory card's) "
-                             "for the mods and HD cutscenes.",
-                             "L'écran d'installation : une autre ROM, les fichiers HD, et un dossier à vous (sur une "
-                             "carte mémoire) pour les mods et les cinématiques HD.",
-                             "Der Einrichtungsbildschirm: ein anderes ROM, die HD-Dateien und ein eigener Ordner "
-                             "(auf einer Speicherkarte) für Mods und HD-Zwischensequenzen.",
-                             "La schermata di configurazione: un'altra ROM, i file HD e una cartella tua (su una "
-                             "scheda di memoria) per le mod e i filmati HD.",
-                             "La pantalla de configuración: otra ROM, los archivos HD y una carpeta propia (en una "
-                             "tarjeta de memoria) para los mods y las cinemáticas HD."},
+    [TXT_OPEN_SETUP_NOTE] = {"The setup screen: the same, with its help texts and the progress of a copy.",
+                             "L'écran de configuration : la même chose, avec ses explications et la progression d'une copie.",
+                             "Der Einrichtungsbildschirm: dasselbe, mit seinen Hilfetexten und dem Fortschritt einer Kopie.",
+                             "La schermata di configurazione: lo stesso, con le sue spiegazioni e l'avanzamento di una copia.",
+                             "La pantalla de configuración: lo mismo, con sus explicaciones y el progreso de una copia."},
     [TXT_FILES_ROM] = {"Choose a different ROM file...", "Choisir un autre fichier ROM...",
                        "Eine andere ROM-Datei wählen...", "Scegli un altro file ROM...", "Elegir otro archivo ROM..."},
     [TXT_FILES_HD_IMPORT] = {"Add HD files from a copied folder...", "Ajouter les fichiers HD d'un dossier copié...",
