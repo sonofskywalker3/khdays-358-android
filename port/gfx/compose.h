@@ -1124,11 +1124,18 @@ KD_FN uint kd_mix_split(uint a, uint b, float t)
     return kd_mix8(ka, kb, t) | ((1u + (uint)(f * 254.0f + 0.5f)) << 24);
 }
 
+/* Layers left out of kd_pixel (KDF_BG_ON_SHIFT's bits and KDF_OBJ_ON): the includer may define it, to
+ * compose a screen's rows without some of them (the lower screen's rows past the DS's for a taller
+ * display: host/screens/lower_layout.h). */
+#ifndef KD_LAYERS_OFF
+#define KD_LAYERS_OFF 0u
+#endif
+
 /* The pixel at (x, row) as the screen shows it, in 6-bit channels as
  * kd_bright gives them (8-bit ones with KDF_FINE). */
 KD_FN uint kd_pixel(int x, int row)
 {
-    const uint flags = KD_DESC(KD_FLAGS);
+    const uint flags = KD_DESC(KD_FLAGS) & ~(uint)(KD_LAYERS_OFF);
     const uint display = flags & KDF_DISPLAY_MASK;
     const uint fine = flags & KDF_FINE;
     uint result;

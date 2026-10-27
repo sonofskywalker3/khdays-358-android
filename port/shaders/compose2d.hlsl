@@ -33,6 +33,9 @@ cbuffer Params : register(b0, space2) {
     uint offset3d;      // source3d 2: the 3D's columns left of the DS's (the one picture's, as wide as it)
     uint4 edge_colors;  // EDGE_COLOR, two entries per uint
     uint4 fog_table[2]; // FOG_TABLE, four entries per uint
+    uint row0;          // the DS row of the target's first (rows past the DS's 192 for a taller display)
+    uint layers_off;    // layers left out (KDF_BG_ON_SHIFT's bits, KDF_OBJ_ON): compose.h KD_LAYERS_OFF
+    uint2 pad;
 };
 
 #include "finish3d.hlsli"
@@ -50,6 +53,7 @@ uint layer3d_at(uint x, int row)
     return 0u;
 }
 
+#define KD_LAYERS_OFF layers_off
 #define KD_FN
 #define KD_VOID
 #define KD_DESC(i) desc.Load((i) * 4u)
@@ -99,8 +103,8 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     }
     g_fx = id.x % scale;
     g_fy = id.y % scale;
-    c6 = KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale))
-                                 : kd_pixel((int)(id.x / scale), (int)(id.y / scale));
+    c6 = KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale) + (int)row0)
+                                 : kd_pixel((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u) {
         // the one-screen picture's source: K in 8 bits, its alpha 0 (not shown over
         // the 3D) or 1 + the 3D's factor x 254 (kd_split)

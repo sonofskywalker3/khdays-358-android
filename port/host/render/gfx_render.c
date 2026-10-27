@@ -23,6 +23,7 @@ typedef struct Compose2dParams {
     uint32_t fog_color, fog_offset, fine, offset3d;
     uint32_t edge_colors[4];
     uint32_t fog_table[8];
+    uint32_t row0, layers_off, pad[2]; /* rows past the DS's (lower_layout.h), layers left out */
 } Compose2dParams;
 
 /* onescreen.hlsl's constant buffer, register for register. */
@@ -74,6 +75,11 @@ static Uint32 area_bytes(int a)
 }
 static SDL_GPUTexture *dummy3d[2]; /* bound in place of the 3D targets at 1x */
 static SDL_GPUTexture *screen[2];
+/* The lower screen's rows past the DS's 192 (or under its frame) for a taller second display, composed
+ * with some layers left out (host/screens/lower_layout.h): asked for, then drawn into `rows_texture`. */
+static int rows_row0, rows_count, rows_scale, rows_drawn;
+static uint32_t rows_off;
+static SDL_GPUTexture *rows_texture;
 static int screen_scale, screen_columns[2]; /* their scale, and each one's width in DS columns */
 static SDL_Texture *wrapped[2];
 static SDL_Renderer *wrapped_for[2];
@@ -589,6 +595,12 @@ static void drop_screens(void)
     }
     screen_scale = 0;
     screen_columns[0] = screen_columns[1] = 0;
+    if (rows_texture != NULL) {
+        SDL_ReleaseGPUTexture(device, rows_texture);
+        rows_texture = NULL;
+    }
+    rows_scale = 0;
+    rows_drawn = 0;
 }
 
 void khdays_gfx_render_close(void)
@@ -1171,6 +1183,51 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
                                1); /* the shader skips pixels past the edge */
         SDL_EndGPUComputePass(pass);
     }
+    rows_drawn = 0;
+    if (rows_count > 0 && p->upper == 0 && one == NULL) {
+        /* the lower screen's (engine B's) rows asked for, apart from the DS's own */
+        Compose2dParams cp;
+        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUBuffer *in[8];
+        SDL_GPUComputePass *pass;
+        if (rows_texture == NULL || rows_scale != scale) {
+            if (rows_texture != NULL) {
+                SDL_ReleaseGPUTexture(device, rows_texture);
+            }
+            rows_texture = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                                        SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+                                        KHDAYS_FRAME_W * scale, KHDAYS_ROWS_MAX * scale);
+            rows_scale = scale;
+        }
+        if (rows_texture != NULL) {
+            SDL_zero(cp);
+            cp.scale = (uint32_t)scale;
+            cp.width = (uint32_t)(KHDAYS_FRAME_W * scale);
+            cp.height = (uint32_t)(rows_count * scale);
+            cp.row0 = (uint32_t)rows_row0;
+            cp.layers_off = rows_off;
+            in[0] = desc[1];
+            in[1] = memory[BBG];
+            in[2] = memory[BOBJ];
+            in[3] = memory[BBGEXT];
+            in[4] = memory[BOBJEXT];
+            in[5] = memory[VRAM];
+            in[6] = layer3d;
+            in[7] = khdays_gpu_hd_buffer();
+            SDL_zeroa(io);
+            io[0].texture = dummy3d[0];
+            io[1].texture = dummy3d[1];
+            io[2].texture = rows_texture;
+            io[2].cycle = true;
+            pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+            SDL_BindGPUComputePipeline(pass, compose);
+            SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
+            SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+            SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);
+            SDL_EndGPUComputePass(pass);
+            rows_drawn = 1;
+        }
+    }
     if (one != NULL) {
         /* the one-screen picture, from both screens and the 3D (onescreen.hlsl) */
         OneScreenParams op;
@@ -1315,6 +1372,24 @@ SDL_Texture *khdays_gfx_render_texture(SDL_Renderer *renderer, int engine)
     }
     return wrap(renderer, screen[engine], screen_columns[engine] * screen_scale, KHDAYS_FRAME_H * screen_scale,
                 &wrapped[engine], &wrapped_for[engine]);
+}
+
+void khdays_gfx_render_set_lower_rows(int row0, int rows, uint32_t layers_off)
+{
+    rows_row0 = row0;
+    rows_count = rows < 0 ? 0 : rows > KHDAYS_ROWS_MAX ? KHDAYS_ROWS_MAX : rows;
+    rows_off = layers_off;
+}
+
+SDL_GPUTexture *khdays_gfx_render_lower_rows(int *row0, int *rows, int *scale)
+{
+    if (!rows_drawn || rows_texture == NULL) {
+        return NULL;
+    }
+    *row0 = rows_row0;
+    *rows = rows_count;
+    *scale = rows_scale;
+    return rows_texture;
 }
 
 int khdays_gfx_render_columns(int engine)
