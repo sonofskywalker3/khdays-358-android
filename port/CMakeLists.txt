@@ -400,6 +400,8 @@ add_library(khdays-host-input STATIC
     host/settings/settings_corner.c       # and what it leaves when closed
     host/screens/ui_font.cpp
     host/screens/ui_text.c
+    host/screens/lower_layout.c      # the lower screen as tall as a second display,
+    host/screens/lower_screens.c     # screen by screen
     runtime/scripts/queue.c          # the Mods page: what it asks of the mods,
     runtime/scripts/view.c           # and what it shows of them
     host/render/png_io.c
@@ -804,6 +806,11 @@ add_test(NAME khdays-save COMMAND khdays-save-test)
 # holds as the game's read tells it, the two views, a port's file written and
 # read back.
 # The update check's versions and GitHub's answer (host/app/release_version.h).
+# The lower screen laid out as tall as a second display taller than 4:3 (host/screens/lower_layout.h).
+add_executable(khdays-lower-layout-test tests/lower_layout_test.c host/screens/lower_layout.c host/screens/lower_screens.c)
+target_compile_options(khdays-lower-layout-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-lower-layout COMMAND khdays-lower-layout-test)
+
 add_executable(khdays-updates-test tests/updates_test.c host/app/release_version.c)
 target_compile_options(khdays-updates-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-updates COMMAND khdays-updates-test)

@@ -30,8 +30,8 @@ static const char *languages[KHDAYS_LANGUAGE_LAST + 1];
  * hand, for comparing with the DS) shows it first, so the menu says what it is. */
 enum { RESOLUTION_CHOICES = 17 };
 static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT], *scalings[2],
-    *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2], *backends[KHDAYS_BACKEND_COUNT],
-    *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
+    *second_screens[KHDAYS_SECOND_SCREEN_COUNT], *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2],
+    *backends[KHDAYS_BACKEND_COUNT], *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
 static const int antialiasing_values[4] = {1, 2, 3, 4};
 static const char *autosaves[3], *save_files[2];
 /* the choices' order on screen: file 99 (the default) first */
@@ -77,6 +77,8 @@ void khdays_model_refresh(const KhdaysProfile *work)
     aspects[KHDAYS_ASPECT_WINDOW] = khdays_text(TXT_VIDEO_ASPECT_WINDOW);
     scalings[0] = khdays_text(TXT_VIDEO_SHARP);
     scalings[1] = khdays_text(TXT_VIDEO_SMOOTH);
+    second_screens[KHDAYS_SECOND_SCREEN_ORIGINAL] = khdays_text(TXT_VIDEO_SECOND_ORIGINAL);
+    second_screens[KHDAYS_SECOND_SCREEN_FULLSCREEN] = khdays_text(TXT_VIDEO_SECOND_FULLSCREEN);
     movies[KHDAYS_MOVIES_HD] = khdays_text(TXT_VIDEO_MOVIES_HD);
     movies[KHDAYS_MOVIES_HD_SMOOTH] = khdays_text(TXT_VIDEO_MOVIES_HD_SMOOTH);
     movies[KHDAYS_MOVIES_PC] = khdays_text(TXT_VIDEO_MOVIES_PC);
@@ -370,6 +372,12 @@ static void build_video(Builder *b, KhdaysProfile *w)
         khdays_text(TXT_VIDEO_MENU_SIZE_NOTE);
     add_choice(b, KHDAYS_SET_SCALING, TXT_VIDEO_SCALING, &v->smooth_scaling, scalings, 2)->note =
         khdays_text(TXT_VIDEO_SCALING_NOTE);
+    if (b->context->second_display) { /* the lower display's shape is not the DS screen's */
+        r = add_choice(b, KHDAYS_SET_SECOND_SCREEN, TXT_VIDEO_SECOND_SCREEN, &v->second_screen_aspect, second_screens,
+                       KHDAYS_SECOND_SCREEN_COUNT);
+        r->note = khdays_text(TXT_VIDEO_SECOND_SCREEN_NOTE);
+        r->apply = KHDAYS_APPLY_NOW;
+    }
     needs_graphics_card(b, add_switch(b, KHDAYS_SET_TEXTURES, TXT_VIDEO_TEXTURES, &v->texture_smoothing, 1, NULL),
                         TXT_VIDEO_TEXTURES_NOTE);
     /* HD graphics and dumping work with either renderer */

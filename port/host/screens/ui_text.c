@@ -543,6 +543,26 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "La de la ventana"},
 #endif
     [TXT_VIDEO_SCALING] = {"Screen scaling", "Mise à l'échelle", "Bildskalierung", "Ridimensionamento", "Escalado"},
+    [TXT_VIDEO_SECOND_SCREEN] = {"Second Screen Aspect Ratio", "Format du second écran",
+                                 "Seitenverhältnis des zweiten Bildschirms", "Proporzioni del secondo schermo",
+                                 "Relación de aspecto de la segunda pantalla"},
+    [TXT_VIDEO_SECOND_SCREEN_NOTE] = {"Fullscreen lays each screen out again as tall as the second screen, never "
+                                      "stretched: panels and lists grow, a menu is enlarged. A screen the port does "
+                                      "not know keeps its black bars.",
+                                      "Plein écran redispose chaque écran à la hauteur du second écran, sans "
+                                      "l'étirer : panneaux et listes s'agrandissent, un menu grandit. Un écran que le "
+                                      "portage ne connaît pas garde ses bandes noires.",
+                                      "Vollbild ordnet jeden Bildschirm neu in der Höhe des zweiten Bildschirms an, "
+                                      "nie gestreckt: Felder und Listen wachsen, ein Menü wird größer. Ein Bild, das "
+                                      "die Portierung nicht kennt, behält seine schwarzen Ränder.",
+                                      "Schermo intero ridispone ogni schermata all'altezza del secondo schermo, senza "
+                                      "stirarla: riquadri ed elenchi crescono, un menu si ingrandisce. Una schermata "
+                                      "che il port non conosce tiene le sue bande nere.",
+                                      "Pantalla completa reorganiza cada pantalla a la altura de la segunda pantalla, "
+                                      "sin estirarla: paneles y listas crecen, un menú se amplía. Una pantalla que el "
+                                      "port no conoce conserva sus bandas negras."},
+    [TXT_VIDEO_SECOND_ORIGINAL] = {"Original", "Original", "Original", "Originale", "Original"},
+    [TXT_VIDEO_SECOND_FULLSCREEN] = {"Fullscreen", "Plein écran", "Vollbild", "Schermo intero", "Pantalla completa"},
 #if defined(__ANDROID__)
     [TXT_VIDEO_SCALING_NOTE] = {"How the DS's screens are stretched to fit the display.",
                                 "Comment les écrans de la DS s'étirent à la taille de l'affichage.",

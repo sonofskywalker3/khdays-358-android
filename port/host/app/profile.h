@@ -144,6 +144,13 @@ typedef enum KhdaysAspect {
     KHDAYS_ASPECT_COUNT
 } KhdaysAspect;
 
+/* The lower screen on a second display of another shape (the Thor's, taller than 4:3). */
+typedef enum KhdaysSecondScreenAspect {
+    KHDAYS_SECOND_SCREEN_ORIGINAL,   /* the DS's 4:3, black bars beside it */
+    KHDAYS_SECOND_SCREEN_FULLSCREEN, /* as tall as the display, never stretched (host/screens/lower_layout.h) */
+    KHDAYS_SECOND_SCREEN_COUNT
+} KhdaysSecondScreenAspect;
+
 #define KHDAYS_RESOLUTION_WINDOW 0 /* internal_resolution = window */
 #define KHDAYS_MENU_SIZE_MAX 4     /* menu_size: 1 to this */
 #define KHDAYS_SUBTITLE_SIZE_MAX 5 /* subtitle_size: 1 to this */
@@ -153,6 +160,7 @@ typedef struct KhdaysVideo {
     int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
+    int second_screen_aspect; /* KhdaysSecondScreenAspect: the lower screen on a second display */
     int texture_smoothing;
     int hd_graphics;   /* use the replacements in mods/ */
     int dump_graphics; /* write the graphics shown to saves/dump/ */

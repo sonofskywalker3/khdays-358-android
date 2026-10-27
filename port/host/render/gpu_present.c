@@ -1422,8 +1422,9 @@ static SDL_ScaleMode mode_for(SDL_Texture *t, float w, float h)
 typedef struct BottomSlot {
     SDL_GPUTexture *texture; /* the lower screen at the display's size */
     SDL_GPUTransferBuffer *buffer;
-    SDL_GPUFence *fence; /* while the copy is on its way */
-    Uint64 order;        /* when it was sent */
+    SDL_GPUFence *fence;   /* while the copy is on its way */
+    Uint64 order;          /* when it was sent */
+    int rows_h, rows_row0; /* the lower screen's extra rows under it: their height there, their first DS row */
 } BottomSlot;
 static BottomSlot bottom_slots[BOTTOM_SLOTS];
 static int bottom_w, bottom_h;
@@ -1465,10 +1466,16 @@ static void bottom_show_finished(void)
     if (newest != NULL && !port_screen) {
         const uint8_t *rgba = (const uint8_t *)SDL_MapGPUTransferBuffer(device, newest->buffer, false);
         if (rgba != NULL) {
-            khdays_bottom_present(rgba, bottom_w, bottom_h, bottom_w * 4);
+            khdays_bottom_present(rgba, bottom_w, bottom_h, bottom_w * 4, newest->rows_h, newest->rows_row0);
             SDL_UnmapGPUTransferBuffer(device, newest->buffer);
         }
     }
+}
+
+/* The room under the lower screen for its rows past the DS's (gfx_render.h KHDAYS_ROWS_MAX at its scale). */
+static int bottom_rows_room(int h)
+{
+    return KHDAYS_ROWS_MAX * h / KHDAYS_FRAME_H;
 }
 
 static int bottom_make(int w, int h)
@@ -1482,12 +1489,12 @@ static int bottom_make(int w, int h)
         t.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         t.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
         t.width = (Uint32)w;
-        t.height = (Uint32)h;
+        t.height = (Uint32)(h + bottom_rows_room(h)); /* and the rows past the DS's, under it */
         t.layer_count_or_depth = 1;
         t.num_levels = 1;
         SDL_zero(b);
         b.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-        b.size = (Uint32)(w * h * 4);
+        b.size = (Uint32)(w * (h + bottom_rows_room(h)) * 4);
         bottom_slots[i].texture = SDL_CreateGPUTexture(device, &t);
         bottom_slots[i].buffer = SDL_CreateGPUTransferBuffer(device, &b);
         if (bottom_slots[i].texture == NULL || bottom_slots[i].buffer == NULL) {
@@ -1506,13 +1513,22 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
                                                                        SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, NULL);
     BottomSlot *slot = NULL;
     SDL_GPUCommandBuffer *cmd;
-    int w = 0, h = 0;
+    SDL_GPUTexture *rows;
+    int w = 0, h = 0, rows_row0 = 0, rows_count = 0, rows_scale = 0;
     if (source == NULL || from->w <= 0.0f || from->h <= 0.0f || !khdays_bottom_fit_size(&w, &h) || w <= 0 ||
         h <= 0) {
         return;
     }
     if ((w != bottom_w || h != bottom_h) && !bottom_make(w, h)) {
         return;
+    }
+    khdays_bottom_set_fullscreen(video.second_screen_aspect == KHDAYS_SECOND_SCREEN_FULLSCREEN);
+    {
+        /* the rows past the DS's the laid-out screen wants, composed from the next frame on */
+        int row0 = 0, count = 0;
+        uint32_t off = 0;
+        khdays_bottom_wanted_rows(&row0, &count, &off);
+        khdays_gfx_render_set_lower_rows(row0, port2d_drawn ? count : 0, off);
     }
     bottom_show_finished();
     if (port_screen) {
@@ -1544,12 +1560,27 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
         blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
         blit.filter = video.smooth_scaling ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
         SDL_BlitGPUTexture(cmd, &blit);
+        slot->rows_h = 0;
+        rows = port2d_drawn ? khdays_gfx_render_lower_rows(&rows_row0, &rows_count, &rows_scale) : NULL;
+        if (rows != NULL && rows_count > 0) {
+            /* the rows past the DS's, at the same scale, under the screen */
+            blit.source.texture = rows;
+            blit.source.x = 0;
+            blit.source.y = 0;
+            blit.source.w = (Uint32)(KHDAYS_FRAME_W * rows_scale);
+            blit.source.h = (Uint32)(rows_count * rows_scale);
+            blit.destination.y = (Uint32)h;
+            blit.destination.h = (Uint32)(rows_count * h / KHDAYS_FRAME_H);
+            SDL_BlitGPUTexture(cmd, &blit);
+            slot->rows_h = (int)blit.destination.h;
+            slot->rows_row0 = rows_row0;
+        }
         copy = SDL_BeginGPUCopyPass(cmd);
         SDL_zero(region);
         SDL_zero(to);
         region.texture = slot->texture;
         region.w = (Uint32)w;
-        region.h = (Uint32)h;
+        region.h = (Uint32)(h + slot->rows_h);
         region.d = 1;
         to.transfer_buffer = slot->buffer;
         SDL_DownloadFromGPUTexture(copy, &region, &to);

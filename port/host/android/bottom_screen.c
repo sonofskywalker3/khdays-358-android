@@ -14,6 +14,7 @@
 
 #include "../../runtime/core/rom.h"
 #include "../render/png_io.h"
+#include "../screens/lower_layout.h"
 
 #define DS_W 256
 #define DS_H 192
@@ -28,6 +29,9 @@ static float touch_nx, touch_ny;
 static int *columns; /* for each destination column, the source column (nearest) */
 static int columns_src, columns_dst;
 static int mark_shown; /* the display shows the title's logo, or the crown mark (khdays_bottom_present_mark) */
+static int fullscreen;           /* khdays_bottom_set_fullscreen */
+static KhdaysLowerLayout layout; /* the screen laid out as tall as the display, the frame shown last */
+static int laid_out;             /* 1: the frame shown last went through `layout` */
 
 /* The title's logo (the heart, the crown, KINGDOM HEARTS 358/2 Days): the opening movie's last picture,
  * the logo on black, as the app keeps it (MainActivity.saveTitleFrame), cut to what is not black; else
@@ -115,6 +119,22 @@ int khdays_bottom_attached(void)
     return attached;
 }
 
+void khdays_bottom_wanted_rows(int *row0, int *rows, uint32_t *layers_off)
+{
+    pthread_mutex_lock(&lock);
+    *row0 = layout.want_row0;
+    *rows = fullscreen ? layout.want_rows : 0;
+    *layers_off = layout.want_off;
+    pthread_mutex_unlock(&lock);
+}
+
+void khdays_bottom_set_fullscreen(int on)
+{
+    pthread_mutex_lock(&lock);
+    fullscreen = on != 0;
+    pthread_mutex_unlock(&lock);
+}
+
 int khdays_bottom_fit_size(int *width, int *height)
 {
     int x, y, attached;
@@ -137,7 +157,7 @@ static void fill(uint8_t *bits, int stride, int x0, int y0, int w, int h)
     }
 }
 
-void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch)
+void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch, int rows_h, int rows_row0)
 {
     ANativeWindow_Buffer buffer;
     int x, y, w, h;
@@ -167,6 +187,23 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     surface_h = buffer.height;
     fit(buffer.width, buffer.height, &x, &y, &w, &h);
     bits = (uint8_t *)buffer.bits;
+    laid_out = 0;
+    if (fullscreen && width == w && height == h && w == buffer.width && h < buffer.height) {
+        /* a display taller than 4:3: the screen laid out again as tall as it (lower_layout.h) */
+        static uint32_t ds[KHDAYS_LOWER_DS_W * (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN)];
+        const uint8_t *rows = rows_h > 0 ? rgba + (size_t)height * (size_t)pitch : NULL;
+        const KhdaysLowerPicture picture = {rgba, width, height, pitch, rows, rows_h, pitch, rows_row0};
+        int ds_rows;
+        khdays_lower_sample(&picture, ds, &ds_rows);
+        if (khdays_lower_layout(&layout, &picture, ds, ds_rows, khdays_lower_screen(ds, ds_rows), buffer.width,
+                                buffer.height)) {
+            khdays_lower_draw(&layout, &picture, bits, buffer.stride * 4);
+            laid_out = 1;
+            ANativeWindow_unlockAndPost(window);
+            pthread_mutex_unlock(&lock);
+            return;
+        }
+    }
     fill(bits, buffer.stride, 0, 0, buffer.width, y);
     fill(bits, buffer.stride, 0, y + h, buffer.width, buffer.height - (y + h));
     fill(bits, buffer.stride, 0, y, x, h);
@@ -465,7 +502,12 @@ int khdays_bottom_touch(int *tx, int *ty)
     int x, y, w, h, down;
     pthread_mutex_lock(&lock);
     down = window != NULL && touch_down && surface_w > 0 && surface_h > 0;
-    if (down) {
+    if (down && laid_out) {
+        /* the DS pixel the touched display pixel shows */
+        const int px = (int)(touch_nx * (float)surface_w), py = (int)(touch_ny * (float)surface_h);
+        down = khdays_lower_touch(&layout, px < surface_w ? px : surface_w - 1, py < surface_h ? py : surface_h - 1, tx,
+                                  ty);
+    } else if (down) {
         fit(surface_w, surface_h, &x, &y, &w, &h);
         *tx = (int)((touch_nx * (float)surface_w - (float)x) * DS_W / (float)w);
         *ty = (int)((touch_ny * (float)surface_h - (float)y) * DS_H / (float)h);
@@ -482,12 +524,20 @@ int khdays_bottom_attached(void)
     return 0;
 }
 
-void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch)
+void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch, int rows_h, int rows_row0)
 {
     (void)rgba;
     (void)width;
     (void)height;
     (void)pitch;
+    (void)rows_h;
+    (void)rows_row0;
+}
+
+void khdays_bottom_wanted_rows(int *row0, int *rows, uint32_t *layers_off)
+{
+    *row0 = *rows = 0;
+    *layers_off = 0;
 }
 
 int khdays_bottom_fit_size(int *width, int *height)
@@ -495,6 +545,11 @@ int khdays_bottom_fit_size(int *width, int *height)
     (void)width;
     (void)height;
     return 0;
+}
+
+void khdays_bottom_set_fullscreen(int on)
+{
+    (void)on;
 }
 
 void khdays_bottom_present_mark(void)

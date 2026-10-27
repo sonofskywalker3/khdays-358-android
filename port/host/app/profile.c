@@ -256,6 +256,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->antialiasing = 1;            /* off: 2x is four times the 3D's work */
     v->aspect = KHDAYS_ASPECT_16_9; /* for one screen; two screens use 4:3 */
     v->smooth_scaling = 0;
+    v->second_screen_aspect = KHDAYS_SECOND_SCREEN_FULLSCREEN;
     v->texture_smoothing = 0;
     v->movies = KHDAYS_MOVIES_HD; /* the maintainer's choice */
     v->picture_ds = 0;            /* the maintainer's choice */
@@ -1061,6 +1062,19 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         }
         return;
     }
+    if (SDL_strcasecmp(key, "second_screen_aspect") == 0) {
+        if (SDL_strcasecmp(value, "original") == 0 || SDL_strcasecmp(value, "fullscreen") == 0) {
+            v->second_screen_aspect = SDL_strcasecmp(value, "fullscreen") == 0 ? KHDAYS_SECOND_SCREEN_FULLSCREEN
+                                                                               : KHDAYS_SECOND_SCREEN_ORIGINAL;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "fullscreen");
+            v->second_screen_aspect = defaults.second_screen_aspect;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "lower_fill") == 0) {
+        return; /* 0.1.4 beta 7's, the edges drawn on: second_screen_aspect has taken its place */
+    }
     {
         static const struct {
             const char *name;
@@ -1533,6 +1547,10 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "aspect = %s\n"
             "# scaling: sharp (the DS's pixels) or smooth\n"
             "scaling = %s\n"
+            "# second_screen_aspect: the lower screen on a second display taller than 4:3 -- original\n"
+            "#                       (the DS's shape, black bars) or fullscreen (as tall as the display,\n"
+            "#                       each screen laid out again for it, never stretched)\n"
+            "second_screen_aspect = %s\n"
             "texture_smoothing = %s\nhd_graphics = %s\ndump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), hd-smooth (hd, their 60 fps versions in data/cutscenes/cinematics60\n"
@@ -1552,8 +1570,9 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
             v->one_screen ? "one" : "two", v->hud_size, v->menu_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
-            v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
-            v->dump_graphics ? "on" : "off",
+            v->smooth_scaling ? "smooth" : "sharp",
+            v->second_screen_aspect == KHDAYS_SECOND_SCREEN_FULLSCREEN ? "fullscreen" : "original",
+            v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off", v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS          ? "ds"
             : v->movies == KHDAYS_MOVIES_PC        ? "pc"
             : v->movies == KHDAYS_MOVIES_HD_SMOOTH ? "hd-smooth"

@@ -283,6 +283,11 @@ never belong in the repository.
   devices (SDL's virtual gamepads, no window), the settings menu, and the pure
   parts of the enhancements (analog movement's arithmetic, the command-menu
   sequencer). Each failing CHECK prints where and what.
+- `lower_layout_test.c`: the lower screen laid out as tall as a second display
+  (`host/screens/lower_layout.c`, `docs/LOWER_DISPLAY.md`) on synthetic screens:
+  each told by its pixels (the pause's dimmed field too), an unknown one in the
+  DS's shape, the pieces where the designs put them, the characters' zoom
+  measured from their grid, a touch back to the DS pixel it shows.
 - `movie_hd_test.c`: the HD movies' course (`runtime/movies/movie_hd.c`)
   against a scripted game and video: the ids from the game's paths, the lookup,
   every transition, the buttons the game is given, the clock's pause reasons.
