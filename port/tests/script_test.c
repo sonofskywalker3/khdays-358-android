@@ -3,6 +3,7 @@
  * the state names, the interface's version 2. Each case writes its mods under a folder of its own,
  * removed at the end. */
 #include "../runtime/core/sha256.h"
+#include "../runtime/mods/list.h"
 #include "../runtime/scripts/api_v2.h"
 #include "../runtime/scripts/deck_link.h"
 #include "../runtime/scripts/enemies_link.h"
@@ -1005,6 +1006,72 @@ static void test_menu_asks(void)
     end_case();
 }
 
+/* Mods of files alone (no mod.ini) are listed with the scripted ones, turned off from the Mods page
+ * (order.ini), and off by hand with a .ignore file or a name beginning with a dot. */
+static void test_content_mods(void)
+{
+    KhdaysModsView view;
+    char path[600], *order;
+    const KhdaysModEntry *e;
+    memset(&view, 0, sizeof(view));
+    begin_case("content");
+    mod_folder("S", "test.s", "gameplay", "game.set_munny(game.munny + 1)\n");
+    put("mods/Looks/files/x.bin", "x");
+    put("mods/Ignored/files/x.bin", "x");
+    put("mods/Ignored/.ignore", "");
+    put("mods/.Hidden/files/x.bin", "x");
+    put("saves/mods/order.ini", "S = on\nLooks = off\n");
+    start();
+    frames(1);
+    CHECK(khdays_mods_count() == 4 && khdays_scripts_mod_count() == 1);
+    CHECK(strcmp(khdays_mods_at(0)->folder, "S") == 0 && khdays_mods_at(0)->scripted);
+    e = khdays_mods_by_folder("Looks");
+    CHECK(e != NULL && !e->scripted && !e->on && !e->ignored && !khdays_mods_active(e));
+    e = khdays_mods_by_folder("Ignored");
+    CHECK(e != NULL && e->on && e->ignored && !khdays_mods_active(e));
+    e = khdays_mods_by_folder(".Hidden");
+    CHECK(e != NULL && e->ignored);
+    CHECK(khdays_scripts_view(&view) && view.count == 4);
+    CHECK(strcmp(view.mods[0].folder, "S") == 0 && !view.mods[0].content &&
+          view.mods[0].state == KHDAYS_MOD_LOADED);
+    /* the listed ones in order.ini's order, then the new ones in name order */
+    CHECK(view.mods[1].content && !view.mods[1].enabled && view.mods[1].state == KHDAYS_MOD_OFF &&
+          strcmp(view.mods[1].folder, "Looks") == 0);
+    CHECK(view.mods[2].content && view.mods[2].ignored && strcmp(view.mods[2].folder, ".Hidden") == 0);
+    CHECK(view.mods[3].content && view.mods[3].ignored && strcmp(view.mods[3].folder, "Ignored") == 0);
+    khdays_scripts_ask(KHDAYS_ASK_ENABLE, "Looks", NULL, 1);
+    khdays_scripts_ask(KHDAYS_ASK_MOVE, "Looks", NULL, -1); /* before S */
+    frames(1);
+    e = khdays_mods_by_folder("Looks");
+    CHECK(e != NULL && khdays_mods_active(e) && strcmp(khdays_mods_at(0)->folder, "Looks") == 0);
+    CHECK(khdays_scripts_mod_count() == 1 && mod_by_folder("S")->state == KHDAYS_MOD_LOADED);
+    snprintf(path, sizeof(path), "%s/saves/mods/order.ini", root);
+    order = khdays_folders_read(path, NULL);
+    CHECK(order != NULL && strcmp(order, "Looks = on\nS = on\n.Hidden = on\nIgnored = on\n") == 0);
+    free(order);
+    khdays_scripts_view_free(&view);
+    CHECK(khdays_scripts_view(&view) && view.count == 4 && view.mods[0].enabled &&
+          view.mods[0].state == KHDAYS_MOD_LOADED && strcmp(view.mods[0].folder, "Looks") == 0);
+    khdays_scripts_view_free(&view);
+    end_case();
+
+    /* content mods alone: no scripted mod, the page's asks still taken */
+    begin_case("content_only");
+    put("mods/Only/files/x.bin", "x");
+    start();
+    frames(1);
+    CHECK(khdays_scripts_mod_count() == 0 && khdays_mods_count() == 1);
+    CHECK(khdays_scripts_view(&view) && view.count == 1 && view.mods[0].content && view.mods[0].enabled);
+    khdays_scripts_view_free(&view);
+    khdays_scripts_ask(KHDAYS_ASK_ENABLE, "Only", NULL, 0);
+    frames(1);
+    CHECK(!khdays_mods_active(khdays_mods_by_folder("Only")));
+    CHECK(khdays_scripts_view(&view) && view.count == 1 && !view.mods[0].enabled &&
+          view.mods[0].state == KHDAYS_MOD_OFF);
+    khdays_scripts_view_free(&view);
+    end_case();
+}
+
 static void test_actions(void)
 {
     begin_case("actions");
@@ -1710,6 +1777,7 @@ int main(void)
     RUN(test_player);
     RUN(test_options);
     RUN(test_menu_asks);
+    RUN(test_content_mods);
     RUN(test_actions);
     RUN(test_files_and_notices);
     RUN(test_room_fingerprint);

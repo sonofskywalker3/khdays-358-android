@@ -48,7 +48,11 @@ id or has no main script is not loaded, and the reason is logged.
 
 Mods load in the order kept in `saves/mods/order.ini` (`<folder> = on|off`, one line each); a mod
 not listed yet comes after the others, on. Events reach the mods in that order: when two mods change
-the same thing in a frame, the later one's change stands.
+the same thing in a frame, the later one's change stands. Every folder in `mods/` is listed there,
+scripted or not: a mod of files alone (models, textures, sounds, texts) is turned on and off from the
+settings menu's Mods page like a scripted one, and a file two mods both replace comes from the earlier
+one. A mod is also off, whatever the file says, when its folder holds a file named `.ignore` or its
+folder's name begins with a dot: a way to turn one off by hand, in a file manager.
 
 ## What a script may use
 

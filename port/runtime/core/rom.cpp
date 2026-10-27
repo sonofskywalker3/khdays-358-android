@@ -5,7 +5,9 @@
 #include "text_patches.h"
 
 extern "C" {
-#include "../../host/app/host.h" // khdays_host_tell_no_data
+#include "../../host/app/host.h"     // khdays_host_tell_no_data
+#include "../../host/app/instance.h" // khdays_host_user_folder
+#include "../mods/list.h"
 #include "origin.h"
 #include "folders.h"
 }
@@ -224,9 +226,24 @@ void read_region(KhdaysRomReader &reader, const Region &r, u32 offset, u8 *out, 
 
 } // namespace
 
+// The VFS reads the mods the list has on, in its order (runtime/mods/list.h).
+static void mods_changed()
+{
+    std::vector<fs::path> active;
+    const int n = khdays_mods_active_paths(nullptr, 0);
+    std::vector<const char *> paths(static_cast<std::size_t>(n > 0 ? n : 1));
+    khdays_mods_active_paths(paths.data(), n);
+    for (int i = 0; i < n; ++i) {
+        active.push_back(utf8_path(paths[static_cast<std::size_t>(i)]));
+    }
+    khdays::vfs::set_mods(std::move(active));
+}
+
 extern "C" int khdays_rom_init(void)
 {
     khdays::vfs::set_mods_root(khdays_mods_folder()); // "mods", or the folder the player chose
+    khdays_mods_on_change(mods_changed);
+    khdays_mods_scan(khdays_mods_folder(), khdays_host_user_folder());
     if (!khdays::vfs::autodetect_data_root()) {
         std::error_code ec;
         const fs::path searched = fs::absolute("data/extracted", ec);

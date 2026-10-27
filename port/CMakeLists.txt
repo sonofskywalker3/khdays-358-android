@@ -495,6 +495,7 @@ target_sources(khdays-native PRIVATE
     runtime/scripts/manifest.c
     runtime/scripts/order.c
     runtime/scripts/folders.cpp
+    runtime/mods/list.c                # every mod folder, in load order, which are on
     runtime/scripts/mods_log.c
     runtime/scripts/api_events.c
     runtime/scripts/api_mod.c
@@ -815,7 +816,7 @@ add_test(NAME khdays-saveslots COMMAND khdays-saveslots-test)
 # Gameplay mods' scripts (runtime/scripts): manifests, the load order, the sandbox, the events and the
 # state names, against a game of the test's own.
 add_executable(khdays-script-test tests/script_test.c runtime/scripts/scripts.c runtime/scripts/sandbox.c
-               runtime/scripts/manifest.c runtime/scripts/order.c runtime/scripts/folders.cpp
+               runtime/scripts/manifest.c runtime/scripts/order.c runtime/scripts/folders.cpp runtime/mods/list.c
                runtime/scripts/mods_log.c runtime/scripts/queue.c runtime/scripts/api_events.c
                runtime/scripts/api_mod.c runtime/scripts/api_state.c runtime/scripts/api_menus.c
                runtime/scripts/api_actions.c runtime/scripts/api_v2.c runtime/scripts/api_enemies.c
