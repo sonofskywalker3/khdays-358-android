@@ -19,8 +19,8 @@
     <string name="setup_game_done">Ready: %1$s. You can play now.</string>
     <string name="setup_game_no_space">Not enough free space: the game needs %1$s, and this device has %2$s free.</string>
 
-    <string name="setup_hd_heading">2  HD (optional)</string>
-    <string name="setup_hd_help_title">The HD cutscenes and HD menus come from your own copies of the HD collections. They are made on a Windows PC, then copied here:</string>
+    <string name="setup_hd_heading">2  HD files from the collections (optional)</string>
+    <string name="setup_hd_help_title">The HD cutscenes and the HD menus and HUD are pulled from your own copies of KINGDOM HEARTS HD 1.5+2.5 ReMIX and 2.8, on a Windows PC, then copied here:</string>
     <string name="setup_hd_step1">1. On a Windows PC where KINGDOM HEARTS HD 1.5+2.5 ReMIX is installed (Steam or Epic), download the KH 358/2 Days Port installer: github.com/Yokimitsuro/khdays-port/releases</string>
     <string name="setup_hd_step2">2. Run it. When it asks for your ROM, give it the same .nds file. Tick HD videos. Tick HD menus as well if you also have KINGDOM HEARTS HD 2.8 Final Chapter Prologue.</string>
     <string name="setup_hd_step3">3. When it is done, copy the folder it installed to onto this device, with a USB cable or an SD card. The whole folder is fine (only its data\\cutscenes and mods folders are used). Any folder on this device will do, such as Download.</string>
@@ -30,7 +30,6 @@
     <string name="setup_hd_videos_no">HD cutscenes: not added</string>
     <string name="setup_hd_menus_yes">HD menus and HUD: added ✓</string>
     <string name="setup_hd_menus_no">HD menus and HUD: not added</string>
-    <string name="setup_hd_other_mods">Other mods: %1$s</string>
     <string name="setup_hd_looking">Looking for the HD files…</string>
     <string name="setup_hd_none">No HD files in that folder. Choose the folder the PC installer installed to (it holds data\\cutscenes or mods\\HD PACK), or a folder it is in.</string>
     <string name="setup_hd_found_videos">HD cutscenes</string>
@@ -42,20 +41,29 @@
     <string name="setup_hd_delete_source">Delete the copy you made (frees %1$s)</string>
     <string name="setup_hd_deleted">The copy you made was deleted.</string>
     <string name="setup_hd_delete_failed">Some of the copy could not be deleted; you can delete it with a file manager.</string>
+    <string name="setup_hd_folder_help">The HD cutscenes take about 6 GB. You can keep them in a folder of your own instead, such as one on a memory card: the game reads them from that folder\'s data\\cutscenes (the PC installer\'s folder, copied whole, can be chosen as it is) or from its cutscenes folder, and HD files added above go there too. Android asks you to allow this app access to all files first.</string>
+    <string name="setup_hd_folder_choose">Keep the HD files in a folder of my own</string>
+    <string name="setup_hd_folder_done">The HD cutscenes are read from %1$s from the next time the game starts. If it is running now, close it from the recent apps and start it again.</string>
+    <string name="setup_hd_folder_reset_done">The HD cutscenes are read from the app\'s folder again from the next time the game starts.</string>
 
-    <string name="setup_media_heading">3  Mods and HD folder (optional)</string>
-    <string name="setup_media_help">Mods and the HD cutscenes take a lot of space. You can keep them in a folder of your own instead, such as one on a memory card, which a file manager also reaches more easily than Android/data. The game reads the mods from its mods folder and the HD cutscenes from its data\\cutscenes (or cutscenes) folder, so the PC installer\'s folder, copied whole, can be chosen as it is. HD files added above go there too. Android asks you to allow this app access to all files first.</string>
+    <string name="setup_mods_heading">3  Mods (optional)</string>
+    <string name="setup_mods_help">A mod is a folder; put it in the mods folder named above, with a file manager or a USB cable. Each mod is turned on and off in the game, in Settings > Mods, and a mod is also off while its folder holds a file named .ignore. You can keep the mods in a folder of your own instead, such as one on a memory card: choose the folder that holds the mods themselves. Android asks you to allow this app access to all files first.</string>
+    <string name="setup_mods_folder_choose">Use a mods folder of my own</string>
+    <string name="setup_mods_folder_done">The mods are read from %1$s from the next time the game starts. If it is running now, close it from the recent apps and start it again.</string>
+    <string name="setup_mods_folder_reset_done">The mods are read from the app\'s folder again from the next time the game starts.</string>
+    <string name="setup_mods_none">No mods found there.</string>
+    <string name="setup_mods_found">Mods found: %1$s</string>
+    <string name="setup_mods_off">%1$s (off)</string>
+    <string name="setup_mods_ignored">%1$s (off: .ignore)</string>
+
     <string name="setup_media_app">Kept in the app\'s folder: %1$s</string>
     <string name="setup_media_own">Kept in: %1$s</string>
     <string name="setup_media_unreadable">Chosen: %1$s, but it cannot be read now (the memory card is out, or access to all files is not allowed). The app\'s folder is used meanwhile.</string>
-    <string name="setup_media_choose">Use a folder of my own</string>
     <string name="setup_media_choose_other">Choose another folder</string>
-    <string name="setup_media_reset">Keep them in the app\'s folder again</string>
+    <string name="setup_media_reset">Back to the app\'s folder</string>
     <string name="setup_media_not_local">The game cannot open that folder. Choose a folder on this device\'s storage or its memory card, not a cloud folder or a Downloads shortcut.</string>
     <string name="setup_media_asking">Allow this app access to all files, then come back here.</string>
     <string name="setup_media_denied">Access to all files was not allowed, so the folder was not changed.</string>
-    <string name="setup_media_done">Mods and HD cutscenes are read from %1$s from the next time the game starts. If it is running now, close it from the recent apps and start it again.</string>
-    <string name="setup_media_reset_done">Mods and HD cutscenes are read from the app\'s folder again from the next time the game starts.</string>
 
     <string name="setup_play">Play</string>
     <string name="setup_cancel">Cancel</string>

@@ -29,14 +29,19 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.sonofskywalker3.khdays358.MainActivity
 import com.sonofskywalker3.khdays358.R
+import com.sonofskywalker3.khdays358.setup.MediaFolder.Kind
+import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 
 /**
  * The app's first screen: the game set up from the player's own ROM (any supported release, unpacked
- * here by [RomExtractor]), and the HD pieces the PC installer made copied in ([HdImport]). Once the game
- * is set up it goes straight to the game, unless opened by the launcher's "Set up / add HD files"
- * shortcut ([EXTRA_SETUP]). Works by touch and by a pad (the D-pad moves, A presses, B goes back).
+ * here by [RomExtractor]), the HD pieces the PC installer made copied in ([HdImport]), and the folders
+ * of the player's own for the HD files and the mods ([MediaFolder]). Once the game is set up it goes
+ * straight to the game, unless opened by the launcher's "Set up / add HD files" shortcut
+ * ([EXTRA_SETUP]) or by the game's settings menu, which may ask for one of its actions ([EXTRA_ACTION]):
+ * then that action starts at once and the screen goes back to the game when it is done. Works by touch
+ * and by a pad (the D-pad moves, A presses, B goes back).
  */
 class SetupActivity : Activity() {
 
@@ -48,6 +53,7 @@ class SetupActivity : Activity() {
     private var askingAccess = false // Android's page for the access to all files was asked for
     private var leftForAccess = false // ... and this screen went behind it
     private var working = false
+    private var actionMode = false // opened on one action: back to the game once it is done
     private var lastHd: Pair<HdImport, HdImport.Found>? = null
 
     private lateinit var gameStatus: TextView
@@ -55,9 +61,12 @@ class SetupActivity : Activity() {
     private lateinit var hdStatus: TextView
     private lateinit var hdButton: Button
     private lateinit var deleteButton: Button
-    private lateinit var mediaStatus: TextView
-    private lateinit var mediaButton: Button
-    private lateinit var mediaResetButton: Button
+    private lateinit var hdFolderStatus: TextView
+    private lateinit var hdFolderButton: Button
+    private lateinit var hdFolderResetButton: Button
+    private lateinit var modsStatus: TextView
+    private lateinit var modsFolderButton: Button
+    private lateinit var modsFolderResetButton: Button
     private lateinit var progressBar: ProgressBar
     private lateinit var progressText: TextView
     private lateinit var cancelButton: Button
@@ -65,8 +74,9 @@ class SetupActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        game = gameFolder()
+        game = MediaFolder.gameFolder(this)
         supported = assets.open(SupportedRoms.ASSET_NAME).use { SupportedRoms.load(it) }
+        val action = intent.getStringExtra(EXTRA_ACTION)
         if (game.extraction() != null && !intent.getBooleanExtra(EXTRA_SETUP, false)) {
             play()
             return
@@ -75,6 +85,18 @@ class SetupActivity : Activity() {
         setContentView(build())
         refresh()
         (if (game.extraction() == null) gameButton else playButton).requestFocus()
+        if (action != null && savedInstanceState == null) {
+            actionMode = true
+            when (action) {
+                ACTION_ROM -> chooseRom()
+                ACTION_HD_IMPORT -> chooseHd()
+                ACTION_HD_FOLDER -> chooseFolder(Kind.HD)
+                ACTION_HD_APP -> { resetFolder(Kind.HD); endAction() }
+                ACTION_MODS_FOLDER -> chooseFolder(Kind.MODS)
+                ACTION_MODS_APP -> { resetFolder(Kind.MODS); endAction() }
+                else -> actionMode = false
+            }
+        }
     }
 
     // Back from Android's page for the access to all files (or its question, Android 10). The screen is
@@ -85,12 +107,13 @@ class SetupActivity : Activity() {
         if (!MediaFolder.hasPending(this) || (askingAccess && !leftForAccess)) {
             return
         }
-        val folder = MediaFolder.takePending(this) ?: return
+        val (kind, folder) = MediaFolder.takePending(this) ?: return
         askingAccess = false
         if (MediaFolder.hasAccess(this)) {
-            useMedia(folder)
+            useFolder(kind, folder)
         } else {
             progressText.text = getString(R.string.setup_media_denied)
+            endAction()
         }
     }
 
@@ -109,12 +132,14 @@ class SetupActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) {
+            if (actionMode) finish() // the picker left: nothing to do here
             return
         }
         when (requestCode) {
             PICK_ROM -> importRom(uri)
             PICK_HD -> importHd(uri)
-            PICK_MEDIA -> pickMedia(uri)
+            PICK_HD_FOLDER -> pickFolder(Kind.HD, uri)
+            PICK_MODS_FOLDER -> pickFolder(Kind.MODS, uri)
         }
     }
 
@@ -136,6 +161,14 @@ class SetupActivity : Activity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** Opened on one action and it is done: back to the game, after a moment to read what was said. */
+    private fun endAction(delay: Long = 0L) {
+        if (!actionMode) {
+            return
+        }
+        if (delay > 0L) main.postDelayed({ if (!isDestroyed) finish() }, delay) else finish()
     }
 
     // --- The game ----------------------------------------------------------------------------------
@@ -211,7 +244,7 @@ class SetupActivity : Activity() {
             if (plan.files == 0) {
                 return@work getString(R.string.setup_hd_already)
             }
-            val into = game.media ?: game.root
+            val into = game.hd ?: game.root
             into.mkdirs()
             val free = StatFs(into.path).availableBytes
             if (free < plan.bytes + SPACE_MARGIN) {
@@ -232,46 +265,46 @@ class SetupActivity : Activity() {
         }
     }
 
-    // --- The mods' and HD videos' folder --------------------------------------------------------------
+    // --- The folders of the player's own: the HD files', the mods' --------------------------------------
 
-    private fun gameFolder(): GameFolder = GameFolder(getExternalFilesDir(null) ?: filesDir, MediaFolder.chosen(this))
-
-    private fun chooseMedia() {
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_MEDIA)
+    private fun chooseFolder(kind: Kind) {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), if (kind == Kind.HD) PICK_HD_FOLDER else PICK_MODS_FOLDER)
     }
 
-    private fun pickMedia(tree: Uri) {
+    private fun pickFolder(kind: Kind, tree: Uri) {
         val folder = MediaFolder.pathOf(tree)
         if (folder == null) {
             progressText.text = getString(R.string.setup_media_not_local)
+            endAction(READ_DELAY_MS)
             return
         }
         if (MediaFolder.hasAccess(this)) {
-            useMedia(folder)
+            useFolder(kind, folder)
             return
         }
-        MediaFolder.keepPending(this, folder)
+        MediaFolder.keepPending(this, kind, folder)
         askingAccess = true
         leftForAccess = false
         progressText.text = getString(R.string.setup_media_asking)
-        MediaFolder.askAccess(this, PICK_MEDIA)
+        MediaFolder.askAccess(this, PICK_HD_FOLDER)
     }
 
-    private fun useMedia(folder: java.io.File) {
-        MediaFolder.keep(this, folder)
+    private fun useFolder(kind: Kind, folder: File) {
+        MediaFolder.keep(this, kind, folder)
         lastHd = null
-        game = gameFolder()
-        progressText.text = getString(R.string.setup_media_done, folder.path)
+        game = MediaFolder.gameFolder(this)
+        progressText.text = getString(if (kind == Kind.HD) R.string.setup_hd_folder_done else R.string.setup_mods_folder_done, folder.path)
         refresh()
+        endAction(READ_DELAY_MS)
     }
 
-    private fun resetMedia() {
-        MediaFolder.forget(this)
+    private fun resetFolder(kind: Kind) {
+        MediaFolder.forget(this, kind)
         lastHd = null
-        game = gameFolder()
-        progressText.text = getString(R.string.setup_media_reset_done)
+        game = MediaFolder.gameFolder(this)
+        progressText.text = getString(if (kind == Kind.HD) R.string.setup_hd_folder_reset_done else R.string.setup_mods_folder_reset_done)
         refresh()
-        mediaButton.requestFocus()
+        (if (kind == Kind.HD) hdFolderButton else modsFolderButton).requestFocus()
     }
 
     // --- The work and the screen -------------------------------------------------------------------
@@ -314,6 +347,10 @@ class SetupActivity : Activity() {
                     game.extraction() != null -> playButton
                     else -> gameButton
                 }.requestFocus()
+                if (deleteButton.visibility == View.VISIBLE) {
+                    actionMode = false // the copy made can be deleted from here: the screen stays
+                }
+                endAction(READ_DELAY_MS)
             }
         }.start()
     }
@@ -329,34 +366,17 @@ class SetupActivity : Activity() {
 
     /** The screen as things stand: what is set up, what can be pressed. */
     private fun refresh() {
-        val release = game.release(supported)
+        val status = SetupStatus.of(this, game, supported)
         val ready = game.extraction() != null
-        gameStatus.text = if (ready) {
-            getString(R.string.setup_game_ready, release?.name ?: game.extraction()?.name)
-        } else {
-            getString(R.string.setup_game_missing)
-        }
+        gameStatus.text = status.game
         gameButton.text = getString(if (ready) R.string.setup_game_choose_other else R.string.setup_game_choose)
-        val mods = game.modNames()
-        val others = mods.filterNot { it.equals(GameFolder.HD_MENUS_MOD, ignoreCase = true) }
-        hdStatus.text = listOfNotNull(
-            getString(if (game.hasHdVideos()) R.string.setup_hd_videos_yes else R.string.setup_hd_videos_no),
-            getString(if (mods.any { it.equals(GameFolder.HD_MENUS_MOD, ignoreCase = true) }) R.string.setup_hd_menus_yes else R.string.setup_hd_menus_no),
-            if (others.isNotEmpty()) getString(R.string.setup_hd_other_mods, others.joinToString(", ")) else null,
-        ).joinToString("\n")
+        hdStatus.text = status.hd
         gameButton.isEnabled = !working
         hdButton.isEnabled = !working && ready
         playButton.isEnabled = !working && ready
-        val chosen = MediaFolder.chosen(this)
-        mediaStatus.text = when {
-            chosen == null -> getString(R.string.setup_media_app, game.root.path)
-            game.media == null -> getString(R.string.setup_media_unreadable, chosen.path)
-            else -> getString(R.string.setup_media_own, chosen.path)
-        }
-        mediaButton.text = getString(if (chosen == null) R.string.setup_media_choose else R.string.setup_media_choose_other)
-        mediaButton.isEnabled = !working
-        mediaResetButton.isEnabled = !working
-        mediaResetButton.visibility = if (chosen != null) View.VISIBLE else View.GONE
+        folderRows(Kind.HD, hdFolderStatus, hdFolderButton, hdFolderResetButton)
+        folderRows(Kind.MODS, modsStatus, modsFolderButton, modsFolderResetButton)
+        modsStatus.text = modsStatus.text.toString() + "\n" + status.mods
         val hd = lastHd
         deleteButton.visibility = if (!working && hd != null) View.VISIBLE else View.GONE
         if (hd != null) {
@@ -366,10 +386,32 @@ class SetupActivity : Activity() {
         cancelButton.visibility = if (working) View.VISIBLE else View.GONE
     }
 
+    /** A folder's status line and its two buttons, as it stands. */
+    private fun folderRows(kind: Kind, status: TextView, choose: Button, reset: Button) {
+        val chosen = MediaFolder.chosen(this, kind)
+        val readable = if (kind == Kind.HD) game.hd else game.modsFolder
+        val own = if (kind == Kind.HD) File(game.root, "data/cutscenes") else File(game.root, "mods")
+        status.text = when {
+            chosen == null -> getString(R.string.setup_media_app, own.path)
+            readable == null -> getString(R.string.setup_media_unreadable, chosen.path)
+            else -> getString(R.string.setup_media_own, chosen.path)
+        }
+        choose.text = getString(
+            when {
+                chosen != null -> R.string.setup_media_choose_other
+                kind == Kind.HD -> R.string.setup_hd_folder_choose
+                else -> R.string.setup_mods_folder_choose
+            },
+        )
+        choose.isEnabled = !working
+        reset.isEnabled = !working
+        reset.visibility = if (chosen != null) View.VISIBLE else View.GONE
+    }
+
     private fun sourceBytes(found: HdImport.Found): Long {
         var bytes = 0L
         found.cutscenes?.let { bytes += game.cutscenes.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
-        found.mods.forEach { mod -> bytes += java.io.File(game.mods, mod.name).walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+        found.mods.forEach { mod -> bytes += File(game.mods, mod.name).walkTopDown().filter { it.isFile }.sumOf { it.length() } }
         return bytes
     }
 
@@ -403,14 +445,18 @@ class SetupActivity : Activity() {
             }
             hdButton = button(R.string.setup_hd_choose) { chooseHd() }.also { addView(it) }
             deleteButton = button(R.string.setup_hd_delete_source) { deleteHdSource() }.also { addView(it) }
+            hdFolderStatus = text(0, BODY_SP, color = ACCENT).spaced(dp(20)).also { addView(it) }
+            addView(text(R.string.setup_hd_folder_help, BODY_SP).spaced(dp(8)))
+            hdFolderButton = button(R.string.setup_hd_folder_choose) { chooseFolder(Kind.HD) }.also { addView(it) }
+            hdFolderResetButton = button(R.string.setup_media_reset) { resetFolder(Kind.HD) }.also { addView(it) }
         })
 
         column.addView(section().apply {
-            addView(text(R.string.setup_media_heading, HEADING_SP, bold = true))
-            mediaStatus = text(0, BODY_SP, color = ACCENT).spaced(dp(8)).also { addView(it) }
-            addView(text(R.string.setup_media_help, BODY_SP).spaced(dp(8)))
-            mediaButton = button(R.string.setup_media_choose) { chooseMedia() }.also { addView(it) }
-            mediaResetButton = button(R.string.setup_media_reset) { resetMedia() }.also { addView(it) }
+            addView(text(R.string.setup_mods_heading, HEADING_SP, bold = true))
+            modsStatus = text(0, BODY_SP, color = ACCENT).spaced(dp(8)).also { addView(it) }
+            addView(text(R.string.setup_mods_help, BODY_SP).spaced(dp(8)))
+            modsFolderButton = button(R.string.setup_mods_folder_choose) { chooseFolder(Kind.MODS) }.also { addView(it) }
+            modsFolderResetButton = button(R.string.setup_media_reset) { resetFolder(Kind.MODS) }.also { addView(it) }
         })
 
         progressText = text(0, BODY_SP).spaced(dp(16)).also { column.addView(it) }
@@ -486,16 +532,26 @@ class SetupActivity : Activity() {
     companion object {
         /** Opens the screen even when the game is set up (the launcher's shortcut). */
         const val EXTRA_SETUP = "com.sonofskywalker3.khdays358.SETUP"
+        /** One of the screen's actions, started at once; back to the game when it is done (MediaFolder.act). */
+        const val EXTRA_ACTION = "com.sonofskywalker3.khdays358.ACTION"
+        const val ACTION_ROM = "rom"
+        const val ACTION_HD_IMPORT = "hd_import"
+        const val ACTION_HD_FOLDER = "hd_folder"
+        const val ACTION_HD_APP = "hd_app"
+        const val ACTION_MODS_FOLDER = "mods_folder"
+        const val ACTION_MODS_APP = "mods_app"
         private const val TAG = "khdays"
         private const val PICK_ROM = 1
         private const val PICK_HD = 2
-        private const val PICK_MEDIA = 3
+        private const val PICK_HD_FOLDER = 3
+        private const val PICK_MODS_FOLDER = 4
         // the unpacked game takes about 1.1 times its ROM: 1.5 asked for
         private const val SPACE_PER_ROM_BYTE_NUMERATOR = 3L
         private const val SPACE_PER_ROM_BYTE_DENOMINATOR = 2L
         private const val SPACE_MARGIN = 64L * 1024 * 1024
         private const val PROGRESS_STEPS = 1000
         private const val PROGRESS_INTERVAL_NS = 100_000_000L
+        private const val READ_DELAY_MS = 2500L // what was said stays this long before the game is back
         private const val MAX_WIDTH_DP = 900
         private const val TITLE_SP = 32f
         private const val HEADING_SP = 22f

@@ -484,6 +484,10 @@ static void build_language(Builder *b, KhdaysProfile *w)
                                                                                         : TXT_LANGUAGE_NOTE);
 }
 
+#ifdef __ANDROID__
+static void build_files(Builder *b);
+#endif
+
 static void build_general(Builder *b, KhdaysProfile *w)
 {
     KhdaysRow *r;
@@ -504,11 +508,84 @@ static void build_general(Builder *b, KhdaysProfile *w)
     r->apply = KHDAYS_APPLY_NEXT;
     r->takes = TXT_TAKES_NEXT_START;
     add_switch(b, KHDAYS_SET_SESSION_LOG, TXT_SESSION_LOG, &w->session_log, 1, khdays_text(TXT_SESSION_LOG_NOTE));
-    if (HANDHELD) {
-        add_command(b, KHDAYS_SET_OPEN_SETUP, TXT_OPEN_SETUP, KHDAYS_CMD_OPEN_SETUP)->note = khdays_text(TXT_OPEN_SETUP_NOTE);
-    }
+#ifdef __ANDROID__
+    build_files(b);
+#endif
     add_command(b, KHDAYS_SET_RESTORE_BOTH, TXT_RESTORE_BOTH, KHDAYS_CMD_RESTORE_BOTH);
 }
+
+#ifdef __ANDROID__
+/* ---- The game's files, on Android: what the setup screen does, from here ---------------------------- */
+
+/* The setup screen's lines (media_folder.h's status), and the lines made of them. */
+static char files_status[2048];
+static char files_game[400], files_hd[400], files_hd_folder[600], files_mods_folder[600], files_mods[600];
+
+/* The line `key=` of the status, or "". */
+static const char *files_line(const char *key)
+{
+    static char line[600];
+    const size_t n = strlen(key);
+    const char *p = files_status;
+    line[0] = '\0';
+    while (p != NULL && *p) {
+        const char *eol = strchr(p, '\n');
+        const size_t len = eol != NULL ? (size_t)(eol - p) : strlen(p);
+        if (len > n && strncmp(p, key, n) == 0 && p[n] == '=') {
+            snprintf(line, sizeof(line), "%.*s", (int)(len - n - 1), p + n + 1);
+            break;
+        }
+        p = eol != NULL ? eol + 1 : NULL;
+    }
+    return line;
+}
+
+static void build_files(Builder *b)
+{
+    KhdaysRow *r;
+    const char *hd_folder, *mods_folder;
+    khdays_media_folder_status(files_status, sizeof(files_status));
+    snprintf(files_game, sizeof(files_game), "%s", files_line("game"));
+    snprintf(files_hd, sizeof(files_hd), "%s", files_line("hd"));
+    hd_folder = files_line("hd_folder");
+    snprintf(files_hd_folder, sizeof(files_hd_folder), khdays_text(TXT_FILES_HD_FOLDER_IS),
+             hd_folder[0] != '\0' ? hd_folder : khdays_text(TXT_FILES_APPS_OWN));
+    mods_folder = files_line("mods_folder");
+    snprintf(files_mods_folder, sizeof(files_mods_folder), khdays_text(TXT_FILES_MODS_FOLDER_IS),
+             mods_folder[0] != '\0' ? mods_folder : khdays_text(TXT_FILES_APPS_OWN));
+    snprintf(files_mods, sizeof(files_mods), "%s", files_line("mods"));
+
+    if (files_game[0] != '\0') {
+        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_game);
+    }
+    add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_ROM, KHDAYS_CMD_FILES_ROM);
+    if (files_hd[0] != '\0') {
+        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_hd);
+    }
+    r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_HD_IMPORT, KHDAYS_CMD_FILES_HD_IMPORT);
+    r->note = khdays_text(TXT_FILES_HD_IMPORT_NOTE);
+    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_hd_folder);
+    r = add_command(b, KHDAYS_SET_FILES_ACT, hd_folder[0] != '\0' ? TXT_FILES_OTHER_FOLDER : TXT_FILES_HD_FOLDER,
+                    KHDAYS_CMD_FILES_HD_FOLDER);
+    r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
+    if (hd_folder[0] != '\0') {
+        r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_APP_FOLDER, KHDAYS_CMD_FILES_HD_APP);
+        r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
+    }
+    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_mods_folder);
+    if (files_mods[0] != '\0') {
+        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_mods);
+    }
+    r = add_command(b, KHDAYS_SET_FILES_ACT, mods_folder[0] != '\0' ? TXT_FILES_OTHER_FOLDER : TXT_FILES_MODS_FOLDER,
+                    KHDAYS_CMD_FILES_MODS_FOLDER);
+    r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
+    if (mods_folder[0] != '\0') {
+        r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_APP_FOLDER, KHDAYS_CMD_FILES_MODS_APP);
+        r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
+    }
+    add_command(b, KHDAYS_SET_OPEN_SETUP, TXT_OPEN_SETUP, KHDAYS_CMD_OPEN_SETUP)->note = khdays_text(TXT_OPEN_SETUP_NOTE);
+}
+#endif
 
 /* ---- The Mods section ---------------------------------------------------- */
 
@@ -553,6 +630,15 @@ static void mods_rebuild(void)
             snprintf(mod_heads[i], sizeof(mod_heads[i]), "%s %s -- %s", name, v->version, v->author);
         } else {
             snprintf(mod_heads[i], sizeof(mod_heads[i]), "%s %s", name, v->version != NULL ? v->version : "");
+        }
+        if (v->ignored) {
+            snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_IGNORED));
+            continue;
+        }
+        if (v->content) {
+            snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s",
+                     khdays_text(v->state == KHDAYS_MOD_LOADED ? TXT_MOD_FILES_ON : TXT_MOD_FILES_OFF));
+            continue;
         }
         switch (v->state) {
         case KHDAYS_MOD_LOADED: snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_RUNNING)); break;
@@ -600,13 +686,16 @@ static void build_mods(Builder *b)
             r = add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_STATE, khdays_text(TXT_MOD_WRITES_MEMORY));
             r->layer = i;
         }
-        r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_MOD_ENABLED, khdays_text(TXT_MOD_ENABLED));
-        r->value = &mod_enabled[i];
-        r->high = 1;
-        r->layer = i;
-        r->note = v->description;
-        r->apply = KHDAYS_APPLY_RESUME;
-        r->takes = TXT_TAKES_RESUME;
+        if (!v->ignored) { /* a mod turned off by hand is turned on by hand */
+            r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_MOD_ENABLED, khdays_text(TXT_MOD_ENABLED));
+            r->value = &mod_enabled[i];
+            r->high = 1;
+            r->layer = i;
+            r->note = v->description;
+            /* a content mod's files already read stay as they are until the game starts again */
+            r->apply = v->content ? KHDAYS_APPLY_NEXT : KHDAYS_APPLY_RESUME;
+            r->takes = v->content ? TXT_TAKES_NEXT_START : TXT_TAKES_RESUME;
+        }
         if (i > 0) {
             r = add(b, KHDAYS_ROW_COMMAND, KHDAYS_SET_MOD_EARLIER, khdays_text(TXT_MOD_EARLIER));
             r->layer = i;
@@ -813,6 +902,12 @@ void khdays_model_command(KhdaysProfile *work, int command)
     case KHDAYS_CMD_RESTORE_BOTH: khdays_profile_default(work); break;
 #ifdef __ANDROID__
     case KHDAYS_CMD_OPEN_SETUP: khdays_media_folder_open_setup(); break;
+    case KHDAYS_CMD_FILES_ROM: khdays_media_folder_act("rom"); break;
+    case KHDAYS_CMD_FILES_HD_IMPORT: khdays_media_folder_act("hd_import"); break;
+    case KHDAYS_CMD_FILES_HD_FOLDER: khdays_media_folder_act("hd_folder"); break;
+    case KHDAYS_CMD_FILES_HD_APP: khdays_media_folder_act("hd_app"); break;
+    case KHDAYS_CMD_FILES_MODS_FOLDER: khdays_media_folder_act("mods_folder"); break;
+    case KHDAYS_CMD_FILES_MODS_APP: khdays_media_folder_act("mods_app"); break;
 #endif
     case KHDAYS_CMD_PRESET_DS:
         khdays_profile_apply_preset(work, KHDAYS_PRESET_DS, KHDAYS_AVAILABLE_ENHANCEMENTS);

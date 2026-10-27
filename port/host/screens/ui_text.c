@@ -274,6 +274,49 @@ static const char *const texts[TXT_COUNT][5] = {
                              "scheda di memoria) per le mod e i filmati HD.",
                              "La pantalla de configuración: otra ROM, los archivos HD y una carpeta propia (en una "
                              "tarjeta de memoria) para los mods y las cinemáticas HD."},
+    [TXT_FILES_ROM] = {"Choose a different ROM file...", "Choisir un autre fichier ROM...",
+                       "Eine andere ROM-Datei wählen...", "Scegli un altro file ROM...", "Elegir otro archivo ROM..."},
+    [TXT_FILES_HD_IMPORT] = {"Add HD files from a copied folder...", "Ajouter les fichiers HD d'un dossier copié...",
+                             "HD-Dateien aus einem kopierten Ordner hinzufügen...",
+                             "Aggiungi i file HD da una cartella copiata...",
+                             "Añadir los archivos HD de una carpeta copiada..."},
+    [TXT_FILES_HD_IMPORT_NOTE] = {"The folder the PC installer made from your HD collections, copied onto this device.",
+                                  "Le dossier créé par l'installateur PC à partir de vos collections HD, copié sur cet "
+                                  "appareil.",
+                                  "Der Ordner, den das PC-Installationsprogramm aus deinen HD-Sammlungen gemacht hat, "
+                                  "auf dieses Gerät kopiert.",
+                                  "La cartella creata dall'installer per PC dalle tue collezioni HD, copiata su questo "
+                                  "dispositivo.",
+                                  "La carpeta que el instalador de PC creó a partir de tus colecciones HD, copiada a "
+                                  "este dispositivo."},
+    [TXT_FILES_HD_FOLDER] = {"Keep the HD files in a folder of my own...", "Garder les fichiers HD dans un dossier à moi...",
+                             "HD-Dateien in einem eigenen Ordner halten...", "Tieni i file HD in una cartella mia...",
+                             "Guardar los archivos HD en una carpeta mía..."},
+    /* %s: the folder's path, or TXT_FILES_APPS_OWN */
+    [TXT_FILES_HD_FOLDER_IS] = {"HD files folder: %s", "Dossier des fichiers HD : %s", "Ordner der HD-Dateien: %s",
+                                "Cartella dei file HD: %s", "Carpeta de los archivos HD: %s"},
+    [TXT_FILES_MODS_FOLDER] = {"Use a mods folder of my own...", "Utiliser un dossier de mods à moi...",
+                               "Einen eigenen Mods-Ordner verwenden...", "Usa una cartella dei mod mia...",
+                               "Usar una carpeta de mods mía..."},
+    [TXT_FILES_MODS_FOLDER_IS] = {"Mods folder: %s", "Dossier des mods : %s", "Mods-Ordner: %s", "Cartella dei mod: %s",
+                                  "Carpeta de mods: %s"},
+    [TXT_FILES_OTHER_FOLDER] = {"Choose another folder...", "Choisir un autre dossier...", "Einen anderen Ordner wählen...",
+                                "Scegli un'altra cartella...", "Elegir otra carpeta..."},
+    [TXT_FILES_APP_FOLDER] = {"Back to the app's folder", "Revenir au dossier de l'application",
+                              "Zurück zum Ordner der App", "Torna alla cartella dell'app",
+                              "Volver a la carpeta de la aplicación"},
+    [TXT_FILES_APPS_OWN] = {"the app's", "celui de l'application", "der der App", "quella dell'app",
+                            "la de la aplicación"},
+    [TXT_FILES_FOLDER_NOTE] = {"Android's folder picker opens over the game. A folder chosen counts from the next "
+                               "start of the game.",
+                               "Le sélecteur de dossier d'Android s'ouvre par-dessus le jeu. Un dossier choisi compte "
+                               "au prochain démarrage du jeu.",
+                               "Androids Ordnerauswahl öffnet sich über dem Spiel. Ein gewählter Ordner gilt ab dem "
+                               "nächsten Start des Spiels.",
+                               "Il selettore di cartelle di Android si apre sopra il gioco. Una cartella scelta vale dal "
+                               "prossimo avvio del gioco.",
+                               "El selector de carpetas de Android se abre sobre el juego. Una carpeta elegida cuenta "
+                               "desde el próximo inicio del juego."},
     /* the buttons the player's DS A, Y and B are on (settings_menu.cpp face_buttons) */
     [TXT_HINTS_GAMEPAD] = {"D-pad: choose   %s: change   %s: clear   %s: back",
                            "Croix : choisir   %s : modifier   %s : effacer   %s : retour",
@@ -966,11 +1009,16 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_MOD_PAUSED] = {"Paused: %s", "En pause : %s", "Pausiert: %s", "In pausa: %s", "En pausa: %s"},
     [TXT_MOD_REFUSED] = {"Not loaded: %s", "Non chargé : %s", "Nicht geladen: %s", "Non caricato: %s",
                          "No cargado: %s"},
-    [TXT_MOD_ORDER_NOTE] = {"Mods later in the list run after the earlier ones: their changes stand.",
-                            "Les mods plus bas dans la liste passent après les autres : leurs changements l'emportent.",
-                            "Spätere Mods der Liste laufen nach den früheren: ihre Änderungen gelten.",
-                            "I mod più in basso nell'elenco vengono dopo gli altri: valgono le loro modifiche.",
-                            "Los mods más abajo en la lista van después de los demás: sus cambios prevalecen."},
+    [TXT_MOD_ORDER_NOTE] = {"Mods later in the list run after the earlier ones: their changes stand. A file two "
+                            "mods both replace comes from the earlier one.",
+                            "Les mods plus bas dans la liste passent après les autres : leurs changements "
+                            "l'emportent. Un fichier remplacé par deux mods vient du premier.",
+                            "Spätere Mods der Liste laufen nach den früheren: ihre Änderungen gelten. Eine Datei, "
+                            "die zwei Mods ersetzen, kommt vom früheren.",
+                            "I mod più in basso nell'elenco vengono dopo gli altri: valgono le loro modifiche. Un "
+                            "file sostituito da due mod viene dal primo.",
+                            "Los mods más abajo en la lista van después de los demás: sus cambios prevalecen. Un "
+                            "archivo que dos mods reemplazan viene del primero."},
     [TXT_ROOM_NEEDS_MODS] = {"This room plays with these mods: %s", "Ce salon joue avec ces mods : %s",
                              "Dieser Raum spielt mit diesen Mods: %s", "Questa stanza gioca con questi mod: %s",
                              "Esta sala juega con estos mods: %s"},
@@ -979,6 +1027,17 @@ static const char *const texts[TXT_COUNT][5] = {
                            "In einem Raum gelten die Optionen des Hosts.",
                            "In una stanza contano le opzioni dell'host.",
                            "En una sala cuentan las opciones del anfitrión."},
+    [TXT_MOD_FILES_ON] = {"On: its files replace the game's.", "Activé : ses fichiers remplacent ceux du jeu.",
+                          "An: seine Dateien ersetzen die des Spiels.", "Attivo: i suoi file sostituiscono quelli del gioco.",
+                          "Activado: sus archivos reemplazan los del juego."},
+    [TXT_MOD_FILES_OFF] = {"Off: the game's own files play.", "Désactivé : les fichiers du jeu sont utilisés.",
+                           "Aus: die eigenen Dateien des Spiels gelten.", "Disattivato: valgono i file del gioco.",
+                           "Desactivado: valen los archivos del juego."},
+    [TXT_MOD_IGNORED] = {"Off by hand: a .ignore file in its folder, or its name begins with a dot.",
+                         "Désactivé à la main : un fichier .ignore dans son dossier, ou son nom commence par un point.",
+                         "Von Hand aus: eine Datei .ignore in seinem Ordner, oder sein Name beginnt mit einem Punkt.",
+                         "Disattivato a mano: un file .ignore nella sua cartella, o il nome inizia con un punto.",
+                         "Desactivado a mano: un archivo .ignore en su carpeta, o su nombre empieza por un punto."},
     [TXT_MOD_WRITES_MEMORY] = {"Writes in the game's memory: a mistake of its own can stop the game or reach a save.",
                                "Écrit dans la mémoire du jeu : une erreur de sa part peut arrêter le jeu ou "
                                "atteindre une sauvegarde.",

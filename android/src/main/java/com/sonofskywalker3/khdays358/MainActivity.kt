@@ -9,7 +9,6 @@ import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.WindowManager
-import com.sonofskywalker3.khdays358.setup.GameFolder
 import com.sonofskywalker3.khdays358.setup.MediaFolder
 import org.libsdl.app.SDLActivity
 import org.libsdl.app.SDLSurface
@@ -75,7 +74,7 @@ class MainActivity : SDLActivity() {
      * when the video is newer; nothing when there is none.
      */
     private fun saveTitleFrame(root: File) {
-        val video = File(GameFolder(root, MediaFolder.chosen(this)).cutscenes, OPENING_VIDEO)
+        val video = File(MediaFolder.gameFolder(this).cutscenes, OPENING_VIDEO)
         val out = File(root, TITLE_FRAME)
         if (!video.isFile || (out.isFile && out.lastModified() >= video.lastModified())) {
             return

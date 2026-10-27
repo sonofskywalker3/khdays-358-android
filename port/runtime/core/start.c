@@ -203,7 +203,9 @@ static void take_working_folder(void)
             fclose(f);
         }
     }
-    khdays_folders_choose(khdays_media_folder_chosen()); /* mods and HD videos from the player's folder */
+    /* the mods and the HD videos from folders of the player's own, when chosen */
+    khdays_folders_choose_mods(khdays_media_folder_mods());
+    khdays_folders_choose_hd(khdays_media_folder_hd());
 #else
     const char *own = SDL_GetBasePath();
     if (SDL_GetPathInfo("data/extracted", NULL)) {
