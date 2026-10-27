@@ -92,6 +92,19 @@ static void test_unknown(void)
     khdays_lower_free(&l);
 }
 
+/* The picture dimmed to `keep` / 255, as under a dialog. */
+static void dim(int keep)
+{
+    for (int yy = 0; yy < DS_H; ++yy) {
+        for (int xx = 0; xx < DS_W; ++xx) {
+            uint8_t *p = picture[yy * SCALE][xx * SCALE];
+            put(xx, yy,
+                (uint32_t)(p[0] * keep / 255) << 16 | (uint32_t)(p[1] * keep / 255) << 8 |
+                    (uint32_t)(p[2] * keep / 255));
+        }
+    }
+}
+
 static void field(void)
 {
     numbered();
@@ -123,6 +136,14 @@ static void test_field(void)
     }
     CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
     khdays_lower_free(&l);
+    /* a mission starting: the panel there, the header still sliding in */
+    field();
+    rect(0, 0, DS_W, 28, 0x212121u);
+    rect(24, 30, 232, 31, 0x938c93u); /* the panel's lilac top edge */
+    CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
+    dim(97); /* fading in from black */
+    CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
+    khdays_lower_free(&l);
 }
 
 static void test_load(void)
@@ -144,6 +165,7 @@ static void test_load(void)
 static void characters(int grid_x0, int grid_x1)
 {
     rect(0, 0, DS_W, DS_H, 0x242424u);
+    rect(40, 20, 140, 21, 0x000000u);           /* the black band under the title */
     rect(grid_x0, 32, grid_x1, 160, 0xd0d0d0u); /* the portraits */
     rect(0, 176, DS_W, 177, 0xffffffu);         /* the line over the help */
     rect(0, 177, DS_W, DS_H, 0x000000u);
@@ -164,6 +186,11 @@ static void test_characters(void)
     CHECK(l.key % 1000 < 104 && l.key % 1000 >= 100);
     CHECK(shows(&l, 1.5f, 100.0f, &x, &y) && x < 8); /* the backdrop beside the grid */
     CHECK(shows(&l, 254.5f, 100.0f, &x, &y) && x >= 248);
+    khdays_lower_free(&l);
+    /* the multiplayer groups' page: the same line and dark top, no title band: not the characters */
+    characters(60, 200);
+    rect(40, 20, 140, 21, 0x212121u);
+    CHECK(lay(&l) != KHDAYS_LOWER_CHARACTERS);
     khdays_lower_free(&l);
 }
 
@@ -188,22 +215,81 @@ static void test_status(void)
     khdays_lower_free(&l);
 }
 
-static void test_summary(void)
+static void summary(int icons)
 {
-    KhdaysLowerLayout l = {0};
-    int x, y;
     numbered();
-    rect(0, 0, DS_W, 56, 0x6d141cu);
-    rect(2, 2, 14, 12, 0x007510u);    /* L */
-    rect(241, 2, 253, 12, 0x007510u); /* R */
+    rect(0, 0, DS_W, 56, 0x212121u);
+    rect(8, 8, 248, 40, 0x62191bu);  /* the card */
+    rect(8, 40, 128, 56, 0xb63337u); /* the Summary tab, chosen */
+    rect(128, 40, 248, 56, 0x424242u);
+    if (icons) {
+        rect(2, 2, 14, 12, 0x429230u);    /* L */
+        rect(241, 2, 253, 12, 0x429230u); /* R */
+    }
     rect(8, 56, 248, 168, 0xffffffu); /* the page */
     rect(0, 168, DS_W, 176, 0x242424u);
     rect(0, 176, DS_W, 177, 0xffffffu);
     rect(0, 177, DS_W, DS_H, 0x000000u);
+}
+
+static void test_summary(void)
+{
+    KhdaysLowerLayout l = {0};
+    int x, y;
+    summary(1);
     CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
     CHECK(shows(&l, 4.5f, 6.5f, &x, &y) && x == 4 && y == 6);          /* L at its own place and size */
     CHECK(shows(&l, 0.5f, 100.0f, &x, &y) && x == 8);                  /* the page from the edge */
     CHECK(shows(&l, 30.5f, 222.5f, &x, &y) && (y == 191 || y == 190)); /* Embark / Back at the bottom */
+    {
+        /* the added line is blank: no row of the last line's text (146-158) shows twice */
+        int seen[DS_H] = {0};
+        for (int oy = 0; oy < 223; ++oy) {
+            if (shows(&l, 100.5f, (float)oy + 0.5f, &x, &y)) {
+                ++seen[y];
+            }
+        }
+        for (int k = 146; k < 159; ++k) {
+            CHECK(seen[k] <= 2); /* the 1.067 zoom shows a row at most twice */
+        }
+        CHECK(seen[144] > 10);
+    }
+    khdays_lower_free(&l);
+    /* the Embark dialog dims it, icons and all: still the summary */
+    summary(1);
+    dim(128);
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
+    khdays_lower_free(&l);
+    /* the story's: no L and R icons, the corners enlarged with the rest */
+    summary(0);
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
+    CHECK(shows(&l, 4.5f, 6.5f, &x, &y) && x == 8 + (int)(4.5f * 240.0f / 256.0f));
+    summary(0);
+    dim(128);
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
+    /* another tab chosen: the Summary tab grey */
+    summary(1);
+    rect(8, 40, 128, 56, 0x424242u);
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
+    khdays_lower_free(&l);
+}
+
+/* A list of missions as the Thor draws it: its greys 107 and 148 (the tutorials' 109 and 150). */
+static void test_missions(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(0, 14, DS_W, 15, 0x212121u);
+    put(100, 14, 0x4a4a4au); /* no header bar across */
+    rect(10, 20, 11, 180, 0x6b6b6bu); /* the frame's edge */
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(232, 20, 248, 176, 0x6b6b6bu); /* the scroll track */
+    rect(236, 172, 244, 175, 0x949494u); /* its rounded end */
+    put(232, 175, 0x6b6b6bu);
+    CHECK(lay(&l) == KHDAYS_LOWER_MISSIONS);
+    CHECK(l.screen == KHDAYS_LOWER_NONE && l.want_rows > 0); /* the DS's shape until its extra rows come */
+    rect(0, 96, 16, 104, 0xffffffu); /* the pointing hand beside the chosen entry, over the frame's edge */
+    CHECK(lay(&l) == KHDAYS_LOWER_MISSIONS);
     khdays_lower_free(&l);
 }
 
@@ -227,6 +313,7 @@ int main(void)
     test_characters();
     test_status();
     test_summary();
+    test_missions();
     test_short_display();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

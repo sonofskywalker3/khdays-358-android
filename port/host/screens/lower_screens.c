@@ -5,6 +5,7 @@
 #include "lower_layout.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define W KHDAYS_LOWER_DS_W
@@ -53,11 +54,22 @@ static int divider(const uint32_t *ds, int from, int min_sum)
     }
     return -1;
 }
-/* Mission Mode's L and R icons in the top corners: green. */
+#define ICON_GREEN 40 /* the icons' green, dimmed too */
+
+/* A grey within `tolerance` of `level`: the same grey drawn a little brighter or darker (the Thor's lists
+ * draw the tutorials' 109 as 107). */
+static int grey_near(uint32_t c, int level, int tolerance)
+{
+    return grey(c) && red(c) >= level - tolerance && red(c) <= level + tolerance;
+}
+/* Mission Mode's L and R icons in the top corners: green, also dimmed under a dialog. */
+static int green_icon(uint32_t c)
+{
+    return green(c) >= ICON_GREEN && green(c) > 2 * red(c) && green(c) > 2 * blue(c);
+}
 static int tab_icons(const uint32_t *ds)
 {
-    const uint32_t l = at(ds, 4, 6), r = at(ds, 247, 6);
-    return green(l) > red(l) + 40 && green(l) > blue(l) + 40 && green(r) > red(r) + 40 && green(r) > blue(r) + 40;
+    return green_icon(at(ds, 4, 6)) && green_icon(at(ds, 247, 6));
 }
 
 /* --- The field's INFORMATION panel (and the pause's, dimmed) ------------------------------------ */
@@ -81,12 +93,29 @@ static int tab_icons(const uint32_t *ds)
 #define MAP_IN_X1 224
 #define MAP_IN0 56
 #define MAP_IN1 136
+#define FIELD_EDGE 30      /* the panel's top edge, lilac */
+#define FIELD_EDGE_MIN 20  /* its red, dimmed too (a mission fading in from black) */
+#define FIELD_EDGE_TINT 2  /* its red and blue alike */
+#define FIELD_WHITE_MIN 100 /* the line under the objective, dimmed too */
+#define FIELD_PANEL_MIN 40  /* the panel's white beside its lilac edge, fading in too */
+
+/* The panel's lilac top edge across row 30 and its white beside the boxes: there while the header is
+ * still sliding in as a mission starts. */
+static int field_panel(const uint32_t *ds)
+{
+    const uint32_t edge = at(ds, 128, FIELD_EDGE), plain = at(ds, 30, FIELD_PLAIN);
+    return red(edge) >= FIELD_EDGE_MIN && red(edge) > green(edge) && blue(edge) > green(edge) &&
+           abs(red(edge) - blue(edge)) <= FIELD_EDGE_TINT && at(ds, 40, FIELD_EDGE) == edge &&
+           at(ds, 220, FIELD_EDGE) == edge && grey(plain) && red(plain) >= FIELD_PANEL_MIN &&
+           at(ds, 220, FIELD_PLAIN) == plain;
+}
 
 static int tell_field(const uint32_t *ds)
 {
     const uint32_t line = at(ds, 128, 23);
-    return grey(line) && red(line) >= 100 && uniform_row(ds, 23) && at(ds, 30, 100) == line &&
-           sum(at(ds, 128, 14)) < 60;
+    return (grey(line) && red(line) >= FIELD_WHITE_MIN && uniform_row(ds, 23) && at(ds, 30, 100) == line &&
+            sum(at(ds, 128, 14)) < 60) ||
+           field_panel(ds);
 }
 
 static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
@@ -147,6 +176,7 @@ static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, f
 #define WHITE_SUM 600
 #define LINE_SUM 300 /* the white line under a page, dimmed under a dialog too */
 #define DARK_SUM 150 /* the characters' title band */
+#define CHARS_TITLE_BAND 20 /* a row of it black under the title */
 
 static int tell_load(const uint32_t *ds)
 {
@@ -154,9 +184,16 @@ static int tell_load(const uint32_t *ds)
     return uniform_row(ds, 14) && blue(c) > red(c) + 60 && sum(at(ds, 128, 15)) < 30;
 }
 
+/* The title's black band under "Select a Character" (the multiplayer groups' page shares the rest). */
+static int characters_title(const uint32_t *ds)
+{
+    return sum(at(ds, 64, CHARS_TITLE_BAND)) == 0 && sum(at(ds, 100, CHARS_TITLE_BAND)) == 0;
+}
+
 static int tell_characters(const uint32_t *ds)
 {
-    return divider(ds, 170, WHITE_SUM) == 176 && !tab_icons(ds) && sum(at(ds, 128, 4)) < DARK_SUM;
+    return divider(ds, 170, WHITE_SUM) == 176 && !tab_icons(ds) && sum(at(ds, 128, 4)) < DARK_SUM &&
+           characters_title(ds);
 }
 
 static int map_zoom(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
@@ -240,23 +277,36 @@ static int map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, fl
 #define SUM_TRACK 216       /* the scroll track from here */
 #define SUM_TRACK_PLAIN 140 /* a row of it plain in every state */
 #define SUM_TRACK_END 146   /* its lower end (the down arrow) from here */
-#define SUM_LINE0 144       /* one ruled line of the page, added under the last */
+#define SUM_LINE0 144       /* one ruled line of the page, added under the last ... */
 #define SUM_LINE1 160
+#define SUM_RULE 159 /* ... blank: the row under a rule (no text reaches it) to its rule */
 #define SUM_ICON_ROWS 15 /* the L and R icons, at their own size */
 #define SUM_ICON_COLS 16
+#define SUM_CARD_LEFT 12 /* the card's red edges */
+#define SUM_CARD_RIGHT 240
+#define SUM_CARD_Y 24
+#define SUM_CARD_RED 40 /* their red, dimmed too */
 
+/* A point of the mission's card: red, dimmed under the Embark dialog too. */
+static int card_red(uint32_t c)
+{
+    return red(c) >= SUM_CARD_RED && red(c) > 2 * green(c) && red(c) > 2 * blue(c);
+}
+
+/* The mission's red card, its left and right edges (Mission Mode's with the L and R icons, the story's
+ * without), on every tab and under the Embark dialog. */
 static int tell_summary(const uint32_t *ds)
 {
     const uint32_t page = at(ds, 100, 120);
-    return tab_icons(ds) && divider(ds, 170, LINE_SUM) == 176 && grey(page) && red(page) >= 30 &&
-           at(ds, 30, 100) == page;
+    return card_red(at(ds, SUM_CARD_LEFT, SUM_CARD_Y)) && card_red(at(ds, SUM_CARD_RIGHT, SUM_CARD_Y)) &&
+           divider(ds, 170, LINE_SUM) == 176 && grey(page) && red(page) >= 30 && at(ds, 30, 100) == page;
 }
 
 static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
 {
     const float foot_top = p->out_h - (float)(H - SUM_FOOT);
     const float page_rows = (float)(SUM_FOOT + SUM_LINE1 - SUM_LINE0) * p->zoom;
-    if (oy < SUM_ICON_ROWS && (ox < SUM_ICON_COLS || ox >= KHDAYS_LOWER_DS_W - SUM_ICON_COLS)) {
+    if (p->split && oy < SUM_ICON_ROWS && (ox < SUM_ICON_COLS || ox >= KHDAYS_LOWER_DS_W - SUM_ICON_COLS)) {
         *sx = ox;
         *sy = oy;
     } else if (oy >= foot_top) {
@@ -292,16 +342,30 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_BORDER_COL 100 /* a column of the lower border without the arrow */
 #define LIST_ICON_ROWS 16   /* the L and R icons at their own size and place */
 #define LIST_ICON_COLS 16
+#define LIST_GREY 108     /* the frame and the scroll track */
+#define LIST_END_GREY 149 /* the track's rounded end */
+#define LIST_GREY_NEAR 4
+#define LIST_EDGE_ROW0 60 /* rows its left edge is looked for at, as well as LIST_SIDE_ROW */
+#define LIST_EDGE_ROW1 140
 #define LAYER_BG1 (1u << 9) /* compose.h: KDF_BG_ON_SHIFT + 1 */
 #define LAYER_OBJ 0x10u     /* KDF_OBJ_ON */
 
 /* The list's frame and scroll track as both lists draw them (the tutorials' too, told apart by their
  * header: its frame shares its entries' layer, and every tutorial already shows). */
+/* The frame's left edge at row y: the pointing hand covers it beside the chosen entry. */
+static int list_edge(const uint32_t *ds, int y)
+{
+    const uint32_t edge = at(ds, 10, y);
+    return at(ds, 9, y) != edge && grey_near(edge, LIST_GREY, LIST_GREY_NEAR);
+}
+
 static int tell_missions(const uint32_t *ds)
 {
-    const uint32_t track = at(ds, 240, 150), end = at(ds, 240, 173), edge = at(ds, 10, 100);
-    return grey(track) && red(track) == 109 && grey(end) && red(end) == 150 && at(ds, 232, 175) == track &&
-           at(ds, 9, 100) != edge && grey(edge) && red(edge) == 109 && !uniform_row(ds, 14);
+    const uint32_t track = at(ds, 240, 150), end = at(ds, 240, 173);
+    return grey_near(track, LIST_GREY, LIST_GREY_NEAR) && grey_near(end, LIST_END_GREY, LIST_GREY_NEAR) &&
+           at(ds, 232, 175) == track &&
+           (list_edge(ds, LIST_EDGE_ROW0) || list_edge(ds, LIST_SIDE_ROW) || list_edge(ds, LIST_EDGE_ROW1)) &&
+           !uniform_row(ds, 14);
 }
 
 static float list_column(float ox)
@@ -445,6 +509,8 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;
         place->map = map_summary;
+        place->split = tab_icons(ds); /* Mission Mode's L and R icons, kept at their own size */
+        *key = place->split;
         place->zoom = (float)W / (float)(SUM_RIGHT - SUM_LEFT);
         if ((float)(SUM_FOOT + SUM_LINE1 - SUM_LINE0) * place->zoom > out_h - (float)(H - SUM_FOOT)) {
             return 0; /* a display too short for the added line */
@@ -453,7 +519,7 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         for (int y = 0; y < SUM_FOOT; ++y) {
             if (y == SUM_LINE1) {
                 for (int k = SUM_LINE0; k < SUM_LINE1; ++k) {
-                    place->rows[0][n++] = (int16_t)k;
+                    place->rows[0][n++] = (int16_t)(k == SUM_RULE ? SUM_RULE : SUM_LINE0);
                 }
             }
             if (y == SUM_TRACK_END) {
