@@ -47,7 +47,13 @@ static char *joined(const char *a, const char *b)
 static void clear(void)
 {
     for (int i = 0; i < count; ++i) {
+#ifdef _MSC_VER
+#pragma warning(suppress : 6001) /* every mod below the count was written before the count moved: none uninitialised */
+#endif
         free(mods[i].folder);
+#ifdef _MSC_VER
+#pragma warning(suppress : 6001)
+#endif
         free(mods[i].path);
     }
     free(mods);

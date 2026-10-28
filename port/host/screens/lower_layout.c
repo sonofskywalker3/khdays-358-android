@@ -74,6 +74,9 @@ int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *pic
         layout->map = grown;
         layout->map_size = width * height;
     }
+    if (layout->map == NULL) {
+        return 0; /* a display of no pixels: nothing to map */
+    }
     layout->screen = screen;
     layout->key = key;
     layout->width = width;
