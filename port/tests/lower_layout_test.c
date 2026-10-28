@@ -411,7 +411,7 @@ static void test_title(void)
     CHECK(shows(&l, 100.5f, 100.5f, &x, &y) && x == 100 && y == 100); /* the screen as it is, at the top */
     CHECK(shows(&l, 250.5f, 185.5f, &x, &y) && x == 250 && y == 185); /* the line's text where it was */
     CHECK(shows(&l, 200.5f, 215.5f, &x, &y) && x == 2 && y == 186);   /* the band's grey below */
-    dim(60);                                                           /* fading in */
+    dim(60);                                                          /* fading in */
     CHECK(lay(&l) == KHDAYS_LOWER_TITLE);
     khdays_lower_free(&l);
 }
@@ -482,10 +482,51 @@ static void test_wider_display(void)
     CHECK(khdays_lower_layout(&l, &pic, ds, rows, khdays_lower_screen(ds, rows), WIDE_W, DS_H * SCALE));
     CHECK(l.screen == KHDAYS_LOWER_NONE);
     khdays_lower_draw(&l, &pic, &wide_out[0][0][0], WIDE_W * 4);
-    CHECK(wide_out[100][4][0] == 0 && wide_out[100][4][3] == 255);              /* black beside it */
+    CHECK(wide_out[100][4][0] == 0 && wide_out[100][4][3] == 255);                /* black beside it */
     CHECK(khdays_lower_touch(&l, 32 * SCALE + 2, 2, &x, &y) && x == 0 && y == 0); /* the first row, whole */
     CHECK(khdays_lower_touch(&l, 32 * SCALE + 2, DS_H * SCALE - 2, &x, &y) && x == 0 && y == DS_H - 1);
     CHECK(!khdays_lower_touch(&l, 4, 100, &x, &y));
+    khdays_lower_free(&l);
+}
+
+/* The shop: above the help box enlarged, the lists' L and R icons in the corners at their own size, the
+ * help box at its own size at the bottom; dimmed as it closes, still the shop. */
+static void test_shop(void)
+{
+    KhdaysLowerLayout l = {0};
+    int x, y;
+    numbered();
+    rect(0, 160, DS_W, 161, 0x9a5720u); /* the help box's border */
+    rect(0, 161, DS_W, 191, 0x4d2b0au); /* its inside */
+    rect(0, 191, DS_W, DS_H, 0x9a5720u);
+    rect(18, 1, 31, 14, 0x4faa40u);   /* the L icon */
+    rect(225, 1, 238, 14, 0x4faa40u); /* the R icon */
+    CHECK(lay(&l) == KHDAYS_LOWER_SHOP);
+    CHECK(shows(&l, 4.5f, 6.5f, &x, &y) && x == 20 && y == 6);       /* L in the corner */
+    CHECK(shows(&l, 250.5f, 6.5f, &x, &y) && x == 234 && y == 6);    /* R in the other */
+    CHECK(shows(&l, 30.5f, 215.5f, &x, &y) && x == 30 && y == 184);  /* the help box at its size */
+    CHECK(shows(&l, 128.5f, 100.5f, &x, &y) && x == 128 && y < 100); /* the middle enlarged */
+    CHECK(shows(&l, 30.5f, 100.5f, &x, &y) && x > 30);
+    dim(60);
+    CHECK(lay(&l) == KHDAYS_LOWER_SHOP);
+    khdays_lower_free(&l);
+}
+
+/* A mission's review: its ruled rows apart, the header and the description box at their own size. */
+static void test_review(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(0, 159, DS_W, 160, 0x212121u); /* plain above the box */
+    rect(8, 161, 248, 162, 0xffffffu);  /* the box's white lines */
+    rect(8, 190, 248, 191, 0xffffffu);
+    for (int r = 55; r < 152; r += 16) {
+        rect(16, r, 230, r + 1, 0x5a5a5au); /* the rules */
+        rect(16, r + 1, 230, r + 3, 0x212121u);
+    }
+    CHECK(lay(&l) == KHDAYS_LOWER_REVIEW);
+    CHECK(shown(&l, 100.5f, 56) >= 5 && shown(&l, 100.5f, 136) >= 5); /* the rows under the rules repeated */
+    CHECK(shown(&l, 100.5f, 10) == 1 && shown(&l, 100.5f, 175) == 1); /* header and box at their size */
     khdays_lower_free(&l);
 }
 
@@ -520,6 +561,8 @@ int main(void)
     test_backdrop();
     test_fades();
     test_wider_display();
+    test_shop();
+    test_review();
     test_short_display();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

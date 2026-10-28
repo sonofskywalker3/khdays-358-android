@@ -168,6 +168,34 @@ static int tell_day(const uint32_t *ds)
            sum(track) > sum(at(ds, DAY_EDGE_X, 100)) && blue(track) >= red(track) && red(track) == green(track);
 }
 
+/* --- A mission's review: Rewards and Items Collected, each a list of ruled rows ------------------------
+ * The rows apart (the plain row under each rule repeated alike), the scroll track longer at a plain row. */
+
+#define REVIEW_BOX_TOP 161 /* the description box's white lines */
+#define REVIEW_BOX_BOTTOM 190
+#define REVIEW_ABOVE_BOX 159 /* plain dark across above the box */
+#define REVIEW_RULE 55       /* the lists' first rule, then every 16 rows */
+#define REVIEW_RULE_X0 60    /* a column of the left list's rules and one of the right's */
+#define REVIEW_RULE_X1 180
+#define REVIEW_GAP0 56 /* the rows under the rules, repeated */
+#define REVIEW_GAPS 6
+#define REVIEW_TRACK 236 /* the scroll track from here */
+#define REVIEW_TRACK0 48
+#define REVIEW_TRACK1 147
+#define REVIEW_MARGIN 8
+
+static int tell_review(const uint32_t *ds)
+{
+    const uint32_t line = at(ds, REVIEW_MARGIN, REVIEW_BOX_TOP), dark = at(ds, 0, REVIEW_ABOVE_BOX),
+                   rule = at(ds, REVIEW_RULE_X0, REVIEW_RULE);
+    return uniform_span(ds, REVIEW_BOX_TOP, REVIEW_MARGIN, W - REVIEW_MARGIN) &&
+           uniform_span(ds, REVIEW_BOX_BOTTOM, REVIEW_MARGIN, W - REVIEW_MARGIN) &&
+           at(ds, REVIEW_MARGIN, REVIEW_BOX_BOTTOM) == line && grey(line) && uniform_row(ds, REVIEW_ABOVE_BOX) &&
+           grey(dark) && sum(line) > sum(dark) && grey(rule) && sum(rule) > sum(dark) &&
+           at(ds, REVIEW_RULE_X1, REVIEW_RULE) == rule && at(ds, REVIEW_RULE_X0, REVIEW_RULE + ENTRY_ROWS) == rule &&
+           at(ds, REVIEW_RULE_X0, REVIEW_RULE + 1) == at(ds, REVIEW_RULE_X0, REVIEW_RULE + 2);
+}
+
 /* --- A picture on a plain backdrop: its top and bottom rows one colour (a logo on white) ----------------- */
 
 #define BACKDROP_ROWS 8 /* this many rows at the top and the bottom, one colour */
@@ -245,6 +273,9 @@ int khdays_lower_pages_tell(const uint32_t *ds)
     if (tell_day(ds)) {
         return KHDAYS_LOWER_DAY;
     }
+    if (tell_review(ds)) {
+        return KHDAYS_LOWER_REVIEW;
+    }
     if (tell_plain(ds)) {
         return KHDAYS_LOWER_PLAIN;
     }
@@ -295,6 +326,20 @@ int khdays_lower_pages_place(int screen, const uint32_t *ds, int rows, KhdaysLow
         }
         track[0][0] = khdays_lower_plain_row(ds, DAY_TRACK0, DAY_TRACK1, DAY_TRACK, W);
         khdays_lower_spread(place->rows[0], rows, (const int(*)[2])gaps, DAY_GAPS);
+        khdays_lower_spread(place->rows[1], rows, (const int(*)[2])track, 1);
+        *key = track[0][0];
+        return 1;
+    }
+    case KHDAYS_LOWER_REVIEW: {
+        int gaps[REVIEW_GAPS][2], track[1][2] = {{0, 1}};
+        place->map = khdays_lower_map_rows;
+        place->split = REVIEW_TRACK;
+        for (int i = 0; i < REVIEW_GAPS; ++i) {
+            gaps[i][0] = REVIEW_GAP0 + i * ENTRY_ROWS;
+            gaps[i][1] = 1;
+        }
+        track[0][0] = khdays_lower_plain_row(ds, REVIEW_TRACK0, REVIEW_TRACK1, REVIEW_TRACK, W);
+        khdays_lower_spread(place->rows[0], rows, (const int(*)[2])gaps, REVIEW_GAPS);
         khdays_lower_spread(place->rows[1], rows, (const int(*)[2])track, 1);
         *key = track[0][0];
         return 1;

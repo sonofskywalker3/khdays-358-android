@@ -189,8 +189,8 @@ static int map_zoom(const KhdaysLowerPlace *p, float ox, float oy, float *sx, fl
 
 /* --- The title: its picture and menu over the copyright line ------------------------------------------ */
 
-#define TITLE_FOOT 180 /* the copyright line's grey band from here to the bottom */
-#define TITLE_TEXT 186 /* a row of the band beside its text */
+#define TITLE_FOOT 180  /* the copyright line's grey band from here to the bottom */
+#define TITLE_TEXT 186  /* a row of the band beside its text */
 #define TITLE_PLAIN_X 2 /* a column of the band plain in every row */
 
 /* The DS's screen at the top, the band longer under it: its own grey (at its left end) below. */
@@ -214,6 +214,55 @@ static int tell_title(const uint32_t *ds)
     return grey(band) && sum(band) > 0 && at(ds, 0, H - 1) == band && at(ds, W / 2, TITLE_FOOT) == band &&
            at(ds, W / 2, TITLE_FOOT + 1) == band && at(ds, 2, TITLE_TEXT) == band &&
            sum(at(ds, 0, TITLE_FOOT - 2)) > sum(band); /* the picture's white above it */
+}
+
+/* --- The Moogle's shop: the wall, the menu or a list over it, the help box under them ----------------- */
+
+#define SHOP_FOOT 160     /* the help box's border across, from here to the bottom */
+#define SHOP_BOX_LINE 161 /* the box's dark inside */
+#define SHOP_MARGIN 8     /* the border's rounded ends left out */
+#define SHOP_ICON_ROWS 15 /* the lists' L and R icons ... */
+#define SHOP_ICON_COLS 16
+#define SHOP_ICON_L 16 /* ... from these columns, put in the corners */
+#define SHOP_ICON_R 224
+#define SHOP_ICON_X 24 /* a column of each icon's green */
+#define SHOP_ICON_X_R 231
+#define SHOP_ICON_Y 7
+
+/* The help box's border one colour across at its top and bottom, brown (dimmed too), its inside darker. */
+static int tell_shop(const uint32_t *ds)
+{
+    const uint32_t border = at(ds, SHOP_MARGIN, SHOP_FOOT), inside = at(ds, SHOP_MARGIN, SHOP_BOX_LINE);
+    return uniform_span(ds, SHOP_FOOT, SHOP_MARGIN, W - SHOP_MARGIN) &&
+           uniform_span(ds, H - 1, SHOP_MARGIN, W - SHOP_MARGIN) && at(ds, SHOP_MARGIN, H - 1) == border &&
+           red(border) > green(border) && green(border) > blue(border) && red(border) > 2 * blue(border) &&
+           sum(inside) < sum(border) && red(inside) > blue(inside) && at(ds, W / 2, SHOP_BOX_LINE) == inside;
+}
+
+static int shop_icons(const uint32_t *ds)
+{
+    return green_icon(at(ds, SHOP_ICON_X, SHOP_ICON_Y)) && green_icon(at(ds, SHOP_ICON_X_R, SHOP_ICON_Y));
+}
+
+/* Above the help box all enlarged by the rows the display adds (the wall's pattern beside it left out);
+ * the lists' L and R icons at their own size in the corners; the help box at its own size below. */
+static int map_shop(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
+{
+    const float foot = (float)SHOP_FOOT + p->extra;
+    if (oy >= foot) {
+        *sx = ox;
+        *sy = oy - p->extra;
+    } else if (p->split && oy < SHOP_ICON_ROWS && ox < SHOP_ICON_COLS) {
+        *sx = ox + SHOP_ICON_L;
+        *sy = oy;
+    } else if (p->split && oy < SHOP_ICON_ROWS && ox >= (float)(W - SHOP_ICON_COLS)) {
+        *sx = ox - (float)(W - SHOP_ICON_COLS) + SHOP_ICON_R;
+        *sy = oy;
+    } else {
+        *sx = (float)W / 2.0f + (ox - (float)W / 2.0f) / p->zoom;
+        *sy = oy / p->zoom;
+    }
+    return 1;
 }
 
 /* --- The camp's status panel ---------------------------------------------------------------------- */
@@ -400,6 +449,9 @@ int khdays_lower_screens_tell(const uint32_t *ds, int ds_rows)
     if (tell_title(ds)) {
         return KHDAYS_LOWER_TITLE;
     }
+    if (tell_shop(ds)) {
+        return KHDAYS_LOWER_SHOP;
+    }
     return khdays_lower_pages_tell(ds); /* the lists drawn a page at a time, a fade (lower_pages.c) */
 }
 
@@ -464,6 +516,12 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         return 1;
     }
     case KHDAYS_LOWER_TITLE: place->map = map_title; return 1;
+    case KHDAYS_LOWER_SHOP:
+        place->map = map_shop;
+        place->zoom = ((float)SHOP_FOOT + place->extra) / (float)SHOP_FOOT;
+        place->split = shop_icons(ds);
+        *key = place->split;
+        return 1;
     case KHDAYS_LOWER_STATUS:
         place->map = khdays_lower_map_rows;
         place->split = STATUS_SPLIT;

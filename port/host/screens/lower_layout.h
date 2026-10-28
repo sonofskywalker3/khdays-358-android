@@ -30,6 +30,8 @@ enum {
     KHDAYS_LOWER_TITLE,      /* the title's picture and menu over the copyright line */
     KHDAYS_LOWER_DAY,        /* a day's missions (the story's), under the day's card */
     KHDAYS_LOWER_BACKDROP,   /* a picture on a plain backdrop (a logo on white): the bars that colour */
+    KHDAYS_LOWER_SHOP,       /* the Moogle's shop: its menu, its lists (buy, sell, synthesis) */
+    KHDAYS_LOWER_REVIEW,     /* a mission's review: Rewards and Items Collected */
     KHDAYS_LOWER_LAYOUTS
 };
 
