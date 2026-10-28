@@ -3,47 +3,12 @@
  * taller picture has past the DS's 192. */
 #include "lower_screens.h"
 #include "lower_layout.h"
+#include "lower_pixels.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define W KHDAYS_LOWER_DS_W
-#define H KHDAYS_LOWER_DS_H
-
-static uint32_t at(const uint32_t *ds, int x, int y)
-{
-    return ds[y * W + x];
-}
-static int red(uint32_t c)
-{
-    return (int)(c >> 16 & 255u);
-}
-static int green(uint32_t c)
-{
-    return (int)(c >> 8 & 255u);
-}
-static int blue(uint32_t c)
-{
-    return (int)(c & 255u);
-}
-static int sum(uint32_t c)
-{
-    return red(c) + green(c) + blue(c);
-}
-static int grey(uint32_t c)
-{
-    return red(c) == green(c) && green(c) == blue(c);
-}
-static int uniform_row(const uint32_t *ds, int y)
-{
-    for (int x = 1; x < W; ++x) {
-        if (at(ds, x, y) != at(ds, 0, y)) {
-            return 0;
-        }
-    }
-    return 1;
-}
 /* The first row from `from` on that is one colour across, brighter than `min_sum` (a divider), or -1. */
 static int divider(const uint32_t *ds, int from, int min_sum)
 {
@@ -56,12 +21,6 @@ static int divider(const uint32_t *ds, int from, int min_sum)
 }
 #define ICON_GREEN 40 /* the icons' green, dimmed too */
 
-/* A grey within `tolerance` of `level`: the same grey drawn a little brighter or darker (the Thor's lists
- * draw the tutorials' 109 as 107). */
-static int grey_near(uint32_t c, int level, int tolerance)
-{
-    return grey(c) && red(c) >= level - tolerance && red(c) <= level + tolerance;
-}
 /* Mission Mode's L and R icons in the top corners: green, also dimmed under a dialog. */
 static int green_icon(uint32_t c)
 {
@@ -93,9 +52,9 @@ static int tab_icons(const uint32_t *ds)
 #define MAP_IN_X1 224
 #define MAP_IN0 56
 #define MAP_IN1 136
-#define FIELD_EDGE 30      /* the panel's top edge, lilac */
-#define FIELD_EDGE_MIN 20  /* its red, dimmed too (a mission fading in from black) */
-#define FIELD_EDGE_TINT 2  /* its red and blue alike */
+#define FIELD_EDGE 30       /* the panel's top edge, lilac */
+#define FIELD_EDGE_MIN 20   /* its red, dimmed too (a mission fading in from black) */
+#define FIELD_EDGE_TINT 2   /* its red and blue alike */
 #define FIELD_WHITE_MIN 100 /* the line under the objective, dimmed too */
 #define FIELD_PANEL_MIN 40  /* the panel's white beside its lilac edge, fading in too */
 
@@ -174,8 +133,8 @@ static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, f
 #define CHARS_STRIPES 4 /* the backdrop's stripes repeat every this many rows */
 #define DIVIDER_SUM 150
 #define WHITE_SUM 600
-#define LINE_SUM 300 /* the white line under a page, dimmed under a dialog too */
-#define DARK_SUM 150 /* the characters' title band */
+#define LINE_SUM 300        /* the white line under a page, dimmed under a dialog too */
+#define DARK_SUM 150        /* the characters' title band */
 #define CHARS_TITLE_BAND 20 /* a row of it black under the title */
 
 static int tell_load(const uint32_t *ds)
@@ -235,39 +194,6 @@ static int tell_status(const uint32_t *ds)
            red(stats) >= 20 && red(stats) <= 60 && sum(at(ds, 100, 120)) == 0;
 }
 
-/* Rows for a picture of `rows` rows: the DS's, each of `at` repeated, the extra rows shared by weight. */
-static void spread(int16_t *out, int rows, const int (*inserts)[2], int count)
-{
-    int weights = 0, given = 0, n = 0;
-    for (int i = 0; i < count; ++i) {
-        weights += inserts[i][1];
-    }
-    for (int y = 0, i = 0; y < H && n < rows; ++y) {
-        if (i < count && inserts[i][0] == y) {
-            const int extra = rows - H, share = i + 1 == count ? extra - given : extra * inserts[i][1] / weights;
-            for (int k = 0; k < share && n < rows; ++k) {
-                out[n++] = (int16_t)y;
-            }
-            given += share;
-            ++i;
-        }
-        out[n++] = (int16_t)y;
-    }
-    while (n < rows) {
-        out[n] = out[n - 1];
-        ++n;
-    }
-}
-
-static int map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
-{
-    const int y = (int)oy;
-    *sx = ox;
-    *sy = (float)p->rows[ox < (float)p->split ? 0 : 1][y < KHDAYS_LOWER_ROWS_MAX ? y : KHDAYS_LOWER_ROWS_MAX - 1] +
-          (oy - (float)y);
-    return 1;
-}
-
 /* --- A mission's summary ---------------------------------------------------------------------------- */
 
 #define SUM_LEFT 8 /* the card, tabs and page span these columns ... */
@@ -279,7 +205,7 @@ static int map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, fl
 #define SUM_TRACK_END 146   /* its lower end (the down arrow) from here */
 #define SUM_LINE0 144       /* one ruled line of the page, added under the last ... */
 #define SUM_LINE1 160
-#define SUM_RULE 159 /* ... blank: the row under a rule (no text reaches it) to its rule */
+#define SUM_RULE 159     /* ... blank: the row under a rule (no text reaches it) to its rule */
 #define SUM_ICON_ROWS 15 /* the L and R icons, at their own size */
 #define SUM_ICON_COLS 16
 #define SUM_CARD_LEFT 12 /* the card's red edges */
@@ -328,6 +254,7 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 
 #define LIST_FRAME_BOTTOM 176 /* the frame's lower border from here: the list grows down to it */
 #define LIST_SIDE_ROW 100     /* a row through the frame's sides and the scroll track */
+#define LIST_PLAIN0 20        /* the frame's sides and the track from here (the rows they grow by: plain ones) */
 #define LIST_IN0 16           /* the entries' columns (the frame leaves its own out) */
 #define LIST_IN1 222
 #define LIST_TRACK0 222 /* the scroll track: its rounded end moves to its new bottom */
@@ -397,13 +324,13 @@ static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx
             *sx = (float)LIST_BORDER_COL + 0.5f;
         }
     } else if (*sx >= (float)LIST_TRACK0 && *sx < (float)LIST_TRACK1 && oy >= (float)LIST_TRACK_END) {
-        *sy = oy < (float)LIST_TRACK_END + e ? (float)LIST_SIDE_ROW : oy - e;
+        *sy = oy < (float)LIST_TRACK_END + e ? (float)p->foot : oy - e; /* the track's plain row */
     } else if (oy < (float)LIST_FRAME_BOTTOM) {
         *sy = oy;
     } else if (*sx >= (float)LIST_IN0 && *sx < (float)LIST_IN1) {
         *sy = (float)KHDAYS_LOWER_ROWS + oy; /* the next missions, as the game drew them under its frame */
     } else {
-        *sy = (float)LIST_SIDE_ROW + (oy - (float)(int)oy);
+        *sy = (float)p->top + (oy - (float)(int)oy); /* the frame's sides, a plain row of them */
     }
     return 1;
 }
@@ -431,7 +358,7 @@ int khdays_lower_screens_tell(const uint32_t *ds, int ds_rows)
     if (tell_status(ds)) {
         return KHDAYS_LOWER_STATUS;
     }
-    return KHDAYS_LOWER_NONE;
+    return khdays_lower_pages_tell(ds); /* the lists drawn a page at a time, a fade (lower_pages.c) */
 }
 
 int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, float out_h, KhdaysLowerPlace *place,
@@ -495,16 +422,19 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         return 1;
     }
     case KHDAYS_LOWER_STATUS:
-        place->map = map_rows;
+        place->map = khdays_lower_map_rows;
         place->split = STATUS_SPLIT;
-        spread(place->rows[0], rows, status_left, (int)(sizeof(status_left) / sizeof(status_left[0])));
-        spread(place->rows[1], rows, status_right, (int)(sizeof(status_right) / sizeof(status_right[0])));
+        khdays_lower_spread(place->rows[0], rows, status_left, (int)(sizeof(status_left) / sizeof(status_left[0])));
+        khdays_lower_spread(place->rows[1], rows, status_right, (int)(sizeof(status_right) / sizeof(status_right[0])));
         return 1;
     case KHDAYS_LOWER_MISSIONS:
         place->map = map_missions;
         place->row0 = LIST_FRAME_BOTTOM;
         place->row_count = (int)ceilf(place->extra) + 1;
         place->layers_off = LAYER_BG1 | LAYER_OBJ; /* the frame and the sprites: the entries alone */
+        place->top = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, 0, LIST_IN0);
+        place->foot = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, LIST_TRACK0, LIST_TRACK1);
+        *key = place->top * 1000 + place->foot;
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;
@@ -532,6 +462,6 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         }
         return 1;
     }
-    default: return 0;
+    default: return khdays_lower_pages_place(screen, ds, rows, place, key);
     }
 }

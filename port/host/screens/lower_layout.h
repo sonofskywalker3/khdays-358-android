@@ -23,6 +23,10 @@ enum {
     KHDAYS_LOWER_STATUS,     /* the camp's status panel */
     KHDAYS_LOWER_MISSIONS,   /* a list of missions: Mission Mode's, the story's day by day */
     KHDAYS_LOWER_SUMMARY,    /* a mission's summary, objectives and rewards */
+    KHDAYS_LOWER_TUTORIALS,  /* the tutorials' list */
+    KHDAYS_LOWER_DIARY,      /* Roxas's Diary's list */
+    KHDAYS_LOWER_PANELS,     /* the Panels page: the board and the stock */
+    KHDAYS_LOWER_PLAIN,      /* one colour across (a fade to white): all of the display that colour */
     KHDAYS_LOWER_LAYOUTS
 };
 

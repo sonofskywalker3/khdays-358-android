@@ -280,16 +280,122 @@ static void test_missions(void)
     KhdaysLowerLayout l = {0};
     numbered();
     rect(0, 14, DS_W, 15, 0x212121u);
-    put(100, 14, 0x4a4a4au); /* no header bar across */
+    put(100, 14, 0x4a4a4au);          /* no header bar across */
     rect(10, 20, 11, 180, 0x6b6b6bu); /* the frame's edge */
     rect(9, 20, 10, 180, 0x4a4a4au);
-    rect(232, 20, 248, 176, 0x6b6b6bu); /* the scroll track */
+    rect(232, 20, 248, 176, 0x6b6b6bu);  /* the scroll track */
     rect(236, 172, 244, 175, 0x949494u); /* its rounded end */
     put(232, 175, 0x6b6b6bu);
     CHECK(lay(&l) == KHDAYS_LOWER_MISSIONS);
     CHECK(l.screen == KHDAYS_LOWER_NONE && l.want_rows > 0); /* the DS's shape until its extra rows come */
     rect(0, 96, 16, 104, 0xffffffu); /* the pointing hand beside the chosen entry, over the frame's edge */
     CHECK(lay(&l) == KHDAYS_LOWER_MISSIONS);
+    khdays_lower_free(&l);
+}
+
+/* The list grown with its extra rows: the frame's sides and the scroll track below the DS's rows take a
+ * plain row of theirs, not the hand's beside the chosen entry nor the track's thumb. */
+static uint8_t overscan[32 * SCALE][DS_W * SCALE][4];
+
+static void test_missions_grown(void)
+{
+    KhdaysLowerLayout l = {0};
+    KhdaysLowerPicture grown = pic;
+    int rows, x, y;
+    numbered();
+    rect(0, 14, DS_W, 15, 0x212121u);
+    put(100, 14, 0x4a4a4au);
+    rect(0, 20, 16, 180, 0x303030u);  /* the frame's left side, plain */
+    rect(10, 20, 11, 180, 0x6b6b6bu); /* its edge */
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(222, 20, 248, 176, 0x6b6b6bu); /* the scroll track */
+    rect(236, 172, 244, 175, 0x949494u);
+    put(232, 175, 0x6b6b6bu);
+    rect(0, 96, 16, 104, 0xffffffu);    /* the hand */
+    rect(224, 90, 242, 112, 0xc0c0c0u); /* the thumb */
+    grown.overscan = &overscan[0][0][0];
+    grown.overscan_rows = 32 * SCALE;
+    grown.overscan_pitch = DS_W * SCALE * 4;
+    grown.overscan_row0 = 176;
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_screen(ds, rows) == KHDAYS_LOWER_MISSIONS);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(l.screen == KHDAYS_LOWER_MISSIONS);
+    CHECK(shows(&l, 2.5f, 200.5f, &x, &y) && (y < 96 || y >= 104));   /* the side under the frame */
+    CHECK(shows(&l, 246.5f, 180.5f, &x, &y) && (y < 90 || y >= 112)); /* the track's added rows */
+    khdays_lower_free(&l);
+}
+
+/* How many of the display's rows show DS row `row` at column x. */
+static int shown(const KhdaysLowerLayout *l, float x, int row)
+{
+    int n = 0, sx, sy;
+    for (int oy = 0; oy < 223; ++oy) {
+        n += shows(l, x, (float)oy + 0.5f, &sx, &sy) && sy == row;
+    }
+    return n;
+}
+
+static void test_tutorials(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(0, 14, DS_W, 15, 0x641c1fu); /* the header's red line */
+    rect(0, 15, DS_W, 16, 0x000000u);
+    rect(0, 16, DS_W, 17, 0x1c1c1cu); /* the frame's stripes */
+    rect(0, 26, DS_W, 27, 0x969696u); /* its top edge */
+    CHECK(lay(&l) == KHDAYS_LOWER_TUTORIALS);
+    /* the gaps between entries grow alike, the entries keep their rows */
+    CHECK(shown(&l, 100.5f, 48) >= 4 && shown(&l, 100.5f, 48) <= 5);
+    CHECK(shown(&l, 100.5f, 160) >= 4 && shown(&l, 100.5f, 160) <= 5);
+    CHECK(shown(&l, 100.5f, 40) == 1);
+    CHECK(shown(&l, 100.5f, 191) == 1);
+    khdays_lower_free(&l);
+}
+
+static void test_diary(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(0, 0, DS_W, 2, 0x3e6c2eu); /* the backdrop's stripes */
+    rect(0, 2, DS_W, 4, 0x487b37u);
+    rect(0, 12, DS_W, 13, 0x789d40u); /* its plain green */
+    rect(0, 188, DS_W, 190, 0x3e6c2eu);
+    CHECK(lay(&l) == KHDAYS_LOWER_DIARY);
+    CHECK(shown(&l, 100.5f, 32) >= 3 && shown(&l, 100.5f, 160) >= 3);
+    rect(116, 8, 124, 14, 0x9f2c31u); /* scrolled: the up arrow over the plain green */
+    CHECK(lay(&l) == KHDAYS_LOWER_DIARY);
+    khdays_lower_free(&l);
+}
+
+static void test_panels(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(0, 0, 95, 157, 0x525259u);    /* the board's frame */
+    rect(95, 24, 232, 157, 0x243148u); /* the stock */
+    rect(8, 160, 248, 161, 0x212121u);
+    rect(8, 161, 248, 162, 0xffffffu); /* the help box */
+    rect(8, 190, 248, 191, 0xffffffu);
+    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
+    /* the board grows above and below its grid; the stock's entries apart */
+    CHECK(shown(&l, 50.5f, 22) >= 15 && shown(&l, 50.5f, 152) >= 15);
+    CHECK(shown(&l, 150.5f, 24) >= 4 && shown(&l, 150.5f, 136) >= 4);
+    CHECK(shown(&l, 150.5f, 191) == 1);
+    khdays_lower_free(&l);
+}
+
+/* A fade to white: all of the display that white, no bars; black keeps the DS's shape. */
+static void test_plain(void)
+{
+    KhdaysLowerLayout l = {0};
+    int x, y;
+    rect(0, 0, DS_W, DS_H, 0xefefefu);
+    put(100, 100, 0xeeeeeeu);
+    CHECK(lay(&l) == KHDAYS_LOWER_PLAIN);
+    CHECK(out[10][100][0] == 0xef && shows(&l, 100.5f, 2.5f, &x, &y));
+    rect(0, 0, DS_W, DS_H, 0x000000u);
+    CHECK(lay(&l) == KHDAYS_LOWER_NONE);
     khdays_lower_free(&l);
 }
 
@@ -314,6 +420,11 @@ int main(void)
     test_status();
     test_summary();
     test_missions();
+    test_missions_grown();
+    test_tutorials();
+    test_diary();
+    test_panels();
+    test_plain();
     test_short_display();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

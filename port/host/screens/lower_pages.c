@@ -1,0 +1,226 @@
+/* lower_pixels.h: the lists the game draws a page at a time (the tutorials', Roxas's Diary's, the Panels
+ * page's stock) and a picture of one colour, and the rows the screens are laid out by (docs/LOWER_DISPLAY.md). */
+#include "lower_pixels.h"
+
+#include <stdlib.h>
+
+void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int count)
+{
+    int weights = 0, weighed = 0, given = 0, n = 0;
+    for (int i = 0; i < count; ++i) {
+        weights += inserts[i][1];
+    }
+    for (int y = 0, i = 0; y < H && n < rows; ++y) {
+        if (i < count && inserts[i][0] == y) {
+            /* each its share rounded, as the shares so far add up to: the rows apart evenly */
+            const int extra = rows - H;
+            int share;
+            weighed += inserts[i][1];
+            share = (extra * weighed + weights / 2) / weights - given;
+            for (int k = 0; k < share && n < rows; ++k) {
+                out[n++] = (int16_t)y;
+            }
+            given += share;
+            ++i;
+        }
+        out[n++] = (int16_t)y;
+    }
+    while (n < rows) {
+        out[n] = out[n - 1];
+        ++n;
+    }
+}
+
+int khdays_lower_map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
+{
+    const int y = (int)oy;
+    const int band = ox < (float)p->split ? 0 : p->split2 > 0 && ox >= (float)p->split2 ? 2 : 1;
+    *sx = ox;
+    *sy = (float)p->rows[band][y < KHDAYS_LOWER_ROWS_MAX ? y : KHDAYS_LOWER_ROWS_MAX - 1] + (oy - (float)y);
+    return 1;
+}
+
+int khdays_lower_plain_row(const uint32_t *ds, int y0, int y1, int x0, int x1)
+{
+    uint32_t hash[H];
+    int best = y0, best_count = 0;
+    for (int y = y0; y < y1; ++y) {
+        uint32_t h = 2166136261u;
+        for (int x = x0; x < x1; ++x) {
+            h = (h ^ at(ds, x, y)) * 16777619u;
+        }
+        hash[y] = h;
+    }
+    for (int y = y0; y < y1; ++y) {
+        int count = 0;
+        for (int k = y0; k < y1; ++k) {
+            count += hash[k] == hash[y];
+        }
+        if (count > best_count) {
+            best = y;
+            best_count = count;
+        }
+    }
+    return best;
+}
+
+/* --- Lists drawn a page at a time (the tutorials', the diary's, the Panels page's stock) ---------------
+ * The game draws only the entries it shows, so the extra rows space them apart: a plain row between
+ * entries repeated (map_rows); the scroll track grows at a plain row of its own. */
+
+#define TUT_HEADER 14     /* the header's red line across */
+#define TUT_FRAME_DARK 16 /* the frame's stripes, then its top edge */
+#define TUT_FRAME_EDGE 26
+#define TUT_GAP0 48 /* the rows between entries: from here, every 16 */
+#define TUT_GAPS 8
+#define TUT_TRACK 224 /* the scroll track from here */
+#define TUT_TRACK0 32 /* its rows */
+#define TUT_TRACK1 175
+#define DIARY_STRIPE0 0 /* the backdrop's stripes above and below the list ... */
+#define DIARY_STRIPE1 2
+#define DIARY_BELOW 188
+#define DIARY_PLAIN 12 /* ... its plain green between (the scroll arrows cross it in the middle) */
+#define DIARY_ARROW0 112
+#define DIARY_ARROW1 132
+#define DIARY_GAP0 32
+#define DIARY_GAPS 9
+#define DIARY_TRACK 232
+#define DIARY_TRACK0 16
+#define DIARY_TRACK1 175
+#define PANELS_LIST 95   /* the board left of here, the stock from here ... */
+#define PANELS_TRACK 232 /* ... its scroll track from here */
+#define PANELS_ENTRY0 24 /* the stock's entries, 16 rows each, their first row plain */
+#define PANELS_ENTRIES 8
+#define PANELS_BOARD_ABOVE 22 /* the board's frame, plain above its grid and below */
+#define PANELS_BOARD_BELOW 152
+#define PANELS_TRACK1 151
+#define PANELS_FRAME 160    /* the dark line over the help, ... */
+#define PANELS_HELP 161     /* ... the help box's white top and ... */
+#define PANELS_HELP_END 190 /* ... bottom lines (their rounded ends left out) */
+#define PANELS_SPAN0 8
+#define PANELS_SPAN1 248
+#define PANELS_BOARD_X 4
+#define PANELS_STOCK_X 150
+#define ENTRY_ROWS 16
+#define TUT_HEADER_RED 40   /* the header's red, dimmed too */
+#define PANELS_HELP_SUM 300 /* the help box's white, dimmed too */
+
+static int tell_tutorials(const uint32_t *ds)
+{
+    const uint32_t header = at(ds, 0, TUT_HEADER), dark = at(ds, 30, TUT_FRAME_DARK), edge = at(ds, 30, TUT_FRAME_EDGE);
+    return uniform_row(ds, TUT_HEADER) && red(header) >= TUT_HEADER_RED && red(header) > 2 * green(header) &&
+           sum(at(ds, 128, TUT_HEADER + 1)) == 0 && at(ds, 200, TUT_FRAME_DARK) == dark &&
+           at(ds, 200, TUT_FRAME_EDGE) == edge && grey(edge) && sum(edge) > sum(dark);
+}
+
+static int tell_diary(const uint32_t *ds)
+{
+    const uint32_t plain = at(ds, 0, DIARY_PLAIN), stripe = at(ds, 0, DIARY_STRIPE0);
+    return uniform_row(ds, DIARY_STRIPE0) && uniform_row(ds, DIARY_STRIPE1) &&
+           uniform_span(ds, DIARY_PLAIN, 0, DIARY_ARROW0) && uniform_span(ds, DIARY_PLAIN, DIARY_ARROW1, W) &&
+           at(ds, DIARY_ARROW1, DIARY_PLAIN) == plain && uniform_row(ds, DIARY_BELOW) &&
+           at(ds, 0, DIARY_BELOW) == stripe && at(ds, 0, DIARY_STRIPE1) != stripe && green(plain) > red(plain) &&
+           green(plain) > blue(plain) && sum(plain) > sum(stripe);
+}
+
+static int tell_panels(const uint32_t *ds)
+{
+    const uint32_t help = at(ds, PANELS_SPAN0, PANELS_HELP), board = at(ds, PANELS_BOARD_X, 100),
+                   stock = at(ds, PANELS_STOCK_X, PANELS_BOARD_BELOW);
+    return uniform_span(ds, PANELS_HELP, PANELS_SPAN0, PANELS_SPAN1) && sum(help) > PANELS_HELP_SUM &&
+           uniform_span(ds, PANELS_HELP_END, PANELS_SPAN0, PANELS_SPAN1) &&
+           at(ds, PANELS_SPAN0, PANELS_HELP_END) == help &&
+           uniform_span(ds, PANELS_FRAME, PANELS_SPAN0, PANELS_SPAN1) &&
+           sum(at(ds, PANELS_SPAN0, PANELS_FRAME)) < sum(help) && at(ds, PANELS_BOARD_X, 60) == board &&
+           at(ds, PANELS_BOARD_X, 140) == board && red(board) == green(board) && blue(board) > red(board) &&
+           blue(stock) > red(stock) + 20;
+}
+
+/* --- One colour across (a fade to white): all of the display that colour -------------------------------- */
+
+#define PLAIN_NEAR 2 /* each channel within this of the first pixel's (the picture's scaling blends a level) */
+
+static int tell_plain(const uint32_t *ds)
+{
+    const uint32_t c = at(ds, 0, 0);
+    if (sum(c) == 0) {
+        return 0; /* black: the bars are already */
+    }
+    for (int i = 0; i < W * H; ++i) {
+        if (abs(red(ds[i]) - red(c)) > PLAIN_NEAR || abs(green(ds[i]) - green(c)) > PLAIN_NEAR ||
+            abs(blue(ds[i]) - blue(c)) > PLAIN_NEAR) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int map_plain(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
+{
+    *sx = ox;
+    *sy = oy * (float)H / p->out_h;
+    return 1;
+}
+
+/* Inserts every ENTRY_ROWS rows from `row0`, `count` of them, each as heavy. */
+static int every_entry(int (*inserts)[2], int row0, int count)
+{
+    for (int i = 0; i < count; ++i) {
+        inserts[i][0] = row0 + i * ENTRY_ROWS;
+        inserts[i][1] = 1;
+    }
+    return count;
+}
+
+int khdays_lower_pages_tell(const uint32_t *ds)
+{
+    if (tell_tutorials(ds)) {
+        return KHDAYS_LOWER_TUTORIALS;
+    }
+    if (tell_diary(ds)) {
+        return KHDAYS_LOWER_DIARY;
+    }
+    if (tell_panels(ds)) {
+        return KHDAYS_LOWER_PANELS;
+    }
+    if (tell_plain(ds)) {
+        return KHDAYS_LOWER_PLAIN;
+    }
+    return KHDAYS_LOWER_NONE;
+}
+
+int khdays_lower_pages_place(int screen, const uint32_t *ds, int rows, KhdaysLowerPlace *place, int *key)
+{
+    switch (screen) {
+    case KHDAYS_LOWER_TUTORIALS:
+    case KHDAYS_LOWER_DIARY: {
+        const int tut = screen == KHDAYS_LOWER_TUTORIALS;
+        int gaps[DIARY_GAPS][2], track[1][2] = {{0, 1}};
+        place->map = khdays_lower_map_rows;
+        place->split = tut ? TUT_TRACK : DIARY_TRACK;
+        track[0][0] = tut ? khdays_lower_plain_row(ds, TUT_TRACK0, TUT_TRACK1, TUT_TRACK, W)
+                          : khdays_lower_plain_row(ds, DIARY_TRACK0, DIARY_TRACK1, DIARY_TRACK, W);
+        khdays_lower_spread(place->rows[0], rows, (const int(*)[2])gaps,
+                            every_entry(gaps, tut ? TUT_GAP0 : DIARY_GAP0, tut ? TUT_GAPS : DIARY_GAPS));
+        khdays_lower_spread(place->rows[1], rows, (const int(*)[2])track, 1);
+        *key = track[0][0];
+        return 1;
+    }
+    case KHDAYS_LOWER_PANELS: {
+        static const int board[][2] = {{PANELS_BOARD_ABOVE, 1}, {PANELS_BOARD_BELOW, 1}};
+        int entries[PANELS_ENTRIES][2], track[1][2] = {{0, 1}};
+        place->map = khdays_lower_map_rows;
+        place->split = PANELS_LIST;
+        place->split2 = PANELS_TRACK;
+        track[0][0] = khdays_lower_plain_row(ds, PANELS_ENTRY0, PANELS_TRACK1, PANELS_TRACK, W);
+        khdays_lower_spread(place->rows[0], rows, board, 2);
+        khdays_lower_spread(place->rows[1], rows, (const int(*)[2])entries,
+                            every_entry(entries, PANELS_ENTRY0, PANELS_ENTRIES));
+        khdays_lower_spread(place->rows[2], rows, (const int(*)[2])track, 1);
+        *key = track[0][0];
+        return 1;
+    }
+    case KHDAYS_LOWER_PLAIN: place->map = map_plain; return 1;
+    default: return 0;
+    }
+}
