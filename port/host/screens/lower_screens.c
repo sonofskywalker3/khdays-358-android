@@ -191,6 +191,21 @@ static int map_zoom(const KhdaysLowerPlace *p, float ox, float oy, float *sx, fl
 
 #define TITLE_FOOT 180 /* the copyright line's grey band from here to the bottom */
 #define TITLE_TEXT 186 /* a row of the band beside its text */
+#define TITLE_PLAIN_X 2 /* a column of the band plain in every row */
+
+/* The DS's screen at the top, the band longer under it: its own grey (at its left end) below. */
+static int map_title(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
+{
+    (void)p;
+    if (oy < (float)H) {
+        *sx = ox;
+        *sy = oy;
+    } else {
+        *sx = (float)TITLE_PLAIN_X + 0.5f;
+        *sy = (float)TITLE_TEXT + 0.5f;
+    }
+    return 1;
+}
 
 /* The band one grey at its corners and middle, the same grey while the title fades in or out too. */
 static int tell_title(const uint32_t *ds)
@@ -448,15 +463,7 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         *key = place->foot * 1000 + (int)(place->zoom * 100.0f);
         return 1;
     }
-    case KHDAYS_LOWER_TITLE:
-        /* the picture enlarged to fill the rows above the band, its left edge kept (the menu's squares and
-         * words); the right edge's scenery past the display left out */
-        place->map = map_zoom;
-        place->top = 0;
-        place->foot = TITLE_FOOT;
-        place->zoom = ((float)TITLE_FOOT + place->extra) / (float)TITLE_FOOT;
-        place->cx = (float)W / 2.0f / place->zoom;
-        return 1;
+    case KHDAYS_LOWER_TITLE: place->map = map_title; return 1;
     case KHDAYS_LOWER_STATUS:
         place->map = khdays_lower_map_rows;
         place->split = STATUS_SPLIT;

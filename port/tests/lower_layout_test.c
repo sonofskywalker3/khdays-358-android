@@ -399,7 +399,7 @@ static void test_plain(void)
     khdays_lower_free(&l);
 }
 
-/* The title: the picture and menu enlarged over the copyright line, the menu's left edge kept. */
+/* The title: the DS's screen at the top, the copyright line's grey band longer under it. */
 static void test_title(void)
 {
     KhdaysLowerLayout l = {0};
@@ -408,9 +408,9 @@ static void test_title(void)
     rect(0, 176, DS_W, 180, 0xffffffu);  /* the picture's white above the band */
     rect(0, 180, DS_W, DS_H, 0x868686u); /* the copyright line's band */
     CHECK(lay(&l) == KHDAYS_LOWER_TITLE);
-    CHECK(shows(&l, 0.5f, 100.0f, &x, &y) && x == 0);                  /* the left edge kept */
-    CHECK(shows(&l, 30.5f, 222.5f, &x, &y) && (y == 191 || y == 190)); /* the band at the bottom */
-    CHECK(shows(&l, 250.5f, 100.0f, &x, &y) && x < 225);               /* the right edge left out */
+    CHECK(shows(&l, 100.5f, 100.5f, &x, &y) && x == 100 && y == 100); /* the screen as it is, at the top */
+    CHECK(shows(&l, 250.5f, 185.5f, &x, &y) && x == 250 && y == 185); /* the line's text where it was */
+    CHECK(shows(&l, 200.5f, 215.5f, &x, &y) && x == 2 && y == 186);   /* the band's grey below */
     dim(60);                                                           /* fading in */
     CHECK(lay(&l) == KHDAYS_LOWER_TITLE);
     khdays_lower_free(&l);
@@ -468,6 +468,27 @@ static void test_fades(void)
     khdays_lower_free(&l);
 }
 
+/* A display wider than 4:3 shows the DS's shape at its height, black beside it: none of the DS's rows
+ * left out. */
+#define WIDE_W ((DS_W + 64) * SCALE)
+static uint8_t wide_out[DS_H * SCALE][WIDE_W][4];
+
+static void test_wider_display(void)
+{
+    KhdaysLowerLayout l = {0};
+    int x, y, rows;
+    numbered();
+    khdays_lower_sample(&pic, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &pic, ds, rows, khdays_lower_screen(ds, rows), WIDE_W, DS_H * SCALE));
+    CHECK(l.screen == KHDAYS_LOWER_NONE);
+    khdays_lower_draw(&l, &pic, &wide_out[0][0][0], WIDE_W * 4);
+    CHECK(wide_out[100][4][0] == 0 && wide_out[100][4][3] == 255);              /* black beside it */
+    CHECK(khdays_lower_touch(&l, 32 * SCALE + 2, 2, &x, &y) && x == 0 && y == 0); /* the first row, whole */
+    CHECK(khdays_lower_touch(&l, 32 * SCALE + 2, DS_H * SCALE - 2, &x, &y) && x == 0 && y == DS_H - 1);
+    CHECK(!khdays_lower_touch(&l, 4, 100, &x, &y));
+    khdays_lower_free(&l);
+}
+
 static void test_short_display(void)
 {
     KhdaysLowerLayout l = {0};
@@ -498,6 +519,7 @@ int main(void)
     test_day();
     test_backdrop();
     test_fades();
+    test_wider_display();
     test_short_display();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

@@ -192,8 +192,9 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     fit(buffer.width, buffer.height, &x, &y, &w, &h);
     bits = (uint8_t *)buffer.bits;
     laid_out = 0;
-    if (fullscreen && width == w && height == h && w == buffer.width && h < buffer.height) {
-        /* a display taller than 4:3: the screen laid out again as tall as it (lower_layout.h) */
+    if (fullscreen && width == w && height == h && (w < buffer.width || h < buffer.height)) {
+        /* a display taller than 4:3: the screen laid out again as tall as it (lower_layout.h); wider: the
+         * DS's shape at its height */
         static uint32_t ds[KHDAYS_LOWER_DS_W * (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN)];
         const uint8_t *rows = rows_h > 0 ? rgba + (size_t)height * (size_t)pitch : NULL;
         const KhdaysLowerPicture picture = {rgba, width, height, pitch, rows, rows_h, pitch, rows_row0};

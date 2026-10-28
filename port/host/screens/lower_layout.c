@@ -3,6 +3,7 @@
 #include "lower_layout.h"
 #include "lower_screens.h"
 
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -41,7 +42,9 @@ int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *pic
                         int screen, int width, int height)
 {
     KhdaysLowerPlace place;
-    const float scale = (float)width / KHDAYS_LOWER_DS_W; /* display pixels a DS dot */
+    /* display pixels a DS dot: the DS's width across, or on a display wider than 4:3 its height */
+    const int wider = (long)width * KHDAYS_LOWER_DS_H > (long)height * KHDAYS_LOWER_DS_W;
+    const float scale = wider ? (float)height / KHDAYS_LOWER_DS_H : (float)width / KHDAYS_LOWER_DS_W;
     const float src_scale = (float)picture->width / KHDAYS_LOWER_DS_W;
     const int over_rows = picture->overscan != NULL ? picture->overscan_rows : 0;
     int key;
@@ -92,7 +95,7 @@ int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *pic
             int px, py;
             if (screen == KHDAYS_LOWER_NONE) {
                 /* the DS's shape, centred */
-                sx = ox;
+                sx = ox - ((float)width / scale - KHDAYS_LOWER_DS_W) / 2.0f;
                 sy = oy - ((float)height / scale - KHDAYS_LOWER_DS_H) / 2.0f;
             } else if (!place.map(&place, ox, oy, &sx, &sy)) {
                 out[x] = -1;

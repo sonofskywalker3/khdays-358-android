@@ -5,7 +5,9 @@ the lower screen in the DS's shape with black bars above and below it, or, with
 Settings > Video > Second Screen Aspect Ratio set to Fullscreen (the default),
 as tall as the display (`host/screens/lower_layout.c`). Nothing is stretched: a
 screen the port knows is laid out again in the taller picture; one it does not
-know keeps the DS's shape and its bars.
+know keeps the DS's shape and its bars. A second display wider than 4:3 (the
+lower screen of other dual-screen handhelds, often 3:2) shows the DS's shape at
+its height with bars beside it; the screens are laid out only on a taller one.
 
 Settings > Video > Screens is shown there too, with a value of its own
 (`[video] screens_second_display`, two by default, apart from `screens` on a
@@ -34,7 +36,7 @@ Rows and columns below are the DS's; the taller picture has `extra` rows more
 | The tutorials' list | row 14 one red across under the header, row 15 black, the frame's stripes (row 16) and its grey top edge (row 26) alike at columns 30 and 200 | the game draws only the entries it shows, so they are spaced apart: the rows between entries (48, 64, ... 160) repeated alike; the scroll track (from column 224) longer at a plain row of its own |
 | Roxas's Diary's list | the backdrop's stripes (rows 0 and 2, again at 188) and its plain green (row 12, either side of the scroll arrows) each one colour across | the same: the rows between entries (32, 48, ... 160) repeated alike, the track (from column 232) longer at a plain row |
 | The Panels page | the help box's white lines (rows 161 and 190) and the dark line over it, the board's grey frame at (4, 60), (4, 100), (4, 140), the stock's blue under its list | the board (columns 0-94) at its own size, its frame grown above and below its grid (rows 22 and 152); the stock's entries apart (each one's plain first row, 24 to 136, repeated); its track (from column 232) longer at a plain row; the help box at the bottom |
-| The title (Story / Mission / Theater, New Game / Continue, Solo / Multiplayer) | the copyright line's grey band (rows 180-191) at its corners and middle, the picture's white above it | the picture and menu (rows 0-179) enlarged both ways to fill the rows above the band, the left edge kept (the menu's squares and words), the right edge's scenery left out; the band at its own size at the bottom |
+| The title (Story / Mission / Theater, New Game / Continue, Solo / Multiplayer) | the copyright line's grey band (rows 180-191) at its corners and middle, the picture's white above it | the DS's screen as it is at the top, the band continued under it in its own grey (nothing enlarged, nothing left out) |
 | A day's missions (the story's) | the day's red card at row 20 (columns 20, 100, 230), the frame's top line one grey across row 40, the scroll track lighter than the frame's edge | the card at its own size; the slots spaced apart, the rows above, between and below them (48, 80, ... 176) repeated alike; the track (from column 224) longer at a plain row of its own |
 | A picture on a plain backdrop (the boot logos on white) | its top and bottom 8 rows one colour, not black | the DS's shape in the middle, the bars that colour |
 | One colour across (the fade to white at a game over) | every DS pixel within 2 of the first, not black | all of the display that colour, no bars |

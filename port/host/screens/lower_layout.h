@@ -44,7 +44,8 @@ typedef struct KhdaysLowerPicture {
 } KhdaysLowerPicture;
 
 /* A layout made for a picture and a display: for each display pixel the picture's pixel it shows (an
- * index into the picture's rows then the overscan's, -1 black). Made again only when the screen or
+ * index into the picture's rows then the overscan's, -1 black). A display wider than 4:3 shows the
+ * DS's shape at its height, black beside it. Made again only when the screen or
  * what was measured on it changes. */
 typedef struct KhdaysLowerLayout {
     int screen;        /* KHDAYS_LOWER_* */
