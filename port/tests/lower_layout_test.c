@@ -399,6 +399,75 @@ static void test_plain(void)
     khdays_lower_free(&l);
 }
 
+/* The title: the picture and menu enlarged over the copyright line, the menu's left edge kept. */
+static void test_title(void)
+{
+    KhdaysLowerLayout l = {0};
+    int x, y;
+    numbered();
+    rect(0, 176, DS_W, 180, 0xffffffu);  /* the picture's white above the band */
+    rect(0, 180, DS_W, DS_H, 0x868686u); /* the copyright line's band */
+    CHECK(lay(&l) == KHDAYS_LOWER_TITLE);
+    CHECK(shows(&l, 0.5f, 100.0f, &x, &y) && x == 0);                  /* the left edge kept */
+    CHECK(shows(&l, 30.5f, 222.5f, &x, &y) && (y == 191 || y == 190)); /* the band at the bottom */
+    CHECK(shows(&l, 250.5f, 100.0f, &x, &y) && x < 225);               /* the right edge left out */
+    dim(60);                                                           /* fading in */
+    CHECK(lay(&l) == KHDAYS_LOWER_TITLE);
+    khdays_lower_free(&l);
+}
+
+/* A day's missions: the slots spaced apart below the day's card. */
+static void test_day(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(10, 9, 246, 37, 0x62191bu); /* the day's card */
+    rect(8, 37, 248, 40, 0x000000u);
+    rect(16, 40, 244, 41, 0x080808u);   /* the frame's top line */
+    rect(224, 41, 240, 176, 0xa5a5acu); /* the scroll track */
+    rect(240, 41, 248, 176, 0x212121u); /* the frame's edge */
+    CHECK(lay(&l) == KHDAYS_LOWER_DAY);
+    CHECK(shown(&l, 100.5f, 80) >= 5 && shown(&l, 100.5f, 144) >= 5); /* the rows between the slots */
+    CHECK(shown(&l, 100.5f, 20) == 1);                                /* the card at its own size */
+    dim(40);                                                          /* closing */
+    CHECK(lay(&l) == KHDAYS_LOWER_DAY);
+    khdays_lower_free(&l);
+}
+
+/* A logo on white: the bars white too, the logo at its size. */
+static void test_backdrop(void)
+{
+    KhdaysLowerLayout l = {0};
+    int x, y;
+    rect(0, 0, DS_W, DS_H, 0xffffffu);
+    rect(60, 90, 200, 100, 0x404040u); /* the logo */
+    CHECK(lay(&l) == KHDAYS_LOWER_BACKDROP);
+    CHECK(out[4][500][0] == 0xff && out[OUT_H - 4][500][0] == 0xff);
+    CHECK(shows(&l, 100.5f, 95.0f + 15.5f, &x, &y) && y >= 90 && y < 100);
+    khdays_lower_free(&l);
+}
+
+/* Screens told while the game fades them: a mission list, the Load list lightened toward white. */
+static void test_fades(void)
+{
+    KhdaysLowerLayout l = {0};
+    numbered();
+    rect(0, 14, DS_W, 15, 0x212121u);
+    put(100, 14, 0x4a4a4au);
+    rect(10, 20, 11, 180, 0x6b6b6bu);
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(232, 20, 248, 176, 0x6b6b6bu);
+    rect(236, 172, 244, 175, 0x949494u);
+    put(232, 175, 0x6b6b6bu);
+    dim(209); /* the Thor's 87 and 121 */
+    CHECK(lay(&l) == KHDAYS_LOWER_MISSIONS);
+    numbered();
+    rect(0, 14, DS_W, 15, 0x3c4a86u); /* the header's blue line, lightened */
+    rect(0, 15, DS_W, 16, 0x2f2f2fu); /* the black under it, lightened */
+    CHECK(lay(&l) == KHDAYS_LOWER_LOAD);
+    khdays_lower_free(&l);
+}
+
 static void test_short_display(void)
 {
     KhdaysLowerLayout l = {0};
@@ -425,6 +494,10 @@ int main(void)
     test_diary();
     test_panels();
     test_plain();
+    test_title();
+    test_day();
+    test_backdrop();
+    test_fades();
     test_short_display();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

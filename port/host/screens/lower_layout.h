@@ -27,6 +27,9 @@ enum {
     KHDAYS_LOWER_DIARY,      /* Roxas's Diary's list */
     KHDAYS_LOWER_PANELS,     /* the Panels page: the board and the stock */
     KHDAYS_LOWER_PLAIN,      /* one colour across (a fade to white): all of the display that colour */
+    KHDAYS_LOWER_TITLE,      /* the title's picture and menu over the copyright line */
+    KHDAYS_LOWER_DAY,        /* a day's missions (the story's), under the day's card */
+    KHDAYS_LOWER_BACKDROP,   /* a picture on a plain backdrop (a logo on white): the bars that colour */
     KHDAYS_LOWER_LAYOUTS
 };
 
@@ -75,6 +78,10 @@ void khdays_lower_draw(const KhdaysLowerLayout *layout, const KhdaysLowerPicture
 /* The DS pixel a display pixel shows (a touch there): 0 when it shows none of the DS's screen (black,
  * or a row past the DS's 192). */
 int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x, int *ds_y);
+
+/* The extra rows to ask the renderer for on a display width x height while no screen wants others (the
+ * mission lists'), so a list shows laid out from its first frame. */
+void khdays_lower_standing_rows(int width, int height, int *row0, int *rows, uint32_t *layers_off);
 
 void khdays_lower_free(KhdaysLowerLayout *layout);
 

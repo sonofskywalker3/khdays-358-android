@@ -34,15 +34,20 @@ Rows and columns below are the DS's; the taller picture has `extra` rows more
 | The tutorials' list | row 14 one red across under the header, row 15 black, the frame's stripes (row 16) and its grey top edge (row 26) alike at columns 30 and 200 | the game draws only the entries it shows, so they are spaced apart: the rows between entries (48, 64, ... 160) repeated alike; the scroll track (from column 224) longer at a plain row of its own |
 | Roxas's Diary's list | the backdrop's stripes (rows 0 and 2, again at 188) and its plain green (row 12, either side of the scroll arrows) each one colour across | the same: the rows between entries (32, 48, ... 160) repeated alike, the track (from column 232) longer at a plain row |
 | The Panels page | the help box's white lines (rows 161 and 190) and the dark line over it, the board's grey frame at (4, 60), (4, 100), (4, 140), the stock's blue under its list | the board (columns 0-94) at its own size, its frame grown above and below its grid (rows 22 and 152); the stock's entries apart (each one's plain first row, 24 to 136, repeated); its track (from column 232) longer at a plain row; the help box at the bottom |
+| The title (Story / Mission / Theater, New Game / Continue, Solo / Multiplayer) | the copyright line's grey band (rows 180-191) at its corners and middle, the picture's white above it | the picture and menu (rows 0-179) enlarged both ways to fill the rows above the band, the left edge kept (the menu's squares and words), the right edge's scenery left out; the band at its own size at the bottom |
+| A day's missions (the story's) | the day's red card at row 20 (columns 20, 100, 230), the frame's top line one grey across row 40, the scroll track lighter than the frame's edge | the card at its own size; the slots spaced apart, the rows above, between and below them (48, 80, ... 176) repeated alike; the track (from column 224) longer at a plain row of its own |
+| A picture on a plain backdrop (the boot logos on white) | its top and bottom 8 rows one colour, not black | the DS's shape in the middle, the bars that colour |
 | One colour across (the fade to white at a game over) | every DS pixel within 2 of the first, not black | all of the display that colour, no bars |
 | A mission's summary (and its Embark dialog) | the card's red edges at (12, 24) and (240, 24), row 176 a line across, the page's grey or white at (100, 120), each also dimmed under the dialog (the story's summary has no L and R icons) | the card, tabs and page enlarged 256/240 so they fill the width, the page one ruled line longer (its scroll track longer above its end); the scanline band, the white line and Embark / Back at their own size at the bottom; Mission Mode's L and R icons at their own size in the corners |
+
+Every screen is told through the game's fades too (to black as a menu closes, to white as Load
+starts a game): its tests compare its colours with one another, not with set values.
 
 Rows the layout wants apart from the DS's (a list's next entry under its frame)
 are asked of the renderer for the next frames (`gfx_render.c`: the lower engine's
 rows composed again from a DS row on, some layers left out, `compose.h`
 `KD_LAYERS_OFF`), sent under the lower picture (`gpu_present.c`) and read from
-there; the frame before they arrive keeps the DS's shape.
+there; they are asked for all along while Fullscreen is chosen, so a list is laid out from its first frame.
 
-Not laid out yet (the DS's shape): the title, the shops and synthesis, the
-tutorial pages shown during a mission, the results, the event and cutscene
-screens.
+Not laid out yet (the DS's shape): the shops and synthesis, the tutorial pages
+shown during a mission, the results.

@@ -125,6 +125,10 @@ void khdays_bottom_wanted_rows(int *row0, int *rows, uint32_t *layers_off)
     *row0 = layout.want_row0;
     *rows = fullscreen ? layout.want_rows : 0;
     *layers_off = layout.want_off;
+    if (fullscreen && *rows == 0) {
+        /* asked for all along: a list is laid out from its first frame, not once they come */
+        khdays_lower_standing_rows(surface_w, surface_h, row0, rows, layers_off);
+    }
     pthread_mutex_unlock(&lock);
 }
 

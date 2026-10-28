@@ -103,7 +103,7 @@ int khdays_lower_plain_row(const uint32_t *ds, int y0, int y1, int x0, int x1)
 #define PANELS_STOCK_X 150
 #define ENTRY_ROWS 16
 #define TUT_HEADER_RED 40   /* the header's red, dimmed too */
-#define PANELS_HELP_SUM 300 /* the help box's white, dimmed too */
+#define PANELS_HELP_SUM 120 /* the help box's white, dimmed too */
 
 static int tell_tutorials(const uint32_t *ds)
 {
@@ -119,8 +119,8 @@ static int tell_diary(const uint32_t *ds)
     return uniform_row(ds, DIARY_STRIPE0) && uniform_row(ds, DIARY_STRIPE1) &&
            uniform_span(ds, DIARY_PLAIN, 0, DIARY_ARROW0) && uniform_span(ds, DIARY_PLAIN, DIARY_ARROW1, W) &&
            at(ds, DIARY_ARROW1, DIARY_PLAIN) == plain && uniform_row(ds, DIARY_BELOW) &&
-           at(ds, 0, DIARY_BELOW) == stripe && at(ds, 0, DIARY_STRIPE1) != stripe && green(plain) > red(plain) &&
-           green(plain) > blue(plain) && sum(plain) > sum(stripe);
+           at(ds, 0, DIARY_BELOW) == stripe && green(plain) > red(plain) && green(plain) > blue(plain) &&
+           sum(plain) > sum(stripe);
 }
 
 static int tell_panels(const uint32_t *ds)
@@ -133,7 +133,66 @@ static int tell_panels(const uint32_t *ds)
            uniform_span(ds, PANELS_FRAME, PANELS_SPAN0, PANELS_SPAN1) &&
            sum(at(ds, PANELS_SPAN0, PANELS_FRAME)) < sum(help) && at(ds, PANELS_BOARD_X, 60) == board &&
            at(ds, PANELS_BOARD_X, 140) == board && red(board) == green(board) && blue(board) > red(board) &&
-           blue(stock) > red(stock) + 20;
+           blue(stock) > red(stock) * 3 / 2 && blue(stock) > green(stock); /* dimmed as it closes too */
+}
+
+/* --- A day's missions (the story's): the day's card above, four slots of the list ------------------------
+ * Only the missions shown are drawn: the slots are spaced apart, the rows between them repeated alike; the
+ * scroll track longer at a plain row of its own. */
+
+#define DAY_CARD_Y 20  /* the day's red card */
+#define DAY_FRAME_Y 40 /* the list frame's top line, one dark grey across */
+#define DAY_FRAME_X0 16
+#define DAY_FRAME_X1 244
+#define DAY_TRACK 224   /* the scroll track from here, ... */
+#define DAY_TRACK_X 230 /* ... its light grey at this column */
+#define DAY_EDGE_X 244  /* the frame's right edge */
+#define DAY_TRACK0 48
+#define DAY_TRACK1 175
+#define DAY_GAP0 48 /* the rows the slots are spaced at: above the first, between, below the last */
+#define DAY_GAPS 5
+#define DAY_GAP_STEP 32
+#define DAY_RED_MIN 8 /* the card's red, dimmed too */
+
+static int day_red(const uint32_t *ds, int x)
+{
+    const uint32_t c = at(ds, x, DAY_CARD_Y);
+    return red(c) > 2 * green(c) && red(c) > 2 * blue(c) && red(c) >= DAY_RED_MIN;
+}
+
+static int tell_day(const uint32_t *ds)
+{
+    const uint32_t track = at(ds, DAY_TRACK_X, 100);
+    return day_red(ds, 20) && day_red(ds, 100) && day_red(ds, 230) &&
+           uniform_span(ds, DAY_FRAME_Y, DAY_FRAME_X0, DAY_FRAME_X1) && grey(at(ds, DAY_FRAME_X0, DAY_FRAME_Y)) &&
+           sum(track) > sum(at(ds, DAY_EDGE_X, 100)) && blue(track) >= red(track) && red(track) == green(track);
+}
+
+/* --- A picture on a plain backdrop: its top and bottom rows one colour (a logo on white) ----------------- */
+
+#define BACKDROP_ROWS 8 /* this many rows at the top and the bottom, one colour */
+
+static int tell_backdrop(const uint32_t *ds)
+{
+    const uint32_t c = at(ds, 0, 0);
+    if (sum(c) == 0) {
+        return 0; /* black: the bars are already */
+    }
+    for (int y = 0; y < BACKDROP_ROWS; ++y) {
+        if (!uniform_row(ds, y) || !uniform_row(ds, H - 1 - y) || at(ds, 0, y) != c || at(ds, 0, H - 1 - y) != c) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The DS's shape in the middle, the rows above and below it its own plain top and bottom rows again. */
+static int map_backdrop(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
+{
+    const float y = oy - p->extra / 2.0f;
+    *sx = ox;
+    *sy = y < 0.0f ? 0.0f : y >= (float)H ? (float)(H - 1) : y;
+    return 1;
 }
 
 /* --- One colour across (a fade to white): all of the display that colour -------------------------------- */
@@ -183,8 +242,14 @@ int khdays_lower_pages_tell(const uint32_t *ds)
     if (tell_panels(ds)) {
         return KHDAYS_LOWER_PANELS;
     }
+    if (tell_day(ds)) {
+        return KHDAYS_LOWER_DAY;
+    }
     if (tell_plain(ds)) {
         return KHDAYS_LOWER_PLAIN;
+    }
+    if (tell_backdrop(ds)) {
+        return KHDAYS_LOWER_BACKDROP;
     }
     return KHDAYS_LOWER_NONE;
 }
@@ -220,7 +285,22 @@ int khdays_lower_pages_place(int screen, const uint32_t *ds, int rows, KhdaysLow
         *key = track[0][0];
         return 1;
     }
+    case KHDAYS_LOWER_DAY: {
+        int gaps[DAY_GAPS][2], track[1][2] = {{0, 1}};
+        place->map = khdays_lower_map_rows;
+        place->split = DAY_TRACK;
+        for (int i = 0; i < DAY_GAPS; ++i) {
+            gaps[i][0] = DAY_GAP0 + i * DAY_GAP_STEP;
+            gaps[i][1] = 1;
+        }
+        track[0][0] = khdays_lower_plain_row(ds, DAY_TRACK0, DAY_TRACK1, DAY_TRACK, W);
+        khdays_lower_spread(place->rows[0], rows, (const int(*)[2])gaps, DAY_GAPS);
+        khdays_lower_spread(place->rows[1], rows, (const int(*)[2])track, 1);
+        *key = track[0][0];
+        return 1;
+    }
     case KHDAYS_LOWER_PLAIN: place->map = map_plain; return 1;
+    case KHDAYS_LOWER_BACKDROP: place->map = map_backdrop; return 1;
     default: return 0;
     }
 }

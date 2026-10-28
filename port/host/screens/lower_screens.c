@@ -52,11 +52,11 @@ static int tab_icons(const uint32_t *ds)
 #define MAP_IN_X1 224
 #define MAP_IN0 56
 #define MAP_IN1 136
-#define FIELD_EDGE 30       /* the panel's top edge, lilac */
-#define FIELD_EDGE_MIN 20   /* its red, dimmed too (a mission fading in from black) */
-#define FIELD_EDGE_TINT 2   /* its red and blue alike */
-#define FIELD_WHITE_MIN 100 /* the line under the objective, dimmed too */
-#define FIELD_PANEL_MIN 40  /* the panel's white beside its lilac edge, fading in too */
+#define FIELD_EDGE 30      /* the panel's top edge, lilac */
+#define FIELD_EDGE_MIN 8   /* its red, dimmed too (a mission fading in from black) */
+#define FIELD_EDGE_TINT 2  /* its red and blue alike */
+#define FIELD_WHITE_MIN 24 /* the line under the objective, dimmed too */
+#define FIELD_PANEL_MIN 24 /* the panel's white beside its lilac edge, fading in too */
 
 /* The panel's lilac top edge across row 30 and its white beside the boxes: there while the header is
  * still sliding in as a mission starts. */
@@ -124,6 +124,7 @@ static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, f
 /* --- Zoomed screens: the save list, the characters ---------------------------------------------- */
 
 #define LOAD_TOP 16
+#define LOAD_BLUE 2 /* the header line's blue over its red, at the least */
 #define LOAD_ZOOM 1.17f
 #define LOAD_CX 130.5f
 #define CHARS_TOP 24
@@ -140,7 +141,10 @@ static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, f
 static int tell_load(const uint32_t *ds)
 {
     const uint32_t c = at(ds, 128, 14);
-    return uniform_row(ds, 14) && blue(c) > red(c) + 60 && sum(at(ds, 128, 15)) < 30;
+    /* row 15 black, the blue line above it: through a fade to black or to white the black stays no redder
+     * than the blue line and the line stays blue */
+    return uniform_row(ds, 14) && blue(c) > red(c) + LOAD_BLUE && grey(at(ds, 128, 15)) &&
+           red(at(ds, 128, 15)) <= red(c);
 }
 
 /* The title's black band under "Select a Character" (the multiplayer groups' page shares the rest). */
@@ -183,6 +187,20 @@ static int map_zoom(const KhdaysLowerPlace *p, float ox, float oy, float *sx, fl
     return 1;
 }
 
+/* --- The title: its picture and menu over the copyright line ------------------------------------------ */
+
+#define TITLE_FOOT 180 /* the copyright line's grey band from here to the bottom */
+#define TITLE_TEXT 186 /* a row of the band beside its text */
+
+/* The band one grey at its corners and middle, the same grey while the title fades in or out too. */
+static int tell_title(const uint32_t *ds)
+{
+    const uint32_t band = at(ds, 0, TITLE_FOOT);
+    return grey(band) && sum(band) > 0 && at(ds, 0, H - 1) == band && at(ds, W / 2, TITLE_FOOT) == band &&
+           at(ds, W / 2, TITLE_FOOT + 1) == band && at(ds, 2, TITLE_TEXT) == band &&
+           sum(at(ds, 0, TITLE_FOOT - 2)) > sum(band); /* the picture's white above it */
+}
+
 /* --- The camp's status panel ---------------------------------------------------------------------- */
 
 #define STATUS_SPLIT 72 /* the red panel's columns, then the stats' */
@@ -190,8 +208,9 @@ static int map_zoom(const KhdaysLowerPlace *p, float ox, float oy, float *sx, fl
 static int tell_status(const uint32_t *ds)
 {
     const uint32_t panel = at(ds, 30, 96), stats = at(ds, 150, 100);
-    return red(panel) > 2 * green(panel) && red(panel) > 60 && at(ds, 60, 100) == panel && grey(stats) &&
-           red(stats) >= 20 && red(stats) <= 60 && sum(at(ds, 100, 120)) == 0;
+    /* (dimmed as the menu closes too) */
+    return red(panel) > 2 * green(panel) && red(panel) >= 8 && at(ds, 60, 100) == panel && grey(stats) &&
+           red(stats) >= 3 && red(stats) <= 60 && red(stats) < red(panel) && sum(at(ds, 100, 120)) == 0;
 }
 
 /* --- A mission's summary ---------------------------------------------------------------------------- */
@@ -211,7 +230,9 @@ static int tell_status(const uint32_t *ds)
 #define SUM_CARD_LEFT 12 /* the card's red edges */
 #define SUM_CARD_RIGHT 240
 #define SUM_CARD_Y 24
-#define SUM_CARD_RED 40 /* their red, dimmed too */
+#define SUM_CARD_RED 20  /* their red, dimmed too */
+#define SUM_LINE_SUM 150 /* the white line under the page, dimmed under the dialog */
+#define SUM_PAGE_MIN 12  /* the page's grey, dimmed too */
 
 /* A point of the mission's card: red, dimmed under the Embark dialog too. */
 static int card_red(uint32_t c)
@@ -225,7 +246,7 @@ static int tell_summary(const uint32_t *ds)
 {
     const uint32_t page = at(ds, 100, 120);
     return card_red(at(ds, SUM_CARD_LEFT, SUM_CARD_Y)) && card_red(at(ds, SUM_CARD_RIGHT, SUM_CARD_Y)) &&
-           divider(ds, 170, LINE_SUM) == 176 && grey(page) && red(page) >= 30 && at(ds, 30, 100) == page;
+           divider(ds, 170, SUM_LINE_SUM) == 176 && grey(page) && red(page) >= SUM_PAGE_MIN && at(ds, 30, 100) == page;
 }
 
 static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
@@ -269,9 +290,10 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_BORDER_COL 100 /* a column of the lower border without the arrow */
 #define LIST_ICON_ROWS 16   /* the L and R icons at their own size and place */
 #define LIST_ICON_COLS 16
-#define LIST_GREY 108     /* the frame and the scroll track */
-#define LIST_END_GREY 149 /* the track's rounded end */
-#define LIST_GREY_NEAR 4
+#define LIST_GREY 108     /* the frame and the scroll track ... */
+#define LIST_END_GREY 149 /* ... and the track's rounded end: as bright as each other as these, dimmed too */
+#define LIST_GREY_NEAR 8  /* (in 149ths of the track's: the Thor draws 107 and 148, the tutorials 109 and 150) */
+#define LIST_GREY_MIN 20
 #define LIST_EDGE_ROW0 60 /* rows its left edge is looked for at, as well as LIST_SIDE_ROW */
 #define LIST_EDGE_ROW1 140
 #define LAYER_BG1 (1u << 9) /* compose.h: KDF_BG_ON_SHIFT + 1 */
@@ -280,18 +302,20 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 /* The list's frame and scroll track as both lists draw them (the tutorials' too, told apart by their
  * header: its frame shares its entries' layer, and every tutorial already shows). */
 /* The frame's left edge at row y: the pointing hand covers it beside the chosen entry. */
-static int list_edge(const uint32_t *ds, int y)
+static int list_edge(const uint32_t *ds, int y, uint32_t track)
 {
     const uint32_t edge = at(ds, 10, y);
-    return at(ds, 9, y) != edge && grey_near(edge, LIST_GREY, LIST_GREY_NEAR);
+    return at(ds, 9, y) != edge && edge == track;
 }
 
 static int tell_missions(const uint32_t *ds)
 {
     const uint32_t track = at(ds, 240, 150), end = at(ds, 240, 173);
-    return grey_near(track, LIST_GREY, LIST_GREY_NEAR) && grey_near(end, LIST_END_GREY, LIST_GREY_NEAR) &&
+    return grey(track) && red(track) >= LIST_GREY_MIN && grey(end) &&
+           abs(red(end) * LIST_GREY - red(track) * LIST_END_GREY) <= red(track) * LIST_GREY_NEAR &&
            at(ds, 232, 175) == track &&
-           (list_edge(ds, LIST_EDGE_ROW0) || list_edge(ds, LIST_SIDE_ROW) || list_edge(ds, LIST_EDGE_ROW1)) &&
+           (list_edge(ds, LIST_EDGE_ROW0, track) || list_edge(ds, LIST_SIDE_ROW, track) ||
+            list_edge(ds, LIST_EDGE_ROW1, track)) &&
            !uniform_row(ds, 14);
 }
 
@@ -358,6 +382,9 @@ int khdays_lower_screens_tell(const uint32_t *ds, int ds_rows)
     if (tell_status(ds)) {
         return KHDAYS_LOWER_STATUS;
     }
+    if (tell_title(ds)) {
+        return KHDAYS_LOWER_TITLE;
+    }
     return khdays_lower_pages_tell(ds); /* the lists drawn a page at a time, a fade (lower_pages.c) */
 }
 
@@ -421,6 +448,15 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         *key = place->foot * 1000 + (int)(place->zoom * 100.0f);
         return 1;
     }
+    case KHDAYS_LOWER_TITLE:
+        /* the picture enlarged to fill the rows above the band, its left edge kept (the menu's squares and
+         * words); the right edge's scenery past the display left out */
+        place->map = map_zoom;
+        place->top = 0;
+        place->foot = TITLE_FOOT;
+        place->zoom = ((float)TITLE_FOOT + place->extra) / (float)TITLE_FOOT;
+        place->cx = (float)W / 2.0f / place->zoom;
+        return 1;
     case KHDAYS_LOWER_STATUS:
         place->map = khdays_lower_map_rows;
         place->split = STATUS_SPLIT;

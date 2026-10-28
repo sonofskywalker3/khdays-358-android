@@ -148,6 +148,21 @@ int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x,
     return 1;
 }
 
+void khdays_lower_standing_rows(int width, int height, int *row0, int *rows, uint32_t *layers_off)
+{
+    static const uint32_t blank[KHDAYS_LOWER_DS_W * (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN)] = {0};
+    KhdaysLowerPlace place;
+    int key;
+    *rows = 0;
+    if (width > 0 &&
+        khdays_lower_screens_place(KHDAYS_LOWER_MISSIONS, blank, KHDAYS_LOWER_DS_H,
+                                   (float)height * KHDAYS_LOWER_DS_W / (float)width, &place, &key)) {
+        *row0 = place.row0;
+        *rows = place.row_count;
+        *layers_off = place.layers_off;
+    }
+}
+
 void khdays_lower_free(KhdaysLowerLayout *layout)
 {
     free(layout->map);

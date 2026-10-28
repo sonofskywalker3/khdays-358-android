@@ -55,12 +55,6 @@ static inline int uniform_span(const uint32_t *ds, int y, int x0, int x1)
     return 1;
 }
 
-/* A grey within `tolerance` of `level`: the same grey drawn a little brighter or darker (the Thor's lists
- * draw the tutorials' 109 as 107). */
-static inline int grey_near(uint32_t c, int level, int tolerance)
-{
-    return grey(c) && red(c) >= level - tolerance && red(c) <= level + tolerance;
-}
 /* Rows for a picture of `rows` rows: the DS's, each of inserts[i][0] repeated, the extra rows shared by
  * inserts[i][1]'s weight. */
 void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int count);
