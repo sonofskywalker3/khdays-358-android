@@ -169,6 +169,8 @@ typedef struct KhdaysVideo {
     int show_fps;      /* the pictures and the game's frames a second, in a corner of the window */
     int backend;       /* KhdaysBackend: the graphics API the picture goes through */
     int one_screen;    /* screens = one: one picture, else the DS's two */
+    int one_screen_second; /* screens_second_display = one: with a second display (the Thor's), both screens
+                              on the upper one as one picture, the lower one the logo; else each on its own */
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
     int menu_size;     /* the settings menu's text size, 1 to 4 (3: as the window's size sets it) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */

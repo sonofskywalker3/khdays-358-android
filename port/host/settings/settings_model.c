@@ -362,9 +362,13 @@ static void build_video(Builder *b, KhdaysProfile *w)
     r->safe = 1;                                              /* off */
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_ASPECT, TXT_VIDEO_ASPECT, &v->aspect, aspects, KHDAYS_ASPECT_COUNT),
                         TXT_VIDEO_ASPECT_NOTE);
-    if (!b->context->second_display) { /* there each screen has a display of its own */
+    if (!b->context->second_display) {
         needs_graphics_card(b, add_choice(b, KHDAYS_SET_SCREENS, TXT_VIDEO_SCREENS, &v->one_screen, screens_choices, 2),
                             TXT_VIDEO_SCREENS_NOTE);
+    } else { /* a value of its own: there two screens are the default, each on its display */
+        r = add_choice(b, KHDAYS_SET_SCREENS, TXT_VIDEO_SCREENS, &v->one_screen_second, screens_choices, 2);
+        needs_graphics_card(b, r, TXT_VIDEO_SCREENS_SECOND_NOTE);
+        r->apply = KHDAYS_APPLY_NOW;
     }
     needs_graphics_card(b, add_number(b, KHDAYS_SET_HUD_SIZE, TXT_VIDEO_HUD_SIZE, &v->hud_size, 1, 8, 1),
                         TXT_VIDEO_HUD_SIZE_NOTE);
@@ -875,7 +879,9 @@ void khdays_model_set_choice(KhdaysProfile *work, const KhdaysRow *row, int choi
 {
     *row->value = row->values != NULL ? row->values[choice] : choice;
     mods_changed(row);
-    if (row->value == &work->video.one_screen && work->video.one_screen && work->video.aspect == KHDAYS_ASPECT_4_3) {
+    if (((row->value == &work->video.one_screen && work->video.one_screen) ||
+         (row->value == &work->video.one_screen_second && work->video.one_screen_second)) &&
+        work->video.aspect == KHDAYS_ASPECT_4_3) {
         work->video.aspect = KHDAYS_ASPECT_16_9; /* the default for one screen */
     }
 }

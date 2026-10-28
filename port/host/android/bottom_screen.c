@@ -501,7 +501,8 @@ int khdays_bottom_touch(int *tx, int *ty)
 {
     int x, y, w, h, down;
     pthread_mutex_lock(&lock);
-    down = window != NULL && touch_down && surface_w > 0 && surface_h > 0;
+    /* (not on the logo or the crown: the lower screen is not shown there) */
+    down = window != NULL && touch_down && !mark_shown && surface_w > 0 && surface_h > 0;
     if (down && laid_out) {
         /* the DS pixel the touched display pixel shows */
         const int px = (int)(touch_nx * (float)surface_w), py = (int)(touch_ny * (float)surface_h);

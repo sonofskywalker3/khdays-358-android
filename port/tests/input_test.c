@@ -614,6 +614,15 @@ static void test_video_settings(void)
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);
     khdays_profile_load(&r, path, count_notice);
     CHECK(r.video.one_screen && r.video.aspect == KHDAYS_ASPECT_16_9);
+    /* With a second display: a value of its own, two by default whatever `screens` says; back through a save;
+     * a bad value says so and keeps two. */
+    CHECK(!p.video.one_screen_second);
+    CHECK(load_text("[video]\nscreens = one\n", &q) == 0 && !q.video.one_screen_second);
+    CHECK(load_text("[video]\nscreens_second_display = one\n", &q) == 0 && q.video.one_screen_second);
+    CHECK(khdays_profile_save(&q, path, count_notice) == 0);
+    khdays_profile_load(&r, path, count_notice);
+    CHECK(r.video.one_screen_second && r.video.one_screen);
+    CHECK(load_text("[video]\nscreens_second_display = both\n", &q) == 1 && !q.video.one_screen_second);
     /* The HUD's size: 1 to 8, 4 by default; a bad value says so. */
     CHECK(load_text("[video]\nhud_size = 6\n", &q) == 0 && q.video.hud_size == 6);
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);

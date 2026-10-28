@@ -265,6 +265,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->hd_graphics = 1;
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
+    v->one_screen_second = 0; /* each screen on its own display */
     v->hud_size = 4;
     v->menu_size = 3;
     v->subtitles = 1; /* as the DS showed them */
@@ -404,6 +405,7 @@ int khdays_profile_repair(KhdaysProfile *p)
             ++changed;
         }
         changed += clamp(&p->video.one_screen, 0, 1);
+        changed += clamp(&p->video.one_screen_second, 0, 1);
         if (p->video.aspect < 0 || p->video.aspect >= KHDAYS_ASPECT_COUNT) {
             p->video.aspect = default_aspect(p->video.one_screen);
             ++changed;
@@ -948,6 +950,15 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } else {
             say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, defaults.one_screen ? "one" : "two");
             v->one_screen = defaults.one_screen;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "screens_second_display") == 0) {
+        if (SDL_strcasecmp(value, "one") == 0 || SDL_strcasecmp(value, "two") == 0) {
+            v->one_screen_second = SDL_strcasecmp(value, "one") == 0;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "two");
+            v->one_screen_second = defaults.one_screen_second;
         }
         return;
     }
@@ -1539,6 +1550,9 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "antialiasing = %s\n"
             "# screens: two (the DS's, one above the other) or one (one picture)\n"
             "screens = %s\n"
+            "# screens_second_display: with a second display (the AYN Thor's lower one) -- two (each screen\n"
+            "#                         on its own display) or one (one picture on the upper display)\n"
+            "screens_second_display = %s\n"
             "# hud_size: 1 to 8, the HUD's size on one screen (4 the default)\n"
             "hud_size = %d\n"
             "# menu_size: 1 to 4, the settings menu's text size (3 the default)\n"
@@ -1568,7 +1582,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
-            v->one_screen ? "one" : "two", v->hud_size, v->menu_size,
+            v->one_screen ? "one" : "two", v->one_screen_second ? "one" : "two", v->hud_size, v->menu_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp",
             v->second_screen_aspect == KHDAYS_SECOND_SCREEN_FULLSCREEN ? "fullscreen" : "original",

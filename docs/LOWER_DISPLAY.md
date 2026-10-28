@@ -7,6 +7,12 @@ as tall as the display (`host/screens/lower_layout.c`). Nothing is stretched: a
 screen the port knows is laid out again in the taller picture; one it does not
 know keeps the DS's shape and its bars.
 
+Settings > Video > Screens is shown there too, with a value of its own
+(`[video] screens_second_display`, two by default, apart from `screens` on a
+single display): One shows the game as one picture on the upper display, as on
+a single display, and the lower display the logo; a screen that one picture
+does not make shows on the two displays as with Two.
+
 The lower picture arrives at the display's width (`host/android/bottom_screen.c`).
 Its DS pixels, read at their middles, tell the screen (`lower_screens.c` and
 `lower_pages.c`, each by a few pixels that hold while the game dims it too).

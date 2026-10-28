@@ -1260,14 +1260,15 @@ void khdays_present_set_video(const KhdaysVideo *given)
     KhdaysVideo copy = *given;
     const KhdaysVideo *v = &copy;
 #if defined(__ANDROID__)
-    /* the lower screen on a display of its own: the DS's two screens, each where it belongs, whatever
-     * the screens setting says -- but the title, made as on one screen (title_one) */
+    /* the lower screen on a display of its own: the DS's two screens, each where it belongs, unless
+     * screens_second_display says one (one picture on the upper display); the title made as on one
+     * screen either way (title_one) */
     given_video = *given;
     two_displays = khdays_bottom_attached();
     if (!two_displays) {
         title_one = 0;
     } else {
-        copy.one_screen = title_one;
+        copy.one_screen = given->one_screen_second || title_one;
     }
 #endif
     graphics_flags =
@@ -1609,6 +1610,12 @@ static int draw_two_displays(void)
         upper_from = (SDL_FRect){0.0f, 0.0f, pw, ph};
         lower_from = ds_columns(lower, cl);
         wu = (float)cu;
+        if (video.one_screen && cu > W) {
+            /* a screen one picture does not make, with screens_second_display on one: the upper screen's
+             * own 256 columns (engine A drawn wider for one picture fills its extra ones with its backdrop) */
+            upper_from = ds_columns(upper, cu);
+            wu = W;
+        }
     } else if (screens != NULL) {
         upper = lower = screens;
         upper_from = (SDL_FRect){0.0f, 0.0f, W, H};

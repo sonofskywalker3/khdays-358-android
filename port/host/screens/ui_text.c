@@ -509,6 +509,16 @@ static const char *const texts[TXT_COUNT][5] = {
                                 "Ein Bild: die Teile des unteren Bildschirms werden hineingesetzt.",
                                 "Un'unica immagine: gli elementi dello schermo inferiore vi sono portati.",
                                 "Una sola imagen: las piezas de la pantalla de abajo se colocan en ella."},
+    [TXT_VIDEO_SCREENS_SECOND_NOTE] = {"One: both screens as one picture on the upper display, the lower display "
+                                       "shows the logo. Two: each screen on its own display.",
+                                       "Un : les deux écrans en une seule image sur l'écran du haut, l'écran du bas "
+                                       "montre le logo. Deux : chaque écran sur le sien.",
+                                       "Einer: beide Bildschirme als ein Bild auf dem oberen Display, das untere "
+                                       "zeigt das Logo. Zwei: jeder Bildschirm auf seinem eigenen Display.",
+                                       "Uno: entrambi gli schermi in un'unica immagine sul display superiore, quello "
+                                       "inferiore mostra il logo. Due: ogni schermo sul proprio display.",
+                                       "Una: las dos pantallas en una sola imagen en la pantalla de arriba, la de "
+                                       "abajo muestra el logo. Dos: cada pantalla en la suya."},
     [TXT_VIDEO_HUD_SIZE] = {"HUD size", "Taille du HUD", "HUD-Größe", "Dimensione HUD", "Tamaño del HUD"},
     [TXT_VIDEO_HUD_SIZE_NOTE] =
         {"One screen: how big the HUD's pieces are, 1 to 8 (4 by default); the dialogs keep "
