@@ -188,6 +188,9 @@ KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv
 KD_FN uint kd_hd(uint entry, float u, float v, float ru, float rv)
 {
     const uint id = (entry >> 20) - 1u;
+#ifdef KD_HD_SEEN
+    KD_HD_SEEN = 1u; /* the colour depends on the place inside the DS pixel */
+#endif
     const uint tile = entry & 0xfffffu;
     const uint info = KD_HD_INFO(id);
     if ((info & 4u) != 0u || (info >> 16) == 0u || ((info >> 8) & 0xffu) == 0u || u < 0.0f || v < 0.0f) {
@@ -202,6 +205,9 @@ KD_FN uint kd_hd(uint entry, float u, float v, float ru, float rv)
 KD_FN uint kd_hd_bitmap(uint entry, uint at, float fu, float fv)
 {
     const uint id = (entry >> 20) - 1u;
+#ifdef KD_HD_SEEN
+    KD_HD_SEEN = 1u;
+#endif
     const uint unit = entry & 0xfffffu;
     const uint info = KD_HD_INFO(id);
     const uint units = (info >> 8) & 0xffu, rows = info >> 16;
@@ -1149,6 +1155,12 @@ KD_FN uint kd_mix_split(uint a, uint b, float t)
     return kd_mix8(ka, kb, t) | ((1u + (uint)(f * 254.0f + 0.5f)) << 24);
 }
 
+/* A layer's colour at a DS pixel (kd_layer): the includer may define it to give the colour looked up
+ * once for the DS pixel (shaders/layers2d.hlsl) where its N x N output pixels share it. */
+#ifndef KD_LAYER_AT
+#define KD_LAYER_AT(b, x, row) kd_layer((b), (x), (row))
+#endif
+
 /* Layers left out of kd_pixel (KDF_BG_ON_SHIFT's bits and KDF_OBJ_ON): the includer may define it, to
  * compose a screen's rows without some of them (the lower screen's rows past the DS's for a taller
  * display: host/screens/lower_layout.h). */
@@ -1187,7 +1199,7 @@ KD_FN uint kd_pixel(int x, int row)
         KdSprite spr = kd_no_sprite();
         int b;
         for (b = 0; b < 4; ++b) {
-            color[b] = (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) ? kd_layer(b, x, row) : 0u;
+            color[b] = (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) ? KD_LAYER_AT(b, x, row) : 0u;
         }
         if (flags & KDF_OBJ_ON) {
             spr = kd_sprites(x, row);
@@ -1282,7 +1294,7 @@ KD_FN uint kd_pixel_wide(int column, int row)
         }
     }
     for (b = 1; b < 4; ++b) {
-        color[b] = source >= 0 && (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) ? kd_layer(b, source, row) : 0u;
+        color[b] = source >= 0 && (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) ? KD_LAYER_AT(b, source, row) : 0u;
     }
     if (x >= 0 && x < 256 && (flags & KDF_OBJ_ON)) {
         spr = kd_sprites(x, row);
