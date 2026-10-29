@@ -316,6 +316,11 @@ static void test_summary(void)
         }
         CHECK(seen[144] > 10);
     }
+    /* the page's text scrolling by (dark and red letters across the middle): still the summary */
+    summary(1);
+    rect(24, 96, 232, 124, 0x3a3a3au);
+    rect(24, 100, 232, 104, 0xea3729u);
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
     khdays_lower_free(&l);
     /* the Embark dialog dims it, icons and all: still the summary */
     summary(1);

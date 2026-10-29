@@ -319,11 +319,15 @@ static int card_red(uint32_t c)
 
 /* The mission's red card, its left and right edges (Mission Mode's with the L and R icons, the story's
  * without), on every tab and under the Embark dialog. */
+/* The page's colour is read in its left margin, which its text never reaches: read where the text
+ * scrolls, the tell came and went with the letters passing by, and the layout with it. */
+#define SUM_MARGIN 16
 static int tell_summary(const uint32_t *ds)
 {
-    const uint32_t page = at(ds, 100, 120);
+    const uint32_t page = at(ds, SUM_MARGIN, 140); /* below the Embark dialog's box, dimmed with the page */
     return card_red(at(ds, SUM_CARD_LEFT, SUM_CARD_Y)) && card_red(at(ds, SUM_CARD_RIGHT, SUM_CARD_Y)) &&
-           divider(ds, 170, SUM_LINE_SUM) == 176 && grey(page) && red(page) >= SUM_PAGE_MIN && at(ds, 30, 100) == page;
+           divider(ds, 170, SUM_LINE_SUM) == 176 && grey(page) && red(page) >= SUM_PAGE_MIN &&
+           at(ds, SUM_MARGIN, 150) == page;
 }
 
 static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
