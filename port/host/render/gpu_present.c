@@ -200,6 +200,34 @@ static int window_cap_for(SDL_GPUDevice *gpu)
     return 0;
 }
 
+/* The GPU device for `driver` (NULL: any): the port draws with compute shaders and SDL's renderer only,
+ * so the Vulkan features SDL asks for by default that a graphics pipeline would use are not required
+ * -- ARM's Mali has no clip distances, and refused the device with them. */
+static SDL_GPUDevice *make_device(int debug, const char *driver)
+{
+    const SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_GPUDevice *made;
+    if (props == 0) {
+        return SDL_CreateGPUDevice(SHADER_FORMATS, debug, driver);
+    }
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_DXIL_BOOLEAN,
+                           (SHADER_FORMATS & SDL_GPU_SHADERFORMAT_DXIL) != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN,
+                           (SHADER_FORMATS & SDL_GPU_SHADERFORMAT_SPIRV) != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN,
+                           (SHADER_FORMATS & SDL_GPU_SHADERFORMAT_MSL) != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug != 0);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
+    if (driver != NULL) {
+        SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, driver);
+    }
+    made = SDL_CreateGPUDeviceWithProperties(props);
+    SDL_DestroyProperties(props);
+    return made;
+}
+
 /* Makes a renderer on a new GPU device. Returns NULL with the reason in `why`. */
 static SDL_Renderer *gpu_renderer(char *why, size_t size)
 {
@@ -210,9 +238,9 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
     SDL_Renderer *r;
     if (name == NULL && SDL_GetHint(SDL_HINT_GPU_DRIVER) == NULL && under_wine()) {
         /* Automatic under Wine: its Direct3D 12 is made of Vulkan (vkd3d), so Vulkan straight away */
-        made = SDL_CreateGPUDevice(SHADER_FORMATS, debug, "vulkan");
+        made = make_device(debug, "vulkan");
     }
-    device = made != NULL ? made : SDL_CreateGPUDevice(SHADER_FORMATS, debug, name);
+    device = made != NULL ? made : make_device(debug, name);
     if (device == NULL && name != NULL) {
         /* the graphics API asked for is not available: use the system's (the settings menu says so) */
         char text[480];
@@ -221,7 +249,7 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
         if (notice != NULL) {
             notice(text);
         }
-        device = SDL_CreateGPUDevice(SHADER_FORMATS, debug, NULL);
+        device = make_device(debug, NULL);
     }
     if (device == NULL) {
         SDL_snprintf(why, size, "no GPU device: %s", SDL_GetError());
@@ -1511,13 +1539,12 @@ static int bottom_make(int w, int h)
 static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
 {
     SDL_GPUTexture *source = (SDL_GPUTexture *)SDL_GetPointerProperty(SDL_GetTextureProperties(lower),
-                                                                       SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, NULL);
+                                                                      SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, NULL);
     BottomSlot *slot = NULL;
     SDL_GPUCommandBuffer *cmd;
     SDL_GPUTexture *rows;
     int w = 0, h = 0, rows_row0 = 0, rows_count = 0, rows_scale = 0;
-    if (source == NULL || from->w <= 0.0f || from->h <= 0.0f || !khdays_bottom_fit_size(&w, &h) || w <= 0 ||
-        h <= 0) {
+    if (source == NULL || from->w <= 0.0f || from->h <= 0.0f || !khdays_bottom_fit_size(&w, &h) || w <= 0 || h <= 0) {
         return;
     }
     if ((w != bottom_w || h != bottom_h) && !bottom_make(w, h)) {
