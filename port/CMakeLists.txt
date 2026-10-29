@@ -63,7 +63,12 @@ else()
     # function with a result, a pointer passed as an integer) clang does too
     # A plain `inline` function MSVC defines in each file that has it, one copy kept by the linker (a
     # COMDAT): GNU's inline semantics define it too, and the link keeps the first.
+    # A local the decomp's C leaves unset where the ROM passes on whatever its register held (as
+    # Ov008_MoveGridCursor's nDx / nDy with no panel lifted) starts at 0: read unset, clang takes the
+    # path for undefined and drops the rest of it, the function's return too, and the code ran on
+    # into the next function (Mission Mode's panels crashed in Ov008_DropLiftedNode).
     set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17 -fgnu89-inline
+        -ftrivial-auto-var-init=zero
         -Wno-error=implicit-function-declaration -Wno-error=return-type -Wno-error=int-conversion
         -Wno-error=incompatible-pointer-types)
     set(KHDAYS_UTF8 "")
