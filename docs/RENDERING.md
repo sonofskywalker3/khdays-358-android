@@ -178,13 +178,24 @@ does not start (`host/render/gpu_present.c`).
 A frame: both screens' 2D are composed by `gfx_render.c` from the package's
 descriptions (`shaders/compose2d.hlsl`: an output pixel takes the 2D of the DS
 pixel it lies in, so the pixel art stays sharp, and the 3D of its own place),
-and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`. Each
+and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`.
+Before each screen's composition, `shaders/layers2d.hlsl` looks each layer's
+colour up once for each DS pixel (the N x N output pixels of a DS pixel would
+each look it up again): `compose2d.hlsl` takes those, and looks up itself only
+the pixels marked as depending on the place inside the DS pixel (a
+replacement's texel, the 3D). Each
 frame uploads the package's polygons, an index of which may cover each 8x8 tile
-(in drawing order), the composition records and the texture pages that changed.
+(in drawing order, each with the target columns it reaches), the composition
+records and the texture pages that changed.
 `raster3d.hlsl` runs `gpu3d.c`'s rasterizer for each pixel -- each thread owns
 one pixel and goes through the polygons that may cover it in drawing order,
 keeping its state as `gpu3d.c`'s `Pixel` does, so translucent IDs, the shadow
-mask and blending over alpha 0 are exactly the reference's; where `gpu3d.c`
+mask and blending over alpha 0 are exactly the reference's. A group of 8 x 8
+pixels lies within one tile and takes the tile's polygons 8 at a time: each
+thread sets one polygon up on one of the group's rows (where its edges cross
+the row and the attributes there), shared through the group's memory, so the
+row's pixels test and interpolate from that instead of each working the edges
+out; a pixel outside a polygon's columns passes it by. Where `gpu3d.c`
 computes in double (the depth) it computes the same integer in float and
 integer steps, its coverage and interpolation kept from being fused
 (`precise`). `finish3d.hlsli` then does the edge marking and the fog, which
@@ -240,7 +251,13 @@ at the resolution drawn); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
 the time preparing the 3D took); `KHDAYS_SPRITE_ROWS=all` (every pixel of the
 port's 2D looks at all 128 sprites, instead of only those `gfx_render.c` lists
-for its row: the same picture, slower).
+for its row: the same picture, slower); `KHDAYS_GPU_TIME` (each pass submitted
+apart and waited for, its time said every 120); `KHDAYS_GPU_SKIP=a,b` (passes
+left out: `2da`, `2db`, `layers`, `rows`, `one`, `3d`, `finish`, `shrink`) and
+`KHDAYS_GPU_DROP=bg0,..,bg3,el` (layers or the elements left out), to measure
+what each costs -- the picture is then wrong; `KHDAYS_GPU_PROBE=1..4` (the
+rasterizer without its plot, untextured, with the row test alone, or with
+nothing per polygon).
 
 ## Mods' graphics
 

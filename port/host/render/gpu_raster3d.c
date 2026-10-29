@@ -14,6 +14,55 @@
 #include <stdio.h>
 #include <string.h>
 
+/* KHDAYS_GPU_SKIP=a,b: passes not dispatched, to measure what each costs (the picture is then wrong) */
+/* KHDAYS_GPU_TIME: each submission waited for, after the card is idle, and its time said every 120 */
+static int gpu_submit_timed(SDL_GPUDevice *dev, SDL_GPUCommandBuffer *cmd, const char *label)
+{
+    static const char *labels[8];
+    static double total_ms[8];
+    static int count[8];
+    SDL_GPUFence *fence;
+    Uint64 t0;
+    int k = 0;
+    if (SDL_getenv("KHDAYS_GPU_TIME") == NULL) {
+        return SDL_SubmitGPUCommandBuffer(cmd);
+    }
+    while (k < 7 && labels[k] != NULL && SDL_strcmp(labels[k], label) != 0) {
+        ++k;
+    }
+    labels[k] = label;
+    SDL_WaitForGPUIdle(dev); /* what came before not counted */
+    t0 = SDL_GetTicksNS();
+    fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    if (fence == NULL) {
+        return 0;
+    }
+    SDL_WaitForGPUFences(dev, true, &fence, 1);
+    SDL_ReleaseGPUFence(dev, fence);
+    total_ms[k] += (double)(SDL_GetTicksNS() - t0) / 1e6;
+    if (++count[k] == 120) {
+        fprintf(stderr, "gpu time: %s %.2f ms on average\n", label, total_ms[k] / count[k]);
+        total_ms[k] = 0.0;
+        count[k] = 0;
+    }
+    return 1;
+}
+
+/* KHDAYS_GPU_TIME: the work so far submitted and timed as `label`, a new command buffer for the rest */
+static void gpu_split(SDL_GPUDevice *dev, SDL_GPUCommandBuffer **cmd, const char *label)
+{
+    if (SDL_getenv("KHDAYS_GPU_TIME") != NULL) {
+        gpu_submit_timed(dev, *cmd, label);
+        *cmd = SDL_AcquireGPUCommandBuffer(dev);
+    }
+}
+
+static int gpu_skip(const char *pass)
+{
+    const char *list = SDL_getenv("KHDAYS_GPU_SKIP");
+    return list != NULL && SDL_strstr(list, pass) != NULL;
+}
+
 #define TILE 8                           /* a tile's side, in DS pixels */
 #define MAX_COLUMNS (3 * KHDAYS_FRAME_W) /* the widest picture (see gpu_present.c) */
 #define MAX_TILES_X (MAX_COLUMNS / TILE)
@@ -32,6 +81,7 @@ typedef struct RasterParams {
     int32_t origin_x;
     uint32_t fine, npolys, nverts, entries; /* how much was uploaded: the shader stays within it */
     uint32_t toon[16];
+    uint32_t probe, pad0, pad1, pad2; /* KHDAYS_GPU_PROBE: work left out, to measure (the picture is wrong) */
 } RasterParams;
 
 typedef struct ComposeParams {
@@ -62,6 +112,7 @@ static int target_scale, target_columns;
 static SDL_Texture *wrapped;
 static SDL_Renderer *wrapped_for;
 static uint32_t *tile_list;
+static uint32_t *span; /* each polygon's columns on the target, first | last << 16 (build_tiles) */
 static uint32_t tile_list_capacity;
 /* Work space that grows with the lists: the vertices with the HUD moved, the
  * boxes and groups of the HUD's polygons, and each polygon's tiles. */
@@ -79,6 +130,9 @@ static int scratch_for(const KhdaysG3dList *list)
         int *b = a != NULL ? (int *)SDL_realloc(hud_group, sizeof(int) * (size_t)n) : NULL;
         float *c = b != NULL ? (float *)SDL_realloc(hud_x0, sizeof(float) * (size_t)n * 4) : NULL;
         uint8_t(*d)[4] = c != NULL ? (uint8_t(*)[4])SDL_realloc(box, sizeof(box[0]) * (size_t)n) : NULL;
+        uint32_t *e = d != NULL ? (uint32_t *)SDL_realloc(span, sizeof(uint32_t) * (size_t)n) : NULL;
+        if (e != NULL)
+            span = e;
         if (a != NULL)
             hud_index = a;
         if (b != NULL)
@@ -87,7 +141,7 @@ static int scratch_for(const KhdaysG3dList *list)
             hud_x0 = c;
         if (d != NULL)
             box = d;
-        if (d == NULL) {
+        if (d == NULL || e == NULL) {
             return 0;
         }
         hud_x1 = hud_x0 + n;
@@ -107,10 +161,14 @@ static int scratch_for(const KhdaysG3dList *list)
     return 1;
 }
 
+/* raster3d.hlsl's group (its numthreads): 8 x 8 pixels, within one tile, so a wave shares its polygon loads */
+#define RASTER_THREADS_X 8
+#define RASTER_THREADS_Y 8
+
 static SDL_GPUComputePipeline *make_pipeline(const unsigned char *dxil, unsigned dxil_size, const unsigned char *spirv,
                                              unsigned spirv_size, const unsigned char *msl, unsigned msl_size,
                                              const char *entry, Uint32 ro_textures, Uint32 ro_buffers,
-                                             Uint32 rw_textures)
+                                             Uint32 rw_textures, Uint32 threads_x, Uint32 threads_y)
 {
     SDL_GPUComputePipelineCreateInfo info;
     const SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
@@ -136,8 +194,8 @@ static SDL_GPUComputePipeline *make_pipeline(const unsigned char *dxil, unsigned
     info.num_readonly_storage_buffers = ro_buffers;
     info.num_readwrite_storage_textures = rw_textures;
     info.num_uniform_buffers = 1;
-    info.threadcount_x = 8;
-    info.threadcount_y = 8;
+    info.threadcount_x = threads_x;
+    info.threadcount_y = threads_y;
     info.threadcount_z = 1;
     return SDL_CreateGPUComputePipeline(device, &info);
 }
@@ -155,9 +213,10 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
 {
     device = d;
     raster = make_pipeline(raster3d_cs_dxil, raster3d_cs_dxil_size, raster3d_cs_spirv, raster3d_cs_spirv_size,
-                           raster3d_cs_msl, raster3d_cs_msl_size, RASTER3D_CS_ENTRY, 0, 5, 2);
+                           raster3d_cs_msl, raster3d_cs_msl_size, RASTER3D_CS_ENTRY, 0, 5, 2, RASTER_THREADS_X,
+                           RASTER_THREADS_Y);
     compose = make_pipeline(compose_cs_dxil, compose_cs_dxil_size, compose_cs_spirv, compose_cs_spirv_size,
-                            compose_cs_msl, compose_cs_msl_size, COMPOSE_CS_ENTRY, 0, 1, 3);
+                            compose_cs_msl, compose_cs_msl_size, COMPOSE_CS_ENTRY, 0, 1, 3, 8, 8);
     polys_capacity = KHDAYS_G3D_DS_POLYS;
     verts_capacity = KHDAYS_G3D_DS_VERTS;
     polys = make_buffer(polys_capacity * (Uint32)sizeof(KhdaysG3dPolygon));
@@ -498,7 +557,11 @@ static int unusable(const KhdaysG3dList *list, const KhdaysG3dPolygon *p)
     return 1;
 }
 
-static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *vertices, int tiles_x, int origin_x)
+/* The tile lists: tiles_x * TILES_Y + 1 start offsets (words), then each tile's polygons, two words each:
+ * the index, and the target columns it can cover (first | last << 16, a pixel wider each side than its
+ * vertices reach, for raster3d.hlsl to pass the rest by). */
+static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *vertices, int tiles_x, int origin_x,
+                            int scale)
 {
     static uint32_t count[MAX_TILES], cursor[MAX_TILES];
     const int tile_count = tiles_x * TILES_Y;
@@ -518,6 +581,13 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
             const float x = vertices[p->first + k].x - (float)origin_x;
             xmin = x < xmin ? x : xmin;
             xmax = x > xmax ? x : xmax;
+        }
+        {
+            const float n = (float)scale;
+            int c0 = (int)ceilf(xmin * n - 0.5f) - 1, c1 = (int)ceilf(xmax * n - 0.5f) + 1;
+            c0 = c0 < 0 ? 0 : c0 > 0xffff ? 0xffff : c0;
+            c1 = c1 < 0 ? 0 : c1 > 0xffff ? 0xffff : c1;
+            span[i] = (uint32_t)c0 | (uint32_t)c1 << 16;
         }
         tx0 = (int)floorf((xmin - 1.0f) / TILE);
         tx1 = (int)floorf((xmax + 1.0f) / TILE);
@@ -546,7 +616,7 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
         total += count[t];
         busiest_tile = count[t] > busiest_tile ? count[t] : busiest_tile;
     }
-    need = (uint32_t)tile_count + 1 + total;
+    need = (uint32_t)tile_count + 1 + 2u * total;
     if (need > tile_list_capacity) {
         uint32_t *grown = (uint32_t *)SDL_realloc(tile_list, need * sizeof(uint32_t) * 2);
         if (grown == NULL) {
@@ -560,7 +630,7 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
         for (int t = 0; t < tile_count; ++t) {
             tile_list[t] = at;
             cursor[t] = at;
-            at += count[t];
+            at += 2u * count[t];
         }
         tile_list[tile_count] = at;
     }
@@ -570,7 +640,10 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
         }
         for (int ty = box[i][2]; ty <= box[i][3]; ++ty) {
             for (int tx = box[i][0]; tx <= box[i][1]; ++tx) {
-                tile_list[cursor[ty * tiles_x + tx]++] = (uint32_t)i;
+                uint32_t *entry = tile_list + cursor[ty * tiles_x + tx];
+                entry[0] = (uint32_t)i;
+                entry[1] = span[i];
+                cursor[ty * tiles_x + tx] += 2;
             }
         }
     }
@@ -804,7 +877,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
             return 0;
         }
     }
-    entries = build_tiles(list, vertices, tiles_x, origin_x);
+    entries = build_tiles(list, vertices, tiles_x, origin_x, scale);
     if (entries == 0) {
         SDL_SetError("out of memory for the tiles");
         return 0;
@@ -946,6 +1019,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         for (int i = 0; i < 16; ++i) {
             rp.toon[i] = io32(io3d, 0x80 + 4u * (unsigned)i);
         }
+        rp.probe = SDL_getenv("KHDAYS_GPU_PROBE") != NULL ? (uint32_t)SDL_atoi(SDL_getenv("KHDAYS_GPU_PROBE")) : 0u;
         SDL_zeroa(out);
         out[0].texture = color3d;
         out[0].cycle = true;
@@ -955,8 +1029,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         SDL_BindGPUComputePipeline(pass, raster);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 5);
         SDL_PushGPUComputeUniformData(cmd, 0, &rp, sizeof(rp));
-        SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
+        if (!gpu_skip("3d"))
+            SDL_DispatchGPUCompute(pass, (Uint32)(w + RASTER_THREADS_X - 1) / RASTER_THREADS_X,
+                                   (Uint32)(h + RASTER_THREADS_Y - 1) / RASTER_THREADS_Y, 1);
         SDL_EndGPUComputePass(pass);
+        gpu_split(device, &cmd, "raster");
     }
     if (compose_too) {
         ComposeParams cp;
@@ -997,10 +1074,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         SDL_BindGPUComputePipeline(pass, compose);
         SDL_BindGPUComputeStorageBuffers(pass, 0, &records, 1);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
-        SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
+        if (!gpu_skip("finish"))
+            SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);
     }
-    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+    if (!gpu_submit_timed(device, cmd, "3d")) {
         vram_valid = 0;
         return 0;
     }
