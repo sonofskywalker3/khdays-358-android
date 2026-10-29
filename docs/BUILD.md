@@ -326,7 +326,9 @@ never belong in the repository.
   matched polygons that moved more than a quarter of the view are reported by
   draw (said, not failed). `KHDAYS_RENDER_OUT=DIR` writes each frame the GPU
   drew. A package recorded wide is drawn as wide, with its polygons wholly
-  beside the DS's columns counted.
+  beside the DS's columns counted. 4: the port's own 2D (`gfx_render.c`) of
+  both screens at 2x, drawn looking only at the sprites each row lists and
+  again looking at every sprite, must be the same pixels.
 - `save_test.c`: the save written so a crash cannot corrupt it: a child process
   writes two 64 KB images in turn as fast as it can and is stopped at a random
   moment, 100 times; the file must be one of the two, whole.

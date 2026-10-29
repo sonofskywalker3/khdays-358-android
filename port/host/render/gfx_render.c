@@ -60,11 +60,44 @@ static uint32_t hd2d_version[KHDAYS_FRAME_HD2D_PAGES]; /* the change counts of t
 /* ... then the screen's elements (gfx/elements.h); each buffer grows to the most any frame needed */
 static uint32_t desc_bytes[2];
 
+#define SPRITE_ROW_BYTES (256u * 4u * 4u) /* each row's sprites: a bit each, 128 */
+
 static uint32_t element_bytes(const KhdaysFramePackage *p, int e)
 {
-    /* ... and the parts left out (KD_LEFT_OUT) */
+    /* ... and the parts left out (KD_LEFT_OUT), and each row's sprites (sprite_rows) */
     const uint32_t left = p->desc2d[e][KD_LEFT_OUT] != 0 ? (KE_LEFT_CELL_WORDS + KE_LEFT_OBJ_WORDS) * 4u : 0u;
-    return p->elements[e].count * KE_WORDS * 4u + left;
+    return p->elements[e].count * KE_WORDS * 4u + left + SPRITE_ROW_BYTES;
+}
+
+/* The sprites each row (modulo 256) shows, for compose.h kd_sprites to look at only those: a sprite in
+ * the rows of its box, as kd_sprites measures them. */
+static int every_sprite = -1; /* KHDAYS_SPRITE_ROWS=all: every sprite on every row, as before the lists */
+
+void khdays_gfx_render_every_sprite(int every)
+{
+    every_sprite = every;
+}
+
+static void sprite_rows(const uint32_t *description, uint32_t *rows)
+{
+    if (every_sprite < 0) {
+        every_sprite =
+            SDL_getenv("KHDAYS_SPRITE_ROWS") != NULL && SDL_strcmp(SDL_getenv("KHDAYS_SPRITE_ROWS"), "all") == 0;
+    }
+    memset(rows, every_sprite ? 0xff : 0, SPRITE_ROW_BYTES);
+    if (every_sprite) {
+        return;
+    }
+    for (uint32_t i = 0; i < 128u; ++i) {
+        const uint32_t base = KD_SPRITES + i * KD_SPRITE_WORDS;
+        const uint32_t box = description[base + KDS_BOX], y = box & 0xffu, height = (box >> 16) & 0xffu;
+        if (!(description[base + KDS_SIZE] & KDS_SHOWN)) {
+            continue;
+        }
+        for (uint32_t dy = 0; dy < height; ++dy) {
+            rows[((y + dy) & 255u) * 4u + i / 32u] |= 1u << (i % 32u);
+        }
+    }
 }
 
 /* The size of area `a`'s buffer: its pages and, for the layers' and the
@@ -561,8 +594,8 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         ok = ok && memory[a] != NULL;
     }
     for (int e = 0; e < 2; ++e) {
-        desc[e] = make_buffer(DESC_BYTES);
-        desc_bytes[e] = DESC_BYTES;
+        desc[e] = make_buffer(DESC_BYTES + SPRITE_ROW_BYTES);
+        desc_bytes[e] = DESC_BYTES + SPRITE_ROW_BYTES;
 
         dummy3d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
         ok = ok && desc[e] != NULL && dummy3d[e] != NULL;
@@ -895,7 +928,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     int columns_a;
     const uint32_t shape_bytes = one != NULL ? (uint32_t)one->shape_count * KO_WORDS * 4u : 0u;
     const uint32_t key_bytes = one != NULL ? (uint32_t)one->key_count * 4u : 0u;
-    const uint32_t piece_bytes = one != NULL ? (uint32_t)one->piece_count * PIECE_BYTES + bin_bytes : 0u; /* and the bins */
+    const uint32_t piece_bytes =
+        one != NULL ? (uint32_t)one->piece_count * PIECE_BYTES + bin_bytes : 0u; /* and the bins */
     /* a screen blend (take_capture); while engine A shows a bank, it is composed as its layers and 3D,
      * as the capture takes it */
     CapturePlan plan;
@@ -939,7 +973,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         /* make room for this frame's elements after the description and its palettes */
         const uint32_t need = DESC_BYTES + element_bytes(p, e);
         if (need > desc_bytes[e]) {
-            uint32_t bytes = desc_bytes[e];
+            uint32_t bytes = desc_bytes[e] != 0 ? desc_bytes[e] : need; /* none after a failed one */
             while (bytes < need)
                 bytes *= 2;
             SDL_ReleaseGPUBuffer(device, desc[e]);
@@ -1018,6 +1052,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
             memcpy(mapped + at, p->left_out_obj[e], KE_LEFT_OBJ_WORDS * 4u);
             at += KE_LEFT_OBJ_WORDS * 4u;
         }
+        sprite_rows(p->desc2d[e], (uint32_t *)(mapped + at));
+        at += SPRITE_ROW_BYTES;
     }
     if (has3d) {
         memcpy(mapped + at, p->layer3d, KHDAYS_FRAME_PIXELS * 4);

@@ -86,6 +86,10 @@ uint layer3d_at(uint x, int row)
 #define KD_LEFT_AT (KHDAYS_DESC_WORDS + 256u + KD_DESC(KD_ELEMENTS) * KE_WORDS)
 #define KD_LEFT_OUT_CELL(c) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc.Load((KD_LEFT_AT + ((c) >> 5)) * 4u) >> ((c) & 31u)) & 1u : 0u)
 #define KD_LEFT_OUT_OBJ(i) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc.Load((KD_LEFT_AT + KE_LEFT_CELL_WORDS + ((i) >> 5)) * 4u) >> ((i) & 31u)) & 1u : 0u)
+// after them each row's sprites (gfx_render.c sprite_rows): 4 words a row, of 256
+#define KD_ROWS_AT (KD_LEFT_AT + (KD_DESC(KD_LEFT_OUT) != 0u ? KE_LEFT_CELL_WORDS + KE_LEFT_OBJ_WORDS : 0u))
+#define KD_SPRITE_ROW(row, word) desc.Load((KD_ROWS_AT + ((uint)(row) & 255u) * 4u + (word)) * 4u)
+#define KD_LOW_BIT(m) firstbitlow(m)
 
 #include "../gfx/compose.h"
 

@@ -53,6 +53,10 @@ typedef struct KhdaysOneScreenDraw {
 int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int raster,
                                const KhdaysOneScreenDraw *one);
 
+/* Tests: 1, each pixel looks at every sprite (as KHDAYS_SPRITE_ROWS=all), 0 only at those its row
+ * lists (the default). */
+void khdays_gfx_render_every_sprite(int every);
+
 /* The size the window shows the draws that follow at, in window pixels a DS pixel. What is made larger
  * (the antialiasing, the window's size rounded up) is shrunk to it on the card (shrink.hlsl), each
  * pixel the average of the area under it. 0: as made. */

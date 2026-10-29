@@ -11,6 +11,9 @@
 
 #include <math.h>
 #include <string.h>
+#if defined(_MSC_VER)
+#include <intrin.h> /* _BitScanForward, for compose.h */
+#endif
 
 typedef uint32_t uint;
 

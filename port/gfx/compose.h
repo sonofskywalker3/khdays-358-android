@@ -481,68 +481,93 @@ KD_FN uint kd_sprite_texel(uint flags, uint tile_word, uint w, uint tx, uint ty,
     }
 }
 
+/* The sprites whose box reaches a row (its number modulo 256), 32 to a word: all of them unless the
+ * description's user lists them (the card does: only those are looked at). */
+#ifndef KD_SPRITE_ROW
+#define KD_SPRITE_ROW(row, word) 0xffffffffu
+#endif
+
+/* The lowest bit set in a word that has one. */
+KD_FN uint kd_low_bit(uint m)
+{
+#if defined(KD_LOW_BIT)
+    return KD_LOW_BIT(m);
+#elif defined(_MSC_VER)
+    unsigned long n;
+    _BitScanForward(&n, m);
+    return (uint)n;
+#else
+    return (uint)__builtin_ctz(m);
+#endif
+}
+
 KD_FN KdSprite kd_sprites(int x, int row)
 {
     KdSprite acc;
-    int i;
+    uint word;
     acc.color = 0u;
     acc.prio = 0u;
     acc.mode = 0u;
     acc.window = 0u;
-    for (i = 0; i < 128; ++i) {
-        const uint base = KD_SPRITES + (uint)i * KD_SPRITE_WORDS;
-        const uint size = KD_DESC(base + KDS_SIZE);
-        uint box, dy, bw, bh, w, h, tx, ty, color, mode, prio;
-        float fu, fv, ru = KD_PIXEL, rv = KD_PIXEL;
-        int dx;
-        if (!(size & KDS_SHOWN) || KD_LEFT_OUT_OBJ((uint)i) != 0u) {
-            continue;
-        }
-        box = KD_DESC(base + KDS_BOX);
-        bw = (box >> 8) & 0xffu;
-        bh = (box >> 16) & 0xffu;
-        dy = ((uint)row - (box & 0xffu)) & 0xffu;
-        dx = x - (int)KD_DESC(base + KDS_X);
-        if (dy >= bh || dx < 0 || dx >= (int)bw) {
-            continue;
-        }
-        w = size & 0xffu;
-        h = (size >> 8) & 0xffu;
-        if (size & KDS_AFFINE) {
-            const uint papb = KD_DESC(base + KDS_PAPB), pcpd = KD_DESC(base + KDS_PCPD);
-            const int rx = dx - (int)(bw / 2u), ry = (int)dy - (int)(bh / 2u);
-            const int ax = ((kd_s16(papb) * rx + kd_s16(papb >> 16) * ry) >> 8) + (int)(w / 2u);
-            const int ay = ((kd_s16(pcpd) * rx + kd_s16(pcpd >> 16) * ry) >> 8) + (int)(h / 2u);
-            if (ax < 0 || ax >= (int)w || ay < 0 || ay >= (int)h) {
+    for (word = 0u; word < 4u; ++word) {
+        uint listed = KD_SPRITE_ROW(row, word);
+        while (listed != 0u) {
+            const int i = (int)(word * 32u + kd_low_bit(listed));
+            const uint base = KD_SPRITES + (uint)i * KD_SPRITE_WORDS;
+            const uint size = KD_DESC(base + KDS_SIZE);
+            uint box, dy, bw, bh, w, h, tx, ty, color, mode, prio;
+            float fu, fv, ru = KD_PIXEL, rv = KD_PIXEL;
+            int dx;
+            listed &= listed - 1u;
+            if (!(size & KDS_SHOWN) || KD_LEFT_OUT_OBJ((uint)i) != 0u) {
                 continue;
             }
-            tx = (uint)ax;
-            ty = (uint)ay;
-            fu = kd_affine_sub(kd_s16(papb) * rx + kd_s16(papb >> 16) * ry, kd_s16(papb), kd_s16(papb >> 16));
-            fv = kd_affine_sub(kd_s16(pcpd) * rx + kd_s16(pcpd >> 16) * ry, kd_s16(pcpd), kd_s16(pcpd >> 16));
-            ru = kd_affine_reach(kd_s16(papb), kd_s16(papb >> 16));
-            rv = kd_affine_reach(kd_s16(pcpd), kd_s16(pcpd >> 16));
-        } else {
-            tx = (size & KDS_HFLIP) ? w - 1u - (uint)dx : (uint)dx;
-            ty = (size & KDS_VFLIP) ? h - 1u - dy : dy;
-            fu = (size & KDS_HFLIP) ? 1.0f - KD_SUB_X : KD_SUB_X;
-            fv = (size & KDS_VFLIP) ? 1.0f - KD_SUB_Y : KD_SUB_Y;
-        }
-        color = kd_sprite_texel(size, KD_DESC(base + KDS_TILE), w, tx, ty, fu, fv, ru, rv);
-        if (color == 0u) {
-            continue;
-        }
-        mode = (size >> KDS_MODE_SHIFT) & 3u;
-        if (mode == 2u) {
-            acc.window = 1u;
-            continue;
-        }
-        prio = (size >> KDS_PRIO_SHIFT) & 3u;
-        /* the lowest priority value wins; on a tie, the first sprite in OAM order */
-        if (kd_shown(acc.color) == 0u || prio < acc.prio) {
-            acc.color = color;
-            acc.prio = prio;
-            acc.mode = mode;
+            box = KD_DESC(base + KDS_BOX);
+            bw = (box >> 8) & 0xffu;
+            bh = (box >> 16) & 0xffu;
+            dy = ((uint)row - (box & 0xffu)) & 0xffu;
+            dx = x - (int)KD_DESC(base + KDS_X);
+            if (dy >= bh || dx < 0 || dx >= (int)bw) {
+                continue;
+            }
+            w = size & 0xffu;
+            h = (size >> 8) & 0xffu;
+            if (size & KDS_AFFINE) {
+                const uint papb = KD_DESC(base + KDS_PAPB), pcpd = KD_DESC(base + KDS_PCPD);
+                const int rx = dx - (int)(bw / 2u), ry = (int)dy - (int)(bh / 2u);
+                const int ax = ((kd_s16(papb) * rx + kd_s16(papb >> 16) * ry) >> 8) + (int)(w / 2u);
+                const int ay = ((kd_s16(pcpd) * rx + kd_s16(pcpd >> 16) * ry) >> 8) + (int)(h / 2u);
+                if (ax < 0 || ax >= (int)w || ay < 0 || ay >= (int)h) {
+                    continue;
+                }
+                tx = (uint)ax;
+                ty = (uint)ay;
+                fu = kd_affine_sub(kd_s16(papb) * rx + kd_s16(papb >> 16) * ry, kd_s16(papb), kd_s16(papb >> 16));
+                fv = kd_affine_sub(kd_s16(pcpd) * rx + kd_s16(pcpd >> 16) * ry, kd_s16(pcpd), kd_s16(pcpd >> 16));
+                ru = kd_affine_reach(kd_s16(papb), kd_s16(papb >> 16));
+                rv = kd_affine_reach(kd_s16(pcpd), kd_s16(pcpd >> 16));
+            } else {
+                tx = (size & KDS_HFLIP) ? w - 1u - (uint)dx : (uint)dx;
+                ty = (size & KDS_VFLIP) ? h - 1u - dy : dy;
+                fu = (size & KDS_HFLIP) ? 1.0f - KD_SUB_X : KD_SUB_X;
+                fv = (size & KDS_VFLIP) ? 1.0f - KD_SUB_Y : KD_SUB_Y;
+            }
+            color = kd_sprite_texel(size, KD_DESC(base + KDS_TILE), w, tx, ty, fu, fv, ru, rv);
+            if (color == 0u) {
+                continue;
+            }
+            mode = (size >> KDS_MODE_SHIFT) & 3u;
+            if (mode == 2u) {
+                acc.window = 1u;
+                continue;
+            }
+            prio = (size >> KDS_PRIO_SHIFT) & 3u;
+            /* the lowest priority value wins; on a tie, the first sprite in OAM order */
+            if (kd_shown(acc.color) == 0u || prio < acc.prio) {
+                acc.color = color;
+                acc.prio = prio;
+                acc.mode = mode;
+            }
         }
     }
     return acc;

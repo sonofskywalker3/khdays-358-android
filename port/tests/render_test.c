@@ -3,6 +3,7 @@
  * through the 3D interpolation; KHDAYS_RENDER_OUT=DIR writes what the GPU drew. Recordings hold the
  * player's data, so they live in saves/frames; without any the test is skipped (exit 77). What each
  * part checks and its limits: docs/BUILD.md, "The port's tests". */
+#include "../host/render/gfx_render.h"
 #include "../host/render/gpu_raster3d.h"
 #include "../gfx/g3d_interp.h"
 #include "../runtime/display/frame_package.h"
@@ -152,10 +153,44 @@ static int finished_same(const KhdaysG3dList *l)
            (l->nverts == 0 || memcmp(rebuilt.verts, l->verts, sizeof(KhdaysG3dVertex) * (size_t)l->nverts) == 0);
 }
 
+/* The port's 2D of both screens drawn twice on the card, each row's sprites only and every sprite: the
+ * same pixels. */
+static int same_with_sprite_lists(const KhdaysFramePackage *p, const char *name)
+{
+    int same = 1;
+    for (int e = 0; e < 2 && same; ++e) {
+        uint32_t *pictures[2] = {NULL, NULL};
+        int w[2] = {0, 0}, h[2] = {0, 0};
+        for (int every = 0; every < 2; ++every) {
+            khdays_gfx_render_every_sprite(every);
+            if (khdays_gfx_render_draw(p, 2, 0)) {
+                pictures[every] = khdays_gfx_render_read(e, &w[every], &h[every]);
+            }
+        }
+        khdays_gfx_render_every_sprite(0);
+        if (pictures[0] == NULL || pictures[1] == NULL) {
+            fprintf(stderr, "%s: the port's 2D could not be drawn: %s\n", name, SDL_GetError());
+            same = 0;
+        } else if (w[0] != w[1] || h[0] != h[1] ||
+                   memcmp(pictures[0], pictures[1], sizeof(uint32_t) * (size_t)w[0] * (size_t)h[0]) != 0) {
+            int differing = 0;
+            for (int i = 0; w[0] == w[1] && h[0] == h[1] && i < w[0] * h[0]; ++i) {
+                differing += pictures[0][i] != pictures[1][i];
+            }
+            fprintf(stderr, "%s: engine %c's 2D differs in %d pixels with each row's sprites only\n", name,
+                    e == 0 ? 'A' : 'B', differing);
+            same = 0;
+        }
+        SDL_free(pictures[0]);
+        SDL_free(pictures[1]);
+    }
+    return same;
+}
+
 int main(int argc, char **argv)
 {
     char dir[1024];
-    int failures = 0, packages = 0, composed = 0, gpu = 0;
+    int failures = 0, packages = 0, composed = 0, gpu = 0, gpu2d = 0, lists_checked = 0;
     Distance distance[3] = {{1, 0, 0, 0, 0, 0, 0}, {2, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0}};
     SDL_GPUDevice *device = NULL;
     const char *out = SDL_getenv("KHDAYS_RENDER_OUT");
@@ -189,6 +224,10 @@ int main(int argc, char **argv)
             : SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL,
                                   SDL_getenv("KHDAYS_GPU_DEBUG") != NULL, NULL);
     if (device != NULL && khdays_raster3d_open(device)) {
+        gpu2d = khdays_gfx_render_open(device);
+        if (!gpu2d) {
+            printf("the port's 2D cannot be drawn (%s): its part is skipped\n", SDL_GetError());
+        }
         gpu = 1;
         printf("graphics card: %s\n", SDL_GetGPUDeviceDriver(device));
     } else {
@@ -383,9 +422,17 @@ int main(int argc, char **argv)
                 SDL_free(pixels);
             }
         }
+        if (gpu2d && (p->wants & KHDAYS_WANT_2D)) {
+            /* the port's 2D at 2x looking only at the sprites each row lists, as when it looks at every one */
+            lists_checked += 1;
+            failures += !same_with_sprite_lists(p, names[f]);
+        }
         SDL_free(data);
     }
 
+    if (gpu2d) {
+        printf("%d packages' 2D drawn with each row's sprites and with every sprite\n", lists_checked);
+    }
     printf("%d packages, %d composed again with the 3D, %d failed; %d 3D lists (%d polygons) built again "
            "from their polygons before clipping\n",
            packages, composed, failures, finished_lists, finished_polygons);
