@@ -126,14 +126,19 @@ static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, f
 #define LOAD_TOP 16
 #define LOAD_BLUE 2 /* the header line's blue over its red, at the least */
 #define LOAD_ZOOM 1.17f
+#define LOAD_LINE_BLUE 103 /* the header line's blue, undimmed */
+#define LOAD_DIVIDER 49    /* a channel of the divider (66) over the rows above it (33 at most), undimmed */
 #define LOAD_CX 130.5f
 #define CHARS_TOP 24
 #define CHARS_ZOOM_MAX 1.2f
-#define CHARS_FREE 4    /* DS columns kept free beside the grid */
-#define CHARS_EDGE 90   /* a grid pixel differs this much (summed) from the backdrop at column 2 */
-#define CHARS_STRIPES 4 /* the backdrop's stripes repeat every this many rows */
+#define CHARS_FREE 4      /* DS columns kept free beside the grid */
+#define CHARS_EDGE 90     /* a grid pixel differs this much (summed) from the backdrop at column 2, undimmed */
+#define CHARS_LINE 176    /* the white line over the help */
+#define CHARS_LINE_OVER 4 /* it brighter than the backdrop this many times, through a fade to black */
+#define CHARS_LINE_MIN 24
+#define CHARS_LINE_NEAR 600 /* no row above it from 170 nearly as bright: this much of 765 at full brightness */
+#define CHARS_STRIPES 4     /* the backdrop's stripes repeat every this many rows */
 #define DIVIDER_SUM 150
-#define WHITE_SUM 600
 #define LINE_SUM 300        /* the white line under a page, dimmed under a dialog too */
 #define DARK_SUM 150        /* the characters' title band */
 #define CHARS_TITLE_BAND 20 /* a row of it black under the title */
@@ -153,10 +158,18 @@ static int characters_title(const uint32_t *ds)
     return sum(at(ds, 64, CHARS_TITLE_BAND)) == 0 && sum(at(ds, 100, CHARS_TITLE_BAND)) == 0;
 }
 
+/* The white line over the help, dimmed too: a grey row far brighter than the backdrop. */
+static int characters_line(const uint32_t *ds)
+{
+    const uint32_t c = at(ds, 0, CHARS_LINE);
+    return uniform_row(ds, CHARS_LINE) && grey(c) && sum(c) >= CHARS_LINE_MIN &&
+           sum(c) > CHARS_LINE_OVER * sum(at(ds, 2, H / 2)) &&
+           divider(ds, 170, sum(c) * CHARS_LINE_NEAR / (3 * 255)) == CHARS_LINE;
+}
+
 static int tell_characters(const uint32_t *ds)
 {
-    return divider(ds, 170, WHITE_SUM) == 176 && !tab_icons(ds) && sum(at(ds, 128, 4)) < DARK_SUM &&
-           characters_title(ds);
+    return characters_line(ds) && !tab_icons(ds) && sum(at(ds, 128, 4)) < DARK_SUM && characters_title(ds);
 }
 
 static int map_zoom(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
@@ -472,17 +485,23 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
     switch (screen) {
     case KHDAYS_LOWER_FIELD: place->map = map_field; return 1;
     case KHDAYS_LOWER_LOAD: {
-        const int line = divider(ds, 20, DIVIDER_SUM);
+        /* the divider over the help line, its threshold faded as the screen is: a fade keeps c x a + w of a
+         * channel c, w the black row under the header's line, a from that line's blue */
+        const int w = (int)red(at(ds, 128, 15)), a_blue = (int)blue(at(ds, 128, 14)) - w;
+        const int line = divider(ds, 20, 3 * w + 3 * LOAD_DIVIDER * a_blue / LOAD_LINE_BLUE);
+        float room;
         place->map = map_zoom;
         place->top = LOAD_TOP;
         place->foot = line > LOAD_TOP ? line - 1 : H;
-        place->zoom = LOAD_ZOOM;
+        room = ((float)(place->foot - place->top) + place->extra) / (float)(place->foot - place->top);
+        place->zoom = LOAD_ZOOM < room ? LOAD_ZOOM : room; /* no more than the display has rows for */
         place->cx = LOAD_CX;
         *key = place->foot;
         return 1;
     }
     case KHDAYS_LOWER_CHARACTERS: {
-        const int line = divider(ds, 170, WHITE_SUM);
+        const int line = characters_line(ds) ? CHARS_LINE : -1;
+        const int edge = CHARS_EDGE * sum(at(ds, 0, CHARS_LINE)) / (3 * 255); /* dimmed as the line is */
         int c0 = W, c1 = -1;
         float half, zoom;
         place->map = map_zoom;
@@ -495,7 +514,7 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
                 const int d = (red(c) > red(b) ? red(c) - red(b) : red(b) - red(c)) +
                               (green(c) > green(b) ? green(c) - green(b) : green(b) - green(c)) +
                               (blue(c) > blue(b) ? blue(c) - blue(b) : blue(b) - blue(c));
-                if (d > CHARS_EDGE) {
+                if (d > edge) {
                     c0 = x < c0 ? x : c0;
                     c1 = x > c1 ? x : c1;
                 }

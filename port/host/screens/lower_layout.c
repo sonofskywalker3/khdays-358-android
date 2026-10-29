@@ -3,7 +3,6 @@
 #include "lower_layout.h"
 #include "lower_screens.h"
 
-
 #include <stdlib.h>
 #include <string.h>
 
@@ -146,8 +145,9 @@ int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x,
     if (v < 0 || (v >> COL_BITS) >= layout->src_h) {
         return 0;
     }
-    *ds_x = (v & COL_MASK) * KHDAYS_LOWER_DS_W / layout->src_w;
-    *ds_y = (v >> COL_BITS) * KHDAYS_LOWER_DS_H / layout->src_h;
+    /* the DS dot under the picture pixel's middle, as the picture is drawn */
+    *ds_x = (2 * (v & COL_MASK) + 1) * KHDAYS_LOWER_DS_W / (2 * layout->src_w);
+    *ds_y = (2 * (v >> COL_BITS) + 1) * KHDAYS_LOWER_DS_H / (2 * layout->src_h);
     return 1;
 }
 
@@ -157,9 +157,8 @@ void khdays_lower_standing_rows(int width, int height, int *row0, int *rows, uin
     KhdaysLowerPlace place;
     int key;
     *rows = 0;
-    if (width > 0 &&
-        khdays_lower_screens_place(KHDAYS_LOWER_MISSIONS, blank, KHDAYS_LOWER_DS_H,
-                                   (float)height * KHDAYS_LOWER_DS_W / (float)width, &place, &key)) {
+    if (width > 0 && khdays_lower_screens_place(KHDAYS_LOWER_MISSIONS, blank, KHDAYS_LOWER_DS_H,
+                                                (float)height * KHDAYS_LOWER_DS_W / (float)width, &place, &key)) {
         *row0 = place.row0;
         *rows = place.row_count;
         *layers_off = place.layers_off;

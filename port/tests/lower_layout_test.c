@@ -3,6 +3,7 @@
  * it does not know, the pieces where the designs put them (docs/LOWER_DISPLAY.md), the characters'
  * zoom measured from their grid, and a touch going back to the DS pixel it shows. */
 #include "../host/screens/lower_layout.h"
+#include "../host/screens/lower_screens.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -92,6 +93,21 @@ static void test_unknown(void)
     khdays_lower_free(&l);
 }
 
+/* The picture faded `white` / 255 of the way to white. */
+static void whiten(int white)
+{
+    for (int yy = 0; yy < DS_H; ++yy) {
+        for (int xx = 0; xx < DS_W; ++xx) {
+            uint8_t *p = picture[yy * SCALE][xx * SCALE];
+            uint32_t c = 0;
+            for (int k = 0; k < 3; ++k) {
+                c = c << 8 | (uint32_t)(p[k] + (255 - p[k]) * white / 255);
+            }
+            put(xx, yy, c);
+        }
+    }
+}
+
 /* The picture dimmed to `keep` / 255, as under a dialog. */
 static void dim(int keep)
 {
@@ -151,15 +167,52 @@ static void test_load(void)
     KhdaysLowerLayout l = {0};
     int x, y;
     numbered();
-    rect(0, 14, DS_W, 15, 0x142470u); /* the header's blue line */
+    rect(0, 14, DS_W, 15, 0x142167u); /* the header's blue line */
     rect(0, 15, DS_W, 16, 0x000000u);
-    rect(0, 144, DS_W, 146, 0x454545u); /* the divider over the help line */
+    rect(0, 144, DS_W, 146, 0x424242u); /* the divider over the help line */
     CHECK(lay(&l) == KHDAYS_LOWER_LOAD);
     CHECK(shows(&l, 30.5f, 5.5f, &x, &y) && x == 30 && y == 5);                       /* the header stays */
     CHECK(shows(&l, 30.5f, 200.5f, &x, &y) && x == 30 && y == 169);                   /* the help line at the bottom */
     CHECK(shows(&l, 128.0f, 95.0f, &x, &y) && abs(x - 130) <= 1 && abs(y - 79) <= 1); /* the list's middle */
     CHECK(shows(&l, 30.0f, 95.0f, &x, &y) && x > 30);                                 /* the list enlarged about it */
+    {
+        /* through a fade the divider is found as before: the same layout */
+        const int key = l.key;
+        for (int keep = 240; keep >= 60; keep -= 30) {
+            numbered();
+            rect(0, 14, DS_W, 15, 0x142167u);
+            rect(0, 15, DS_W, 16, 0x000000u);
+            rect(0, 20, DS_W, 21, 0x212121u); /* a plain row of the list's backdrop */
+            rect(0, 144, DS_W, 146, 0x424242u);
+            dim(keep);
+            CHECK(lay(&l) == KHDAYS_LOWER_LOAD && l.key == key);
+        }
+        for (int white = 30; white <= 210; white += 30) {
+            /* and through a fade to white */
+            numbered();
+            rect(0, 14, DS_W, 15, 0x142167u);
+            rect(0, 15, DS_W, 16, 0x000000u);
+            rect(0, 20, DS_W, 21, 0x000000u);
+            rect(0, 144, DS_W, 146, 0x424242u);
+            whiten(white);
+            CHECK(lay(&l) == KHDAYS_LOWER_LOAD && l.key == key);
+        }
+    }
     khdays_lower_free(&l);
+}
+
+/* A display only a little taller than the DS's: Load enlarged no more than it has rows for. */
+static void test_load_short(void)
+{
+    KhdaysLowerPlace place;
+    int key, rows;
+    numbered();
+    rect(0, 14, DS_W, 15, 0x142167u);
+    rect(0, 15, DS_W, 16, 0x000000u);
+    rect(0, 144, DS_W, 146, 0x424242u);
+    khdays_lower_sample(&pic, ds, &rows);
+    CHECK(khdays_lower_screens_place(KHDAYS_LOWER_LOAD, ds, DS_H, (float)DS_H + 4.0f, &place, &key));
+    CHECK(place.zoom <= ((float)(place.foot - place.top) + 4.0f) / (float)(place.foot - place.top) + 0.0001f);
 }
 
 static void characters(int grid_x0, int grid_x1)
@@ -184,6 +237,15 @@ static void test_characters(void)
     characters(8, 248);
     CHECK(lay(&l) == KHDAYS_LOWER_CHARACTERS);
     CHECK(l.key % 1000 < 104 && l.key % 1000 >= 100);
+    {
+        /* through a fade to black: still the characters, laid out alike */
+        const int key = l.key;
+        for (int keep = 230; keep >= 80; keep -= 30) {
+            characters(8, 248);
+            dim(keep);
+            CHECK(lay(&l) == KHDAYS_LOWER_CHARACTERS && l.key == key);
+        }
+    }
     CHECK(shows(&l, 1.5f, 100.0f, &x, &y) && x < 8); /* the backdrop beside the grid */
     CHECK(shows(&l, 254.5f, 100.0f, &x, &y) && x >= 248);
     khdays_lower_free(&l);
@@ -547,6 +609,7 @@ int main(void)
     test_unknown();
     test_field();
     test_load();
+    test_load_short();
     test_characters();
     test_status();
     test_summary();
