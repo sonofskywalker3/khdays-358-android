@@ -449,6 +449,15 @@ static void test_panels(void)
     CHECK(shown(&l, 50.5f, 22) >= 15 && shown(&l, 50.5f, 152) >= 15);
     CHECK(shown(&l, 150.5f, 24) >= 4 && shown(&l, 150.5f, 136) >= 4);
     CHECK(shown(&l, 150.5f, 191) == 1);
+    /* the hand pointing at the board's top left cell, over its frame: still Panels */
+    rect(0, 54, 13, 64, 0xffffffu);
+    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
+    /* and a panel dragged by touch over the frame above the grid: still Panels */
+    rect(0, 12, 16, 28, 0xd04040u);
+    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
+    /* ... but not with the frame's colour gone from two spots */
+    rect(80, 146, 96, 160, 0xd04040u);
+    CHECK(lay(&l) != KHDAYS_LOWER_PANELS);
     khdays_lower_free(&l);
 }
 

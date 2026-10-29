@@ -99,7 +99,11 @@ int khdays_lower_plain_row(const uint32_t *ds, int y0, int y1, int x0, int x1)
 #define PANELS_HELP_END 190 /* ... bottom lines (their rounded ends left out) */
 #define PANELS_SPAN0 8
 #define PANELS_SPAN1 248
-#define PANELS_BOARD_X 4
+/* The board's frame above its grid and below, at spots across its width: the hand pointing at a cell
+ * covers the frame beside the grid, and a panel dragged by touch may cover any one of these. */
+static const int panels_frame[][2] = {{4, 20}, {48, 20}, {88, 20}, {4, 154}, {48, 154}, {88, 154}};
+#define PANELS_FRAME_SPOTS 6
+#define PANELS_FRAME_AGREE 5 /* the frame's colour: what this many of them show */
 #define PANELS_STOCK_X 150
 #define ENTRY_ROWS 16
 #define TUT_HEADER_RED 40   /* the header's red, dimmed too */
@@ -123,17 +127,34 @@ static int tell_diary(const uint32_t *ds)
            sum(plain) > sum(stripe);
 }
 
+/* The board's frame colour: what PANELS_FRAME_AGREE of its spots show; 1 when there is one. */
+static int panels_board(const uint32_t *ds, uint32_t *board)
+{
+    for (int i = 0; i <= PANELS_FRAME_SPOTS - PANELS_FRAME_AGREE; ++i) {
+        const uint32_t c = at(ds, panels_frame[i][0], panels_frame[i][1]);
+        int agree = 0;
+        for (int k = 0; k < PANELS_FRAME_SPOTS; ++k) {
+            agree += at(ds, panels_frame[k][0], panels_frame[k][1]) == c;
+        }
+        if (agree >= PANELS_FRAME_AGREE) {
+            *board = c;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int tell_panels(const uint32_t *ds)
 {
-    const uint32_t help = at(ds, PANELS_SPAN0, PANELS_HELP), board = at(ds, PANELS_BOARD_X, 100),
-                   stock = at(ds, PANELS_STOCK_X, PANELS_BOARD_BELOW);
+    const uint32_t help = at(ds, PANELS_SPAN0, PANELS_HELP), stock = at(ds, PANELS_STOCK_X, PANELS_BOARD_BELOW);
+    uint32_t board;
     return uniform_span(ds, PANELS_HELP, PANELS_SPAN0, PANELS_SPAN1) && sum(help) > PANELS_HELP_SUM &&
            uniform_span(ds, PANELS_HELP_END, PANELS_SPAN0, PANELS_SPAN1) &&
            at(ds, PANELS_SPAN0, PANELS_HELP_END) == help &&
            uniform_span(ds, PANELS_FRAME, PANELS_SPAN0, PANELS_SPAN1) &&
-           sum(at(ds, PANELS_SPAN0, PANELS_FRAME)) < sum(help) && at(ds, PANELS_BOARD_X, 60) == board &&
-           at(ds, PANELS_BOARD_X, 140) == board && red(board) == green(board) && blue(board) > red(board) &&
-           blue(stock) > red(stock) * 3 / 2 && blue(stock) > green(stock); /* dimmed as it closes too */
+           sum(at(ds, PANELS_SPAN0, PANELS_FRAME)) < sum(help) && panels_board(ds, &board) &&
+           red(board) == green(board) && blue(board) > red(board) && blue(stock) > red(stock) * 3 / 2 &&
+           blue(stock) > green(stock); /* dimmed as it closes too */
 }
 
 /* --- A day's missions (the story's): the day's card above, four slots of the list ------------------------
