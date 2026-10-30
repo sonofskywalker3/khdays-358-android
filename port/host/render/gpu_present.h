@@ -89,4 +89,11 @@ void khdays_present_port_screen(int covered);
  * caller's textures for the old one are gone). */
 SDL_Renderer *khdays_present_event(const SDL_Event *event, int *renewed);
 
+/* Android: the window's surface came again after going (another app over the game, then back). The
+ * swapchain is made again on it, the one of the surface that went let go first; SDL's own remaking
+ * waits for the driver to say the surface was lost, and a Mali phone showed only black instead. If no
+ * swapchain can be made, the renderer is made again as for a lost device (khdays_present_lost).
+ * Returns 0 when the surface has no size yet: asked again before a frame is drawn. */
+int khdays_present_new_surface(void);
+
 #endif

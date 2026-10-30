@@ -62,6 +62,7 @@ static int refused_scale;                  /* a scale the device could not make 
 static int window_scale_cap;               /* the most "window" makes on this device (0: no limit) */
 #define OLDER_ADRENO_BELOW 700             /* window_cap_for: Adreno models below this are capped */
 #define OLDER_ADRENO_WINDOW_CAP 2
+#define NEW_SURFACE_TRIES 120         /* khdays_present_new_surface: turns of the loop (about 2 s) */
 
 /* The graphics card stopped answering (a driver reset: D3D12's device removed, hung or reset, Vulkan's
  * lost). SDL's renderer does not notice on D3D12, so the port notices from its own calls' errors and
@@ -1760,6 +1761,42 @@ void khdays_present_draw(void)
     }
     /* around a scene's videos the game goes down to black and comes up from it */
     darken(1.0f - khdays_movie_hd_game_level());
+}
+
+int khdays_present_new_surface(void)
+{
+    static int tries; /* a surface with no size yet: claimed again at the next turns of the loop */
+    if (device == NULL || window == NULL) {
+        return 1;
+    }
+    /* the swapchain let go with its surface, in that order, and made on the new one: SDL's renderer
+     * draws into a picture of its own and copies it to the swapchain's, so it carries on as it was */
+    SDL_WaitForGPUIdle(device);
+    SDL_ReleaseWindowFromGPUDevice(device, window);
+    if (!SDL_ClaimWindowForGPUDevice(device, window)) {
+        fprintf(stderr, "host: no swapchain on the window's new surface (%s); making the renderer again\n",
+                SDL_GetError());
+        tries = 0;
+        device_lost = 1; /* the window makes everything again (khdays_present_lost) */
+        return 1;
+    }
+    if (SDL_GetGPUSwapchainTextureFormat(device, window) == SDL_GPU_TEXTUREFORMAT_INVALID) {
+        /* SDL says the window is claimed when the surface has no size yet, but keeps no swapchain */
+        if (++tries < NEW_SURFACE_TRIES) {
+            return 0;
+        }
+        fprintf(stderr, "host: the window's new surface never took a swapchain; making the renderer again\n");
+        tries = 0;
+        device_lost = 1;
+        return 1;
+    }
+    tries = 0;
+    if (!SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                       SDL_GPU_PRESENTMODE_VSYNC)) { /* as SDL_SetRenderVSync(renderer, 1) */
+        fprintf(stderr, "host: the new swapchain keeps SDL's present mode: %s\n", SDL_GetError());
+    }
+    fprintf(stderr, "host: the window's surface came again; its swapchain made again\n");
+    return 1;
 }
 
 SDL_Renderer *khdays_present_event(const SDL_Event *event, int *renewed)

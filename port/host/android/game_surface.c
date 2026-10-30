@@ -8,11 +8,13 @@
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static int ready;
+static int went;    /* the surface went since it first came */
+static int renewed; /* it came again after going: the swapchain is made again before a frame is drawn */
 
 int khdays_game_surface_frame_begin(void)
 {
     pthread_mutex_lock(&lock);
-    if (!ready) {
+    if (!ready || renewed) {
         pthread_mutex_unlock(&lock);
         return 0;
     }
@@ -21,6 +23,24 @@ int khdays_game_surface_frame_begin(void)
 
 void khdays_game_surface_frame_end(void)
 {
+    pthread_mutex_unlock(&lock);
+}
+
+int khdays_game_surface_renew_begin(void)
+{
+    pthread_mutex_lock(&lock);
+    if (!ready || !renewed) {
+        pthread_mutex_unlock(&lock);
+        return 0;
+    }
+    renewed = 0;
+    return 1;
+}
+
+void khdays_game_surface_renew_again(void)
+{
+    pthread_mutex_lock(&lock);
+    renewed = 1;
     pthread_mutex_unlock(&lock);
 }
 
@@ -33,6 +53,12 @@ JNIEXPORT void JNICALL Java_com_sonofskywalker3_khdays358_GameSurface_nativeRead
     (void)type;
     pthread_mutex_lock(&lock);
     ready = there == JNI_TRUE;
+    if (!ready) {
+        went = 1;
+    } else if (went) {
+        went = 0;
+        renewed = 1;
+    }
     pthread_mutex_unlock(&lock);
     __android_log_print(ANDROID_LOG_INFO, "khdays", "display: the game's surface %s", there ? "came" : "went");
 }

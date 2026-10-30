@@ -620,6 +620,19 @@ static int host_thread(void *unused)
         /* While the settings menu shows, it keeps animating even if the paused
          * game sends no frames. */
         int animating;
+#if defined(__ANDROID__)
+        /* Back from another app: the swapchain made on the new surface before anything is drawn on it
+         * (host/android/game_surface.h), the surface held meanwhile */
+        if (khdays_game_surface_renew_begin()) {
+            const int made = khdays_present_new_surface();
+            khdays_game_surface_frame_end();
+            if (made) {
+                redraw(window, renderer);
+            } else {
+                khdays_game_surface_renew_again(); /* the surface has no size yet */
+            }
+        }
+#endif
         /* A newer release is told of on the front-end (the boot logos, the title: scene 1), never
          * in the middle of the game, and once a run. */
         if (!khdays_settings_is_open() && khdays_runtime_scene() == 1) {
