@@ -22,6 +22,11 @@ int khdays_host_player_slot_taken(void);
  * taken. */
 const char *khdays_host_user_folder(void);
 
+/* The folder for this slot's save files (khdays.sav, slots/): the user folder, or on Android a folder of
+ * the player's own (host/android/saves_folder.h), decided at the first call (the game's first read of its
+ * save). */
+const char *khdays_host_saves_folder(void);
+
 /* Whether another copy of the port is running on this machine right now. */
 int khdays_host_other_copies(void);
 

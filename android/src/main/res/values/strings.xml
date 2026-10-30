@@ -56,6 +56,9 @@
     <string name="setup_mods_off">%1$s (off)</string>
     <string name="setup_mods_ignored">%1$s (off: .ignore)</string>
 
+    <string name="setup_saves_folder_done">The saves are kept in %1$s from the next time the game starts: they are copied there then, and the app\'s folder keeps its copy. If the game is running now, close it from the recent apps and start it again. A folder that already holds saves (synced from another device) is used as it is.</string>
+    <string name="setup_saves_folder_reset_done">The saves come back to the app\'s folder the next time the game starts (copied from the folder they were in, which keeps its copy).</string>
+
     <string name="setup_media_app">Kept in the app\'s folder: %1$s</string>
     <string name="setup_media_own">Kept in: %1$s</string>
     <string name="setup_media_unreadable">Chosen: %1$s, but it cannot be read now (the memory card is out, or access to all files is not allowed). The app\'s folder is used meanwhile.</string>

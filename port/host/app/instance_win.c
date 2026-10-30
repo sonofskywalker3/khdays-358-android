@@ -74,6 +74,11 @@ const char *khdays_host_user_folder(void)
     return folder;
 }
 
+const char *khdays_host_saves_folder(void)
+{
+    return khdays_host_user_folder();
+}
+
 int khdays_host_other_copies(void)
 {
     /* count the processes of the same executable, other than this one */

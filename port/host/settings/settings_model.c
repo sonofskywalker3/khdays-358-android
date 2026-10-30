@@ -532,6 +532,7 @@ static void build_general(Builder *b, KhdaysProfile *w)
 /* The setup screen's lines (media_folder.h's status), and the lines made of them. */
 static char files_status[2048];
 static char files_game[400], files_hd[400], files_hd_folder[600], files_mods_folder[600], files_mods[600];
+static char files_saves_folder[600];
 
 /* The line `key=` of the status into `line` ("" without). */
 static void files_line(const char *key, char *line, size_t size)
@@ -552,12 +553,13 @@ static void files_line(const char *key, char *line, size_t size)
 
 /* A long line as rows of at most FILES_ROW_CHARS, broken at spaces (the rows do not wrap). */
 #define FILES_ROW_CHARS 76
-static char files_rows[8][FILES_ROW_CHARS + 4];
+#define FILES_ROWS 12
+static char files_rows[FILES_ROWS][FILES_ROW_CHARS + 4];
 
 static void add_files_lines(Builder *b, const char *text, int *row)
 {
     const char *p = text;
-    while (*p != '\0' && *row < 8) {
+    while (*p != '\0' && *row < FILES_ROWS) {
         size_t n = strlen(p);
         if (n > FILES_ROW_CHARS) {
             n = FILES_ROW_CHARS;
@@ -581,7 +583,7 @@ static void add_files_lines(Builder *b, const char *text, int *row)
 static void build_files(Builder *b)
 {
     KhdaysRow *r;
-    char hd_folder[600], mods_folder[600], text[1200];
+    char hd_folder[600], mods_folder[600], saves_folder[600], text[1200];
     int row = 0;
     khdays_media_folder_status(files_status, sizeof(files_status));
     files_line("game", files_game, sizeof(files_game));
@@ -589,10 +591,13 @@ static void build_files(Builder *b)
     files_line("hd_folder", hd_folder, sizeof(hd_folder));
     files_line("mods_folder", mods_folder, sizeof(mods_folder));
     files_line("mods", files_mods, sizeof(files_mods));
+    files_line("saves_folder", saves_folder, sizeof(saves_folder));
     snprintf(files_hd_folder, sizeof(files_hd_folder), khdays_text(TXT_FILES_HD_FOLDER_IS),
              hd_folder[0] != '\0' ? hd_folder : khdays_text(TXT_FILES_APPS_OWN));
     snprintf(files_mods_folder, sizeof(files_mods_folder), khdays_text(TXT_FILES_MODS_FOLDER_IS),
              mods_folder[0] != '\0' ? mods_folder : khdays_text(TXT_FILES_APPS_OWN));
+    snprintf(files_saves_folder, sizeof(files_saves_folder), khdays_text(TXT_FILES_SAVES_FOLDER_IS),
+             saves_folder[0] != '\0' ? saves_folder : khdays_text(TXT_FILES_APPS_OWN));
 
     if (files_game[0] != '\0') {
         add(b, KHDAYS_ROW_LINE, KHDAYS_SET_FILES_LINE, files_game);
@@ -618,6 +623,16 @@ static void build_files(Builder *b)
     r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
     if (mods_folder[0] != '\0') {
         r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_APP_FOLDER, KHDAYS_CMD_FILES_MODS_APP);
+        r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
+    }
+    /* the saves where an app that syncs folders reaches them (host/android/saves_folder.h) */
+    snprintf(text, sizeof(text), "%s", files_saves_folder);
+    add_files_lines(b, text, &row);
+    r = add_command(b, KHDAYS_SET_FILES_ACT, saves_folder[0] != '\0' ? TXT_FILES_OTHER_FOLDER : TXT_FILES_SAVES_FOLDER,
+                    KHDAYS_CMD_FILES_SAVES_FOLDER);
+    r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
+    if (saves_folder[0] != '\0') {
+        r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_APP_FOLDER, KHDAYS_CMD_FILES_SAVES_APP);
         r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
     }
     add_command(b, KHDAYS_SET_OPEN_SETUP, TXT_OPEN_SETUP, KHDAYS_CMD_OPEN_SETUP)->note = khdays_text(TXT_OPEN_SETUP_NOTE);
@@ -948,6 +963,8 @@ void khdays_model_command(KhdaysProfile *work, int command)
     case KHDAYS_CMD_FILES_HD_APP: khdays_media_folder_act("hd_app"); break;
     case KHDAYS_CMD_FILES_MODS_FOLDER: khdays_media_folder_act("mods_folder"); break;
     case KHDAYS_CMD_FILES_MODS_APP: khdays_media_folder_act("mods_app"); break;
+    case KHDAYS_CMD_FILES_SAVES_FOLDER: khdays_media_folder_act("saves_folder"); break;
+    case KHDAYS_CMD_FILES_SAVES_APP: khdays_media_folder_act("saves_app"); break;
 #endif
     case KHDAYS_CMD_PRESET_DS:
         khdays_profile_apply_preset(work, KHDAYS_PRESET_DS, KHDAYS_AVAILABLE_ENHANCEMENTS);

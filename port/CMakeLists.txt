@@ -381,7 +381,8 @@ else()
             host/android/app_class.c
             host/android/game_surface.c          # frames presented only while the game's surface is there
             host/android/touch_gear.c            # the settings key a touch screen taps
-            host/android/media_folder.c)         # the player's folder for the mods and HD videos
+            host/android/media_folder.c          # the player's folder for the mods and HD videos
+            host/android/saves_folder.c)         # the save files in a folder of the player's own
     else()
         list(APPEND KHDAYS_PLATFORM_SOURCES
             host/movies/movie_hd_none.c

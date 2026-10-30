@@ -303,12 +303,13 @@ static void sound_service(u32 data, u32 err)
 #define TAG_FS 11
 #define CARD_CMD(offset) (*(volatile u32 *)KHDAYS_W(card_cmd + (offset)))
 
-/* saves/khdays.sav, or saves/player<N>/ for a further player on the PC (host/app/instance.h) */
+/* saves/khdays.sav, or saves/player<N>/ for a further player on the PC, or the player's own saves folder
+ * on Android (host/app/instance.h) */
 static const char *save_file(void)
 {
-    static char path[96];
+    static char path[1100];
     if (path[0] == 0) {
-        snprintf(path, sizeof(path), "%s/khdays.sav", khdays_host_user_folder());
+        snprintf(path, sizeof(path), "%s/khdays.sav", khdays_host_saves_folder());
     }
     return path;
 }
@@ -338,7 +339,7 @@ static void backup_identify(u32 type)
     backup_extent = read > 0 ? (u32)read : 0;
     backup_changed = 0;
     /* the save files beyond the chip's three, and the view the game reads its slots through */
-    khdays_slots_attach(backup, backup_size, khdays_host_user_folder());
+    khdays_slots_attach(backup, backup_size, khdays_host_saves_folder());
 }
 
 int khdays_backup_commit(void)

@@ -1,6 +1,9 @@
 /* host/app/instance.h on POSIX. Each slot is a lock on a file in the saves folder (the system releases
  * it when the process ends); on Android one copy runs, which always takes slot 1. */
 #include "instance.h"
+#if defined(__ANDROID__)
+#include "../android/saves_folder.h"
+#endif
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -81,6 +84,21 @@ const char *khdays_host_user_folder(void)
         }
     }
     return folder;
+}
+
+const char *khdays_host_saves_folder(void)
+{
+#if defined(__ANDROID__)
+    static char saves[1024];
+    if (saves[0] == '\0') { /* (the game's thread only: its save's first read) */
+        char decided[sizeof(saves)];
+        khdays_saves_folder_decide(khdays_host_user_folder(), decided, sizeof(decided));
+        memcpy(saves, decided, sizeof(saves));
+    }
+    return saves;
+#else
+    return khdays_host_user_folder();
+#endif
 }
 
 int khdays_host_other_copies(void)

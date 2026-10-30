@@ -94,6 +94,8 @@ class SetupActivity : Activity() {
                 ACTION_HD_APP -> { resetFolder(Kind.HD); endAction() }
                 ACTION_MODS_FOLDER -> chooseFolder(Kind.MODS)
                 ACTION_MODS_APP -> { resetFolder(Kind.MODS); endAction() }
+                ACTION_SAVES_FOLDER -> chooseFolder(Kind.SAVES)
+                ACTION_SAVES_APP -> { resetFolder(Kind.SAVES); endAction(READ_DELAY_MS) }
                 else -> actionMode = false
             }
         }
@@ -140,6 +142,7 @@ class SetupActivity : Activity() {
             PICK_HD -> importHd(uri)
             PICK_HD_FOLDER -> pickFolder(Kind.HD, uri)
             PICK_MODS_FOLDER -> pickFolder(Kind.MODS, uri)
+            PICK_SAVES_FOLDER -> pickFolder(Kind.SAVES, uri)
         }
     }
 
@@ -268,7 +271,12 @@ class SetupActivity : Activity() {
     // --- The folders of the player's own: the HD files', the mods' --------------------------------------
 
     private fun chooseFolder(kind: Kind) {
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), if (kind == Kind.HD) PICK_HD_FOLDER else PICK_MODS_FOLDER)
+        val request = when (kind) {
+            Kind.HD -> PICK_HD_FOLDER
+            Kind.MODS -> PICK_MODS_FOLDER
+            Kind.SAVES -> PICK_SAVES_FOLDER
+        }
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), request)
     }
 
     private fun pickFolder(kind: Kind, tree: Uri) {
@@ -293,7 +301,12 @@ class SetupActivity : Activity() {
         MediaFolder.keep(this, kind, folder)
         lastHd = null
         game = MediaFolder.gameFolder(this)
-        progressText.text = getString(if (kind == Kind.HD) R.string.setup_hd_folder_done else R.string.setup_mods_folder_done, folder.path)
+        val done = when (kind) {
+            Kind.HD -> R.string.setup_hd_folder_done
+            Kind.MODS -> R.string.setup_mods_folder_done
+            Kind.SAVES -> R.string.setup_saves_folder_done
+        }
+        progressText.text = getString(done, folder.path)
         refresh()
         endAction(READ_DELAY_MS)
     }
@@ -302,7 +315,12 @@ class SetupActivity : Activity() {
         MediaFolder.forget(this, kind)
         lastHd = null
         game = MediaFolder.gameFolder(this)
-        progressText.text = getString(if (kind == Kind.HD) R.string.setup_hd_folder_reset_done else R.string.setup_mods_folder_reset_done)
+        val done = when (kind) {
+            Kind.HD -> R.string.setup_hd_folder_reset_done
+            Kind.MODS -> R.string.setup_mods_folder_reset_done
+            Kind.SAVES -> R.string.setup_saves_folder_reset_done
+        }
+        progressText.text = getString(done)
         refresh()
         (if (kind == Kind.HD) hdFolderButton else modsFolderButton).requestFocus()
     }
@@ -540,11 +558,14 @@ class SetupActivity : Activity() {
         const val ACTION_HD_APP = "hd_app"
         const val ACTION_MODS_FOLDER = "mods_folder"
         const val ACTION_MODS_APP = "mods_app"
+        const val ACTION_SAVES_FOLDER = "saves_folder" // the saves' folder: from the game's settings menu only
+        const val ACTION_SAVES_APP = "saves_app"
         private const val TAG = "khdays"
         private const val PICK_ROM = 1
         private const val PICK_HD = 2
         private const val PICK_HD_FOLDER = 3
         private const val PICK_MODS_FOLDER = 4
+        private const val PICK_SAVES_FOLDER = 5
         // the unpacked game takes about 1.1 times its ROM: 1.5 asked for
         private const val SPACE_PER_ROM_BYTE_NUMERATOR = 3L
         private const val SPACE_PER_ROM_BYTE_DENOMINATOR = 2L

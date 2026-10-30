@@ -178,8 +178,8 @@ static int copy_file(const char *from, const char *to, void *buffer)
 /* The saves as they are before the game writes any: what a playback starts from. */
 static void copy_saves(const char *base)
 {
-    const char *folder = khdays_host_user_folder();
-    char from[320], to[320];
+    const char *folder = khdays_host_saves_folder();
+    char from[1100], to[1100];
     int copied = 0;
     void *buffer = malloc(SAVE_ROOM);
     if (buffer == NULL) {

@@ -13,9 +13,11 @@ class SetupStatus(
     val hdFolder: String,
     val modsFolder: String,
     val mods: String,
+    val savesFolder: String,
 ) {
     /** The lines the settings menu reads (port/host/settings/settings_model.c). */
-    fun lines(): String = listOf("game" to game, "hd" to hd, "hd_folder" to hdFolder, "mods_folder" to modsFolder, "mods" to mods)
+    fun lines(): String = listOf("game" to game, "hd" to hd, "hd_folder" to hdFolder, "mods_folder" to modsFolder, "mods" to mods,
+        "saves_folder" to savesFolder)
         .joinToString("\n") { (key, value) -> key + "=" + value.replace("\n", ". ").replace(" ✓", "") } // no tick in the game's font
 
     companion object {
@@ -50,6 +52,7 @@ class SetupStatus(
                 MediaFolder.chosen(context, MediaFolder.Kind.HD)?.path ?: "",
                 MediaFolder.chosen(context, MediaFolder.Kind.MODS)?.path ?: "",
                 modsLine,
+                MediaFolder.chosen(context, MediaFolder.Kind.SAVES)?.path ?: "",
             )
         }
     }

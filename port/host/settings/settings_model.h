@@ -63,7 +63,9 @@ enum KhdaysCommand {
     KHDAYS_CMD_FILES_HD_FOLDER,
     KHDAYS_CMD_FILES_HD_APP,
     KHDAYS_CMD_FILES_MODS_FOLDER,
-    KHDAYS_CMD_FILES_MODS_APP
+    KHDAYS_CMD_FILES_MODS_APP,
+    KHDAYS_CMD_FILES_SAVES_FOLDER,
+    KHDAYS_CMD_FILES_SAVES_APP
 };
 
 /* A stable name for each row, for the tests (binding rows are told apart by

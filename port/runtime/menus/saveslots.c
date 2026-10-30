@@ -15,7 +15,7 @@
 
 static u8 *chip;
 static u32 chip_size;
-static char folder[256];
+static char folder[1024];
 static int port_view;
 static int chosen = -1; /* the file game slot 0 was in the port's view, -1 before one */
 static int page = -1;   /* the page view's first file, -1 when it is not on */
@@ -47,7 +47,7 @@ static u8 *file_bytes(int file)
 /* Port file `f` (counted after the chip's) as it is on the disk: NULL when it is not there. */
 static void read_file(int f)
 {
-    char path[320];
+    char path[1100];
     long read;
     free(files[f]);
     files[f] = NULL;
@@ -159,7 +159,7 @@ int khdays_slots_commit(void)
 {
     int ok = 1;
     for (int f = 0; f < PORT_FILES; ++f) {
-        char path[320];
+        char path[1100];
         if (!changed[f] || files[f] == NULL) {
             continue;
         }

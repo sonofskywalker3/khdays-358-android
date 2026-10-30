@@ -16,8 +16,9 @@ import org.libsdl.app.SDL
 import java.io.File
 
 /**
- * The player's own folders for the mods and for the HD files, so they can live on a memory card or in a
- * folder a file manager reaches easily, rather than in Android/data. Each is kept as a path in the app's
+ * The player's own folders for the mods, for the HD files and for the save files, so they can live on a
+ * memory card or in a folder a file manager (or an app that syncs folders) reaches easily, rather than in
+ * Android/data. Each is kept as a path in the app's
  * private storage ([MODS_KEPT_IN], [HD_KEPT_IN]); port/host/android/media_folder.c reads them as the game
  * starts, and port/runtime/core/folders.c and [GameFolder] read the folders the same way: the mods
  * folder is the one that holds a folder per mod, the HD folder holds data/cutscenes (the PC installer's
@@ -30,6 +31,7 @@ import java.io.File
 object MediaFolder {
     const val MODS_KEPT_IN = "mods_folder.txt" // media_folder.c's MODS_KEPT_IN
     const val HD_KEPT_IN = "hd_folder.txt" // media_folder.c's HD_KEPT_IN
+    const val SAVES_KEPT_IN = "saves_folder.txt" // saves_folder.c's SAVES_KEPT_IN
     const val OLD_KEPT_IN = "media_folder.txt" // one folder for both, before 0.1.4 beta 7
     private const val PENDING_IN = "media_folder.pending" // chosen, waiting for the access to all files
     private const val TAG = "khdays"
@@ -40,6 +42,7 @@ object MediaFolder {
     enum class Kind(val keptIn: String) {
         MODS(MODS_KEPT_IN),
         HD(HD_KEPT_IN),
+        SAVES(SAVES_KEPT_IN), // the save files: moved there by port/host/android/saves_folder.c as the game starts
     }
 
     /** The folder chosen for `kind`, or null for the app's own. */

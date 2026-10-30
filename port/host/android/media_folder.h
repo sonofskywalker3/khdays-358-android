@@ -18,7 +18,7 @@ int khdays_media_folder_open_setup(void);
 
 /* Opens the setup screen on one of its actions, straight away, back to the game once it is done:
  * "rom" (another ROM file), "hd_import" (HD files copied from a folder), "hd_folder" (the HD files'
- * own folder), "hd_app" (the app's again), "mods_folder", "mods_app". 0 when it could not be. */
+ * own folder), "hd_app" (the app's again), "mods_folder", "mods_app", "saves_folder", "saves_app" (saves_folder.h). 0 when it could not be. */
 int khdays_media_folder_act(const char *action);
 
 /* What the setup screen would say of the game's files, a line each: "game=<ready or not>",
