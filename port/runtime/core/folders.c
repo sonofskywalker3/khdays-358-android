@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 #include <windows.h> /* host/posix/include/windows.h off Windows */
+#if defined(__ANDROID__)
+#include <unistd.h>
+#endif
 
 static char mods[1024] = "mods";
 static char cutscenes[1024] = "data/cutscenes";
@@ -39,6 +42,16 @@ void khdays_folders_choose_mods(const char *folder)
 void khdays_folders_choose_hd(const char *folder)
 {
     char path[1024];
+#if defined(__ANDROID__)
+    {
+        /* the app's own named whole: SDL opens a relative path from the app's private folder, not the
+         * working folder (the theater's chapters, their lengths and music were never found there) */
+        char here[768];
+        if (getcwd(here, sizeof(here)) != NULL) {
+            snprintf(cutscenes, sizeof(cutscenes), "%s/data/cutscenes", here);
+        }
+    }
+#endif
     if (readable(folder, "HD videos") == NULL) {
         return;
     }
