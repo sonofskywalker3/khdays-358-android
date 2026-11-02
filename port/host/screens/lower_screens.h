@@ -20,6 +20,7 @@ struct KhdaysLowerPlace {
     int16_t rows[3][KHDAYS_LOWER_ROWS_MAX]; /* a row's source in each of up to three column bands, split at
                                                `split` and (when not 0) `split2` */
     int split, split2;
+    int seam; /* a column repeated to widen the picture */
     /* extra rows it shows (a source row of KHDAYS_LOWER_ROWS + DS row): DS rows from row0, `rows` of them,
      * composed with layers_off's layers left out; row_count is how many (compose.h KD_LAYERS_OFF) */
     int row0, row_count;
