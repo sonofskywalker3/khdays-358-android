@@ -429,12 +429,12 @@ extern "C" void khdays_ui_obtained_end(void)
 }
 extern "C" void khdays_ui_obtained_commands(KhdaysSequenceImage *out)
 {
-    *out = notices[0].program;
+    khdays_sequence_copy(out, &notices[0].program);
 }
 extern "C" void khdays_ui_notification_commands(KhdaysSequenceImage *out)
 {
     for (int k = 1; k <= 3; ++k)
-        out[k - 1] = notices[k].program;
+        khdays_sequence_copy(&out[k - 1], &notices[k].program);
 }
 extern "C" int khdays_ui_notification_enabled(int kind)
 {

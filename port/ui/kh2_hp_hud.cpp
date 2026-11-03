@@ -231,7 +231,7 @@ extern "C" void khdays_ui_kh2_hp_reference(int reference)
 
 extern "C" void khdays_ui_kh2_hp_commands(KhdaysSequenceImage *out)
 {
-    *out = program;
+    khdays_sequence_copy(out, &program);
 }
 
 extern "C" int khdays_ui_kh2_hp_cell(int screen, int bg, const KhdaysBgLayer *layer, unsigned entry)

@@ -677,9 +677,22 @@ static void capture_3d(KhdaysFramePackage *p)
         }
     }
     khdays_textures_mark(&p->list3d); /* the textures drawn instead (HD graphics) */
-    khdays_reticles_commands(&p->list3d, p->sequence3d_images);
-    khdays_heart_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT);
-    khdays_prize_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS);
+    {
+        /* no native sequence in the list (no KH2 piece shown): none to look for, program by program, through it */
+        int sequences = 0;
+        for (int i = 0; i < p->list3d.npolys && !sequences; ++i) {
+            sequences = (p->list3d.polys[i].flags & KHDAYS_G3D_SEQUENCE) != 0;
+        }
+        if (sequences) {
+            khdays_reticles_commands(&p->list3d, p->sequence3d_images);
+            khdays_heart_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT);
+            khdays_prize_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS);
+        } else {
+            for (unsigned i = 0; i < KSI_3D_PROGRAMS; ++i) {
+                khdays_sequence_clear(&p->sequence3d_images[i]);
+            }
+        }
+    }
     p->list3d_serial = list3d_serial;
     p->list3d_time = list3d_time;
     p->list3d_cut = (uint8_t)list3d_cut;
@@ -1152,12 +1165,18 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
     }
     p->frame = frame;
     p->sequence_image.words[KSI_COUNT] = 0;
-    memset(p->information_images, 0, sizeof(p->information_images));
-    memset(&p->obtained_image, 0, sizeof(p->obtained_image));
-    memset(p->notification_images, 0, sizeof(p->notification_images));
-    memset(&p->mission_panel_image, 0, sizeof(p->mission_panel_image));
-    memset(p->minimap_images, 0, sizeof(p->minimap_images));
-    memset(&p->radar_image, 0, sizeof(p->radar_image));
+    for (int i = 0; i < 2; ++i) {
+        khdays_sequence_clear(&p->information_images[i]);
+    }
+    khdays_sequence_clear(&p->obtained_image);
+    for (int i = 0; i < 3; ++i) {
+        khdays_sequence_clear(&p->notification_images[i]);
+    }
+    khdays_sequence_clear(&p->mission_panel_image);
+    for (int i = 0; i < 4; ++i) {
+        khdays_sequence_clear(&p->minimap_images[i]);
+    }
+    khdays_sequence_clear(&p->radar_image);
     p->mission_panel_state = 0;
     p->mission_panel_backdrop = -1;
     p->information_hold_frames = 0;

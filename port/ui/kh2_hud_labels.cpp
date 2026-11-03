@@ -434,5 +434,5 @@ extern "C" void khdays_ui_kh2_labels_emit(void)
 extern "C" void khdays_ui_kh2_labels_commands(KhdaysSequenceImage out[5])
 {
     for (int i = 0; i < 5; ++i)
-        out[i] = labels[i].program;
+        khdays_sequence_copy(&out[i], &labels[i].program);
 }

@@ -368,7 +368,7 @@ void runtime()
     expect(emitted.size() == 2 && masked[0] == 36 && masked[1] == 9 && !masked[2] && !masked[3],
            "valid slots replace exactly their own tiles; missing/disabled slots fall back");
     expect(reads == 0 && uploads == 0 && atlases == 2, "live GPU path uploads atlases only once");
-    KhdaysSequenceImage programs[4];
+    KhdaysSequenceImage programs[4] = {};
     khdays_ui_kh2_portrait_commands(programs);
     expect(programs[0].words[KSI_COUNT] == 1 && programs[1].words[KSI_COUNT] == 1 && programs[2].words[KSI_COUNT] == 0,
            "per-slot GPU programs");
@@ -448,7 +448,7 @@ void party_runtime()
         collect_party(frame);
     expect(allocations == before && uploads == uploads_before,
            "live party gauges allocated or uploaded pixels repeatedly");
-    KhdaysSequenceImage programs[3];
+    KhdaysSequenceImage programs[3] = {};
     khdays_ui_kh2_party_commands(programs);
     expect(programs[0].words[KSI_COUNT] > 0 && programs[1].words[KSI_COUNT] > 0 && programs[2].words[KSI_COUNT] > 0,
            "party GPU programs were not independent");
@@ -460,7 +460,7 @@ void party_runtime()
            "damage trail did not retain the previous bar extent");
     paused = 1;
     collect_party(21);
-    KhdaysSequenceImage frozen[3];
+    KhdaysSequenceImage frozen[3] = {};
     khdays_ui_kh2_party_commands(frozen);
     expect(std::memcmp(programs, frozen, sizeof(programs)) == 0, "paused party gauge changed its animation");
     paused = 0;
@@ -568,7 +568,7 @@ void labels_runtime()
     expect(khdays_ui_kh2_label_cell(0, 173) && !khdays_ui_kh2_label_cell(0, 64) &&
                khdays_ui_kh2_label_cell(4, 0x7180) && !khdays_ui_kh2_label_cell(4, 173),
            "label suppression affects unrelated HUD tiles");
-    KhdaysSequenceImage programs[5];
+    KhdaysSequenceImage programs[5] = {};
     khdays_ui_kh2_labels_commands(programs);
     expect(programs[0].words[KSI_COUNT] && !programs[1].words[KSI_COUNT] && programs[2].words[KSI_COUNT] &&
                !programs[3].words[KSI_COUNT] && bool(programs[4].words[KSI_COUNT]) == !native_limit,
@@ -581,7 +581,7 @@ void labels_runtime()
     khdays_ui_kh2_labels_commands(programs);
     paused = 1;
     collect_labels(42);
-    KhdaysSequenceImage frozen[5];
+    KhdaysSequenceImage frozen[5] = {};
     khdays_ui_kh2_labels_commands(frozen);
     expect(std::memcmp(programs, frozen, sizeof(programs)) == 0, "paused label animation advanced");
     paused = 0;

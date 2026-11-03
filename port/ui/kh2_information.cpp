@@ -577,7 +577,7 @@ extern "C" void khdays_ui_information_end(void)
 extern "C" void khdays_ui_information_commands(KhdaysSequenceImage out[2])
 {
     for (int i = 0; i < 2; ++i)
-        out[i] = windows[std::size_t(i)].program;
+        khdays_sequence_copy(&out[i], &windows[std::size_t(i)].program);
 }
 extern "C" unsigned khdays_ui_information_hold_frames(void)
 {

@@ -250,7 +250,7 @@ extern "C" void khdays_ui_kh2_enemy_emit(void)
 }
 extern "C" void khdays_ui_kh2_enemy_commands(KhdaysSequenceImage *out)
 {
-    *out = program;
+    khdays_sequence_copy(out, &program);
 }
 
 extern "C" int khdays_ui_kh2_enemy_ready(void)

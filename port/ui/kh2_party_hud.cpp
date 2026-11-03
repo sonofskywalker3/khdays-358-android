@@ -339,5 +339,5 @@ extern "C" int khdays_ui_kh2_party_compose(int slot, const KhdaysUiElement *face
 extern "C" void khdays_ui_kh2_party_commands(KhdaysSequenceImage out[3])
 {
     for (std::size_t i = 0; i < slots.size(); ++i)
-        out[i] = slots[i].program;
+        khdays_sequence_copy(&out[i], &slots[i].program);
 }

@@ -48,5 +48,25 @@
 typedef struct KhdaysSequenceImage {
     unsigned words[KSI_WORDS];
 } KhdaysSequenceImage;
+
+/* Its header and its quads alone (12 KB a whole one, and most frames have none: the words past its count are never
+ * read). */
+static inline void khdays_sequence_copy(KhdaysSequenceImage *to, const KhdaysSequenceImage *from)
+{
+    const unsigned count = from->words[KSI_COUNT] > KSI_MAX_QUADS ? KSI_MAX_QUADS : from->words[KSI_COUNT];
+    const unsigned words = KSI_HEADER + count * KSI_QUAD_WORDS;
+    for (unsigned i = 0; i < words; ++i) {
+        to->words[i] = from->words[i];
+    }
+    to->words[KSI_COUNT] = from->words[KSI_COUNT];
+}
+
+/* No commands: its header cleared. */
+static inline void khdays_sequence_clear(KhdaysSequenceImage *image)
+{
+    for (unsigned i = 0; i < KSI_HEADER; ++i) {
+        image->words[i] = 0;
+    }
+}
 #endif
 #endif

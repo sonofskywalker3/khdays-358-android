@@ -853,7 +853,7 @@ extern "C" int khdays_ui_mission_panel_cell(int engine, int bg, int x, int y)
 }
 extern "C" void khdays_ui_mission_panel_commands(KhdaysSequenceImage *out)
 {
-    *out = program;
+    khdays_sequence_copy(out, &program);
 }
 extern "C" unsigned khdays_ui_mission_panel_state(void)
 {

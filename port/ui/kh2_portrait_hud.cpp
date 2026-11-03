@@ -300,5 +300,5 @@ extern "C" void khdays_ui_kh2_portrait_emit(void)
 extern "C" void khdays_ui_kh2_portrait_commands(KhdaysSequenceImage out[4])
 {
     for (std::size_t i = 0; i < slots.size(); ++i)
-        out[i] = slots[i].program;
+        khdays_sequence_copy(&out[i], &slots[i].program);
 }

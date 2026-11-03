@@ -599,9 +599,10 @@ extern "C" int khdays_minimap_cell(int engine, int bg, unsigned entry)
 }
 extern "C" void khdays_minimap_commands(KhdaysSequenceImage *out)
 {
-    std::copy(programs.begin(), programs.end(), out);
+    for (std::size_t i = 0; i < programs.size(); ++i)
+        khdays_sequence_copy(&out[i], &programs[i]);
 }
 extern "C" void khdays_minimap_radar_commands(KhdaysSequenceImage *out)
 {
-    *out = radar_program;
+    khdays_sequence_copy(out, &radar_program);
 }
