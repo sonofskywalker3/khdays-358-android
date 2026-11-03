@@ -432,6 +432,33 @@ int main(int argc, char **argv)
             lists_checked += 1;
             failures += !same_with_sprite_lists(p, names[f]);
         }
+        if (gpu2d && (p->wants & KHDAYS_WANT_2D) && SDL_getenv("KHDAYS_RENDER_2D3D_OUT") != NULL &&
+            khdays_gfx_render_draw(p, 2, 0)) {
+            /* both screens' 2D at 2x, raw, to compare builds */
+            for (int e = 0; e < 2; ++e) {
+                int w = 0, h = 0;
+                uint32_t *pixels = khdays_gfx_render_read(e, &w, &h);
+                char name[1200];
+                SDL_snprintf(name, sizeof(name), "%s/%s.2d%d.raw", SDL_getenv("KHDAYS_RENDER_2D3D_OUT"), names[f], e);
+                if (pixels != NULL) {
+                    SDL_SaveFile(name, pixels, sizeof(uint32_t) * (size_t)w * (size_t)h);
+                    SDL_free(pixels);
+                }
+            }
+        }
+        if (gpu2d && (p->wants & KHDAYS_WANT_2D) && (p->wants & KHDAYS_WANT_3D) && p->info[0].is3d &&
+            SDL_getenv("KHDAYS_RENDER_2D3D_OUT") != NULL && khdays_raster3d_rasterize(p, 2, 0) &&
+            khdays_gfx_render_draw(p, 2, 1)) {
+            /* engine A's 2D over its 3D at 2x, raw, to compare builds */
+            int w = 0, h = 0;
+            uint32_t *pixels = khdays_gfx_render_read(0, &w, &h);
+            char name[1200];
+            SDL_snprintf(name, sizeof(name), "%s/%s.raw", SDL_getenv("KHDAYS_RENDER_2D3D_OUT"), names[f]);
+            if (pixels != NULL) {
+                SDL_SaveFile(name, pixels, sizeof(uint32_t) * (size_t)w * (size_t)h);
+                SDL_free(pixels);
+            }
+        }
         SDL_free(data);
     }
 
