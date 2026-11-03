@@ -159,6 +159,10 @@ int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x,
     /* the DS dot under the picture pixel's middle, as the picture is drawn */
     *ds_x = (2 * (v & COL_MASK) + 1) * KHDAYS_LOWER_DS_W / (2 * layout->src_w);
     *ds_y = (2 * (v >> COL_BITS) + 1) * KHDAYS_LOWER_DS_H / (2 * layout->src_h);
+    if (layout->screen == KHDAYS_LOWER_MISSIONS) {
+        /* the longer scroll track: its whole length for the game's, not the plain row its added rows show */
+        khdays_lower_list_track_touch(*ds_x, (float)y / (float)layout->height, ds_y);
+    }
     return 1;
 }
 

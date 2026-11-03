@@ -456,6 +456,8 @@ static void test_missions_seam(void)
     CHECK(rows == DS_H + 32);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
     CHECK(shows(&l, 160.5f, 100.5f, &x, &y) && x == 166); /* the nearest plain on them too */
+    /* a touch low on the longer scroll track: low on the game's, not the plain row shown there */
+    CHECK(khdays_lower_touch(&l, 240 * SCALE, 190 * SCALE, &x, &y) && x >= 222 && y > 150);
     /* a touch on the next entry: past the DS's rows */
     CHECK(khdays_lower_touch(&l, 60 * SCALE, 190 * SCALE, &x, &y) && y >= DS_H);
     khdays_lower_free(&l);

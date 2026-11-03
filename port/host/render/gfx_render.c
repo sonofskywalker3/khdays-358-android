@@ -1642,7 +1642,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     if (rows_count > 0 && p->upper == 0 && one == NULL) {
         /* the lower screen's (engine B's) rows asked for, apart from the DS's own */
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[4];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         if (rows_texture == NULL || rows_scale != scale) {
@@ -1674,7 +1674,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
             io[1].texture = dummy3d[1];
             io[2].texture = rows_texture;
             io[2].cycle = true;
-            pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+            io[3].texture = layers1x[1]; /* (bound for the pipeline; no rows of it are read: layers1x_rows 0) */
+            pass = SDL_BeginGPUComputePass(cmd, io, 4, NULL, 0);
             SDL_BindGPUComputePipeline(pass, compose);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
             SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1696,7 +1697,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     for (int i = 0; i < shop_count; ++i) {
         const int s = shop_s[i], v = shop_v[i], b = engine_on(p, s) == 1;
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[4];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         SDL_zero(cp);
@@ -1718,7 +1719,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[1].texture = dummy3d[1];
         io[2].texture = shop_screen[s][v];
         io[2].cycle = true;
-        pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+        io[3].texture = layers1x[b]; /* (bound for the pipeline; no rows of it are read: layers1x_rows 0) */
+        pass = SDL_BeginGPUComputePass(cmd, io, 4, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));

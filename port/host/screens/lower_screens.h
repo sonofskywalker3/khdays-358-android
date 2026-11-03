@@ -28,6 +28,9 @@ struct KhdaysLowerPlace {
 };
 
 /* KHDAYS_LOWER_* of the DS's pixels (lower_layout.h khdays_lower_sample). */
+/* A touch `at` (0 to 1) down a list on the display, on its scroll track from DS column ds_x: the row of the game's. */
+void khdays_lower_list_track_touch(int ds_x, float at, int *ds_y);
+
 int khdays_lower_screens_tell(const uint32_t *ds, int ds_rows);
 
 /* Fills `place` for `screen` on a picture out_h DS dots high, and `key` with what it measured; 0 when

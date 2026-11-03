@@ -492,6 +492,13 @@ static int list_seam(const uint32_t *ds, int ds_rows)
     return seam;
 }
 
+void khdays_lower_list_track_touch(int ds_x, float at, int *ds_y)
+{
+    if (ds_x >= LIST_TRACK0 && ds_x < LIST_TRACK1) {
+        *ds_y = (int)(at * (float)H);
+    }
+}
+
 static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
 {
     const float e = p->extra;
