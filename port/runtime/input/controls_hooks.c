@@ -22,6 +22,11 @@ extern int GetEntryField20ByIndex(int idx);
 static KhdaysGameControls game;
 static int tracing = -1;
 
+void khdays_controls_deck_press_taken(void)
+{
+    --game.deck_press_a;
+}
+
 const KhdaysGameControls *khdays_controls_state(void)
 {
     return &game;
@@ -125,6 +130,64 @@ void khdays_trace_selection_after(int flags, int active, int selected, int value
 
 /* ---- The command menu (Ov022_UpdateCommandInput) -------------------------- */
 
+extern void Ov002_PanelApplyCursorMove(int from, int to);
+extern int Ov002_GetPanelField018c(void);
+extern int PlaySound(int kind, int sound);
+
+#define PANEL_SESSION 0x0207f620u /* data_ov002_0207f620: the deck's cursor */
+#define PANEL_CONTEXT 0x0207f614u /* data_ov002_0207f614 */
+#define SESSION_ROW 0x0u          /* bKind: the row the cursor is on */
+#define SESSION_MODE 0x1u         /* bMode: 0, the deck's own rows */
+#define SESSION_ROWS 0x18u        /* bSlotCount */
+#define SESSION_SLOTS 0x1au       /* aSlots, u16 each; 7 an empty row */
+#define CONTEXT_TARGET 0x1a8u     /* pTarget: the cursor moves only with one (Ov002_PanelCursorNext) */
+#define EMPTY_ROW 7u
+
+static u8 deck_tap_serial;
+
+static u32 deck_rd32(u32 address)
+{
+    return *(const volatile u32 *)KHDAYS_W(address);
+}
+
+static u32 deck_rd16(u32 address)
+{
+    return *(const volatile u16 *)KHDAYS_W(address);
+}
+
+static u32 deck_rd8(u32 address)
+{
+    return *(const volatile u8 *)KHDAYS_W(address);
+}
+
+/* A tap on one of the on-screen deck's rows: to that row, as X would have gone there (Ov002_PanelCursorNext's own
+ * checks and sound); on the row the cursor is on already, A. */
+static void command_tap(const KhdaysInputSnapshot *in)
+{
+    u32 session, context;
+    int row;
+    if (in->deck_tap_serial == deck_tap_serial) {
+        return;
+    }
+    deck_tap_serial = in->deck_tap_serial;
+    session = deck_rd32(PANEL_SESSION);
+    context = deck_rd32(PANEL_CONTEXT);
+    if (session == 0u || context == 0u || deck_rd8(session + SESSION_MODE) != 0u) {
+        return; /* a list of the deck's open: the buttons move through it */
+    }
+    row = in->deck_tap_row;
+    if (row >= deck_rd8(session + SESSION_ROWS) ||
+        deck_rd16(session + SESSION_SLOTS + 2u * (u32)row) == EMPTY_ROW) {
+        return;
+    }
+    if (row == deck_rd8(session + SESSION_ROW)) {
+        game.deck_press_a = 2; /* its game frames: the press, and one to let the game see it go */
+    } else if (Ov002_GetPanelField018c() != 0 && deck_rd32(context + CONTEXT_TARGET) != 0u) {
+        Ov002_PanelApplyCursorMove(deck_rd8(session + SESSION_ROW), row);
+        PlaySound(0, 0);
+    }
+}
+
 void khdays_controls_command_input(int scheme, int panel_open, int menu_state, int held, int pressed, int menu0,
                                    int menu1, int deck_word)
 {
@@ -133,6 +196,7 @@ void khdays_controls_command_input(int scheme, int panel_open, int menu_state, i
     game.command_scheme = scheme;
     if (!panel_open) {
         game.command_input_frame = khdays_input_game_frames();
+        command_tap(khdays_input_snapshot());
     }
     if (now != last || deck_word != last_deck || (pressed & 0xfff) != 0) {
         trace("command in: scheme %d panel %d menu state %d menu %d/%d held %04x pressed %04x deck word %04x", scheme,

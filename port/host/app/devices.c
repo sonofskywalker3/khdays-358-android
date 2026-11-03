@@ -21,6 +21,8 @@ typedef struct Pad {
 
 static KhdaysProfile profile;
 static KhdaysPublish publish;
+static void (*touch_apply)(const KhdaysProfile *profile, KhdaysInputSnapshot *snapshot);
+static void (*touch_relayout)(void);
 static KhdaysDeviceState state;
 static KhdaysInputSnapshot snapshot;
 static int game_input = 1;    /* 0 while the settings menu has the input */
@@ -92,6 +94,9 @@ static void send(void)
 {
     snapshot.ui_open = 0;
     khdays_bindings_resolve(&profile, &state, &snapshot);
+    if (touch_apply != NULL) {
+        touch_apply(&profile, &snapshot);
+    }
     if (!game_input) {
         /* The settings menu has the input: the game sees nothing held. */
         memset(&snapshot, 0, sizeof(snapshot));
@@ -102,9 +107,22 @@ static void send(void)
     }
 }
 
+void khdays_devices_set_touch(void (*apply)(const KhdaysProfile *profile, KhdaysInputSnapshot *snapshot),
+                              void (*relayout)(void))
+{
+    touch_apply = apply;
+    touch_relayout = relayout;
+}
+
+void khdays_devices_resend(void)
+{
+    send();
+}
+
 void khdays_devices_init(const KhdaysProfile *p, KhdaysPublish to)
 {
     profile = *p;
+    khdays_hud_layout_set(p->hud_layout.custom ? p->hud_layout.place : NULL);
     khdays_hud_settings_publish(p->enh.hud);
     publish = to;
     khdays_bindings_reset(&state);
@@ -113,6 +131,10 @@ void khdays_devices_init(const KhdaysProfile *p, KhdaysPublish to)
 
 void khdays_devices_set_profile(const KhdaysProfile *p)
 {
+    khdays_hud_layout_set(p->hud_layout.custom ? p->hud_layout.place : NULL);
+    if (touch_relayout != NULL) {
+        touch_relayout();
+    }
     profile = *p;
     khdays_hud_settings_publish(p->enh.hud);
     send();

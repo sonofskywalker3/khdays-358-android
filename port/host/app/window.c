@@ -23,6 +23,10 @@
 #include "../settings/settings_model.h"
 #include "../settings/settings_sample.h"
 #include "../settings/settings_ui.h"
+#include "../touch/touch_overlay.h"
+#include "../screens/layout_editor_screen.h"
+#include "../screens/layout_demo.h"
+#include "../../ui/layout_editor.h"
 #include "../screens/cine_screen.h"
 #include "../screens/day_screen.h"
 #include "../movies/theater_music.h"
@@ -424,11 +428,15 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     for (int i = 0; i < mod_notice_count; ++i) {
         khdays_settings_corner_draw(renderer, mod_notices[i].line, corner_rows + i);
     }
+    if (!khdays_touch_draw(renderer)) { /* the on-screen controls, with a gear of their own */
 #if defined(__ANDROID__)
-    khdays_touch_gear_draw(renderer); /* the settings key a touch screen taps */
+        khdays_touch_gear_draw(renderer); /* the settings key a touch screen taps */
 #endif
+    }
     khdays_movie_pause_draw(renderer);
+    khdays_layout_editor_draw(renderer);
     khdays_settings_draw(renderer, window);
+    khdays_layout_demo_frame(renderer);
     drawn = SDL_GetTicksNS();
     SDL_RenderPresent(renderer);
     khdays_present_redraw_took(drawn - began, SDL_GetTicksNS() - drawn); /* (the shop's timings) */
@@ -569,6 +577,7 @@ static void open_update_notice(const char *tag)
 }
 
 static void close_settings(void);
+static void resume_game_after_menu(void);
 
 /* The menu has closed: acts on the update notice's answer, and closes the game once the update's
  * installer runs (it replaces the game's files). */
@@ -651,6 +660,11 @@ static void close_settings(void)
     /* Whatever is still held (the button that closed the menu) only counts for
      * the game once it has been released, and the settings button that closed
      * the menu does not reopen it. */
+    resume_game_after_menu();
+}
+
+static void resume_game_after_menu(void)
+{
     khdays_devices_set_game_input(1);
     (void)khdays_devices_take_settings_request();
     if (settings_stopped) {
@@ -799,7 +813,9 @@ static int host_thread(void *unused)
         SDL_SignalSemaphore(ready);
         return 1;
     }
+    khdays_devices_set_touch(khdays_touch_apply, khdays_touch_relayout);
     khdays_devices_init(&profile, publish);
+    khdays_layout_demo_start(window);
     khdays_settings_set_graphics_card(khdays_present_gpu());
     tell_game();
     khdays_updates_start(profile.network.check_updates); /* in the background; told of on the title */
@@ -1034,10 +1050,44 @@ static int host_thread(void *unused)
                 continue;
             }
             apply_changes();
+            if (khdays_editor_take_request()) {
+                /* out of the menu, the game still stopped under the layout editor */
+                close_settings();
+                stop_game_for_menu();
+                khdays_layout_editor_open(renderer);
+                redraw(window, renderer);
+                continue;
+            }
             if (!SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST) || SDL_GetTicks() - drawn_at >= 16) {
                 redraw(window, renderer);
                 drawn_at = SDL_GetTicks();
             }
+            continue;
+        }
+        if (khdays_layout_demo_event(&event)) {
+            if (khdays_editor_take_request() && !khdays_layout_editor_is_open()) {
+                stop_game_for_menu();
+                khdays_layout_editor_open(renderer);
+            }
+            redraw(window, renderer);
+            continue;
+        }
+        if (khdays_layout_editor_is_open()) {
+            int changed = 0, moved = 0;
+            const int closed = khdays_layout_editor_event(&event, renderer, &changed, &moved);
+            khdays_devices_handle(&event, renderer);
+            if (changed) {
+                char path[512];
+                khdays_settings_path(path, sizeof(path));
+                khdays_profile_save(khdays_devices_profile(), path, notice);
+            }
+            if (moved) {
+                khdays_present_refresh_now();
+            }
+            if (closed) {
+                resume_game_after_menu();
+            }
+            redraw(window, renderer);
             continue;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.scancode == SDL_SCANCODE_F12) {
@@ -1050,7 +1100,16 @@ static int host_thread(void *unused)
             khdays_devices_handle(&event, renderer);
             continue;
         }
+        if (khdays_touch_event(&event, renderer)) {
+            if (khdays_touch_take_settings()) {
+                khdays_touch_release();
+                settings_key();
+                redraw(window, renderer);
+            }
+            continue;
+        }
         if (opens_settings(&event, renderer)) {
+            khdays_touch_release();
             settings_key();
             redraw(window, renderer);
             continue;

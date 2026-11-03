@@ -380,7 +380,6 @@ else()
             host/app/update_install_android.c    # the update's APK put in place by Android's installer
             host/android/app_class.c
             host/android/game_surface.c          # frames presented only while the game's surface is there
-            host/android/touch_gear.c            # the settings key a touch screen taps
             host/android/media_folder.c          # the player's folder for the mods and HD videos
             host/android/saves_folder.c)         # the save files in a folder of the player's own
     else()
@@ -545,6 +544,10 @@ endif()
 add_library(khdays-host-input STATIC
     host/app/profile.c
     host/app/bindings.c
+    ui/hud_layout.c                  # the HUD's groups and their places
+    ui/layout_editor.c               # dragging them
+    host/touch/touch_layout.c        # the on-screen controls: their places,
+    host/touch/touch_input.c         # what the fingers hold,
     host/app/devices.c
     host/settings/settings_model.c        # the settings menu: its content,
     host/settings/settings_menu.cpp       # its screen in Dear ImGui,
@@ -740,6 +743,10 @@ target_sources(khdays-native PRIVATE
     host/render/gfx_render.c
     host/render/kh2_sequence_gpu.c
     host/render/onescreen.c               # the one picture's situation and composition
+    host/android/touch_gear.c             # the settings key a touch screen taps
+    host/touch/touch_overlay.c            # the on-screen controls on the screen
+    host/screens/layout_editor_screen.c   # moving the HUD's groups and those controls
+    host/screens/layout_demo.c            # ... with no one at the mouse, for a film of it
     host/render/onescreen_images.c
     host/screens/layout_screen.c           # the port's screens drawn from a mod's pieces
     host/screens/save_screen.c             # the port's save list on the screen
@@ -1066,7 +1073,7 @@ target_compile_options(khdays-mod-polygon-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-mod-polygon COMMAND khdays-mod-polygon-test)
 # The one-screen picture: the compositions' places and the port's own file, the pass's steps and the 2D
 # apart from the 3D, on the CPU.
-add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/situation.c ui/situation_decide.c
+add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/hud_layout.c ui/situation.c ui/situation_decide.c
                                      host/render/png_io.c host/render/onescreen_images.c)
 target_include_directories(khdays-onescreen-test PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(khdays-onescreen-test PRIVATE khdays-gfx SDL3::SDL3)
@@ -1126,6 +1133,11 @@ add_executable(khdays-lower-layout-test tests/lower_layout_test.c host/screens/l
                                         host/screens/lower_pages.c)
 target_compile_options(khdays-lower-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-lower-layout COMMAND khdays-lower-layout-test)
+
+# The on-screen controls' places and what fingers hold (host/touch/).
+add_executable(khdays-touch-test tests/touch_test.c host/touch/touch_layout.c host/touch/touch_input.c ui/hud_layout.c ui/layout_editor.c)
+target_link_libraries(khdays-touch-test PRIVATE SDL3::SDL3)
+add_test(NAME khdays-touch COMMAND khdays-touch-test)
 
 add_executable(khdays-select-pages-test tests/select_pages_test.c runtime/menus/select_pages.c)
 target_compile_options(khdays-select-pages-test PRIVATE /W4 /std:c17)

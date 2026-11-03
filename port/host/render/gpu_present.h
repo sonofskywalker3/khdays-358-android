@@ -62,6 +62,9 @@ int khdays_present_refresh_backdrop(void);
 int khdays_present_settling(void);
 int khdays_present_refresh_settling(void);
 
+/* The newest package drawn again now, for what its picture's composition depends on having changed. */
+void khdays_present_refresh_now(void);
+
 /* Whether the latest one-screen picture has a settings button of its own (an animated backdrop's
  * `button open_settings`), and whether a window point (SDL's mouse coordinates) is on one. */
 int khdays_present_settings_button(void);

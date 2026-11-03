@@ -1202,6 +1202,13 @@ int khdays_present_settling(void)
     return latest != NULL && video.one_screen && khdays_onescreen_settling(latest);
 }
 
+void khdays_present_refresh_now(void)
+{
+    if (latest != NULL) {
+        present(latest, 0);
+    }
+}
+
 int khdays_present_refresh_settling(void)
 {
     static uint32_t refreshed_at;

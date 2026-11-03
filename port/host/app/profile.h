@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include "hud_settings.h"
+#include "../../ui/hud_layout.h"
 
 #ifdef __cplusplus
 extern "C" { /* the settings menu is C++ (settings_menu.cpp) */
@@ -279,6 +280,34 @@ typedef struct KhdaysModsSettings {
     int native_code; /* 0 (the default): no plugin is loaded; 1: they are, the player having been told */
 } KhdaysModsSettings;
 
+/* The on-screen controls ([touch] in the settings file): on a touch screen, one picture. */
+typedef enum KhdaysTouchMode {
+    KHDAYS_TOUCH_OFF,
+    KHDAYS_TOUCH_ON,
+    KHDAYS_TOUCH_WITHOUT_PAD, /* hidden while a controller is what is played */
+    KHDAYS_TOUCH_MODES
+} KhdaysTouchMode;
+
+#define KHDAYS_TOUCH_CONTROLS_KEPT 9 /* host/touch/touch_layout.h KHDAYS_TOUCH_CONTROLS */
+
+typedef struct KhdaysTouch {
+    int mode;      /* KhdaysTouchMode */
+    int layout;    /* host/touch/touch_layout.h KHDAYS_TOUCH_LAYOUT_*: A, C or the player's own */
+    int opacity;   /* percent, 20..100 */
+    int size;      /* percent of the default size, 60..160 */
+    int vibration; /* a short buzz at a press */
+    KhdaysHudPlace control[KHDAYS_TOUCH_CONTROLS_KEPT]; /* the player's own layout's: in points (host/touch/touch_layout.h) */
+} KhdaysTouch;
+
+/* The HUD's groups where the player put them ([hud_layout] in the settings file). */
+typedef struct KhdaysHudLayoutSettings {
+    int custom; /* 0: where the composition has them */
+    KhdaysHudPlace place[KHDAYS_HUD_GROUPS];
+} KhdaysHudLayoutSettings;
+
+/* Hidden with a controller, layout C. */
+void khdays_touch_default(KhdaysTouch *touch);
+
 typedef struct KhdaysProfile {
     int version;         /* 1 */
     int language;        /* the game's and this screen's language: 0 the system's, else 1..5 (ui_text.h) */
@@ -294,6 +323,8 @@ typedef struct KhdaysProfile {
     KhdaysSave save;
     KhdaysGameplay gameplay;
     KhdaysModsSettings mods;
+    KhdaysTouch touch;
+    KhdaysHudLayoutSettings hud_layout;
 } KhdaysProfile;
 
 /* The faithful default: today's keyboard layout, the DS layout on the

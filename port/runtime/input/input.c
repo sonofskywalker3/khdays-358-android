@@ -338,6 +338,10 @@ static u16 player_buttons(void)
     if (step.dpad_own) {
         buttons &= (u16)~dpad;
     }
+    if (game->deck_press_a > 0) {
+        buttons |= KHDAYS_KEY_A;
+        khdays_controls_deck_press_taken();
+    }
     return (u16)(buttons | step.buttons | lock_buttons);
 }
 

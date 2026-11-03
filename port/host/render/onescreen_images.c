@@ -1,4 +1,5 @@
 /* Independent HUD images keep their screen shape's priority and dimming without inheriting its crop. */
+#include "../../ui/hud_layout.h"
 #include "onescreen_images.h"
 #include "../../runtime/display/frame_package.h"
 #include "../../ui/hud_options.h"
@@ -157,14 +158,16 @@ void khdays_onescreen_images(const KhdaysFramePackage *p, const KhdaysSituation 
                 (p->mission_panel_state & 1u) && panel[KSI_ANCHORED] && panel[KSI_OUTPUT] == r[KE_IMAGE];
             if (information || mission) {
                 const float factor = khdays_composition_hud_factor(), scale = 0.766667f * factor;
+                float moved_x, moved_y; /* the player's layout (ui/hud_layout.h) */
+                khdays_hud_layout_offset(KHDAYS_HUD_MISSION, khdays_composition_columns(), &moved_x, &moved_y);
                 if (mission && panel[KSI_PANEL_ANCHOR] >= 1 && panel[KSI_PANEL_ANCHOR] <= 9) {
                     const unsigned anchor = panel[KSI_PANEL_ANCHOR] - 1;
                     const float ax = (float)(anchor % 3) * .5f, ay = (float)(anchor / 3) * .5f;
                     Picture *picture = &pictures[count++];
                     picture->owner = -1;
                     image_shape(&picture->shape, r, e != p->upper ? KOF_LOWER : 0,
-                                (float)khdays_composition_columns() * ax + (x - 256 * ax) * scale,
-                                192 * ay + (y - 192 * ay) * scale, w * scale, h * scale);
+                                (float)khdays_composition_columns() * ax + (x - 256 * ax) * scale + moved_x,
+                                192 * ay + (y - 192 * ay) * scale + moved_y, w * scale, h * scale);
                     continue;
                 }
                 if (mission) {
@@ -178,9 +181,9 @@ void khdays_onescreen_images(const KhdaysFramePackage *p, const KhdaysSituation 
                  * The element already contains gauge.json's offsets and the entire animation. */
                 Picture *picture = &pictures[count++];
                 picture->owner = information ? -2 : -1;
-                image_shape(&picture->shape, r, e != p->upper ? KOF_LOWER : 0, x * scale,
-                            ((p->hud_options & KHDAYS_HUD_ALIGN_EDGES) ? 0 : 5 * factor) + y * scale, w * scale,
-                            h * scale);
+                image_shape(&picture->shape, r, e != p->upper ? KOF_LOWER : 0, x * scale + moved_x,
+                            ((p->hud_options & KHDAYS_HUD_ALIGN_EDGES) ? 0 : 5 * factor) + y * scale + moved_y,
+                            w * scale, h * scale);
                 continue;
             }
             const uint32_t lower = e != p->upper ? KOF_LOWER : 0;

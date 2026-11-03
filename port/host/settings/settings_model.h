@@ -57,6 +57,7 @@ enum KhdaysCommand {
     KHDAYS_CMD_RESTORE_SOUND,
     KHDAYS_CMD_PRESET_DS,
     KHDAYS_CMD_PRESET_KH2,
+    KHDAYS_CMD_LAYOUT_EDIT, /* the screen that moves the HUD's groups */
     KHDAYS_CMD_OPEN_SETUP,  /* Android: the app's setup screen */
     KHDAYS_CMD_FILES_ROM,   /* Android: the setup screen's actions, straight away (media_folder.h) */
     KHDAYS_CMD_FILES_HD_IMPORT,
@@ -171,6 +172,12 @@ enum KhdaysSettingId {
     KHDAYS_SET_NATIVE_CODE,
     KHDAYS_SET_PLUGIN_HEADING,
     KHDAYS_SET_PLUGIN_STATE,
+    KHDAYS_SET_TOUCH,
+    KHDAYS_SET_TOUCH_LAYOUT,
+    KHDAYS_SET_TOUCH_OPACITY,
+    KHDAYS_SET_TOUCH_SIZE,
+    KHDAYS_SET_TOUCH_VIBRATION,
+    KHDAYS_SET_LAYOUT_EDIT,
     KHDAYS_SET_COUNT
 };
 

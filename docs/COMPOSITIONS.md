@@ -26,6 +26,13 @@ order while their conditions hold. Their lines:
 | `backdrop <file> [at <corner>] [fit]` | a picture of the mod's `layouts/` folder (PNG) behind everything, covering the picture (with `fit`, inside it: all of it shows at any aspect ratio), its aspect kept, held at the corner |
 | `preload <file>` | a picture named as a backdrop's is (and an animated one's atlas) read ahead on a thread of its own while its section holds, so showing it later holds nothing up |
 
+`group <name>` after a `shape` or a `shape3d` puts it in one of the HUD's groups: `mission`, `counter`,
+`map`, `countdown`, `deck` or `party` (`port/ui/hud_layout.h`). A layout of the player's moves a group as one,
+every shape in it by the same distance; a shape in no group stays where its line puts it. `port/ui/composition.c`
+is the one place a group's move reaches the picture: the groups, the places in the settings file and the screen
+that moves them (`port/ui/layout_editor.h`, `port/host/screens/layout_editor_screen.c`) know nothing of how pictures
+are made.
+
 A length is in the picture's DS dots at the HUD's scale (its factor, 1 at the
 default HUD size); `fixed(N)` is one that does not follow it, `A+fixed(B)` both.
 

@@ -19,6 +19,14 @@ void khdays_devices_init(const KhdaysProfile *profile, KhdaysPublish publish);
 void khdays_devices_set_profile(const KhdaysProfile *profile);
 const KhdaysProfile *khdays_devices_profile(void);
 
+/* The on-screen controls (host/touch/touch_overlay.h), when the game has them: `apply` adds what they hold to each
+ * snapshot, `relayout` hears of a new profile. Before khdays_devices_init. */
+void khdays_devices_set_touch(void (*apply)(const KhdaysProfile *profile, KhdaysInputSnapshot *snapshot),
+                              void (*relayout)(void));
+
+/* The snapshot made again and handed on (the on-screen controls changed what they hold). */
+void khdays_devices_resend(void);
+
 /* One SDL event. `renderer` maps the mouse onto the DS screens. */
 void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer);
 

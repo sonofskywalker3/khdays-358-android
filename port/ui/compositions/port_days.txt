@@ -40,17 +40,17 @@ hide3d hud
 # at 0.75, the mission's panel and what is under it moving down 20 to make room
 # for it while it shows (`push`, below), easing there and back.
 [field if hud info-new !mod-menu-overhaul !information-mod]
-shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0 group mission
 [field if hud info-new mod-menu-overhaul !information-mod]
-shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0 group mission
 
 # The mission's information the upper screen shows at its start (the same
 # banner, the upper screen's 0,0-256,24, fading out at the DS's edge), in the
 # same place: the game takes it away after about five seconds.
 [field if info-upper mission-panel !mod-menu-overhaul !information-mod]
-shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
+shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0 group mission
 [field if info-upper mission-panel mod-menu-overhaul !information-mod]
-shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0
+shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0 group mission
 
 # The mission's panel (the lower screen's 4,152-252,192) at the top left,
 # scale 0.75; the backdrop around its bevelled corners (8-bit 36 36 36) made
@@ -62,16 +62,16 @@ shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0
 # mission's start, before the game draws the rest of its HUD; in a story's
 # challenge too, whose lower screen is a mission's.
 [field if mission-panel !dialog !mod-menu-overhaul !mission-panel-mod]
-shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
-shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
+shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 group mission
+shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 group mission
 [field if mission-panel !dialog mod-menu-overhaul !mission-panel-mod]
-shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
-shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
+shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12 group mission
+shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12 group mission
 
 # The enemy's health first, above the map: at the top right, the map in the
 # same corner under it (as Kingdom Hearts II has them).
 [field if hud]
-shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
+shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667 group map
 
 # The map, as Kingdom Hearts II has it: a window of 104 x 64 in the middle of
 # its box (112,64-216,128; the game keeps the map scrolled to the player
@@ -80,8 +80,8 @@ shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
 # -- with the panel's black, stretched, half seen through behind it, 3 larger
 # on each side, both fading out at their edges.
 [field if mission-panel !dialog]
-shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 see-through 232 232 240 0.55 fade 4 4 4 4
-shape lower 186 156 2 12 at top-right margin 0 3 3 0 scale 33.2 3.533333 see-through 0 0 0 0.5 fade 6 6 6 6
+shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 see-through 232 232 240 0.55 fade 4 4 4 4 group map
+shape lower 186 156 2 12 at top-right margin 0 3 3 0 scale 33.2 3.533333 see-through 0 0 0 0.5 fade 6 6 6 6 group map
 
 [field if info-upper]
 stop
@@ -99,24 +99,24 @@ stop
 # 3D, ends its digits (Ov002_SceneStepPanelHud draws them leftwards from it).
 # At the 2D shapes' scale, so that it stays under the panel at every HUD size.
 [field if hud !mod-menu-overhaul]
-shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
-shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667
+shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667 group counter
+shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667 group counter
 [field if hud mod-menu-overhaul]
-shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667 push info-new|info-upper 0 20 12
-shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667 push info-new|info-upper 0 20 12
+shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667 push info-new|info-upper 0 20 12 group counter
+shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667 push info-new|info-upper 0 20 12 group counter
 [field if hud]
 # the countdown and the lock-on, at the top in the middle
-shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667
+shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667 group countdown
 # the sigils and the death counter under the map
-shape upper 163 25 93 30 at top-right margin 0 47.333333 5 0 scale 0.666667
+shape upper 163 25 93 30 at top-right margin 0 47.333333 5 0 scale 0.666667 group map
 # the command deck (with the reaction command above it) at the bottom left
-shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333
+shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333 group deck
 # the player's health and the allies' (their rows from y 84, from y 64 with
 # four members), at the bottom right
 [field if hud !party-4]
-shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667
+shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667 group party
 [field if hud party-4]
-shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
+shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667 group party
 
 # ----------------------------------------------------------------------------
 # Sora's memories: the 3D on both screens, the lower screen showing a picture
@@ -147,23 +147,23 @@ brightness upper
 [field-3d-both if !hud]
 hide3d hud
 [field-3d-both if hud info-new !mod-menu-overhaul !information-mod]
-shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0 group mission
 [field-3d-both if hud info-new mod-menu-overhaul !information-mod]
-shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0 group mission
 [field-3d-both if hud]
-shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
+shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667 group counter
 [field-3d-both if info-upper]
 stop
 [field-3d-both if hud]
-shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667
-shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667
-shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
-shape upper 163 25 93 30 at top-right margin 0 27 5 0 scale 0.666667
-shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333
+shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667 group counter
+shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667 group countdown
+shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667 group map
+shape upper 163 25 93 30 at top-right margin 0 27 5 0 scale 0.666667 group map
+shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333 group deck
 [field-3d-both if hud !party-4]
-shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667
+shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667 group party
 [field-3d-both if hud party-4]
-shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
+shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667 group party
 
 # ----------------------------------------------------------------------------
 # The field's dialogs (an event's text, a person's words): the upper screen
@@ -217,7 +217,7 @@ shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 
 [pause if !event mod-menu-overhaul !information-mod]
 shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 key 16 16 16
 [pause if !event]
-shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4
+shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4 group map
 [pause if !event !mission-panel-mod]
 shape lower 4 152 248 40 at bottom-left margin 5 0 0 5 scale 0.5 key 36 36 36 key 16 16 16 see-through 0 0 0 0.65
 [pause]

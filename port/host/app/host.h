@@ -111,6 +111,8 @@ typedef struct KhdaysInputSnapshot {
     int16_t sticks[2][2];      /* the pad's two sticks as they are, [left, right][x, y] in SDL's range (y grows
                                   downwards), whatever their roles: the Enemy Profiles' model viewer turns and
                                   zooms with them (runtime/menus/enemy_viewer.c); 0 without a pad */
+    uint8_t deck_tap_row;      /* the on-screen controls: the command deck's row tapped last */
+    uint8_t deck_tap_serial;   /* ... and how many taps, so the game takes each once */
 } KhdaysInputSnapshot;
 
 /* The latest snapshot, for the game's own read of the pad once a game frame: a button pressed and let
