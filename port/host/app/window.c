@@ -689,7 +689,7 @@ static void resume_game_after_menu(void)
 static void mouse_follow(SDL_Window *window)
 {
     int row, skip;
-    const int menu = khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip);
+    const int menu = khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip) || khdays_layout_editor_is_open();
     const int focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     const int hold = !menu && khdays_devices_profile()->enh.mouse_camera && focused;
     const int shown = menu || !focused;

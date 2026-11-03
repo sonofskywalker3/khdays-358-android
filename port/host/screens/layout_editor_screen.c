@@ -127,6 +127,8 @@ static void load(int layout)
     items();
 }
 
+static void read_area(SDL_Renderer *renderer);
+
 void khdays_layout_editor_open(SDL_Renderer *renderer)
 {
     const KhdaysProfile *p = khdays_devices_profile();
@@ -135,19 +137,7 @@ void khdays_layout_editor_open(SDL_Renderer *renderer)
     memset(&editor, 0, sizeof(editor));
     editor.held = -1;
     editor.snap = 1;
-    editor.grid = GRID_POINTS * density_now;
-    {
-        SDL_Rect safe;
-        editor.area.x1 = screen.w;
-        editor.area.y1 = screen.h;
-        if (SDL_GetWindowSafeArea(SDL_GetRenderWindow(renderer), &safe) && safe.w > 0 && safe.h > 0) {
-            const float k = SDL_GetWindowPixelDensity(SDL_GetRenderWindow(renderer));
-            editor.area.x0 = (float)safe.x * k;
-            editor.area.y0 = (float)safe.y * k;
-            editor.area.x1 = (float)(safe.x + safe.w) * k;
-            editor.area.y1 = (float)(safe.y + safe.h) * k;
-        }
-    }
+    read_area(renderer);
     open_now = 1;
     load(with_controls ? p->touch.layout : KHDAYS_TOUCH_LAYOUT_CUSTOM);
 }
@@ -186,25 +176,68 @@ static int take_drag(int index, const KhdaysHudBox *before)
     return 0;
 }
 
+/* The controls' places as they are now, in points from their nearest sides. */
+static void control_places(KhdaysHudPlace *out)
+{
+    memset(out, 0, sizeof(KhdaysHudPlace) * KHDAYS_TOUCH_CONTROLS);
+    for (size_t c = 0; c < sizeof(moved_controls) / sizeof(moved_controls[0]); ++c) {
+        const int id = moved_controls[c];
+        const KhdaysHudBox b = {controls.box[id].x0, controls.box[id].y0, controls.box[id].x1, controls.box[id].y1};
+        out[id] = khdays_editor_control_place(&b, screen.w, screen.h, density_now);
+    }
+    out[KHDAYS_TOUCH_DPAD] = out[KHDAYS_TOUCH_STICK];
+}
+
+/* The window's own part an item may lie in, and the snap's lines. */
+static void read_area(SDL_Renderer *renderer)
+{
+    SDL_Rect safe;
+    SDL_Window *const window = SDL_GetRenderWindow(renderer);
+    editor.grid = GRID_POINTS * density_now;
+    editor.area.x0 = editor.area.y0 = 0.0f;
+    editor.area.x1 = screen.w;
+    editor.area.y1 = screen.h;
+    if (SDL_GetWindowSafeArea(window, &safe) && safe.w > 0 && safe.h > 0) {
+        const float k = SDL_GetWindowPixelDensity(window);
+        editor.area.x0 = (float)safe.x * k;
+        editor.area.y0 = (float)safe.y * k;
+        editor.area.x1 = (float)(safe.x + safe.w) * k;
+        editor.area.y1 = (float)(safe.y + safe.h) * k;
+    }
+}
+
+/* The window changed shape with the editor open: what was placed so far, from its nearest sides, in the new one. */
+static void window_changed(SDL_Renderer *renderer)
+{
+    KhdaysHudPlace kept[KHDAYS_TOUCH_CONTROLS];
+    const int layout = base_layout;
+    control_places(kept);
+    editor.held = -1;
+    read_screen(renderer);
+    read_area(renderer);
+    khdays_touch_layout_custom(&screen, hud, kept, &controls);
+    base_layout = layout;
+    items();
+}
+
 static void finish(int keep, int *changed)
 {
     open_now = 0;
     khdays_touch_edit(NULL);
     if (keep) {
         KhdaysProfile p = *khdays_devices_profile();
-        if (base_layout != KHDAYS_TOUCH_LAYOUT_CUSTOM) {
+        if (!with_controls) {
+            /* the HUD alone: the on-screen controls' settings are not this window's to change */
+            memcpy(p.hud_layout.place, hud, sizeof(hud));
+            p.hud_layout.custom = base_layout == KHDAYS_TOUCH_LAYOUT_CUSTOM;
+        } else if (base_layout != KHDAYS_TOUCH_LAYOUT_CUSTOM) {
             p.touch.layout = base_layout; /* a preset as it is */
             p.hud_layout.custom = 0;
         } else {
             memcpy(p.hud_layout.place, hud, sizeof(hud));
             p.hud_layout.custom = 1;
             p.touch.layout = KHDAYS_TOUCH_LAYOUT_CUSTOM;
-            for (size_t c = 0; c < sizeof(moved_controls) / sizeof(moved_controls[0]); ++c) {
-                const int id = moved_controls[c];
-                const KhdaysHudBox b = {controls.box[id].x0, controls.box[id].y0, controls.box[id].x1, controls.box[id].y1};
-                p.touch.control[id] = khdays_editor_control_place(&b, screen.w, screen.h, density_now);
-            }
-            p.touch.control[KHDAYS_TOUCH_DPAD] = p.touch.control[KHDAYS_TOUCH_STICK];
+            control_places(p.touch.control);
         }
         khdays_devices_set_profile(&p);
         *changed = 1;
@@ -221,6 +254,10 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
     *changed = 0;
     *moved = 0;
     switch (event->type) {
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        window_changed(renderer);
+        *moved = 1;
+        return 0;
     case SDL_EVENT_KEY_DOWN:
         if (event->key.scancode == SDL_SCANCODE_ESCAPE || event->key.scancode == SDL_SCANCODE_AC_BACK) {
             finish(0, changed);
