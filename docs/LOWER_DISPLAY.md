@@ -15,6 +15,12 @@ single display): One shows the game as one picture on the upper display, as on
 a single display, and the lower display the logo; a screen that one picture
 does not make shows on the two displays as with Two.
 
+A list's next entry, shown under its frame from extra rows, takes a touch too: it
+comes past the DS's 192 rows, and the game's list picks the row under its view (the
+hook on `*_MissionListTouchRow`, `runtime/input/input.c khdays_input_touch_below`). Its HD
+text comes from the canvases those rows show (`ui/text.c khdays_ui_text_lower_rows`).
+The column widened is one among 8 plain ones, so no long name is split.
+
 The lower picture arrives at the display's width (`host/android/bottom_screen.c`).
 Its DS pixels, read at their middles, tell the screen (`lower_screens.c` and
 `lower_pages.c`, each by a few pixels that hold while the game dims it too).

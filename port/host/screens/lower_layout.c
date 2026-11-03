@@ -146,8 +146,15 @@ int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x,
         return 0;
     }
     v = layout->map[(size_t)y * (size_t)layout->width + (size_t)x];
-    if (v < 0 || (v >> COL_BITS) >= layout->src_h) {
+    if (v < 0 || (layout->want_rows <= 0 && (v >> COL_BITS) >= layout->src_h)) {
         return 0;
+    }
+    if ((v >> COL_BITS) >= layout->src_h) {
+        /* an extra row: past the DS's 192, as the game's list hook takes it (below the frame on the DS) */
+        const int row = layout->want_row0 + ((v >> COL_BITS) - layout->src_h) * KHDAYS_LOWER_DS_H / layout->src_h;
+        *ds_x = (2 * (v & COL_MASK) + 1) * KHDAYS_LOWER_DS_W / (2 * layout->src_w);
+        *ds_y = row > KHDAYS_LOWER_DS_H ? row : KHDAYS_LOWER_DS_H;
+        return 1;
     }
     /* the DS dot under the picture pixel's middle, as the picture is drawn */
     *ds_x = (2 * (v & COL_MASK) + 1) * KHDAYS_LOWER_DS_W / (2 * layout->src_w);

@@ -2001,6 +2001,18 @@ HOOKS["ov022@0209038c"] = [
         "    }\n",
     )
 ]
+# A mission list's next entry, shown under the frame on a taller second display (host/screens/lower_layout.c): a touch
+# on it comes past the DS's 192 rows (runtime/input/input.c), reaches the list's touch as a touch on its own last row,
+# and picks the row under the view as one on the list does.
+for _key in ("ov008@02073e58", "ov025@020a9458"):
+    HOOKS[_key] = [
+        (
+            "if (touch.nY < pList->nTop + pList->nHeight - 2) {",
+            "extern int khdays_input_touch_below(void);\n"
+            "        if (khdays_input_touch_below()) nRow = (pList->nScroll + pList->nHeight) / ROW_HEIGHT;\n"
+            "        if (touch.nY < pList->nTop + pList->nHeight - 2) {",
+        )
+    ]
 HOOKS["ov022@0208a6d0"] = [
     (  # Ov022_BeginSubStateDispatch: the cast slot's begin, Stop's Cure's
         "data_ov022_020b2a20[*(int *)(obj + 0xc)]",

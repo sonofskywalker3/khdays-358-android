@@ -54,6 +54,8 @@ static int script_next;
 static u16 script_keys;
 static KhdaysPressEdges script_edges; /* the script's presses between two of the game's reads */
 static u32 script_actions;            /* the port's own controls the script holds */
+#define KHDAYS_DS_ROWS 192
+#define KHDAYS_LIST_LAST_ROW 170
 static int script_touch_x = -1, script_touch_y;
 static int script_move[2], script_camera[2]; /* the sticks' positions, y up */
 
@@ -442,15 +444,34 @@ u16 khdays_input_xy(void)
     return xy_word(pressed());
 }
 
+static int touch_below;
+
+int khdays_input_touch_below(void)
+{
+    return touch_below;
+}
+
 int khdays_input_touch(int *x, int *y)
 {
+    int down;
     if (khdays_movie_hd_running()) {
         return 0; /* the player's input is not the game's while an HD video plays (or is about to) */
     }
     if (script_touch_x >= 0) {
         *x = script_touch_x;
         *y = script_touch_y;
-        return 1;
+        down = 1;
+    } else {
+        down = khdays_replay_playing() ? khdays_replay_touch(x, y) : khdays_host_touch(x, y);
     }
-    return khdays_replay_playing() ? khdays_replay_touch(x, y) : khdays_host_touch(x, y);
+    if (!down) {
+        return 0;
+    }
+    /* under the DS's rows (a list's next entry on a taller display): on the list's last row, for its touch to come
+     * (at the DS's bottom it would press the Embark button there), told apart for the hook on it (prepare.py) */
+    touch_below = *y >= KHDAYS_DS_ROWS;
+    if (touch_below) {
+        *y = KHDAYS_LIST_LAST_ROW;
+    }
+    return 1;
 }

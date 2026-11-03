@@ -456,6 +456,34 @@ static void test_missions_seam(void)
     CHECK(rows == DS_H + 32);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
     CHECK(shows(&l, 160.5f, 100.5f, &x, &y) && x == 166); /* the nearest plain on them too */
+    /* a touch on the next entry: past the DS's rows */
+    CHECK(khdays_lower_touch(&l, 60 * SCALE, 190 * SCALE, &x, &y) && y >= DS_H);
+    khdays_lower_free(&l);
+    /* a long name with only a gap between letters near 178: the column is past its end, the name whole */
+    memset(overscan, 0, sizeof(overscan));
+    numbered();
+    rect(10, 20, 11, 180, 0x6b6b6bu);
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(16, 12, 222, 176, 0x101010u);
+    rect(222, 20, 248, 176, 0x6b6b6bu);
+    rect(236, 172, 244, 175, 0x949494u);
+    put(232, 175, 0x6b6b6bu);
+    for (int c = 150; c < 190; c += 2) {
+        if (c != 178) {
+            put(c, 30, 0xffffffu);
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 181.5f, 100.5f, &x, &y) && x == 189);
+    khdays_lower_free(&l);
+    /* no room between names and marks (a challenge's): past them, inside the bar */
+    for (int c = 150; c < 216; c += 2) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 210.5f, 100.5f, &x, &y) && x == 217);
     khdays_lower_free(&l);
 }
 

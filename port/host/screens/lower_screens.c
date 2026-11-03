@@ -388,6 +388,8 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_SEAM 178  /* plain from top to bottom, between the names and the crowns or challenge marks ... */
 #define LIST_SEAM0 150 /* ... or the nearest column that is, on a list whose names run longer */
 #define LIST_SEAM1 221
+#define LIST_BAR_LAST 217 /* ... the last column inside the selected entry's bar */
+#define LIST_SEAM_RUN 8 /* ... among this many plain columns: wider than a gap between letters or words */
 #define LIST_WIDEN 20 /* ... repeated: the frame's right edge (244) on the screen's */
 #define LIST_ARROW0 114 /* the down arrow under the list, kept in its middle */
 #define LIST_ARROW1 126
@@ -447,19 +449,44 @@ static int list_plain_column(const uint32_t *ds, int ds_rows, int x)
     return 1;
 }
 
-/* The column to repeat: the one in use while it stays plain, so that nothing moves as the list scrolls. */
+/* Column x among LIST_SEAM_RUN plain ones together: widening there splits no name, however long. */
+static int list_clear_column(const uint8_t *plain, int x)
+{
+    int run = 1;
+    for (int k = x - 1; k >= LIST_SEAM0 && plain[k - LIST_SEAM0]; --k) {
+        ++run;
+    }
+    for (int k = x + 1; k <= LIST_SEAM1 && plain[k - LIST_SEAM0]; ++k) {
+        ++run;
+    }
+    return plain[x - LIST_SEAM0] && run >= LIST_SEAM_RUN;
+}
+
+/* The column to repeat: the one in use while it stays clear, so that nothing moves as the list scrolls; else the
+ * nearest clear one; else, on a list with no room between its names and marks (a challenge's), the last plain one
+ * inside the selected entry's bar: past all they hold, the bars and rules longer. */
 static int list_seam(const uint32_t *ds, int ds_rows)
 {
     static int seam = LIST_SEAM;
-    if (list_plain_column(ds, ds_rows, seam)) {
+    uint8_t plain[LIST_SEAM1 - LIST_SEAM0 + 1];
+    for (int x = LIST_SEAM0; x <= LIST_SEAM1; ++x) {
+        plain[x - LIST_SEAM0] = (uint8_t)list_plain_column(ds, ds_rows, x);
+    }
+    if (list_clear_column(plain, seam)) {
         return seam;
     }
     for (int d = 0; LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM1; ++d) {
-        if (LIST_SEAM + d <= LIST_SEAM1 && list_plain_column(ds, ds_rows, LIST_SEAM + d)) {
-            return seam = LIST_SEAM + d;
+        const int r = LIST_SEAM + d, l = LIST_SEAM - d;
+        if (r <= LIST_SEAM1 && list_clear_column(plain, r)) {
+            return seam = r;
         }
-        if (LIST_SEAM - d >= LIST_SEAM0 && list_plain_column(ds, ds_rows, LIST_SEAM - d)) {
-            return seam = LIST_SEAM - d;
+        if (l >= LIST_SEAM0 && list_clear_column(plain, l)) {
+            return seam = l;
+        }
+    }
+    for (int x = LIST_BAR_LAST; x >= LIST_SEAM0; --x) {
+        if (plain[x - LIST_SEAM0]) {
+            return seam = x;
         }
     }
     return seam;
