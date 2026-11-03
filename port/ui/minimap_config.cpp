@@ -149,12 +149,19 @@ class Reader {
             while (digit())
                 ++at;
         }
-        // strtod, not std::from_chars: Android's libc++ has no floating-point from_chars
+#if defined(__ANDROID__)
+        // strtod: Android's libc++ has no floating-point from_chars, and its C library's numbers are always the C locale's
         const std::string digits(text.data() + start, text.data() + at);
         char *end = nullptr;
         const double n = std::strtod(digits.c_str(), &end);
         if (end != digits.c_str() + digits.size() || !std::isfinite(n))
             fail();
+#else
+        double n = 0;
+        const auto parsed = std::from_chars(text.data() + start, text.data() + at, n);
+        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + at || !std::isfinite(n))
+            fail();
+#endif
         return n;
     }
     void object(const std::string &prefix, int depth)
