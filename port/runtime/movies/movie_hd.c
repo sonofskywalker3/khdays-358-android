@@ -1001,7 +1001,7 @@ int khdays_movie_hd_subtitles_exist(const char *stem)
     if (khdays_mods_find(relative, path, (int)sizeof(path))) {
         return 1;
     }
-    snprintf(path, sizeof(path), "data/cutscenes/cinematics/subtitles/%s/%s.txt", codes[language], stem);
+    snprintf(path, sizeof(path), "%s/cinematics/subtitles/%s/%s.txt", khdays_cutscenes_folder(), codes[language], stem);
     return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 }
 

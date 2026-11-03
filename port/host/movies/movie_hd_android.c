@@ -1218,8 +1218,8 @@ static void voice_file(const char *file, int nth)
                 const uint8_t *data = AMediaCodec_getOutputBuffer(t.codec, (size_t)o, &length);
                 if (data != NULL) {
                     const double seconds = (double)info.size / frame_bytes / rate;
+                    pthread_mutex_lock(&voice_lock); /* (the clock sees the sound and its count together) */
                     SDL_PutAudioStreamData(stream, data + info.offset, info.size);
-                    pthread_mutex_lock(&voice_lock);
                     voice.put += seconds;
                     pthread_mutex_unlock(&voice_lock);
                     put += seconds;
@@ -1328,7 +1328,9 @@ void khdays_hd_voice_play(const char *const *paths, int count)
         pthread_mutex_unlock(&voice_control);
         return;
     }
+    pthread_mutex_lock(&voice_lock);
     voice.have_thread = 1;
+    pthread_mutex_unlock(&voice_lock);
     pthread_mutex_unlock(&voice_control);
 }
 
