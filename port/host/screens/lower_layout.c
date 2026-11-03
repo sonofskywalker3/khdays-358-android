@@ -20,7 +20,11 @@ static const uint8_t *row_of(const KhdaysLowerPicture *p, int row)
 
 void khdays_lower_sample(const KhdaysLowerPicture *picture, uint32_t *ds, int *ds_rows)
 {
-    const int rows = KHDAYS_LOWER_DS_H;
+    int rows = KHDAYS_LOWER_DS_H;
+    if (picture->overscan != NULL) {
+        const int over = picture->overscan_rows * KHDAYS_LOWER_DS_H / picture->height;
+        rows += over < KHDAYS_LOWER_OVERSCAN ? over : KHDAYS_LOWER_OVERSCAN;
+    }
     for (int y = 0; y < rows; ++y) {
         const int py = (2 * y + 1) * picture->height / (2 * KHDAYS_LOWER_DS_H);
         const uint8_t *row = row_of(picture, py);

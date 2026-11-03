@@ -430,6 +430,16 @@ static void test_missions_seam(void)
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
     CHECK(shows(&l, 165.5f, 100.5f, &x, &y) && x == 168); /* the nearest to 178 they leave plain */
     khdays_lower_free(&l);
+    for (int line = 4 * SCALE; line < 6 * SCALE; ++line) {
+        for (int c = 168 * SCALE; c < 169 * SCALE; ++c) {
+            memset(overscan[line][c], 0xff, 4); /* the next entry's words, on that column */
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(rows == DS_H + 32);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 160.5f, 100.5f, &x, &y) && x == 166); /* the nearest plain on them too */
+    khdays_lower_free(&l);
 }
 
 /* How many of the display's rows show DS row `row` at column x. */

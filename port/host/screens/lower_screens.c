@@ -419,11 +419,12 @@ static float list_column(float ox, int seam)
     return ox + (float)(LIST_SHIFT - LIST_WIDEN);
 }
 
-/* Column x the same as the next on the frame's entries: repeating it stretches nothing. */
-static int list_plain_column(const uint32_t *ds, int x)
+/* Column x the same as the next on the frame's entries and the next one under them, in the extra rows sampled
+ * after the screen's: repeating it stretches nothing. */
+static int list_plain_column(const uint32_t *ds, int ds_rows, int x)
 {
-    for (int y = LIST_IN_ROW0; y < LIST_FRAME_BOTTOM; ++y) {
-        if (at(ds, x, y) != at(ds, x + 1, y)) {
+    for (int y = LIST_IN_ROW0; y < ds_rows; ++y) {
+        if ((y < LIST_FRAME_BOTTOM || y >= H) && at(ds, x, y) != at(ds, x + 1, y)) {
             return 0;
         }
     }
@@ -431,17 +432,17 @@ static int list_plain_column(const uint32_t *ds, int x)
 }
 
 /* The column to repeat: the one in use while it stays plain, so that nothing moves as the list scrolls. */
-static int list_seam(const uint32_t *ds)
+static int list_seam(const uint32_t *ds, int ds_rows)
 {
     static int seam = LIST_SEAM;
-    if (list_plain_column(ds, seam)) {
+    if (list_plain_column(ds, ds_rows, seam)) {
         return seam;
     }
     for (int d = 0; LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM1; ++d) {
-        if (LIST_SEAM + d <= LIST_SEAM1 && list_plain_column(ds, LIST_SEAM + d)) {
+        if (LIST_SEAM + d <= LIST_SEAM1 && list_plain_column(ds, ds_rows, LIST_SEAM + d)) {
             return seam = LIST_SEAM + d;
         }
-        if (LIST_SEAM - d >= LIST_SEAM0 && list_plain_column(ds, LIST_SEAM - d)) {
+        if (LIST_SEAM - d >= LIST_SEAM0 && list_plain_column(ds, ds_rows, LIST_SEAM - d)) {
             return seam = LIST_SEAM - d;
         }
     }
@@ -515,7 +516,6 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
     static const int status_left[][2] = {{82, 6}, {98, 6}, {114, 6}, {130, 6}, {150, 7}};
     static const int status_right[][2] = {{12, 4}, {28, 4}, {44, 4}, {60, 4}, {76, 4}, {92, 4}, {106, 4}, {124, 3}};
     const int rows = (int)ceilf(out_h);
-    (void)ds_rows;
     memset(place, 0, sizeof(*place));
     place->out_h = out_h;
     place->extra = out_h - (float)H;
@@ -595,7 +595,7 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->layers_off = LAYER_BG1 | LAYER_OBJ; /* the frame and the sprites: the entries alone */
         place->top = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, 0, LIST_IN0);
         place->foot = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, LIST_TRACK0, LIST_TRACK1);
-        place->seam = list_seam(ds);
+        place->seam = list_seam(ds, ds_rows);
         *key = place->seam * 1000000 + place->top * 1000 + place->foot;
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
