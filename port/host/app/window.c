@@ -1078,7 +1078,7 @@ static int host_thread(void *unused)
         }
         if (khdays_layout_editor_is_open()) {
             int changed = 0, moved = 0;
-            const int closed = khdays_layout_editor_event(&event, renderer, &changed, &moved);
+            const int editor_closed = khdays_layout_editor_event(&event, renderer, &changed, &moved);
             khdays_devices_handle(&event, renderer);
             if (changed) {
                 char path[512];
@@ -1088,7 +1088,7 @@ static int host_thread(void *unused)
             if (moved) {
                 khdays_present_refresh_now();
             }
-            if (closed) {
+            if (editor_closed) {
                 resume_game_after_menu();
             }
             redraw(window, renderer);
