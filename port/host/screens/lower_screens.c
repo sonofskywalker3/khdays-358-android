@@ -384,12 +384,17 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_TRACK0 222 /* the scroll track: its rounded end moves to its new bottom */
 #define LIST_TRACK1 243
 #define LIST_TRACK_END 173
+#define LIST_TRACK_FOOT 239 /* its lower edge where the thumb's shadow never falls */
+#define LIST_THUMB_COL 232  /* a column of the track the thumb crosses */
 #define LIST_SHIFT 9    /* the left margin left out: the frame's left edge on the screen's */
 #define LIST_SEAM 178  /* plain from top to bottom, between the names and the crowns or challenge marks ... */
 #define LIST_SEAM0 150 /* ... or the nearest column that is, on a list whose names run longer */
 #define LIST_SEAM1 221
 #define LIST_BAR_LAST 217 /* ... the last column inside the selected entry's bar */
 #define LIST_SEAM_RUN 8 /* ... among this many plain columns: wider than a gap between letters or words */
+#define LIST_SEAM_GAP 4 /* ... or, the row's rank close after a long name, this many: wider than between letters */
+#define LIST_MARKS0 208 /* a challenge's marks reach these columns; a crown or a rank stops short of them */
+#define LIST_MARKS1 212
 #define LIST_WIDEN 20 /* ... repeated: the frame's right edge (244) on the screen's */
 #define LIST_ARROW0 114 /* the down arrow under the list, kept in its middle */
 #define LIST_ARROW1 126
@@ -420,7 +425,7 @@ static int tell_missions(const uint32_t *ds)
     const uint32_t track = at(ds, 240, 150), end = at(ds, 240, 173);
     return grey(track) && red(track) >= LIST_GREY_MIN && grey(end) &&
            abs(red(end) * LIST_GREY - red(track) * LIST_END_GREY) <= red(track) * LIST_GREY_NEAR &&
-           at(ds, 232, 175) == track &&
+           at(ds, LIST_TRACK_FOOT, 175) == track &&
            (list_edge(ds, LIST_EDGE_ROW0, track) || list_edge(ds, LIST_SIDE_ROW, track) ||
             list_edge(ds, LIST_EDGE_ROW1, track)) &&
            !uniform_row(ds, 14);
@@ -449,8 +454,8 @@ static int list_plain_column(const uint32_t *ds, int ds_rows, int x)
     return 1;
 }
 
-/* Column x among LIST_SEAM_RUN plain ones together: widening there splits no name, however long. */
-static int list_clear_column(const uint8_t *plain, int x)
+/* Column x among `wanted` plain ones together: widening there splits no name, however long. */
+static int list_clear_column(const uint8_t *plain, int x, int wanted)
 {
     int run = 1;
     for (int k = x - 1; k >= LIST_SEAM0 && plain[k - LIST_SEAM0]; --k) {
@@ -459,29 +464,39 @@ static int list_clear_column(const uint8_t *plain, int x)
     for (int k = x + 1; k <= LIST_SEAM1 && plain[k - LIST_SEAM0]; ++k) {
         ++run;
     }
-    return plain[x - LIST_SEAM0] && run >= LIST_SEAM_RUN;
+    return plain[x - LIST_SEAM0] && run >= wanted;
 }
 
-/* The column to repeat: the one in use while it stays clear, so that nothing moves as the list scrolls; else the
- * nearest clear one; else, on a list with no room between its names and marks (a challenge's), the last plain one
- * inside the selected entry's bar: past all they hold, the bars and rules longer. */
+/* The column to repeat. A challenge's list, on any of its pages: the last plain one inside the selected entry's bar,
+ * past its marks, so that they stay where they are whatever names the page has. Another list: the one in use while
+ * it stays clear, so that nothing moves as the list scrolls; else the nearest clear one; else the last gap before its
+ * ranks, its crowns as far right as on its other pages; else that last one too. */
 static int list_seam(const uint32_t *ds, int ds_rows)
 {
     static int seam = LIST_SEAM;
     uint8_t plain[LIST_SEAM1 - LIST_SEAM0 + 1];
+    int marks = 0;
     for (int x = LIST_SEAM0; x <= LIST_SEAM1; ++x) {
         plain[x - LIST_SEAM0] = (uint8_t)list_plain_column(ds, ds_rows, x);
     }
-    if (list_clear_column(plain, seam)) {
+    for (int x = LIST_MARKS0; x <= LIST_MARKS1; ++x) {
+        marks |= !plain[x - LIST_SEAM0];
+    }
+    if (!marks && list_clear_column(plain, seam, LIST_SEAM_RUN)) {
         return seam;
     }
-    for (int d = 0; LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM1; ++d) {
+    for (int d = 0; !marks && (LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM1); ++d) {
         const int r = LIST_SEAM + d, l = LIST_SEAM - d;
-        if (r <= LIST_SEAM1 && list_clear_column(plain, r)) {
+        if (r <= LIST_SEAM1 && list_clear_column(plain, r, LIST_SEAM_RUN)) {
             return seam = r;
         }
-        if (l >= LIST_SEAM0 && list_clear_column(plain, l)) {
+        if (l >= LIST_SEAM0 && list_clear_column(plain, l, LIST_SEAM_RUN)) {
             return seam = l;
+        }
+    }
+    for (int x = LIST_SEAM; !marks && x >= LIST_SEAM0; --x) {
+        if (list_clear_column(plain, x, LIST_SEAM_GAP)) {
+            return seam = x;
         }
     }
     for (int x = LIST_BAR_LAST; x >= LIST_SEAM0; --x) {
@@ -490,6 +505,35 @@ static int list_seam(const uint32_t *ds, int ds_rows)
         }
     }
     return seam;
+}
+
+/* The row of the track its added rows go in at: over its rounded end, or over the thumb when it lies there (the
+ * list's last page), which then still ends the track. */
+static int list_track_cut(const uint32_t *ds, int foot)
+{
+    int y = LIST_TRACK_END;
+    while (y > LIST_PLAIN0 && at(ds, LIST_THUMB_COL, y - 1) != at(ds, LIST_THUMB_COL, foot)) {
+        --y;
+    }
+    return y;
+}
+
+/* The extra rows one colour under the entries, not black: the game draws nothing there (the theater's list keeps its
+ * entries in the layers left out, and they show what is behind them). */
+static int list_rows_empty(const uint32_t *ds, int ds_rows)
+{
+    const uint32_t c = ds_rows > H ? at(ds, LIST_IN0, H) : 0u;
+    if (c == 0u) {
+        return 0;
+    }
+    for (int y = H; y < ds_rows; ++y) {
+        for (int x = LIST_IN0; x < LIST_IN1; ++x) {
+            if (at(ds, x, y) != c) {
+                return 0;
+            }
+        }
+    }
+    return 1;
 }
 
 void khdays_lower_list_track_touch(int ds_x, float at, int *ds_y)
@@ -516,11 +560,14 @@ static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx
         } else if (*sx >= (float)LIST_ARROW0 && *sx < (float)LIST_ARROW1) {
             *sx = (float)LIST_BORDER_COL + 0.5f;
         }
-    } else if (*sx >= (float)LIST_TRACK0 && *sx < (float)LIST_TRACK1 && oy >= (float)LIST_TRACK_END) {
-        *sy = oy < (float)LIST_TRACK_END + e ? (float)p->foot : oy - e; /* the track's plain row */
+    } else if (*sx >= (float)LIST_TRACK0 && *sx < (float)LIST_TRACK1 && oy >= (float)p->cut) {
+        *sy = oy < (float)p->cut + e ? (float)p->foot : oy - e; /* the track's plain row */
     } else if (oy < (float)LIST_FRAME_BOTTOM) {
         *sy = oy;
     } else if (*sx >= (float)LIST_IN0 && *sx < (float)LIST_IN1) {
+        if (p->empty) {
+            return 0;
+        }
         *sy = (float)KHDAYS_LOWER_ROWS + oy; /* the next missions, as the game drew them under its frame */
     } else {
         *sy = (float)p->top + (oy - (float)(int)oy); /* the frame's sides, a plain row of them */
@@ -646,7 +693,10 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->top = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, 0, LIST_IN0);
         place->foot = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, LIST_TRACK0, LIST_TRACK1);
         place->seam = list_seam(ds, ds_rows);
-        *key = place->seam * 1000000 + place->top * 1000 + place->foot;
+        place->cut = list_track_cut(ds, place->foot);
+        place->empty = list_rows_empty(ds, ds_rows);
+        *key = (int)((unsigned)place->seam << 23 | (unsigned)place->top << 15 | (unsigned)place->foot << 7 |
+                     ((unsigned)(LIST_TRACK_END - place->cut) & 127u) | (place->empty ? 1u << 31 : 0u));
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;

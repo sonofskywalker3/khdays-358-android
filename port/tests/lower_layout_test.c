@@ -489,6 +489,101 @@ static void test_missions_seam(void)
     khdays_lower_free(&l);
 }
 
+/* The DS row the display's dot (ox, oy) shows, -1 none. */
+static int map_row(const KhdaysLowerLayout *l, float ox, float oy)
+{
+    const int32_t v = l->map[(size_t)(oy * SCALE) * (size_t)l->width + (size_t)(ox * SCALE)];
+    return v < 0 ? -1 : (v >> 12) / SCALE;
+}
+
+/* A list as the game draws it, for the pages below: entries plain, the frame and the track. */
+static void list_frame(void)
+{
+    memset(overscan, 0, sizeof(overscan));
+    numbered();
+    rect(0, 14, DS_W, 15, 0x212121u);
+    put(100, 14, 0x4a4a4au);
+    rect(10, 20, 11, 180, 0x6b6b6bu);
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(16, 12, 222, 176, 0x101010u);
+    rect(222, 20, 248, 176, 0x6b6b6bu);
+    rect(236, 172, 244, 175, 0x949494u);
+}
+
+/* A challenge's list keeps its column on a page with no long names; the last page, the thumb on the track's end, is
+ * still the list, the thumb ending the longer track; a list whose extra rows are one colour shows black there. */
+static void test_missions_pages(void)
+{
+    KhdaysLowerLayout l = {0};
+    KhdaysLowerPicture grown = pic;
+    int rows, x, y;
+    grown.overscan = &overscan[0][0][0];
+    grown.overscan_rows = 32 * SCALE;
+    grown.overscan_pitch = DS_W * SCALE * 4;
+    grown.overscan_row0 = 176;
+    /* the marks, and only short names */
+    list_frame();
+    for (int c = 186; c < 216; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    put(60, 40, 0xffffffu);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 200.5f, 100.5f, &x, &y) && x == 209); /* the marks left of the column, none moved */
+    khdays_lower_free(&l);
+    /* a crown's: stops short of those columns, widened before it */
+    list_frame();
+    for (int c = 193; c < 207; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    put(214, 30, 0xffffffu); /* the bar's end */
+    put(218, 30, 0xffffffu);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* a page with ranks after long names, only a short gap between them: the crowns stay where they are */
+    list_frame();
+    for (int c = 150; c < 169; c += 2) {
+        put(c, 40, 0xffffffu);
+    }
+    for (int c = 175; c < 207; c += 2) {
+        put(c, 30, 0xffffffu);
+    }
+    put(214, 30, 0xffffffu);
+    put(218, 30, 0xffffffu);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* the last page */
+    list_frame();
+    rect(224, 130, 238, 176, 0xa6a6a6u);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_screen(ds, rows) == KHDAYS_LOWER_MISSIONS);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(l.screen == KHDAYS_LOWER_MISSIONS);
+    /* under the thumb's place the track's plain row; the thumb's last row at the bottom of the longer track */
+    CHECK(map_row(&l, 243.5f, 129.5f) == 129);
+    CHECK(map_row(&l, 243.5f, 135.5f) == 20);
+    CHECK(map_row(&l, 243.5f, 174.5f + (float)OUT_H / SCALE - DS_H) == 174);
+    khdays_lower_free(&l);
+    /* the theater's: the entries in the layers left out, the extra rows one colour */
+    list_frame();
+    for (int line = 0; line < 32 * SCALE; ++line) {
+        for (int c = 0; c < DS_W * SCALE; ++c) {
+            overscan[line][c][2] = 0xff;
+            overscan[line][c][3] = 0xff;
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(!shows(&l, 100.5f, 190.5f, &x, &y));
+    CHECK(!khdays_lower_touch(&l, 100 * SCALE, 190 * SCALE, &x, &y));
+    khdays_lower_free(&l);
+    memset(overscan, 0, sizeof(overscan));
+}
+
 /* How many of the display's rows show DS row `row` at column x. */
 static int shown(const KhdaysLowerLayout *l, float x, int row)
 {
@@ -729,6 +824,7 @@ int main(void)
     test_missions();
     test_missions_grown();
     test_missions_seam();
+    test_missions_pages();
     test_tutorials();
     test_diary();
     test_panels();

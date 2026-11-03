@@ -19,7 +19,12 @@ A list's next entry, shown under its frame from extra rows, takes a touch too: i
 comes past the DS's 192 rows, and the game's list picks the row under its view (the
 hook on `*_MissionListTouchRow`, `runtime/input/input.c khdays_input_touch_below`). Its HD
 text comes from the canvases those rows show (`ui/text.c khdays_ui_text_lower_rows`).
-The column widened is one among 8 plain ones, so no long name is split.
+The column widened is one among 8 plain ones, so no long name is split; a challenge's
+list, told by its marks reaching columns 208-212, widens past them on every page, so
+they stay put as it scrolls, and a page of ranks close after long names widens in the
+last gap before them. The list's last page has the thumb on the track's end: the rows
+the track grows by go in above it, so it still ends the track. Extra rows one colour
+under the entries are nothing the game drew (the theater's list) and show black.
 
 The lower picture arrives at the display's width (`host/android/bottom_screen.c`).
 Its DS pixels, read at their middles, tell the screen (`lower_screens.c` and

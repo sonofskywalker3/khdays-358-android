@@ -70,6 +70,8 @@ static struct {
     SDL_AtomicInt stop;
     int art_now, art_before; /* arts' indices, -1 none */
     Uint64 art_since;        /* when art_now came in */
+    Uint64 loaded_at;        /* when load() ended */
+    int loads;               /* how many times the list was loaded */
 } s;
 
 /* ---- The artworks ----------------------------------------------------------------------------- */
@@ -86,6 +88,8 @@ static int SDLCALL read_arts(void *unused)
         }
         SDL_SetAtomicInt(&a->read, 1);
     }
+    SDL_Log("theater list: %d artworks read, %u ms after the list loaded", s.art_count,
+            (unsigned)(SDL_GetTicks() - s.loaded_at));
     return 0;
 }
 
@@ -548,8 +552,12 @@ int khdays_cine_screen_draw(SDL_Renderer *renderer)
     }
     if (renderer != s.layout.renderer || v.language != s.tried) {
         const Scene *sc;
+        const Uint64 began = SDL_GetTicks();
         s.tried = v.language;
         s.ok = load(renderer, v.language);
+        s.loaded_at = SDL_GetTicks();
+        SDL_Log("theater list: load %d %s in %u ms (%d chapters, %d artworks)", ++s.loads, s.ok ? "done" : "failed",
+                (unsigned)(s.loaded_at - began), s.chapter_count, s.art_count);
         s.cursor = s.first = 0;
         sc = s.ok ? scene_of(v.movies[v.cursor]) : NULL;
         if (s.ok) {
