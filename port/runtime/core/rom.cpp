@@ -7,10 +7,13 @@
 extern "C" {
 #include "../../host/app/host.h"     // khdays_host_tell_no_data
 #include "../../host/app/instance.h" // khdays_host_user_folder
+#include "../mods/days.h"
 #include "../mods/list.h"
 #include "origin.h"
 #include "folders.h"
+#include "session_log.h"
 }
+#include "../menus/saveworld.h"
 
 #include "khdays/assets/message.h" // lz_decompress
 #include "khdays/vfs/filesystem.h"
@@ -90,6 +93,22 @@ std::vector<GameFile> files;
 std::vector<std::string> game_paths; // by file id: the FNT's name, or _unnamed/file_NNNNN.bin
 std::map<std::string, u32> file_ids; // the game's paths, as the FNT names them
 std::vector<Region> regions;         // sorted by start
+u32 image_end;                       // past everything placed
+
+// The files the mods add (khdays_rom_add_file), by their paths in lower case: the image's range and id.
+struct Added {
+    u32 top, bottom, id;
+};
+std::map<std::string, Added> added;
+
+std::string lower(std::string_view text)
+{
+    std::string s(text);
+    for (char &c : s) {
+        c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+    }
+    return s;
+}
 
 u32 le32(const u8 *p)
 {
@@ -226,15 +245,14 @@ void read_region(KhdaysRomReader &reader, const Region &r, u32 offset, u8 *out, 
 
 } // namespace
 
-// The VFS reads the mods the list has on, in its order (runtime/mods/list.h).
-static void mods_changed()
+// The VFS reads the mods on as the game started, in the list's order (runtime/mods/list.h).
+static void give_vfs_the_mods()
 {
     std::vector<fs::path> active;
-    const int n = khdays_mods_active_paths(nullptr, 0);
-    std::vector<const char *> paths(static_cast<std::size_t>(n > 0 ? n : 1));
-    khdays_mods_active_paths(paths.data(), n);
-    for (int i = 0; i < n; ++i) {
-        active.push_back(utf8_path(paths[static_cast<std::size_t>(i)]));
+    for (int i = 0; i < khdays_mods_started_count(); ++i) {
+        if (const char *path = khdays_mods_started_path(i)) {
+            active.push_back(utf8_path(path));
+        }
     }
     khdays::vfs::set_mods(std::move(active));
 }
@@ -242,8 +260,10 @@ static void mods_changed()
 extern "C" int khdays_rom_init(void)
 {
     khdays::vfs::set_mods_root(khdays_mods_folder()); // "mods", or the folder the player chose
-    khdays_mods_on_change(mods_changed);
+    khdays_days_unpack_all(khdays_mods_folder()); // the .days mods' files copied out where the VFS reads them
     khdays_mods_scan(khdays_mods_folder(), khdays_host_user_folder());
+    khdays_mods_start();
+    give_vfs_the_mods();
     if (!khdays::vfs::autodetect_data_root()) {
         std::error_code ec;
         const fs::path searched = fs::absolute("data/extracted", ec);
@@ -251,14 +271,15 @@ extern "C" int khdays_rom_init(void)
         khdays_host_tell_no_data(utf8(ec ? fs::path("data/extracted") : searched).c_str(), nullptr);
         return 0;
     }
+    khdays_days_check_originals(utf8(khdays::vfs::data_root() / "nitrofs").c_str());
     const fs::path system = khdays::vfs::data_root() / "system";
     header = read_whole(system / "header.bin");
     if (header.size() != 0x200) {
         fail("system/header.bin is not a 0x200-byte cartridge header (re-run the extractor)");
     }
     const auto field = [](u32 offset) { return le32(header.data() + offset); };
-    us_card = std::memcmp(header.data() + GAME_CODE_AT, US_GAME_CODE, 4) == 0 &&
-              header[ROM_VERSION_AT] == US_ROM_VERSION;
+    us_card =
+        std::memcmp(header.data() + GAME_CODE_AT, US_GAME_CODE, 4) == 0 && header[ROM_VERSION_AT] == US_ROM_VERSION;
 
     const struct {
         const char *name;
@@ -347,6 +368,70 @@ extern "C" int khdays_rom_init(void)
         }
     }
     std::sort(regions.begin(), regions.end(), [](const Region &a, const Region &b) { return a.start < b.start; });
+    image_end = rom_end;
+    return 1;
+}
+
+namespace {
+
+// A file the game does not have placed past everything else: read from `where`, or served from `bytes`.
+int add(const char *path, const fs::path &where, std::uint64_t size, std::vector<u8> bytes)
+{
+    if (size == 0 || size > 0xffffffffull - image_end - 0x200u) {
+        return 0;
+    }
+    const u32 placed = (image_end + 0x1ff) & ~0x1ffu;
+    const u32 id = static_cast<u32>(files.size());
+    image_end = placed + static_cast<u32>(size);
+    files.push_back({where, static_cast<u32>(size), std::move(bytes)});
+    game_paths.emplace_back(path);
+    regions.push_back({placed, image_end, GAME_FILE, static_cast<int>(id)}); // the last: still in order
+    added[lower(path)] = {placed, image_end, id};
+    return 1;
+}
+
+} // namespace
+
+extern "C" int khdays_rom_add_file(const char *path, const char *disk)
+{
+    const fs::path where = utf8_path(disk);
+    std::error_code ec;
+    const auto size = fs::file_size(where, ec);
+    return !ec && add(path, where, size, {});
+}
+
+extern "C" int khdays_rom_add_bytes(const char *path, const unsigned char *data, unsigned int size)
+{
+    return add(path, {}, size, std::vector<u8>(data, data + size));
+}
+
+extern "C" int khdays_rom_add_alias(const char *path, const char *game_path)
+{
+    const auto it = file_ids.find(game_path);
+    if (it == file_ids.end()) {
+        return 0;
+    }
+    const u32 id = it->second;
+    added[lower(path)] = {le32(fat.data() + 8 * id), le32(fat.data() + 8 * id + 4), id};
+    return 1;
+}
+
+extern "C" int khdays_rom_added_file(const char *path, unsigned int *bounds)
+{
+    if (added.empty()) {
+        return 0;
+    }
+    while (*path == '/') {
+        ++path;
+    }
+    const auto it = added.find(lower(path));
+    if (it == added.end()) {
+        return 0;
+    }
+    bounds[0] = it->second.top;
+    bounds[1] = it->second.bottom;
+    bounds[2] = it->second.id;
+    khdays_log("rom: the game opened %s, a mod's (the image's 0x%08x-0x%08x)", path, it->second.top, it->second.bottom);
     return 1;
 }
 
@@ -398,6 +483,7 @@ void read_rom(KhdaysRomReader &reader, u32 offset, u8 *destination, u32 size)
 
 extern "C" void khdays_rom_read(u32 offset, u8 *destination, u32 size)
 {
+    khdays_saveworld_card_read(offset); /* the mission worlds' archives read: the save list's world */
     read_rom(card_reader, offset, destination, size);
 }
 
@@ -472,7 +558,13 @@ extern "C" int khdays_rom_find(const char *path, u32 *offset, u32 *size)
     }
     const auto it = file_ids.find(path);
     if (it == file_ids.end()) {
-        return 0;
+        const auto more = added.find(lower(path)); // a file a mod adds
+        if (more == added.end()) {
+            return 0;
+        }
+        *offset = more->second.top;
+        *size = more->second.bottom - more->second.top;
+        return 1;
     }
     *offset = le32(fat.data() + 8 * it->second);
     *size = le32(fat.data() + 8 * it->second + 4) - *offset;
@@ -481,12 +573,12 @@ extern "C" int khdays_rom_find(const char *path, u32 *offset, u32 *size)
 
 extern "C" int khdays_rom_file_count(void)
 {
-    return static_cast<int>(game_paths.size());
+    return static_cast<int>(fat.size() / 8); // the table's files, not the mods' added ones
 }
 
 extern "C" int khdays_rom_file_info(int id, char *path, int size, u32 *offset, u32 *bytes)
 {
-    if (id < 0 || static_cast<std::size_t>(id) >= game_paths.size()) {
+    if (id < 0 || id >= khdays_rom_file_count()) {
         return 0;
     }
     const std::string &name = game_paths[static_cast<std::size_t>(id)];

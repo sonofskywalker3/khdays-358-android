@@ -8,6 +8,9 @@
 #include "../app/places.h"
 #include "ui_text.h"
 #include "../../runtime/menus/charselect.h"
+#include "../../runtime/menus/select_pages.h"
+#include "../../runtime/characters/characters.h"
+#include "mod_faces.h"
 #include "../../runtime/core/rom.h"
 #include "../app/profile.h"
 
@@ -34,10 +37,11 @@ static struct {
     KhdaysLayout layout;
     KhdaysLayoutStrings strings;
     SDL_Texture *art;
-    int columns;
+    int columns, rows; /* the grid's, and a page's rows (select_pages.h) */
     float gap, stat_pitch, gauge_pitch, plate_pitch, frame_place, frame_other;
     Uint8 bars[BARS_MOST][3];
     int bar_count;
+    KhdaysModFaces faces; /* the mods' characters' */
 } s;
 
 static void forget(void)
@@ -47,9 +51,12 @@ static void forget(void)
         s.art = NULL;
     }
     s.bar_count = 0;
+    khdays_mod_faces_forget(&s.faces);
     khdays_layout_forget(&s.layout);
     khdays_layout_strings_free(&s.strings);
 }
+
+static const float *place(const char *name);
 
 static int load(SDL_Renderer *renderer, int language)
 {
@@ -79,7 +86,7 @@ static int load(SDL_Renderer *renderer, int language)
     s.columns = 0;
     for (char *line = text; line != NULL && *line != '\0'; line = next) {
         float a, b;
-        int n, r, g, bl;
+        int n, r, g, bl, got;
         next = strchr(line, '\n');
         if (next != NULL) {
             *next++ = '\0';
@@ -87,9 +94,12 @@ static int load(SDL_Renderer *renderer, int language)
         if (khdays_layout_line(&s.layout, line, folder)) {
             continue;
         }
-        if (SDL_sscanf(line, "grid %d %f", &n, &a) == 2) {
+        if ((got = SDL_sscanf(line, "grid %d %f %d", &n, &a, &r)) >= 2) {
+            /* columns, the gap, and the rows of a page (none in the layouts made before the pages: then the
+             * rows that fit above the places' plates) */
             s.columns = n > 0 ? n : 1;
             s.gap = a;
+            s.rows = got == 3 && r > 0 ? r : 0;
         } else if (SDL_sscanf(line, "stats %f", &a) == 1) {
             s.stat_pitch = a;
         } else if (SDL_sscanf(line, "gauge_pitch %f", &a) == 1) {
@@ -123,7 +133,14 @@ static int load(SDL_Renderer *renderer, int language)
     }
     snprintf(path, sizeof(path), "UI/mlt/mlt_%s.s.z", codes[language]);
     khdays_layout_strings(reader, path, &s.strings, s.layout.who);
+    if (s.rows == 0) {
+        const float *tile = place("tile"), *plate = place("plate");
+        const float bottom = plate[1] > tile[1] ? plate[1] : 1080.0f;
+        s.rows = (int)((bottom - tile[1] + s.gap) / (tile[3] + s.gap));
+        s.rows = s.rows > 0 ? s.rows : 1;
+    }
     khdays_charselect_columns(s.columns);
+    khdays_charselect_rows(s.rows);
     return 1;
 }
 
@@ -139,6 +156,10 @@ static const float *place(const char *name)
 static void face(const KhdaysLayoutFrame *fr, int character, int in_colour, float x, float y, float w, float h)
 {
     char name[24];
+    if (character >= KHDAYS_SELECT_CHARACTERS) {
+        khdays_mod_face_draw(&s.faces, &s.layout, fr, character, x, y, w, h, in_colour ? 255 : GREY_LIGHT);
+        return;
+    }
     snprintf(name, sizeof(name), in_colour ? "face%d" : "face%d_grey", character);
     if (in_colour) {
         khdays_layout_draw_piece(&s.layout, fr, name, x, y, w, h, 1.0f);
@@ -163,6 +184,14 @@ static void circle(const KhdaysLayoutFrame *fr, const char *style, int which, fl
     snprintf(label, sizeof(label), khdays_text(TXT_ROOM_PLACE), which + 1);
     khdays_layout_utf8(label, wide, 16);
     line(fr, style, wide, cx, cy);
+}
+
+/* Character `c`'s name (`record` NAMES) or its weapon's (WEAPONS): the game's text, or a mod's
+ * character's in the game's language `language` (1-5), into `out` when it is one. */
+static const unsigned short *named(int c, int record, int language, unsigned short *out, int room)
+{
+    const unsigned short *mod = khdays_mod_name(c, record == WEAPONS, language, out, room);
+    return mod != NULL ? mod : khdays_layout_string(&s.strings, record + c);
 }
 
 /* The character a place is on as shown: this copy's as it moves. */
@@ -202,7 +231,8 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
         line(fr, "name", name, 0, 0);
         return;
     }
-    if (c < 0 || c >= KHDAYS_SELECT_CHARACTERS) {
+    unsigned short text[64];
+    if (c < 0 || (c >= KHDAYS_SELECT_CHARACTERS && khdays_characters_numbered(c) == NULL)) {
         return;
     }
     khdays_layout_fill_rounded(s.layout.renderer, fr, f[0] - t, f[1] - t, f[2] + 2 * t, f[3] + 2 * t, 10, BLACK,
@@ -210,8 +240,8 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
     face(fr, c, 1, f[0], f[1], f[2], f[3]);
     khdays_layout_ring_rounded(s.layout.renderer, fr, f[0] - t, f[1] - t, f[2] + 2 * t, f[3] + 2 * t, 10, t,
                                KHDAYS_PLACE_COLOURS[v->self & 3], 1.0f);
-    line(fr, "name", khdays_layout_string(&s.strings, NAMES + c), 0, 0);
-    line(fr, "weapon", khdays_layout_string(&s.strings, WEAPONS + c), 0, 0);
+    line(fr, "name", named(c, NAMES, v->language, text, 64), 0, 0);
+    line(fr, "weapon", named(c, WEAPONS, v->language, text, 64), 0, 0);
     for (int i = 0; i < KHDAYS_SELECT_STATS; ++i) {
         const float y = row[1] + (float)i * s.stat_pitch;
         khdays_layout_fill_rounded(s.layout.renderer, fr, row[0], y, row[2], row[3], row[3] / 2, BLACK, PANEL_ALPHA);
@@ -227,20 +257,54 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
     }
 }
 
+/* "2 / 3" under the grid: the layout's `text page` where it has one, else in the places' circles' style under the
+ * page's rows. */
+static void page_indicator(const KhdaysLayoutFrame *fr, int page, int pages, const float *tile)
+{
+    char label[32];
+    unsigned short wide[32];
+    snprintf(label, sizeof(label), "%d / %d", page + 1, pages);
+    khdays_layout_utf8(label, wide, 32);
+    if (khdays_layout_text(&s.layout, "page") != NULL) {
+        line(fr, "page", wide, 0, 0);
+    } else {
+        const float cx = tile[0] + ((float)s.columns * (tile[2] + s.gap) - s.gap) / 2;
+        const float cy = tile[1] + (float)s.rows * (tile[3] + s.gap) + s.gap;
+        line(fr, "tag", wide, cx, cy);
+    }
+}
+
+/* Where the cursor is in the grid: on this copy's character, or on the random choice (position `count`). */
+static int cursor_position(const KhdaysSelectView *v, int count)
+{
+    const int target = v->random ? KHDAYS_SELECT_CHARACTERS : v->character;
+    for (int p = 0; p <= count; ++p) {
+        if (khdays_charselect_at(v, p) == target) {
+            return p;
+        }
+    }
+    return 0;
+}
+
 static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
 {
     const float *tile = place("tile"), *tag_at = place("tile_tag");
-    int list[KHDAYS_SELECT_CHARACTERS], count = 0;
-    for (int c = 0; c < KHDAYS_SELECT_CHARACTERS; ++c) {
-        if (v->choosable & (1u << c)) {
-            list[count++] = c;
-        }
+    int count = 0; /* the characters before the random choice */
+    while (khdays_charselect_at(v, count) >= 0 && khdays_charselect_at(v, count) != KHDAYS_SELECT_CHARACTERS) {
+        ++count;
     }
-    for (int p = 0; p <= count; ++p) {
-        /* the characters, then the random choice (charselect.c's grid has it last too) */
-        const int row = p / s.columns, in_row = SDL_min(s.columns, count + 1 - row * s.columns);
+    const KhdaysSelectGrid g = {count + 1, s.columns, s.rows};
+    const int page = khdays_select_page_of(g, cursor_position(v, count)), first = khdays_select_page_first(g, page);
+    const int shown = khdays_select_page_count(g, page);
+    if (khdays_select_pages(g) > 1) {
+        page_indicator(fr, page, khdays_select_pages(g), tile);
+    }
+    for (int p = first; p < first + shown; ++p) {
+        /* the page's characters, then on the last page the random choice (charselect.c's grid has it last too) */
+        const int on_page = p - first, row = on_page / s.columns, in_row = SDL_min(s.columns, shown - row * s.columns);
         const float left = tile[0] + (float)(s.columns - in_row) * (tile[2] + s.gap) / 2;
-        const float x = left + (float)(p % s.columns) * (tile[2] + s.gap), y = tile[1] + (float)row * (tile[3] + s.gap);
+        const float x = left + (float)(on_page % s.columns) * (tile[2] + s.gap),
+                    y = tile[1] + (float)row * (tile[3] + s.gap);
         int on[KHDAYS_SELECT_PLACES], n = 0;
         if (p == count) {
             const float t = v->random ? s.frame_place : s.frame_other;
@@ -257,7 +321,7 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
             break;
         }
         for (int i = 0; i < KHDAYS_SELECT_PLACES; ++i) {
-            if ((v->places[i].present || i == v->self) && character_of(v, i) == list[p]) {
+            if ((v->places[i].present || i == v->self) && character_of(v, i) == khdays_charselect_at(v, p)) {
                 on[n++] = i;
             }
         }
@@ -265,7 +329,7 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
             const float t = n > 0 ? s.frame_place : s.frame_other;
             khdays_layout_fill_rounded(s.layout.renderer, fr, x - t, y - t, tile[2] + 2 * t, tile[3] + 2 * t, 8, BLACK,
                                        TILE_ALPHA);
-            face(fr, list[p], n > 0, x, y, tile[2], tile[3]);
+            face(fr, khdays_charselect_at(v, p), n > 0, x, y, tile[2], tile[3]);
             khdays_layout_ring_rounded(s.layout.renderer, fr, x - t, y - t, tile[2] + 2 * t, tile[3] + 2 * t, 8, t,
                                        n > 0 ? KHDAYS_PLACE_COLOURS[on[0] & 3] : OTHERS_GREY, 1.0f);
         }
@@ -293,13 +357,14 @@ static void draw_places(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
         khdays_layout_ring_rounded(s.layout.renderer, fr, x, y, plate[2], plate[3], plate[3] / 2, pl->ready ? 4 : EDGE,
                                    pl->ready ? KHDAYS_PLACE_COLOURS[i & 3] : EDGE_GREY, 1.0f);
         circle(fr, "plate_tag", i, x + ring[0], y + ring[1], ring[2]);
-        if (c >= 0 && c < KHDAYS_SELECT_CHARACTERS) {
+        if (c >= 0 && (c < KHDAYS_SELECT_CHARACTERS || khdays_characters_numbered(c) != NULL)) {
+            unsigned short text[64];
             face(fr, c, 1, x + small[0], y + small[1], small[2], small[3]);
             if (pl->name[0] != 0) {
                 line(fr, "plate_player", pl->name, x, y);
-                line(fr, "plate_character", khdays_layout_string(&s.strings, NAMES + c), x, y);
+                line(fr, "plate_character", named(c, NAMES, v->language, text, 64), x, y);
             } else {
-                line(fr, "plate_alone", khdays_layout_string(&s.strings, NAMES + c), x, y);
+                line(fr, "plate_alone", named(c, NAMES, v->language, text, 64), x, y);
             }
         }
     }

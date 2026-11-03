@@ -27,6 +27,13 @@ void khdays_ui_emit(int part, const KhdaysUiElement *element);
 /* Move a supplementary image with a queued anchor, including when that anchor
  * follows a HUD piece rather than a layout line. */
 void khdays_ui_emit_following(int part, const KhdaysUiElement *element, const KhdaysUiElement *anchor);
+/* An image extending beyond its layout box (the KH2 gauge around the portrait). */
+void khdays_ui_emit_extended(int part, const KhdaysUiElement *element, const KhdaysUiElement *box);
+/* An element's current texels resolved through its own engine's palette, or direct RGBA. */
+uint32_t khdays_ui_element_rgba(const KhdaysUiElement *element, int x, int y);
+/* The existing image store's id; an indexed element converted once per image/palette change. */
+int khdays_ui_image_replacement(int image);
+int khdays_ui_element_direct(const KhdaysUiElement *element);
 
 /* For a part drawn from the port's own state (the pause's Retry cursor): when that state changes, the
  * next VBlank composes the frame again even if the game's picture is the same. */
@@ -36,6 +43,12 @@ int khdays_ui_take_changed(void);
  * KE_CELLS), or sprite `index` of the screen's 128 */
 void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy);
 void khdays_ui_left_out_obj(int part, int screen, int index);
+/* The same for a cell whose picture the window draws apart from the composition (the Menu Overhaul's
+ * pause): also left out of engine A's display capture, which the game shows again in its screen blends
+ * (an event's camera cuts), and its layer left to it: the other parts' elements in that layer are not
+ * drawn (a scene's text canvas, whose characters the game's pause has taken). */
+void khdays_ui_left_out_cell_captured(int part, int screen, int layer, int cx, int cy);
+const uint8_t *khdays_ui_captured_cell_bits(int screen);
 /* Whether a part that is not off already stands for cell (cx, cy) of text
  * layer `layer` this frame (the parts emit in their order, the text first). */
 int khdays_ui_cell_taken(int screen, int layer, int cx, int cy);

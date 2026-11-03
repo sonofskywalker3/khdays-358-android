@@ -6,6 +6,7 @@
 #define KHDAYS_PROFILE_H
 
 #include <stdint.h>
+#include "hud_settings.h"
 
 #ifdef __cplusplus
 extern "C" { /* the settings menu is C++ (settings_menu.cpp) */
@@ -130,6 +131,8 @@ typedef struct KhdaysEnhancements {
     int analog_movement;
     int run_threshold; /* percent of stick travel, 50..95 */
     int walk_speed;    /* percent of the game's own speed, 20..90 */
+    int chase_free;    /* Chase Camera's Free: on Manual, walking keeps the tilt (runtime/menus/camp.h) */
+    int hud[KHDAYS_OPT_COUNT];
 } KhdaysEnhancements;
 
 typedef enum KhdaysPreset { KHDAYS_PRESET_DS, KHDAYS_PRESET_KH2 } KhdaysPreset;
@@ -155,6 +158,14 @@ typedef enum KhdaysSecondScreenAspect {
 #define KHDAYS_MENU_SIZE_MAX 4     /* menu_size: 1 to this */
 #define KHDAYS_SUBTITLE_SIZE_MAX 5 /* subtitle_size: 1 to this */
 
+/* The two screens' arrangement ([video] two_screens), with two screens: the upper above the lower, as the
+ * DS has them, or side by side, the upper on the left. */
+typedef enum KhdaysTwoScreens {
+    KHDAYS_TWO_STACKED,
+    KHDAYS_TWO_SIDE_BY_SIDE,
+    KHDAYS_TWO_SCREENS_COUNT
+} KhdaysTwoScreens;
+
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
     int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
@@ -171,6 +182,7 @@ typedef struct KhdaysVideo {
     int one_screen;    /* screens = one: one picture, else the DS's two */
     int one_screen_second; /* screens_second_display = one: with a second display (the Thor's), both screens
                               on the upper one as one picture, the lower one the logo; else each on its own */
+    int two_screens;   /* KhdaysTwoScreens: the DS's two screens one above the other or side by side */
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
     int menu_size;     /* the settings menu's text size, 1 to 4 (3: as the window's size sets it) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
@@ -261,6 +273,12 @@ typedef struct KhdaysGameplay {
     int stop_magic; /* 1 (the default): Stop's panels, recipes and casts; 0: the game as the DS's */
 } KhdaysGameplay;
 
+/* The mods ([mods] in the settings file): whether their native plugins may run (runtime/plugins/plugins.h),
+ * read as the game starts. */
+typedef struct KhdaysModsSettings {
+    int native_code; /* 0 (the default): no plugin is loaded; 1: they are, the player having been told */
+} KhdaysModsSettings;
+
 typedef struct KhdaysProfile {
     int version;         /* 1 */
     int language;        /* the game's and this screen's language: 0 the system's, else 1..5 (ui_text.h) */
@@ -275,6 +293,7 @@ typedef struct KhdaysProfile {
     KhdaysNetwork network;
     KhdaysSave save;
     KhdaysGameplay gameplay;
+    KhdaysModsSettings mods;
 } KhdaysProfile;
 
 /* The faithful default: today's keyboard layout, the DS layout on the

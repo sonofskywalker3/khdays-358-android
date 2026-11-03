@@ -12,6 +12,8 @@
 #include "../runtime/input/sequencers.h"
 #include "../runtime/scripts/queue.h"
 #include "../runtime/scripts/view.h"
+#include "../runtime/plugins/plugins.h"
+#include "../runtime/plugins/shown.h"
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -623,6 +625,16 @@ static void test_video_settings(void)
     khdays_profile_load(&r, path, count_notice);
     CHECK(r.video.one_screen_second && r.video.one_screen);
     CHECK(load_text("[video]\nscreens_second_display = both\n", &q) == 1 && !q.video.one_screen_second);
+    /* The two screens' arrangement: stacked by default; side by side read and written back; a bad value says
+     * so and keeps stacked. */
+    CHECK(p.video.two_screens == KHDAYS_TWO_STACKED);
+    CHECK(load_text("[video]\nscreens = two\ntwo_screens = Side-By-Side\n", &q) == 0 &&
+          q.video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE);
+    CHECK(khdays_profile_save(&q, path, count_notice) == 0);
+    khdays_profile_load(&r, path, count_notice);
+    CHECK(r.video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE && !r.video.one_screen);
+    CHECK(load_text("[video]\ntwo_screens = stacked\n", &q) == 0 && q.video.two_screens == KHDAYS_TWO_STACKED);
+    CHECK(load_text("[video]\ntwo_screens = beside\n", &q) == 1 && q.video.two_screens == KHDAYS_TWO_STACKED);
     /* The HUD's size: 1 to 8, 4 by default; a bad value says so. */
     CHECK(load_text("[video]\nhud_size = 6\n", &q) == 0 && q.video.hud_size == 6);
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);
@@ -913,6 +925,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_ENH_LOCK_ON, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MENU, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MOVEMENT, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_ENH_CHASE_FREE, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_LEFT_STICK, KHDAYS_ROW_CHOICE, 0, 2, 0},
         {KHDAYS_SET_RIGHT_STICK, KHDAYS_ROW_CHOICE, 0, 2, 0},
         {KHDAYS_SET_LEFT_DEAD_ZONE, KHDAYS_ROW_NUMBER, 5, 90, 5},
@@ -929,6 +942,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 3, 0}, /* off, 2x, 3x, 4x */
         {KHDAYS_SET_ASPECT, KHDAYS_ROW_CHOICE, 0, KHDAYS_ASPECT_COUNT - 1, 0},
         {KHDAYS_SET_SCREENS, KHDAYS_ROW_CHOICE, 0, 1, 0},
+        {KHDAYS_SET_TWO_SCREENS, KHDAYS_ROW_CHOICE, 0, KHDAYS_TWO_SCREENS_COUNT - 1, 0},
         {KHDAYS_SET_HUD_SIZE, KHDAYS_ROW_NUMBER, 1, 8, 1},
         {KHDAYS_SET_MENU_SIZE, KHDAYS_ROW_NUMBER, 1, KHDAYS_MENU_SIZE_MAX, 1},
         {KHDAYS_SET_SCALING, KHDAYS_ROW_CHOICE, 0, 1, 0},
@@ -965,6 +979,7 @@ static void test_settings_model(void)
         int found[KHDAYS_SET_COUNT] = {0};
         int bindings[KHDAYS_LAYER_COUNT][KHDAYS_ACT_COUNT] = {{0}};
         khdays_profile_default(&p);
+        CHECK(p.enh.chase_free == 0); /* Chase Camera's Free: off unless chosen */
         p.enh.separate_lock_on = p.enh.dpad_command_menu = enhancements;
         khdays_model_refresh(&p);
         for (int s = 0; s < KHDAYS_SECTION_COUNT; ++s) {
@@ -1104,6 +1119,55 @@ static void test_settings_layout(void)
 /* The Mods section with two mods the game showed (runtime/scripts/view.h): it appears, a mod turned off,
  * a toggle, a choice, a number and a button asked of the game's thread, a mod moved later; gone again
  * with no mod. */
+/* Mods with native plugins alone: the section shows, its native code switch (with its warning) changes the
+ * settings, each plugin's state is told; safe mode said as such; gone again with no plugin. */
+static void test_settings_native_code(void)
+{
+    static KhdaysRow rows[KHDAYS_MODEL_ROWS_MAX];
+    const KhdaysModelContext context = {1, 0, 0, NULL};
+    KhdaysProfile p;
+    KhdaysPluginShown plugins[2] = {
+        {"Spinner", "1.0", "khdays-port", "", KHDAYS_PLUGIN_WAITING},
+        {"Broken", "2", "", "its library cannot be loaded (none)", KHDAYS_PLUGIN_REFUSED},
+    };
+    KhdaysPluginsShown shown = {0, 0, plugins, 2};
+    int n, lines = 0;
+    CHECK(!khdays_model_section_shown(KHDAYS_SECTION_MODS));
+    khdays_plugins_shown_set(&shown);
+    CHECK(khdays_model_section_shown(KHDAYS_SECTION_MODS));
+    khdays_profile_default(&p);
+    CHECK(p.mods.native_code == 0);
+    n = khdays_model_rows(KHDAYS_SECTION_MODS, &p, &context, rows);
+    CHECK(n == 5 && rows[0].id == KHDAYS_SET_NATIVE_CODE && rows[0].kind == KHDAYS_ROW_SWITCH);
+    CHECK(rows[0].note == khdays_text(TXT_NATIVE_CODE_NOTE) && rows[0].takes == TXT_TAKES_NEXT_START);
+    CHECK(strcmp(rows[1].label, "Spinner 1.0 -- khdays-port") == 0 && strcmp(rows[3].label, "Broken 2") == 0);
+    for (int i = 0; i < n; ++i) {
+        if (rows[i].id == KHDAYS_SET_PLUGIN_STATE) {
+            ++lines;
+            CHECK(i != 2 || strcmp(rows[i].label, khdays_text(TXT_PLUGIN_WAITING)) == 0);
+            CHECK(i != 4 || strstr(rows[i].label, "its library cannot be loaded (none)") != NULL);
+        }
+    }
+    CHECK(lines == 2);
+    khdays_settings_open(&p);
+    khdays_settings_draw(screen, NULL);
+    to_section(KHDAYS_SECTION_MODS);
+    shot("2-native-code");
+    to_row(KHDAYS_SET_NATIVE_CODE, -1);
+    key(SDL_SCANCODE_RETURN);
+    CHECK(khdays_settings_profile()->mods.native_code == 1);
+    khdays_settings_draw(screen, NULL);
+    CHECK(key(SDL_SCANCODE_ESCAPE) == 0 && key(SDL_SCANCODE_ESCAPE) == 1);
+    /* safe mode: the plugins wait for it, not for the setting */
+    shown.safe_mode = 1;
+    khdays_plugins_shown_set(&shown);
+    khdays_model_rows(KHDAYS_SECTION_MODS, &p, &context, rows);
+    CHECK(strcmp(rows[2].label, khdays_text(TXT_PLUGIN_SAFE_MODE)) == 0);
+    shown.count = 0;
+    khdays_plugins_shown_set(&shown);
+    CHECK(!khdays_model_section_shown(KHDAYS_SECTION_MODS));
+}
+
 static void test_settings_mods(void)
 {
     KhdaysProfile p;
@@ -1203,6 +1267,7 @@ static void test_settings_mods(void)
     v.count = 0;
     khdays_scripts_view_set(&v);
     CHECK(!khdays_model_section_shown(KHDAYS_SECTION_MODS));
+    test_settings_native_code();
 }
 
 static void test_settings_screen(void)
@@ -1410,6 +1475,11 @@ static void test_video_page(void)
     CHECK(v->one_screen == 1 && v->aspect == KHDAYS_ASPECT_16_9);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->one_screen == 0);
+    key(SDL_SCANCODE_DOWN); /* the two screens' arrangement, with two screens: side by side and back */
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE);
+    key(SDL_SCANCODE_LEFT);
+    CHECK(v->two_screens == KHDAYS_TWO_STACKED);
     key(SDL_SCANCODE_DOWN); /* the HUD's size, by one */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->hud_size == 5);
@@ -1451,6 +1521,9 @@ static void test_video_page(void)
     key(SDL_SCANCODE_DOWN); /* the aspect cannot be chosen either, nor the screens: on to scaling */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->one_screen == 0);
+    key(SDL_SCANCODE_DOWN); /* the two screens' arrangement needs no card */
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE);
     key(SDL_SCANCODE_DOWN); /* nor the HUD's size */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->hud_size == 4);
@@ -2092,6 +2165,54 @@ static void test_languages(void)
     khdays_ui_set_language(KHDAYS_LANGUAGE_ENGLISH);
 }
 
+static void test_hud_settings(void)
+{
+    KhdaysProfile p, q;
+    char path[512];
+    khdays_profile_default(&p);
+    CHECK(load_text("version = 1\n", &q) == 0);
+    CHECK(p.enh.hud[KHDAYS_OPT_UI_PADDING] == 0);
+    CHECK(memcmp(p.enh.hud, q.enh.hud, sizeof(p.enh.hud)) == 0);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        p.enh.hud[i] = i < KHDAYS_OPT_MISSION_VISIBILITY ? (i & 1) : i == KHDAYS_OPT_MISSION_VISIBILITY ? 1 : 9;
+    path_of("hud.ini", path, sizeof(path));
+    CHECK(khdays_profile_save(&p, path, count_notice) == 0);
+    notices = 0;
+    khdays_profile_load(&q, path, count_notice);
+    CHECK(notices == 0 && memcmp(p.enh.hud, q.enh.hud, sizeof(p.enh.hud)) == 0);
+    khdays_hud_settings_publish(q.enh.hud);
+    const unsigned generation = khdays_hud_settings_generation();
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        CHECK(khdays_hud_setting(i) == q.enh.hud[i]);
+    khdays_hud_settings_publish(q.enh.hud);
+    CHECK(khdays_hud_settings_generation() == generation);
+    KhdaysModelContext context = {0};
+    KhdaysRow rows[KHDAYS_MODEL_ROWS_MAX];
+    khdays_model_refresh(&q);
+    const int count = khdays_model_rows(KHDAYS_SECTION_ENHANCEMENTS, &q, &context, rows);
+    int found = 0;
+    for (int i = 0; i < count; ++i)
+        if (rows[i].id >= KHDAYS_SET_HUD_FONT && rows[i].id <= KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR) {
+            const int option = rows[i].id - KHDAYS_SET_HUD_FONT;
+            ++found;
+            CHECK(rows[i].value == &q.enh.hud[option] && rows[i].available);
+            CHECK(rows[i].apply == KHDAYS_APPLY_NOW);
+            const int old = *rows[i].value;
+            CHECK(khdays_model_adjust(&q, &rows[i], rows[i].kind == KHDAYS_ROW_SWITCH && old ? -1 : 1));
+            CHECK(*rows[i].value != old);
+        }
+    CHECK(found == KHDAYS_OPT_COUNT);
+    CHECK(khdays_model_changes(&p, &q) & KHDAYS_CHANGE_CONTROLS);
+    khdays_devices_set_profile(&q);
+    CHECK(khdays_hud_settings_generation() != generation);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        CHECK(khdays_hud_setting(i) == q.enh.hud[i]);
+    q.enh.hud[KHDAYS_OPT_MISSION_ANCHOR] = 999;
+    q.enh.hud[KHDAYS_OPT_MISSION_VISIBILITY] = -1;
+    CHECK(khdays_profile_repair(&q));
+    CHECK(q.enh.hud[KHDAYS_OPT_MISSION_ANCHOR] == 9 && q.enh.hud[KHDAYS_OPT_MISSION_VISIBILITY] == 0);
+}
+
 int main(void)
 {
     test_default_profile();
@@ -2114,6 +2235,7 @@ int main(void)
     test_settings_model();
     test_settings_layout();
     test_settings_screen();
+    test_hud_settings();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

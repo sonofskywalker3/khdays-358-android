@@ -87,8 +87,8 @@ build, macOS, Windows on ARM and the Nintendo Switch.
 ## Installing
 
 On Windows, the installer from the releases page is all you need besides your
-own copy of the game: it asks for your ROM (the European release of KINGDOM
-HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
+own copy of the game: it asks for your ROM (the European or North American
+release of KINGDOM HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
 KINGDOM HEARTS HD 1.5+2.5 ReMIX folder), prepares the game's data from it, and
 can also make the HD pack from your HD collections, add the port to Steam (PC
 and Steam Deck), and install the mod studio. Nothing of the game comes with
@@ -206,9 +206,9 @@ Your choices are kept in `saves/settings.ini`, a text file you may also edit
 by hand (`KHDAYS_SETTINGS=<path>` uses another file). If the port cannot read
 it, it starts with the defaults and keeps the old file as `settings.ini.bad`.
 
-**Enhancements** (Settings → Enhancements; all off by default, so the game
-plays as on the DS until you switch one on). Each does only what the game's
-own controls can do, through the same parts of the game:
+**Enhancements** (Settings → Enhancements). The control enhancements below
+are off by default. Each uses the game's own controls through the same parts
+of the game:
 
 - **Analog camera:** the right stick turns the field camera and tilts it, as
   far as the tilt of the stick, at up to the game's own turning speed
@@ -242,6 +242,26 @@ own controls can do, through the same parts of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Chase Camera: Free:** on the camp's Config page drawn on one screen,
+  Chase Camera has a third value after the game's Auto and Manual. Free is
+  the game's Manual, except that walking no longer pulls the camera's tilt
+  back to its preset's: the tilt set by hand stays (its distance still
+  follows, and the events' cameras and the lock-on are the game's). The game
+  keeps Manual in its save; the settings file keeps Free
+  (`[enhancements] chase_free`), which the settings' enhancements also turn
+  on and off (Free camera) -- there with two screens too, where the game
+  draws its own Config page. Off unless chosen.
+
+The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
+sequences, the pause-menu target, and HUD/control during INFORMATION messages.
+All but the HD fonts are off until the player turns them on. These switches
+require the corresponding enabled mod assets and preserve native fallback when
+an asset is unavailable. Mission-panel visibility and its gameplay
+and pause anchors are saved here too. **UI padding**, off by default, removes
+the outer inset from an active HD HUD in single-screen mode. Changes use
+`saves/settings.ini`; they never rewrite mod JSON. See the
+[HUD preference reference](docs/KH2_SEQUENCES.md#live-enhancements-preferences)
+for defaults, precedence, and the INFORMATION transition exception.
 
 The **Kingdom Hearts II layout** (Settings → Gamepad preset; Kingdom Hearts
 III uses the same buttons for these actions) puts attack on the bottom face
@@ -294,6 +314,10 @@ once:
   stays where it was, and the lower screen stays 4:3 in the middle. The game
   sees nothing different: it still computes
   its 4:3 view.
+- **Two screens** (with two screens): stacked, the upper above the lower as
+  on the DS, or side by side, the upper on the left and the lower on the
+  right, each at the DS's width (the aspect ratio widens stacked screens
+  only); side by side, a 16:9 window shows each screen a third larger.
 - **Screen scaling**: sharp (the DS's pixels as squares) or smooth.
 - **3D texture smoothing**: off as on the DS, or blended between texels.
 - **HD graphics**: the replacements in your mods (below), on by default.
@@ -326,6 +350,7 @@ The choices are kept in the `[video]` section of `saves/settings.ini`:
 internal_resolution = window   # the window's size (the default), or a multiple: 2 to 16 in the settings
 antialiasing = off        # off, 2x, 3x or 4x: made that many times larger and shrunk
 aspect = 16:9             # 4:3 (the DS's), 16:9, 16:10, or window
+two_screens = stacked     # with two screens: stacked (the DS's) or side-by-side
 scaling = sharp           # sharp (the DS's) or smooth
 texture_smoothing = off   # off (the DS's) or on
 hd_graphics = on          # the mods' replacements
@@ -576,7 +601,10 @@ drawn over itself are replaced, so the game's text stays its own. A model
 keeps its own skeleton, weights, polygons and textures and is moved by the
 game's animations: its joints named like the original's nodes follow them,
 `<model>.bones.txt` pairs the others (a line `<joint> <node>`; `scale <k>`
-sizes the model), the rest move with their parents, and a rest pose far from
+sizes the model; `keep <node> ...` still draws the game's own shapes of
+those nodes, a chest's light rays under a new chest; `switch <setting>`
+draws the model only while that HD replacement of the settings is on, such
+as `kh2_prizes`), the rest move with their parents, and a rest pose far from
 the game's (a T-pose) is turned to match. A model may be glTF (`.gltf`, or
 `.glb` with its textures inside) or FBX (`.fbx`, binary or ASCII), taken in
 that order when more than one is there; an FBX in centimetres or with Z up is
@@ -594,6 +622,11 @@ writes, without starting the game, every texture (with each palette it is
 drawn with), every model as glTF with its skeleton, and every 2D tile sheet
 as an indexed PNG, under those names (default `saves/dump/graphics`). A
 dumped 2D tile sheet put back unchanged is drawn as the original.
+`khdays-native --kh2-object <mdlx> <out.gltf> [--hd <folder>] [--picture <n>
+<file>]... [--pose <mset> <motion>] [--turn <degrees>]` makes a KINGDOM HEARTS
+II object of the player's 1.5+2.5 copy into a glTF model with its skeleton,
+in the first frame of one of its motions, its HD pictures beside it (the KH2
+prizes mod's chests are made so).
 
 ## Sound
 
@@ -644,7 +677,7 @@ ends by itself (not when the game stops it); the voices' streams are decoded
 ahead, so even their first line is the mod's. Best: 48,000 Hz, 16 bits, about
 as loud as the original (a dumped one shows how loud).
 
-**The originals** to make them from: `khdays-native --dump-sounds [DIR]`
+**The originals** to make them from: `khdays-native --dump-sounds [DIR [NAME...]]`
 writes every wave, stream, sequence and sequence-archive entry as WAV under
 those same names, loops included (default `saves/dump/sounds`, about
 2.3 GB). It runs without starting the game; the sequences are played by the
@@ -723,6 +756,17 @@ and the log says why. Made from a copy you own, for example:
 ffmpeg -i source.mp4 -c:v mpeg1video -q:v 2 -c:a mp2 -b:a 256k -f mpeg mods/MyMod/movies/802.mpg
 ```
 
+## Mods made for the DS game
+
+A mod can replace any of the game's own files: `mods/<Mod>/files/<path>` is read instead of the
+card's file at that path (`ba/ch/ro/def.p.z`, `UI/cm/cm.p2`...), in the game's own format, as the
+studio writes them. Mods made with Kingdom Hearts DS Project Editor (`.days` files) need nothing
+more: left in `mods/` as they are, each is a mod of its own on the Mods page. The port copies their
+files out into `mods/.days/<name>/` (again only when the `.days` changes; the copy goes when the
+`.days` does), checks each against the mod's own list, and tells in the session log a mod made for
+another copy of the game than the player's. With the HD PACK's menus, the HD pieces are drawn
+instead of the game's pictures: a `.days` mod's new faces and title show with them off.
+
 ## Mods that change the game
 
 Besides content, a mod can carry Lua scripts that change how the game plays: they hear what
@@ -735,6 +779,16 @@ runs in its own sandbox: an error or an endless loop stops that mod only, and sc
 outside their own folder, nor any memory but the game's. `docs/SCRIPTING.md` describes it all; `port/mods_examples/` (installed
 as `mods-examples/`) has examples to copy into `mods/`; khdays-studio's Console shows what the
 mods print and reloads them while the game runs.
+
+For what scripts cannot do, a mod can carry a native plugin: C++ built for the player's computer
+against the KH Mod SDK (`sdk/`), loaded only once the player has turned native code on (the
+settings menu's Mods page, read at the next start; it runs inside the game, unisolated).
+`docs/MODDING_NATIVE.md` describes it. **Examples:** installed with KH Studio (the installer's
+choice), `mods-examples/` has five mods with a native plugin ready to copy into `mods/`, their
+plugins built -- `HelloWorld`, `CustomCharacter` (a character of its own), `CustomLimit` (a
+character with a Limit of its own), `CustomEnemy` (Shadows that blink away and split) and
+`AdvancedNativeMod` (hooks at the game's routines) -- and `sdk/` the KH Mod SDK to build your own
+(`sdk/examples/` in the repository).
 
 ## Multiplayer
 
@@ -841,8 +895,11 @@ the connection error -- the port boots it again in the same window.
 | `assets/` | The library the port and the studio share: the game's data formats decoded to neutral forms (textures, 2D graphics, fonts, text, models and animation, sound, video), the open formats mods use (PNG, BMP, glTF, FBX), the mod layer and the game filesystem; `tests/` its tests (`ctest`) |
 | `installer/` | The Windows installer (Inno Setup) and the helper that runs its steps |
 | `tools/` | ROM verification, data extraction and decompression; `hd/` the HD mods made from the player's HD collections; `tests/` their tests (`python -m unittest`) |
-| `docs/` | [`BUILD.md`](docs/BUILD.md), how the port is built from the decompilation and tested; [`PLATFORM.md`](docs/PLATFORM.md), how it stands in for the DS; [`RENDERING.md`](docs/RENDERING.md), how it draws the game; [`SOUND.md`](docs/SOUND.md), how it plays its sound; [`MULTIPLAYER.md`](docs/MULTIPLAYER.md), its multiplayer and server; [`COMPOSITIONS.md`](docs/COMPOSITIONS.md), the one-screen layouts' format; [`HD_SCREENS.md`](docs/HD_SCREENS.md), the HD screens' files; [`HD_FONTS.md`](docs/HD_FONTS.md), PNG font definitions and rendering; [`FONT_MAPPING.md`](docs/FONT_MAPPING.md), scoped font choices; [`DECOMP_FINDINGS.md`](docs/DECOMP_FINDINGS.md), what the decompilation's C should say differently; [`RUNTIME_MAP.md`](docs/RUNTIME_MAP.md), what the running game does (scenes, overlays, menus, data); [`FORMATS.md`](docs/FORMATS.md), the game's data formats; [`STUDIO.md`](docs/STUDIO.md), how the studio works |
+| `docs/` | [`BUILD.md`](docs/BUILD.md), how the port is built from the decompilation and tested; [`PLATFORM.md`](docs/PLATFORM.md), how it stands in for the DS; [`RENDERING.md`](docs/RENDERING.md), how it draws the game; [`SOUND.md`](docs/SOUND.md), how it plays its sound; [`MULTIPLAYER.md`](docs/MULTIPLAYER.md), its multiplayer and server; [`COMPOSITIONS.md`](docs/COMPOSITIONS.md), the one-screen layouts' format; [`HD_SCREENS.md`](docs/HD_SCREENS.md), the HD screens' files; [`MENU_OVERHAUL.md`](docs/MENU_OVERHAUL.md), the Menu Overhaul mod's screens; [`WALK_MOD.md`](docs/WALK_MOD.md), the Walk mod's analog walk; [`HD_FONTS.md`](docs/HD_FONTS.md), PNG font definitions and rendering; [`FONT_MAPPING.md`](docs/FONT_MAPPING.md), scoped font choices; [`DECOMP_FINDINGS.md`](docs/DECOMP_FINDINGS.md), what the decompilation's C should say differently; [`RUNTIME_MAP.md`](docs/RUNTIME_MAP.md), what the running game does (scenes, overlays, menus, data); [`FORMATS.md`](docs/FORMATS.md), the game's data formats; [`STUDIO.md`](docs/STUDIO.md), how the studio works |
 | `external/khdays-decomp` | The decompilation, pinned; updated deliberately and tested |
+
+KH2's local-asset sequence viewer, renderer validation, and HP gauge mapping are
+documented in [`docs/KH2_SEQUENCES.md`](docs/KH2_SEQUENCES.md).
 
 ### Checking the port
 

@@ -40,6 +40,7 @@ typedef struct KhdaysTextureReplacement {
  * of `units` 32-byte units (bits 8-15) and `rows` rows (bits 16-31). The
  * units drawn instead are numbered from the bitmap's start (tiles2d.h). */
 #define KHDAYS_REPLACEMENT_BITMAP 0x4u
+#define KHDAYS_REPLACEMENT_NO_MIPS 0x10u /* atlas regions are sampled explicitly at their logical size */
 
 /* A texture from a file's data, as the port draws it, into `rgba` (width x
  * height x 4 bytes, the sizes of `param`): `param` its TEXIMAGE_PARAM (the
@@ -79,6 +80,8 @@ int khdays_textures_write_indexed_png(const char *path, const uint8_t *indices, 
  * counted here never changes, but for a changing one's texels. */
 int khdays_textures_replacements(void);
 const KhdaysTextureReplacement *khdays_textures_replacement(int id);
+/* The name replacement `id` was found under (the texture's: names.h), or NULL. */
+const char *khdays_textures_name(int id);
 
 /* A replacement whose texels the runtime changes as the game runs (a movie's frame: video.c), zero at
  * first: written between khdays_textures_change_begin and _end, which moves its version; read on

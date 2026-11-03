@@ -60,6 +60,103 @@ int khdays_language_choose(int setting)
 /* Each text in English, French, German, Italian and Spanish. The words for the game's own Config page
  * (Config, Controls, Type A, Command List, Only) are the game's, in each language. */
 static const char *const texts[TXT_COUNT][5] = {
+    [TXT_HUD_FONT] = {"HD font replacement", "Polices HD", "HD-Schriftersatz", "Caratteri HD", "Fuentes HD"},
+    [TXT_HUD_MINIMAP] = {"KH2 minimap", "Mini-carte KH2", "KH2-Minikarte", "Minimappa KH2", "Minimapa KH2"},
+    [TXT_HUD_PARTY_HP] = {"Player / party HP sequences", "PV du joueur et des alliés", "LP-Sequenzen der Gruppe",
+                          "Sequenze HP del gruppo", "Secuencias de VT del grupo"},
+    [TXT_HUD_ENEMY_HP] = {"Enemy HP sequences", "PV des ennemis", "Gegner-LP-Sequenzen", "Sequenze HP dei nemici",
+                          "Secuencias de VT enemiga"},
+    [TXT_HUD_MISSION] = {"Mission panel sequence", "Séquence du panneau de mission", "Missionsanzeige-Sequenz",
+                         "Sequenza pannello missione", "Secuencia del panel de misión"},
+    [TXT_HUD_INFORMATION] = {"Information sequence", "Séquence des informations", "Informationssequenz",
+                             "Sequenza informazioni", "Secuencia de información"},
+    [TXT_HUD_RETICLES] = {"Target reticle sequences", "Séquences des réticules", "Zielmarkierungssequenzen",
+                          "Sequenze mirini", "Secuencias de las miras"},
+    [TXT_HUD_LOCKED_ON] = {"LOCKED ON! sequence", "Séquence LOCKED ON!", "LOCKED ON!-Sequenz", "Sequenza LOCKED ON!",
+                           "Secuencia LOCKED ON!"},
+    [TXT_HUD_NOTIFICATIONS] = {"Notification box sequences", "Séquences des notifications",
+                               "Benachrichtigungssequenzen", "Sequenze notifiche", "Secuencias de notificaciones"},
+    [TXT_HUD_HEART_POINTS] = {"Heart counter sequence", "Séquence du compteur de cœurs", "Herzzähler-Sequenz",
+                              "Sequenza contatore cuori", "Secuencia del contador de corazones"},
+    [TXT_HUD_PRIZES] = {"KH2 prizes and chests", "Prix et coffres de KH2", "Preise und Truhen aus KH2",
+                        "Premi e forzieri di KH2", "Premios y cofres de KH2"},
+    [TXT_HUD_PAUSE_TARGET] = {"Target in pause menu", "Cible dans le menu Pause", "Ziel im Pausenmenü",
+                              "Bersaglio nel menu pausa", "Objetivo en el menú de pausa"},
+    [TXT_HUD_INFORMATION_HUD] = {"HUD and control during INFORMATION", "ATH et commandes pendant INFORMATION",
+                                 "HUD und Steuerung bei INFORMATION", "HUD e comandi durante INFORMATION",
+                                 "HUD y controles durante INFORMATION"},
+    [TXT_HUD_UI_PADDING] = {"UI padding", "Marges de l’interface", "UI-Rand", "Margini interfaccia",
+                            "Margen de la interfaz"},
+    [TXT_HUD_UI_PADDING_NOTE] =
+        {"Single-screen HUD: off aligns the UI to the screen edges; on restores the original padding.",
+         "ATH sur un écran : désactivé, aligne l’interface sur les bords ; activé, rétablit les marges d’origine.",
+         "Einzelbildschirm-HUD: Aus richtet die UI am Bildschirmrand aus; Ein stellt den ursprünglichen Rand wieder her.",
+         "HUD a schermo singolo: disattivato allinea l’interfaccia ai bordi; attivato ripristina i margini originali.",
+         "HUD en una pantalla: desactivado alinea la interfaz con los bordes; activado restaura el margen original."},
+    [TXT_HUD_MISSION_VISIBILITY] = {"Mission panel visibility", "Visibilité du panneau de mission",
+                                    "Sichtbarkeit der Missionsanzeige", "Visibilità pannello missione",
+                                    "Visibilidad del panel de misión"},
+    [TXT_HUD_MISSION_ANCHOR] = {"Mission panel in gameplay", "Position du panneau en jeu", "Missionsanzeige im Spiel",
+                                "Pannello missione in gioco", "Panel de misión en juego"},
+    [TXT_HUD_MISSION_PAUSE_ANCHOR] = {"Mission panel while paused", "Position du panneau en pause",
+                                      "Missionsanzeige bei Pause", "Pannello missione in pausa",
+                                      "Panel de misión en pausa"},
+    [TXT_HUD_REPLACEMENTS] = {"HUD replacements", "Remplacements de l’ATH", "HUD-Ersatz", "Sostituzioni HUD",
+                              "Sustituciones del HUD"},
+    [TXT_HUD_MISSION_LAYOUT] = {"Mission panel placement", "Position du panneau de mission",
+                                "Position der Missionsanzeige", "Posizione pannello missione",
+                                "Posición del panel de misión"},
+    [TXT_HUD_REPLACEMENT_NOTE] =
+        {"Use an enabled replacement from the mod JSON. Off keeps the original. Changes apply without restarting; JSON files are never modified.",
+         "Utilise un remplacement activé dans le JSON du mod. Désactivé conserve l’original. Aucun redémarrage ni modification du JSON.",
+         "Verwendet einen im Mod-JSON aktivierten Ersatz. Aus behält das Original. Ohne Neustart; JSON-Dateien bleiben unverändert.",
+         "Usa una sostituzione abilitata nel JSON della mod. Disattivato mantiene l’originale. Nessun riavvio; i JSON non vengono modificati.",
+         "Usa una sustitución activada en el JSON del mod. Desactivado conserva el original. Sin reiniciar ni modificar los JSON."},
+    [TXT_HUD_PARTY_NOTE] =
+        {"Covers player and party HP bars, HUD portraits, player numbers and LIMIT text. Requires enabled JSON replacements.",
+         "Inclut les PV, portraits, numéros des joueurs et LIMIT. Remplacements JSON activés requis.",
+         "Für LP, Porträts, Spielernummern und LIMIT. Aktivierter JSON-Ersatz erforderlich.",
+         "Include HP, ritratti, numeri giocatore e LIMIT. Richiede sostituzioni JSON abilitate.",
+         "Incluye VT, retratos, números de jugador y LIMIT. Requiere sustituciones JSON activadas."},
+    [TXT_HUD_NOTIFICATIONS_NOTE] =
+        {"Obtained, Backpack Full and Recon Breakthrough boxes, with their text. Each still requires its own enabled JSON replacement.",
+         "Boîtes d’objet obtenu, sac plein et découverte en reconnaissance, avec leur texte. Chaque remplacement doit être activé dans le JSON.",
+         "Erhalten-, Rucksack-voll- und Erkundungsdurchbruch-Anzeigen mit Text. Jeweils aktivierter JSON-Ersatz erforderlich.",
+         "Riquadri oggetto ottenuto, zaino pieno e svolta in ricognizione, con testo. Ogni sostituzione deve essere abilitata nel JSON.",
+         "Cuadros de objeto obtenido, mochila llena y avance en reconocimiento, con texto. Cada sustitución debe estar activada en el JSON."},
+    [TXT_HUD_INFORMATION_NOTE] =
+        {"Uses enabled JSON replacements. An upper-screen message already open finishes with its current renderer before switching.",
+         "Utilise les remplacements JSON activés. Un message déjà ouvert sur l’écran supérieur se termine avant le changement.",
+         "Verwendet aktivierten JSON-Ersatz. Eine bereits offene Meldung oben endet vor dem Wechsel.",
+         "Usa le sostituzioni JSON abilitate. Un messaggio già aperto sullo schermo superiore termina prima del cambio.",
+         "Usa sustituciones JSON activadas. Un mensaje ya abierto en la pantalla superior termina antes del cambio."},
+    [TXT_HUD_INFORMATION_HUD_NOTE] =
+        {"Allow HUD and control while the information box is active. Requires the JSON option and replacement. Pause, dialogue, cutscene and scripted locks remain. An open message finishes before switching.",
+         "Conserve l’ATH et les commandes pendant les informations si le JSON l’autorise. Les restrictions de pause, dialogue, cinématique et script restent actives. Attend la fin du message ouvert.",
+         "Erlaubt HUD und Steuerung bei Informationen, sofern JSON dies aktiviert. Pause, Dialog, Film und Skriptsperren bleiben. Wechsel nach Ende offener Meldung.",
+         "Mantiene HUD e comandi durante le informazioni se abilitato nel JSON. Restano i blocchi di pausa, dialoghi, filmati e script. Attende la fine del messaggio aperto.",
+         "Permite HUD y controles durante la información si el JSON lo activa. Se mantienen los bloqueos de pausa, diálogo, escenas y scripts. Espera al final del mensaje abierto."},
+    [TXT_HUD_MINIMAP_NOTE] =
+        {"KH2 map presentation in single-screen mode, if kh2map is enabled in minimap.json. Map textures and icons keep their replacements. Two-screen mode is unchanged.",
+         "Présentation KH2 sur un écran si kh2map est activé dans minimap.json. Les remplacements des textures et icônes sont conservés. Deux écrans inchangés.",
+         "KH2-Karte auf einem Bildschirm, wenn kh2map in minimap.json aktiv ist. Textur- und Symbolersatz bleiben. Zwei Bildschirme unverändert.",
+         "Mappa KH2 su schermo singolo se kh2map è attivo in minimap.json. Mantiene texture e icone sostituite. Due schermi invariati.",
+         "Mapa KH2 en una pantalla si kh2map está activado en minimap.json. Conserva las texturas e iconos sustituidos. Dos pantallas sin cambios."},
+    [TXT_HUD_ALWAYS] = {"Always", "Toujours", "Immer", "Sempre", "Siempre"},
+    [TXT_HUD_PAUSE_ONLY] = {"Pause only", "En pause seulement", "Nur bei Pause", "Solo in pausa", "Solo en pausa"},
+    [TXT_HUD_ANCHOR_0] = {"Top left", "En haut à gauche", "Oben links", "In alto a sinistra", "Arriba a la izquierda"},
+    [TXT_HUD_ANCHOR_1] = {"Top", "En haut", "Oben", "In alto", "Arriba"},
+    [TXT_HUD_ANCHOR_2] = {"Top right", "En haut à droite", "Oben rechts", "In alto a destra", "Arriba a la derecha"},
+    [TXT_HUD_ANCHOR_3] = {"Middle left", "Au milieu à gauche", "Mitte links", "Al centro a sinistra",
+                          "Centro a la izquierda"},
+    [TXT_HUD_ANCHOR_4] = {"Middle", "Au milieu", "Mitte", "Al centro", "Centro"},
+    [TXT_HUD_ANCHOR_5] = {"Middle right", "Au milieu à droite", "Mitte rechts", "Al centro a destra",
+                          "Centro a la derecha"},
+    [TXT_HUD_ANCHOR_6] = {"Bottom left", "En bas à gauche", "Unten links", "In basso a sinistra",
+                          "Abajo a la izquierda"},
+    [TXT_HUD_ANCHOR_7] = {"Bottom", "En bas", "Unten", "In basso", "Abajo"},
+    [TXT_HUD_ANCHOR_8] = {"Bottom right", "En bas à droite", "Unten rechts", "In basso a destra", "Abajo a la derecha"},
+
     [TXT_SETTINGS] = {"Settings", "Réglages", "Einstellungen", "Impostazioni", "Ajustes"},
     [TXT_CONTROLS] = {"Controls", "Commandes", "Steuerung", "Comandi", "Controles"},
     [TXT_GAMEPAD_PRESET] = {"Gamepad preset", "Disposition manette", "Controller-Belegung", "Schema controller",
@@ -524,6 +621,22 @@ static const char *const texts[TXT_COUNT][5] = {
                                        "inferiore mostra il logo. Due: ogni schermo sul proprio display.",
                                        "Una: las dos pantallas en una sola imagen en la pantalla de arriba, la de "
                                        "abajo muestra el logo. Dos: cada pantalla en la suya."},
+    [TXT_VIDEO_TWO_SCREENS] = {"Two screens", "Deux écrans", "Zwei Bildschirme", "Due schermi", "Dos pantallas"},
+    [TXT_VIDEO_TWO_SCREENS_STACKED] = {"Stacked", "Superposés", "Übereinander", "Uno sopra l'altro", "Arriba y abajo"},
+    [TXT_VIDEO_TWO_SCREENS_SIDE] = {"Side by side", "Côte à côte", "Nebeneinander", "Affiancati", "A los lados"},
+    [TXT_VIDEO_TWO_SCREENS_NOTE] =
+        {"Side by side: the upper screen on the left, the lower on the right, each as wide as the DS's (the aspect "
+         "widens stacked screens only).",
+         "Côte à côte : l'écran du haut à gauche, celui du bas à droite, chacun aussi large que celui de la DS (le "
+         "format n'élargit que les écrans superposés).",
+         "Nebeneinander: der obere Bildschirm links, der untere rechts, jeder so breit wie der des DS (das "
+         "Seitenverhältnis verbreitert nur übereinanderliegende Bildschirme).",
+         "Affiancati: lo schermo superiore a sinistra, quello inferiore a destra, ciascuno largo come quello del DS "
+         "(il formato allarga solo gli schermi uno sopra l'altro).",
+         "A los lados: la pantalla de arriba a la izquierda y la de abajo a la derecha, cada una del ancho de la de "
+         "la DS (el formato solo ensancha las pantallas de arriba y abajo)."},
+    [TXT_VIDEO_TWO_SCREENS_ONE] = {"Only with two screens.", "Seulement avec deux écrans.",
+                                   "Nur mit zwei Bildschirmen.", "Solo con due schermi.", "Solo con dos pantallas."},
     [TXT_VIDEO_HUD_SIZE] = {"HUD size", "Taille du HUD", "HUD-Größe", "Dimensione HUD", "Tamaño del HUD"},
     [TXT_VIDEO_HUD_SIZE_NOTE] =
         {"One screen: how big the HUD's pieces are, 1 to 8 (4 by default); the dialogs keep "
@@ -985,6 +1098,14 @@ static const char *const texts[TXT_COUNT][5] = {
          "Los datos del juego en\n%s\nestán incompletos o dañados: %s\n\nVuelve a extraerlos de tu propia "
          "copia del juego con tools/extract_data.py."},
     [TXT_PAUSE_RETRY] = {"Retry", "Réessayer", "Wiederholen", "Riprova", "Reintentar"},
+    [TXT_PANELS_STATS] = {"Stats", "Statistiques", "Status", "Statistiche", "Estadísticas"},
+    [TXT_PANELS_SUBMENU] = {"Submenu", "Sous-menu", "Untermenü", "Sottomenu", "Submenú"},
+    [TXT_VIEWER_MODEL] = {"3D Model", "Modèle 3D", "3D-Modell", "Modello 3D", "Modelo 3D"},
+    [TXT_VIEWER_TURN] = {"Turn", "Tourner", "Drehen", "Ruota", "Girar"},
+    [TXT_VIEWER_ZOOM] = {"Zoom", "Zoom", "Zoom", "Zoom", "Zoom"},
+    [TXT_VIEWER_RESET] = {"Reset", "Recentrer", "Zurücksetzen", "Ripristina", "Restablecer"},
+    [TXT_VIEWER_BACK] = {"Back", "Retour", "Zurück", "Indietro", "Volver"},
+    [TXT_VIEWER_ENEMY] = {"Enemy", "Ennemi", "Gegner", "Nemico", "Enemigo"},
     [TXT_SAVE_AUTOSAVE_TAG] = {"AUTO", "AUTO", "AUTO", "AUTO", "AUTO"},
     [TXT_CAMP_BACK_TO_MENU] = {"Return to the main menu?", "Revenir au menu principal ?", "Zum Hauptmenü zurückkehren?",
                                "Tornare al menu principale?", "¿Volver al menú principal?"},
@@ -1058,7 +1179,8 @@ static const char *const texts[TXT_COUNT][5] = {
                            "In una stanza contano le opzioni dell'host.",
                            "En una sala cuentan las opciones del anfitrión."},
     [TXT_MOD_FILES_ON] = {"On: its files replace the game's.", "Activé : ses fichiers remplacent ceux du jeu.",
-                          "An: seine Dateien ersetzen die des Spiels.", "Attivo: i suoi file sostituiscono quelli del gioco.",
+                          "An: seine Dateien ersetzen die des Spiels.",
+                          "Attivo: i suoi file sostituiscono quelli del gioco.",
                           "Activado: sus archivos reemplazan los del juego."},
     [TXT_MOD_FILES_OFF] = {"Off: the game's own files play.", "Désactivé : les fichiers du jeu sont utilisés.",
                            "Aus: die eigenen Dateien des Spiels gelten.", "Disattivato: valgono i file del gioco.",
@@ -1077,6 +1199,49 @@ static const char *const texts[TXT_COUNT][5] = {
                                "salvataggio.",
                                "Escribe en la memoria del juego: un error suyo puede detener el juego o llegar a una "
                                "partida guardada."},
+    [TXT_NATIVE_CODE] = {"Native code", "Code natif", "Nativer Code", "Codice nativo", "Código nativo"},
+    [TXT_NATIVE_CODE_NOTE] =
+        {"Lets the mods' plugins run: programs built for this computer that a mod carries, which can change how the "
+         "game plays. A plugin can do anything a program can -- crash the game, damage your saves, reach your files "
+         "-- and the game does not isolate it. Turn it on only for mods from people you trust. Off, the rest of each "
+         "mod works without its plugin. If a plugin keeps the game from starting, start it with --safe-mode.",
+         "Permet aux plugins des mods de s'exécuter : des programmes compilés pour cet ordinateur qu'un mod apporte et "
+         "qui peuvent changer la façon de jouer. Un plugin peut faire tout ce que fait un programme -- planter le jeu, "
+         "abîmer vos sauvegardes, atteindre vos fichiers -- et le jeu ne l'isole pas. Ne l'activez que pour des mods "
+         "de personnes de confiance. Désactivé, le reste de chaque mod fonctionne sans son plugin. Si un plugin "
+         "empêche le jeu de démarrer, lancez-le avec --safe-mode.",
+         "Lässt die Plugins der Mods laufen: Programme für diesen Computer, die ein Mod mitbringt und die das Spiel "
+         "verändern können. Ein Plugin kann alles, was ein Programm kann -- das Spiel abstürzen lassen, Spielstände "
+         "beschädigen, auf deine Dateien zugreifen -- und das Spiel schottet es nicht ab. Schalte es nur für Mods von "
+         "Leuten ein, denen du vertraust. Aus, funktioniert der Rest jedes Mods ohne sein Plugin. Lässt ein Plugin "
+         "das Spiel nicht starten, starte es mit --safe-mode.",
+         "Permette ai plugin dei mod di essere eseguiti: programmi compilati per questo computer che un mod porta con "
+         "sé e che possono cambiare il gioco. Un plugin può fare tutto ciò che fa un programma -- bloccare il gioco, "
+         "danneggiare i salvataggi, raggiungere i tuoi file -- e il gioco non lo isola. Attivalo solo per mod di "
+         "persone di cui ti fidi. Disattivato, il resto di ogni mod funziona senza il suo plugin. Se un plugin "
+         "impedisce al gioco di avviarsi, avvialo con --safe-mode.",
+         "Deja que se ejecuten los plugins de los mods: programas compilados para este ordenador que trae un mod y "
+         "que pueden cambiar cómo se juega. Un plugin puede hacer lo mismo que cualquier programa -- cerrar el juego, "
+         "dañar tus partidas, tocar tus archivos -- y el juego no lo aísla. Actívalo solo con mods de gente de "
+         "confianza. Desactivado, el resto de cada mod funciona sin su plugin. Si un plugin no deja arrancar el "
+         "juego, inícialo con --safe-mode."},
+    [TXT_PLUGIN_RUNNING] = {"Plugin running", "Plugin en cours", "Plugin läuft", "Plugin in esecuzione",
+                            "Plugin en marcha"},
+    [TXT_PLUGIN_WAITING] = {"Plugin not loaded: native code is off", "Plugin non chargé : le code natif est désactivé",
+                            "Plugin nicht geladen: nativer Code ist aus",
+                            "Plugin non caricato: il codice nativo è disattivato",
+                            "Plugin no cargado: el código nativo está desactivado"},
+    [TXT_PLUGIN_SAFE_MODE] = {"Plugin not loaded: the game started in safe mode",
+                              "Plugin non chargé : le jeu a démarré en mode sans échec",
+                              "Plugin nicht geladen: das Spiel startete im abgesicherten Modus",
+                              "Plugin non caricato: il gioco è partito in modalità provvisoria",
+                              "Plugin no cargado: el juego arrancó en modo seguro"},
+    [TXT_PLUGIN_REFUSED] = {"Plugin not loaded: %s", "Plugin non chargé : %s", "Plugin nicht geladen: %s",
+                            "Plugin non caricato: %s", "Plugin no cargado: %s"},
+    [TXT_PLUGIN_FAILED] = {"Plugin failed to start: %s", "Le plugin n'a pas démarré : %s",
+                           "Plugin konnte nicht starten: %s", "Il plugin non è partito: %s",
+                           "El plugin no pudo arrancar: %s"},
+    [TXT_PLUGIN_STOPPED] = {"Plugin stopped", "Plugin arrêté", "Plugin gestoppt", "Plugin fermato", "Plugin detenido"},
     [TXT_AUTOSAVE] = {"Autosave", "Sauvegarde auto", "Automatisch speichern", "Salvataggio automatico", "Autoguardado"},
     [TXT_AUTOSAVE_FILE99] = {"In file 99", "Dans le fichier 99", "In Datei 99", "Nel file 99", "En el archivo 99"},
     [TXT_AUTOSAVE_PLAYED] = {"In the file being played", "Dans le fichier en cours", "In der gespielten Datei",
@@ -1154,6 +1319,29 @@ static const char *const texts[TXT_COUNT][5] = {
                             "mientras juegas; Esc lo suelta con los ajustes."},
     [TXT_MOUSE_SPEED] = {"Mouse camera speed (%)", "Vitesse caméra souris (%)", "Maus-Kameratempo (%)",
                          "Velocità telecamera mouse (%)", "Velocidad cámara ratón (%)"},
+    [TXT_SHOP_WELCOME] = {"Welcome!", "Bienvenue !", "Willkommen!", "Benvenuto!", "¡Bienvenido!"},
+    [TXT_CHASE_FREE] = {"Free", "Libre", "Frei", "Libera", "Libre"},
+    [TXT_CHASE_FREE_HELP] = {"Control the camera yourself. Walking keeps the tilt you set.",
+                             "Contrôlez la caméra vous-même. La marche garde l'inclinaison choisie.",
+                             "Steuere die Kamera selbst. Beim Gehen bleibt die eingestellte Neigung.",
+                             "Controlla la telecamera da solo. Camminando resta l'inclinazione scelta.",
+                             "Controla la cámara tú mismo. Al caminar se mantiene la inclinación elegida."},
+    [TXT_ENH_CHASE_FREE] = {"Free camera", "Caméra libre", "Freie Kamera", "Telecamera libera", "Cámara libre"},
+    [TXT_ENH_CHASE_FREE_NOTE] =
+        {"With the camp's camera on Manual, walking keeps the tilt you set instead of pulling it "
+         "back. On one screen the camp's page shows it as a third value, Free.",
+         "Avec la caméra du camp en manuel, la marche garde l'inclinaison choisie au lieu de "
+         "la ramener. Sur un seul écran, la page du camp l'affiche comme troisième valeur, "
+         "Libre.",
+         "Steht die Kamera im Lager auf manuell, bleibt beim Gehen die eingestellte Neigung, "
+         "statt zurückzugehen. Auf einem Bildschirm zeigt die Lagerseite sie als dritten "
+         "Wert, Frei.",
+         "Con la telecamera del campo in manuale, camminando resta l'inclinazione scelta "
+         "invece di tornare indietro. Su un solo schermo la pagina del campo la mostra come "
+         "terzo valore, Libera.",
+         "Con la cámara del campamento en manual, al caminar se mantiene la inclinación que "
+         "pongas en vez de volver a la suya. En una pantalla, la página del campamento la "
+         "muestra como un tercer valor, Libre."},
 };
 
 static int current = KHDAYS_LANGUAGE_ENGLISH;

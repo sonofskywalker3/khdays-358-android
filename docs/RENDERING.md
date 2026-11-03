@@ -76,6 +76,15 @@ engine's `KhdaysGpu2dWide` does the same, with a DS column whose own pixel stays
 taking the DS's record, and a column with no 2D and no sprite its window mask's
 record alone).
 
+## Two screens side by side
+
+With two screens, `[video] two_screens = side-by-side` puts the upper screen on the left and the lower on the right
+(`host/render/two_screens.c`): a picture two DS screens wide and one tall, each screen its DS's 256 columns (a screen
+drawn wider shows its middle 256), the engine A's 3D drawn on the card again over its own screen's place. The aspect
+ratio widens stacked screens only: side by side the picture is the DS's columns (`columns_now()`). Stacked, the
+default, is the picture as it was, the two screens one above the other. Only the presentation changes: the game and
+its frames are the same.
+
 ## One screen
 
 The one-screen pass (`port/gfx/onescreen.h`) places shapes -- rectangles of
@@ -149,6 +158,17 @@ The graphics card draws the lists (`host/render/gpu_raster3d.c`); the software
 rasterizer (`port/gpu/gpu3d.c`, GBATEK's "DS 3D Video") draws them as the
 reference, close to the hardware where GBATEK leaves the arithmetic open (the
 depth value, the interpolation, which pixels a polygon covers), not bit-exact.
+
+Selection reticles have a port-only `KHDAYS_G3D_MARKER` flag. The selection draw
+hooks mark both KH2 replacements and native PNG/DS fallback draws, and clear the
+scope before returning to unrelated rendering. These polygons follow the world
+in submission order, bypass world depth in both Z and W modes, and leave world
+depth unchanged. Their translucent IDs start separately from the world's, so an
+enemy using the same ID cannot erase them. This prevents translucent enemies
+from covering reticles through the normal Y sort. GPU and software paths apply
+the same rule, including lists rebuilt for interpolation. This does not set
+`KHDAYS_G3D_OVER_2D` or change HUD placement: the existing BG0 and one-screen UI
+composition still decide which 2D elements cover the reticle.
 
 ### Shadow volumes
 
@@ -308,7 +328,14 @@ game turns G; its head is where its parent's K puts it, so the mod keeps its
 own proportions. A joint at G's place with no correction is drawn with D_G
 itself; one that follows no node moves with its parent. A mesh is drawn both
 sides or front only as its file says (glTF `doubleSided`; FBX both), unless
-`<model>.bones.txt` says `cull back` or `cull none`. A blended mesh's vertex
+`<model>.bones.txt` says `cull back` or `cull none`. The game's own shapes are
+left unsent but for those `keep <node> ...` names: a shape whose vertices all
+hang from those nodes (through the palette's bones) is known by its display
+list's place from the model's start, the place the game's SHP command sends it
+from, and sent as the game sends it (a chest's light rays under a KH2 chest).
+`switch <setting>` ties the model to an HD replacement of the settings
+(`hud_settings.h`'s keys): while it is off, the game's model is drawn. A blended
+mesh's vertex
 alpha goes across each polygon, pixel by pixel, times the polygon's (the list's
 vertices carry it: `KhdaysG3dVertex` `a`, 1 for the game's, whose polygons have
 one alpha as the DS's): taken whole per triangle, KH2's sun glow came out a disk

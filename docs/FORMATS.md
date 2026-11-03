@@ -59,6 +59,17 @@ are not matched, only what they decode to.
 - **String tables** (`UI/**/*.s`, usually `.s.z`): `u32 header_size (8); u32
   count;` then per string `u32 length` (these 4 bytes included) and its UTF-16LE
   units with a NUL. The 136 shipped tables hold 5,007 strings.
+- **The story's scenes** (`ev/EV_S.p2` the shared ones, `EV_TT`, `EV_NM`, `EV_BB`,
+  `EV_AL`, `EV_AW`, `EV_HE`, `EV_PP`, `EV_DP` each world's): a P2 container whose
+  entries, stored plain, are scripts of the game's script machine (see Missions).
+  A line is a step's mode-0x40 operand: a table in the script's data of seven
+  words, the offsets of the Japanese, English, French, German, Italian and Spanish
+  texts (UTF-8, NUL-ended) and a closing -1; -1 for a language the card lacks
+  (every Japanese one). Step 1.29 shows most of them, 2.64
+  (`Ov002_ScriptOpenChoicePanel`) a choice's; two steps may share a table, and the
+  languages may share a text ("..."). The archives hold 4,012 lines (`EV_DP`
+  none). The studio writes a changed line past its script's data and points that
+  language's word at it, so the other languages keep theirs.
 
 Strings keep the game's control codes; in them the DS's buttons are characters
 of the game's font (U+3349 its A, U+3314 its B, U+3322 its X, U+3336 U+3351
@@ -165,3 +176,39 @@ are, and its translation, rotation and scale curves. A J0AC's tables and curve
 data are not inside it: the game's BCA0s share them between their animations,
 after the J0ACs, at offsets from each J0AC. The game loops or stops an animation
 at the frame count its clip gives (for example `Ov259_ModelAnimTick`).
+
+## KH2's PAX (the prize effect)
+
+Not the game's: KINGDOM HEARTS II's prize effect, `obj/PRIZE.mdlx` in the player's 1.5+2.5 copy, as
+`tools/mods/kh2_pax.py` reads it to make the KH2 prizes mod (docs/KH2_SEQUENCES.md, "Field prizes"). Only what that
+needs is read.
+
+- The file is a BAR; its entry of type 18 holds the PAX (`PAX_`). The PAX's data block is at +0x180: a word 0x96,
+  two words (1, 0x60), the pictures' count and their offsets, the animations' count and their offsets, each offset
+  from the block.
+- A picture: a 32-byte header (u16 page TBP, palette CBP, buffer width, format 0x13 = 8 bits, x, y, width, height;
+  then the GS TEX0 word), the width x height indices, then 256 RGBA palette entries stored in the PS2's CSM1 order
+  (index bits 3 and 4 swapped), alpha 0x80 opaque. Pictures sit at (x, y) in 128 x 64 pages; the remaster's HD
+  pages (`remastered/obj/PRIZE.mdlx/-0.dds`, `-1.dds`, 256 x 128) are those pages in the order of their TBPs.
+- An animation: a 0x20-byte header (its number first: 0 munny, 1 the HP orb, 2 the MP orb, 3 the drive orb; its
+  frame count, u16, at +0x14), then its frame list, 8 bytes a frame: u16 the frame's offset from the animation's
+  +0x10, u16 how long it shows in KH2's frames (60 a second) times 256, a byte 0x80 on the last, 3 bytes 0. Across
+  the 7957 animations of the player's KH2 every wait was whole frames (1, 2, 3, 4, 6, 40, 60); the prizes' are 2,
+  a 30th of a second, one of Days's field frames.
+- A frame: u16 kind (0 squares, 8 four corners), u16 layer count, u32 size, the GS TEX0 word at +0x10 (its page and
+  palette), the layers at +0x20: a square (four s16: x0 y0 x1 y1) or four corners (eight s16), each with its part of
+  the page as four u16 (u, v, w, h) in 1/4096 of the page; then, a layer each, 8 bytes: RGBA (0x80 = 1) and the GS
+  blend byte (0x44 mixed by alpha, 0x48 added).
+
+## KH2's objects (a chest, a prize box)
+
+Not the game's: KINGDOM HEARTS II's objects (`obj/<name>.mdlx` in the player's 1.5+2.5 copy), as
+`assets/src/kh2_map.cpp` reads them for the KH2 prizes mod's chests (`khdays-native --kh2-object`) and the studio's
+KH2 rooms' pieces. An `.mdlx` is a BAR: its model (type 4), its textures (type 7, a texture container as a map's),
+and a small entry of type 23. The model, 0x90 bytes after its entry's start: u32 kind (3 an object), u16 bones at
++0x10, the bones' table at +0x14 (0x40 bytes a bone: index, parent, then scale, rotation in radians and translation,
+four floats each), u16 groups at +0x1c, the groups from +0x20 (0x20 bytes each: u32 flags, u32 texture, the DMA chain
+at +0x10). A group's flag 0x400000 is light KH2 adds over the model (The World That Never Was's chest's glowing
+lines). A chest's rest pose has its lid open: its motion set (`obj/<name>.mset`, a BAR of motions, each a BAR
+holding the motion, type 9) has it closed in `00A`'s first frame; the lid is its last bone (`j3`), 100 degrees from
+closed when open.

@@ -15,6 +15,7 @@ is made on the player's computer from the player's own copies.
 | `setup_steps.py` | the helper: each step the installer cannot do by itself (`--help` lists them) |
 | `steam_library.py` | where Steam keeps the collections (its folder, libraries, app manifests) |
 | `epic_library.py` | where the Epic Games Store keeps them (its launcher's manifests, the default folder) |
+| `xbox_library.py` | where the Xbox app (Microsoft Store, PC Game Pass) keeps them (each drive's game library) |
 | `steam_shortcut.py` | the port added to Steam as a non-Steam game, and taken out again |
 | `collection_archive.py` | the collections' archives (`.hed`/`.pkg`) read as their own code reads them |
 | `hd_inputs.txt` | the collection files the HD tools read (traced: `setup_steps.py trace-inputs`) |
@@ -46,6 +47,12 @@ who wants to host their own; the game's default server is the maintainer's.
 The example gameplay mods (`port/mods_examples`) and their interface (`docs/SCRIPTING.md`) go to
 `mods-examples/`, outside `mods/`: none runs until the player copies its folder into `mods/`.
 
+The studio's task (off by default) brings the native mods' tools with it: the KH Mod SDK as the
+repository has it (`sdk/`: its headers, CMake, docs and the examples' sources) and each of its
+examples as a mod ready to copy, its plugin built (`mods-examples/HelloWorld`, `CustomCharacter`,
+`CustomLimit`, `CustomEnemy`, `AdvancedNativeMod`). The build builds the SDK alone into
+`build/sdk` (with `--no-build`, the one already there).
+
 ## The HD pieces
 
 Optional, from the player's own copies, on the HD page: **HD menus and HUD** (both KINGDOM HEARTS
@@ -64,10 +71,12 @@ others' files. The videos
 already installed are linked into the tools' folder, not copied, so an installer whose scene map
 or video tool differs makes only the missing videos, and the subtitles and music again. Either folder may be left empty: a choice whose collection is not given cannot be
 ticked. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
-launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), and either store's copy
-is read: Steam's keeps its language's archives in `Image/dt` and Days's videos in
-`STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in `Image/en` and the videos in
-`EPIC/Mare/MOVIE/Days/en` (any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
+launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), else in the Xbox app's
+game libraries (each drive's `XboxGames`, or the folder its `.GamingRoot` names; a game in
+`<library>/<game>/Content`), and each store's copy is read: Steam's keeps its language's archives in
+`Image/dt` and Days's videos in `STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in
+`Image/en` and the videos in `EPIC/Mare/MOVIE/Days/en`, the Xbox app's its videos under `MSSTORE`
+(any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
 page with its own Browse buttons, because Inno's folder page refuses an empty folder.) A tool that
 fails (a copy a mod changed may lack what it reads) leaves its screens with the DS's look and the
 others are made all the same: the installer says which, keeps what each said whole in
@@ -95,6 +104,22 @@ While it runs the computer is kept from sleeping (its display still turns off as
 settings say); on battery, where Windows may sleep all the same, it first asks to plug in.
 ffmpeg reads and writes the videos: the tool fetches the pinned build once into `setup/ffmpeg`
 (`THIRD_PARTY_NOTICES.md`). Nothing made leaves the computer: the videos are the player's own.
+HD menus and HUD also imports the native KH2 HP gauge. `kh2_gauge.py` reads the
+five localized `field2d/*/zz0field.2dd` entries from `kh2_fifth` and their second
+remastered PNG sheets. It adjusts the private output's sequence coordinates,
+adds the Days limit overlay and divider, and creates per-language `gauge.json`
+files under `mods/HD PACK/layouts/gauge/`. The installation's packages remain
+untouched. Existing gauge animation/position settings are preserved when the
+pack is rebuilt; generated resource names and centered origins are updated.
+The converter scripts and default JSON are shipped with the installer and
+included in its HD cache fingerprint. [Native sequence details](../docs/KH2_SEQUENCES.md).
+
+The same localized archive supplies party/enemy gauges, field reticles,
+INFORMATION, and the obtained-item box. Additional mod-authored layouts stay
+disabled until their JSON entries and resources are provided. The minimap tool
+exports Days' icon atlas and copies KH2's remastered radar mask; existing icon
+settings and images are preserved. Replacements can be gated live in the game's
+Enhancements menu without rewriting these JSON files.
 
 ## Add to Steam
 
@@ -207,3 +232,8 @@ keys the Proton mapping and finds the entry again to remove it. In `config.vdf` 
 tools live at `InstallConfigStore/Software/Valve/Steam/CompatToolMapping`, one block per app id; the
 port's entry is inserted into or removed from that block as text, so every other byte stays as
 Steam wrote it, and only when the block exists (the player has run a game under Proton).
+The HD menu/HUD build also runs `heart_points.py` against the extracted Days ROM.
+It assembles the heart counter's palettes into an editable PNG and creates its
+`hart` BAR image/sequence entries. The installed native executable provides a
+headless model-conversion command; the game is not started during conversion.
+Existing edited counter files and `gauge.json` settings are preserved on rebuild.

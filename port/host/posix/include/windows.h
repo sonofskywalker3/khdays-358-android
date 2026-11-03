@@ -138,6 +138,8 @@ static inline BOOL InitOnceExecuteOnce(PINIT_ONCE once, PINIT_ONCE_FN function, 
 #define InterlockedDecrement(target) __atomic_sub_fetch((target), 1, __ATOMIC_SEQ_CST)
 #define InterlockedIncrement64(target) __atomic_add_fetch((target), 1, __ATOMIC_SEQ_CST)
 #define InterlockedExchangeAdd(target, value) __atomic_fetch_add((target), (value), __ATOMIC_SEQ_CST)
+#define InterlockedOr(target, value) __atomic_fetch_or((target), (value), __ATOMIC_SEQ_CST)
+#define InterlockedAnd(target, value) __atomic_fetch_and((target), (value), __ATOMIC_SEQ_CST)
 #define InterlockedExchangeAdd64(target, value) __atomic_fetch_add((target), (value), __ATOMIC_SEQ_CST)
 #define InterlockedAdd64(target, value) __atomic_add_fetch((target), (value), __ATOMIC_SEQ_CST)
 #define InterlockedCompareExchange(target, exchange, comparand)                                                       \

@@ -1,5 +1,6 @@
 /* The sounds mods replace (sound_mods.h). */
 #include "sound_mods.h"
+#include "../characters/characters.h"
 #include "../core/window.h"
 #include "../core/rom.h"
 #include "../core/session_log.h"
@@ -132,18 +133,18 @@ void khdays_sound_mods_trace(int on)
     trace = on;
 }
 
-/* Whether a mod the list has on (runtime/mods/list.h: the folders order.ini turns on, in load order)
+/* Whether a mod on as the game started (runtime/mods/list.h: the folders order.ini turns on, in load order)
  * has the folder `sub` (e.g. "sounds/wave"), looked at in load order. */
 static int any_mod_has(const char *sub)
 {
-    for (int i = 0; i < khdays_mods_count(); ++i) {
-        const KhdaysModEntry *e = khdays_mods_at(i);
+    for (int i = 0; i < khdays_mods_started_count(); ++i) {
+        const char *path = khdays_mods_started_path(i);
         char folder[600];
         DWORD attributes;
-        if (!khdays_mods_active(e)) {
+        if (path == NULL) {
             continue;
         }
-        snprintf(folder, sizeof(folder), "%s/%s", e->path, sub);
+        snprintf(folder, sizeof(folder), "%s/%s", path, sub);
         attributes = GetFileAttributesA(folder);
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
             return 1;
@@ -152,8 +153,15 @@ static int any_mod_has(const char *sub)
     return 0;
 }
 
-/* mods/<Mod>/sounds in a mod that is on. */
+/* mods/<Mod>/sounds in a mod that is on, or a mod's character's [sounds]. */
+static int mods_sounds(void);
+
 int khdays_sound_mods_present(void)
+{
+    return mods_sounds() || khdays_characters_have_sounds();
+}
+
+static int mods_sounds(void)
 {
     static int present = -1;
     if (present < 0) {
@@ -220,6 +228,32 @@ static Entry *entry_for(const char *identifier, const KhdaysOriginalLoop *loop)
 {
     return entry_want(entry_find(identifier), loop);
 }
+
+/* The entry of a character's own file (characters.h), by its path; `name` what the traces call it (never a game
+ * sound's identifier: entry_find never finds it). */
+static Entry *entry_of_file(const char *path, const char *name)
+{
+    Entry *e;
+    for (e = entries; e != NULL; e = e->next) {
+        if (e->state != NO_FILE && strcmp(e->path, path) == 0) {
+            return e;
+        }
+    }
+    e = calloc(1, sizeof(*e));
+    if (e == NULL) {
+        return NULL;
+    }
+    snprintf(e->identifier, sizeof(e->identifier), "%s", name);
+    snprintf(e->path, sizeof(e->path), "%s", path);
+    e->state = LET_GO; /* to decode */
+    e->next = entries;
+    entries = e;
+    return e;
+}
+
+/* What a character's `none` plays in place of the game's sound: nothing, as long as it lasts. Never let go (it is
+ * not among the entries). */
+static Entry silence = {"silence", "none", {0}, READY, {32768, 1, 0, NULL, 0, 0, 0}, 0, 0, NULL};
 
 /* Whether a found file is a folder of its own (not "." or ".."). */
 static int is_folder(const WIN32_FIND_DATAA *found)
@@ -290,22 +324,33 @@ static void decode_entries_ahead(const KhdaysSoundArchive *sdat)
     }
     done = 1;
     decode_voice_streams_ahead(sdat);
-    for (int i = 0; i < khdays_mods_count(); ++i) {
-        const KhdaysModEntry *e = khdays_mods_at(i);
+    for (int i = 0;; ++i) {
+        char path[520], name[160];
+        Entry *e;
+        if (!khdays_characters_sound_file(i, path, sizeof(path), name, sizeof(name))) {
+            break;
+        }
+        e = path[0] != '\0' ? entry_of_file(path, name) : NULL;
+        if (e != NULL && e->state == LET_GO) {
+            enqueue(e, 0);
+        }
+    }
+    for (int i = 0; i < khdays_mods_started_count(); ++i) {
+        const char *path = khdays_mods_started_path(i);
         char pattern[600];
         WIN32_FIND_DATAA archive;
         HANDLE archives;
-        if (!khdays_mods_active(e)) {
+        if (path == NULL) {
             continue;
         }
-        snprintf(pattern, sizeof(pattern), "%s\\sounds\\seqarc\\*", e->path);
+        snprintf(pattern, sizeof(pattern), "%s\\sounds\\seqarc\\*", path);
         archives = FindFirstFileA(pattern, &archive);
         if (archives == INVALID_HANDLE_VALUE) {
             continue;
         }
         do {
             if (is_folder(&archive)) {
-                decode_archive_ahead(e->path, archive.cFileName);
+                decode_archive_ahead(path, archive.cFileName);
             }
         } while (FindNextFileA(archives, &archive));
         FindClose(archives);
@@ -570,7 +615,23 @@ static struct {
     u32 tag;    /* the command list that prepares it */
     u64 played; /* output samples since it started, its pauses not counted */
     u32 stops;  /* the ARM9's stops of its player when it began (KhdaysSnd7Driver.player_stops) */
+    u32 waited; /* output samples its start has waited, silent, for its file (START_WAIT_SECONDS) */
 } sequence[16];
+
+/* How long a piece of music's start waits, silent, for its file to be decoded: it begins from its first
+ * note rather than as a moment of the original and then the file where the original got to (the field's
+ * music after a save is loaded, its file not decoded yet). Past it, the original is heard until the file
+ * is ready. */
+#define START_WAIT_SECONDS 3
+static uint32_t last_rate = 48000; /* the output rate the files last played at */
+
+/* Whether sequence `p`'s start waits for its file: a piece of music's (seq/), not yet decoded. */
+static int start_waits(int p)
+{
+    const Entry *e = sequence[p].entry;
+    return e != NULL && (e->state == QUEUED || e->state == LET_GO) && strncmp(e->identifier, "seq/", 4) == 0 &&
+           sequence[p].played == 0 && sequence[p].waited < START_WAIT_SECONDS * last_rate;
+}
 
 static struct {
     Entry *entry;
@@ -599,16 +660,22 @@ static void set_entry(Entry **slot, Entry *e)
 void khdays_sound_mods_sequence(const KhdaysSoundArchive *archive, int arm7_player, int kind, int number, int entry,
                                 u32 command_tag)
 {
-    char identifier[160];
+    char identifier[160], path[520], name[160];
+    int own;
     if (!khdays_sound_mods_present() || archive == NULL || arm7_player < 0 || arm7_player > 15 ||
         !khdays_sound_archive_identifier(archive, kind, number, entry, identifier, sizeof(identifier))) {
         return;
     }
     decode_entries_ahead(archive);
-    set_entry(&sequence[arm7_player].entry, entry_for(identifier, NULL));
+    /* a new character's actor's sound: its own file, or silence (characters.h) */
+    own = khdays_characters_speaker_sound(identifier, path, sizeof(path), name, sizeof(name));
+    set_entry(&sequence[arm7_player].entry, own < 0   ? &silence
+                                            : own > 0 ? entry_want(entry_of_file(path, name), NULL)
+                                                      : entry_for(identifier, NULL));
     sequence[arm7_player].state = sequence[arm7_player].entry != NULL ? ARMED : IDLE;
     sequence[arm7_player].tag = command_tag;
     sequence[arm7_player].played = 0;
+    sequence[arm7_player].waited = 0;
 }
 
 void khdays_sound_mods_stream(const KhdaysSoundArchive *archive, int stream_player, int number, uint32_t start,
@@ -629,7 +696,8 @@ void khdays_sound_mods_stream(const KhdaysSoundArchive *archive, int stream_play
 
 int khdays_sound_mods_replaces_player(int p)
 {
-    return sequence[p].state == PLAYING && sequence[p].entry != NULL && sequence[p].entry->state == READY;
+    return sequence[p].state == PLAYING && sequence[p].entry != NULL &&
+           (sequence[p].entry->state == READY || start_waits(p));
 }
 
 int khdays_sound_mods_replaces_stream(int s)
@@ -719,7 +787,9 @@ static void mix_sequences(const KhdaysSnd7Driver *driver, uint32_t rate, uint32_
         if (!sequence_step(p, record, driver, finished_tag, rate)) {
             continue;
         }
-        if (sequence[p].state == PLAYING_ON || !(record[0] & 4)) {
+        if (sequence[p].state == PLAYING && !(record[0] & 4) && start_waits(p)) {
+            ++sequence[p].waited; /* its start waits for its file */
+        } else if (sequence[p].state == PLAYING_ON || !(record[0] & 4)) {
             ++sequence[p].played;
         }
         if (sequence[p].entry->state != READY) {
@@ -916,6 +986,7 @@ void khdays_sound_mods_mix(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driv
     const float master = (soundcnt & 0x8000) ? factor(soundcnt & 0x7f) : 0.0f;
     int heard[4] = {0, 0, 0, 0};
     smooth = hw->smooth;
+    last_rate = rate;
     mix_sequences(driver, rate, finished_tag, player_gain, master, out);
     mix_streams(hw, stream_gain, master, heard, out);
     mix_streams_on(rate, heard, out);

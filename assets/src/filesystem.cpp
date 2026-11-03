@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <fstream>
+#include <mutex>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -15,6 +17,7 @@ std::filesystem::path g_data_root{};
 std::filesystem::path g_mods_root{"mods"};
 std::vector<std::filesystem::path> g_mods;  // set_mods's list, in load order
 bool g_mods_set = false;
+std::shared_mutex g_mods_lock;  // the three above: set on one thread while others look files up
 
 // Normalize a game path to a relative path: strip leading slashes, unify
 // separators, and reject any component that would escape the root.
@@ -56,6 +59,7 @@ bool mod_ignored(const std::filesystem::path& mod) {
 }
 
 void set_mods(std::vector<std::filesystem::path> mods) {
+    std::unique_lock lock(g_mods_lock);
     g_mods = std::move(mods);
     g_mods_set = true;
 }
@@ -63,6 +67,7 @@ void set_mods(std::vector<std::filesystem::path> mods) {
 std::optional<std::filesystem::path> find_in_mods(const std::filesystem::path& rel) {
     std::error_code ec;
     std::vector<std::filesystem::path> listed;
+    std::shared_lock lock(g_mods_lock);
     if (!g_mods_set) {
         if (!std::filesystem::is_directory(g_mods_root, ec)) {
             return std::nullopt;
@@ -102,6 +107,7 @@ const std::filesystem::path& data_root() {
 }
 
 void set_mods_root(const std::filesystem::path& root) {
+    std::unique_lock lock(g_mods_lock);
     g_mods_root = root;
     g_mods.clear();
     g_mods_set = false;

@@ -53,6 +53,22 @@ int khdays_rom_file_at(u32 offset, char *path, int size, u32 *within);
  * and the ranges the extraction does not keep. */
 int khdays_rom_area_at(u32 offset, char *name, int size, u32 *start, u32 *end);
 
+/* A file the game does not have (a mod's new mission), at `disk` (UTF-8), served as `path` ("mi/mi/20000",
+ * no leading /) past everything else: the game opens it by that path (FS_OpenFile's join,
+ * khdays_rom_added_file), the file table does not name it. Before the game starts. 0 when it cannot be read. */
+int khdays_rom_add_file(const char *path, const char *disk);
+
+/* The same for a file made by the port (a mission built from a mod's description): `size` bytes, copied. */
+int khdays_rom_add_bytes(const char *path, const unsigned char *data, unsigned int size);
+
+/* The same for a game file served under another path too ("mi/mi/0010" as "mi/mi/20000"). 0 when the game
+ * has no `game_path`. */
+int khdays_rom_add_alias(const char *path, const char *game_path);
+
+/* For FS_OpenFile (port/tools/prepare.py): whether `path` is an added file, with where the image holds it
+ * (bounds[0], bounds[1]) and its id past the table's (bounds[2]). */
+int khdays_rom_added_file(const char *path, unsigned int *bounds);
+
 /* A file a mod provides at mods/<Mod>/<relative> ("sounds/strm/X.ogg"), in
  * the mods' order (khdays::vfs::find_in_mods): its path, UTF-8, into `path`.
  * 0 if no mod has it. */

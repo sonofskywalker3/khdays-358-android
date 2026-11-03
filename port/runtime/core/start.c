@@ -13,7 +13,12 @@
 #include "threads.h"
 #include "khdays_data_area.h" /* the data area's bounds (build/port/gen-x64) */
 #include "../sound/sound_dump.h"
+#include "../mods/list.h"
 #include "../mods/names.h"
+#include "../characters/characters.h"
+#include "../plugins/plugins.h"
+#include "../scripts/mods_log.h"
+#include "../missions/missions.h"
 #include "session_log.h"
 #include "window.h"
 
@@ -41,7 +46,9 @@ void khdays_android_log_streams(void); /* host/posix/android_log.c */
 #define change_folder chdir
 #endif
 
-extern void khdays_NitroMain(void); /* the decomp's main, renamed at build */
+extern int khdays_export_heart_model(const char *input, const char *output);
+extern int khdays_export_kh2_object(int argc, char **argv); /* tools/kh2_object_export.cpp */
+extern void khdays_NitroMain(void);                         /* the decomp's main, renamed at build */
 extern void _fp_init(void);
 extern void NitroStartUp(void);
 extern void __call_static_initializers(void);
@@ -254,6 +261,29 @@ static void attach_parent_console(void)
 }
 #endif
 
+/* A native plugin's line (runtime/plugins/plugins.h): in the mods' log, which also writes it to the session log. */
+static void plugin_said(const char *mod_id, const char *text)
+{
+    static int opened;
+    if (!opened) {
+        opened = 1;
+        khdays_mods_log_open(khdays_host_user_folder());
+    }
+    khdays_mods_log(mod_id, "native", NULL, 0, text);
+}
+
+/* Safe mode: the game started without the mods' native plugins (KHDAYS_SAFE_MODE=1 or --safe-mode). */
+static int safe_mode(int argc, char **argv)
+{
+    const char *knob = getenv("KHDAYS_SAFE_MODE");
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--safe-mode") == 0) {
+            return 1;
+        }
+    }
+    return knob != NULL && strcmp(knob, "0") != 0;
+}
+
 int main(int argc, char **argv)
 {
 #if defined(__ANDROID__)
@@ -277,7 +307,8 @@ int main(int argc, char **argv)
         if (MODULE_PARAMS[5] != 0) {
             MIi_UncompressBackward(MODULE_PARAMS[5]);
         }
-        return khdays_sound_dump(argc >= 3 ? argv[2] : KHDAYS_SOUND_DUMP_DIRECTORY);
+        return khdays_sound_dump(argc >= 3 ? argv[2] : KHDAYS_SOUND_DUMP_DIRECTORY, (const char *const *)argv + 3,
+                                 argc > 3 ? argc - 3 : 0);
     }
     if (argc >= 2 && strcmp(argv[1], "--dump-graphics") == 0) {
         /* Headless: the ROM's files only; nothing of the game runs. */
@@ -285,6 +316,13 @@ int main(int argc, char **argv)
             return 1;
         }
         return khdays_graphics_dump(argc >= 3 ? argv[2] : KHDAYS_GRAPHICS_DUMP_DIRECTORY);
+    }
+    if (argc == 4 && strcmp(argv[1], "--export-heart-model") == 0) {
+        return khdays_export_heart_model(argv[2], argv[3]);
+    }
+    if (argc >= 4 && strcmp(argv[1], "--kh2-object") == 0) {
+        /* Headless: a KH2 object of the player's collection made into a glTF model (the KH2 prizes mod) */
+        return khdays_export_kh2_object(argc - 2, argv + 2);
     }
     /* this copy's player slot: a further copy on the PC is player N, with its own save, settings, logs
      * and gamepad (host/app/instance.h) */
@@ -296,6 +334,11 @@ int main(int argc, char **argv)
     }
     khdays_log_open();
     khdays_log("%s", working_folder_note);
+    khdays_missions_report();
+    khdays_characters_report();
+    khdays_plugins_set_safe_mode(safe_mode(argc, argv));
+    khdays_plugins_mods_on(khdays_mods_started_has);
+    khdays_plugins_start(khdays_mods_folder(), plugin_said);
     khdays_log("the game's memory at %p (its references from there)", (void *)khdays_window);
     {
         /* The game runs on a context whose stack is in its memory (memory.c), so its locals are reached
