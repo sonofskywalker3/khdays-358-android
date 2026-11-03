@@ -40,6 +40,10 @@ int khdays_devices_take_hud_mode_request(void);
 /* The active gamepad's name, or NULL when none is connected. */
 const char *khdays_devices_gamepad_name(void);
 
+/* Whether a gamepad names its face buttons by mark, the Nintendo way (AYN's built-in pads), though SDL does not
+ * call it a Nintendo pad. */
+int khdays_devices_pad_marked(SDL_Gamepad *gamepad);
+
 /* The active gamepad itself (for its button labels), or NULL. */
 SDL_Gamepad *khdays_devices_gamepad(void);
 
