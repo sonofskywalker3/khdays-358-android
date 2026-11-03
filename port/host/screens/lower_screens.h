@@ -23,6 +23,8 @@ struct KhdaysLowerPlace {
     int seam; /* a column repeated to widen the picture */
     int cut;   /* a list's scroll track: the row its added rows go in at */
     int empty; /* a list's extra rows: nothing the game drew, black instead */
+    /* a challenge's list: the column its entries' rows repeat, by the row in the sampled DS pixels (0: `seam`) */
+    int16_t row_seam[KHDAYS_LOWER_ROWS_MAX];
     /* extra rows it shows (a source row of KHDAYS_LOWER_ROWS + DS row): DS rows from row0, `rows` of them,
      * composed with layers_off's layers left out; row_count is how many (compose.h KD_LAYERS_OFF) */
     int row0, row_count;

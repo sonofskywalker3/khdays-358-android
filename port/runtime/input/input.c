@@ -451,6 +451,18 @@ int khdays_input_touch_below(void)
     return touch_below;
 }
 
+/* The row a touch under a list takes: the next one under its view, which the list scrolls up to; a touch there again,
+ * that row still the selected one, is on it, and opens it as a second touch on a row does. */
+static int below_row = -1;
+
+int khdays_input_below_row(int next, int selected)
+{
+    if (selected == below_row) {
+        return selected;
+    }
+    return below_row = next;
+}
+
 int khdays_input_touch(int *x, int *y)
 {
     int down;
@@ -472,6 +484,8 @@ int khdays_input_touch(int *x, int *y)
     touch_below = *y >= KHDAYS_DS_ROWS;
     if (touch_below) {
         *y = KHDAYS_LIST_LAST_ROW;
+    } else {
+        below_row = -1; /* a touch elsewhere: the next one under the list is a first one */
     }
     return 1;
 }

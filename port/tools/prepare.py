@@ -2009,7 +2009,9 @@ for _key in ("ov008@02073e58", "ov025@020a9458"):
         (
             "if (touch.nY < pList->nTop + pList->nHeight - 2) {",
             "extern int khdays_input_touch_below(void);\n"
-            "        if (khdays_input_touch_below()) nRow = (pList->nScroll + pList->nHeight) / ROW_HEIGHT;\n"
+            "        extern int khdays_input_below_row(int next, int selected);\n"
+            "        if (khdays_input_touch_below()) nRow = khdays_input_below_row((pList->nScroll + pList->nHeight) / "
+            "ROW_HEIGHT, pList->nSelected);\n"
             "        if (touch.nY < pList->nTop + pList->nHeight - 2) {",
         )
     ]

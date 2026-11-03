@@ -395,6 +395,9 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_SEAM_GAP 4 /* ... or, the row's rank close after a long name, this many: wider than between letters */
 #define LIST_MARKS0 208 /* a challenge's marks reach these columns; a crown or a rank stops short of them */
 #define LIST_MARKS1 212
+#define LIST_MARKS_SEAM 180 /* ... and a row of them repeats this one, before them; a name's row, reaching here, not */
+#define LIST_MARKS_FROM 176 /* ... which is plain from here on up to them on a row with neither */
+#define LIST_MARKS_TO 183
 #define LIST_WIDEN 20 /* ... repeated: the frame's right edge (244) on the screen's */
 #define LIST_ARROW0 114 /* the down arrow under the list, kept in its middle */
 #define LIST_ARROW1 126
@@ -468,7 +471,8 @@ static int list_clear_column(const uint8_t *plain, int x, int wanted)
 }
 
 /* The column to repeat. A challenge's list, on any of its pages: the last plain one inside the selected entry's bar,
- * past its marks, so that they stay where they are whatever names the page has. Another list: the one in use while
+ * past its marks, for the rows a long name reaches them on (list_row_seams has the others); it is never one before the
+ * marks for a page without a long name, so that they stay where they are. Another list: the one in use while
  * it stays clear, so that nothing moves as the list scrolls; else the nearest clear one; else the last gap before its
  * ranks, its crowns as far right as on its other pages; else that last one too. */
 static int list_seam(const uint32_t *ds, int ds_rows)
@@ -505,6 +509,31 @@ static int list_seam(const uint32_t *ds, int ds_rows)
         }
     }
     return seam;
+}
+
+/* A challenge's list, each row of its entries: the marks' rows widened before them, as far right as the DS has them,
+ * and any other row but a name's long enough to reach them. Their hash, 0 on another list. */
+static uint32_t list_row_seams(const uint32_t *ds, int ds_rows, int16_t *row_seam)
+{
+    uint32_t hash = 2166136261u;
+    uint8_t plain[LIST_SEAM1 - LIST_SEAM0 + 1];
+    int marks = 0;
+    for (int x = LIST_MARKS0; x <= LIST_MARKS1; ++x) {
+        plain[x - LIST_SEAM0] = (uint8_t)list_plain_column(ds, ds_rows, x);
+        marks |= !plain[x - LIST_SEAM0];
+    }
+    if (!marks) {
+        return 0u;
+    }
+    for (int y = LIST_IN_ROW0; y < ds_rows; ++y) {
+        int clear = y < LIST_FRAME_BOTTOM || y >= H;
+        for (int x = LIST_MARKS_FROM; clear && x < LIST_MARKS_TO; ++x) {
+            clear = at(ds, x, y) == at(ds, x + 1, y);
+        }
+        row_seam[y] = (int16_t)(clear ? LIST_MARKS_SEAM : 0);
+        hash = (hash ^ (uint32_t)row_seam[y]) * 16777619u;
+    }
+    return hash;
 }
 
 /* The row of the track its added rows go in at: over its rounded end, or over the thumb when it lies there (the
@@ -551,7 +580,12 @@ static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx
         *sy = oy;
         return 1;
     }
-    *sx = list_column(ox, p->seam);
+    {
+        /* the row in the sampled pixels: the DS's, then the extra rows' after them */
+        const int row = oy < (float)LIST_FRAME_BOTTOM ? (int)oy : H + (int)oy - LIST_FRAME_BOTTOM;
+        const int seam = oy < (float)LIST_FRAME_BOTTOM + e && p->row_seam[row] != 0 ? p->row_seam[row] : p->seam;
+        *sx = list_column(ox, seam);
+    }
     if (oy >= (float)LIST_FRAME_BOTTOM + e) {
         /* the lower border, the down arrow in the widened list's middle */
         *sy = oy - e;
@@ -696,7 +730,8 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->cut = list_track_cut(ds, place->foot);
         place->empty = list_rows_empty(ds, ds_rows);
         *key = (int)((unsigned)(place->seam - LIST_SEAM0) << 24 | (unsigned)place->top << 16 |
-                     (unsigned)place->foot << 8 | (unsigned)place->cut | (place->empty ? 1u << 31 : 0u));
+                     (unsigned)place->foot << 8 | (unsigned)place->cut | (place->empty ? 1u << 31 : 0u)) ^
+               (int)list_row_seams(ds, ds_rows, place->row_seam);
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;

@@ -485,7 +485,7 @@ static void test_missions_seam(void)
     }
     khdays_lower_sample(&grown, ds, &rows);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
-    CHECK(shows(&l, 210.5f, 100.5f, &x, &y) && x == 217);
+    CHECK(shows(&l, 210.5f, 30.5f, &x, &y) && x == 217);
     khdays_lower_free(&l);
 }
 
@@ -529,7 +529,16 @@ static void test_missions_pages(void)
     put(60, 40, 0xffffffu);
     khdays_lower_sample(&grown, ds, &rows);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
-    CHECK(shows(&l, 200.5f, 100.5f, &x, &y) && x == 209); /* the marks left of the column, none moved */
+    CHECK(shows(&l, 200.5f, 30.5f, &x, &y) && x == 189); /* the marks widened before, as far right as the DS's */
+    khdays_lower_free(&l);
+    /* a name running up to them on its own row: it stays whole, the marks' row as before */
+    for (int c = 150; c < 184; c += 2) {
+        put(c, 22, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 174.5f, 22.5f, &x, &y) && x == 183);  /* the name's row: not widened there */
+    CHECK(shows(&l, 200.5f, 30.5f, &x, &y) && x == 189);
     khdays_lower_free(&l);
     /* a crown's: stops short of those columns, widened before it */
     list_frame();
