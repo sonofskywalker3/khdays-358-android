@@ -112,8 +112,9 @@ __declspec(allocate(".khrt$z")) static const RouteRecord last_route = {0};
 #define FIRST_ROUTE (&first_route + 1)
 #define END_ROUTE (&last_route)
 #else
-/* the ELF linker's bounds of section khrt (compat/khdays_references.h) */
-extern const RouteRecord __start_khrt[], __stop_khrt[];
+/* the ELF linker's bounds of section khrt (compat/khdays_references.h); weak: a build prepared --no-routes has none,
+ * and replace finds no routine */
+extern const RouteRecord __start_khrt[] __attribute__((weak)), __stop_khrt[] __attribute__((weak));
 #define FIRST_ROUTE (__start_khrt)
 #define END_ROUTE (__stop_khrt)
 #endif

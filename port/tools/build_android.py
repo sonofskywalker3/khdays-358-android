@@ -28,7 +28,11 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.skip_prepare:
-        subprocess.run([sys.executable, str(ROOT / "port" / "tools" / "prepare.py"), "--out", str(GEN)], check=True)
+        # No game routine called through a plugin's pointer: a plugin's library cannot load from the shared storage
+        # here, and every call of the game's would pay for the pointer on the handheld's slower core.
+        subprocess.run(
+            [sys.executable, str(ROOT / "port" / "tools" / "prepare.py"), "--out", str(GEN), "--no-routes"], check=True
+        )
     elif not (GEN / "sources.cmake").exists():
         raise SystemExit(f"no prepared sources in {GEN}: run without --skip-prepare")
 

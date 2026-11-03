@@ -4754,9 +4754,11 @@ def rewrite_game(
     absolute: dict[str, int],
     functions: dict[str, int],
     dispatched: dict[str, int],
+    routes: bool = True,
 ) -> tuple[list[str], int]:
     """The game's C (`sources`: (path compiled, original relative path)) and
-    the HAL rewritten into out/rewritten (port/tools/references)."""
+    the HAL rewritten into out/rewritten (port/tools/references); `routes`: each game routine called through
+    a pointer a native plugin may change."""
     from references.build import Program, rewrite_all
 
     jobs = [(path, str(out / "rewritten" / rel).replace("\\", "/")) for path, rel in sources]
@@ -4766,7 +4768,10 @@ def rewrite_game(
     ]
     thunks = {n for n in functions if n.startswith("khdays_ovcall_")}
     outputs, size = rewrite_all(
-        jobs, Program(absolute=dict(absolute), functions=functions, game_functions=thunks, dispatched=dispatched), out
+        jobs,
+        Program(absolute=dict(absolute), functions=functions, game_functions=thunks, dispatched=dispatched),
+        out,
+        routes=routes,
     )
     return outputs, size
 
@@ -4778,6 +4783,11 @@ def cmake_list(name: str, paths: list[str]) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "build" / "port" / "gen-x64"))
+    ap.add_argument(
+        "--no-routes",
+        action="store_true",
+        help="game routines called directly: no plugin can replace them (kh.engine replace finds none), no pointer per call",
+    )
     args = ap.parse_args()
     out = Path(args.out).resolve()  # sources.cmake names its files absolutely
     patched_dir = out / "patched"
@@ -5398,7 +5408,7 @@ def main() -> int:
     # into the ROM's code reach it as a call through its DS address does
     dispatched_calls = {n: a for n, a in functions.items() if n.startswith("khdays_ovcall_")}
     dispatched_calls.update({n: absolute[n] for n in rom_run if n in absolute})
-    rewritten, area = rewrite_game(out, c_sources, placed, functions, dispatched_calls)
+    rewritten, area = rewrite_game(out, c_sources, placed, functions, dispatched_calls, not args.no_routes)
     # the port's side calls the game's functions the host's way: none of
     # those taking their arguments in a block (references/emit.py)
     block = set((out / "references_block_abi.txt").read_text(encoding="utf-8").split())
