@@ -285,12 +285,30 @@ static void ring(SDL_Renderer *renderer, float cx, float cy, float r, float widt
 static void pill(SDL_Renderer *renderer, const KhdaysTouchBox *b, SDL_FColor fill, SDL_FColor edge, float width)
 {
     const float r = (b->y1 - b->y0) / 2.0f, cy = (b->y0 + b->y1) / 2.0f;
-    const SDL_FRect middle = {b->x0 + r, b->y0, b->x1 - b->x0 - 2.0f * r, b->y1 - b->y0};
     const int half = STEPS / 2;
-    disc(renderer, b->x0 + r, cy, r, fill);
-    disc(renderer, b->x1 - r, cy, r, fill);
-    SDL_SetRenderDrawColorFloat(renderer, fill.r, fill.g, fill.b, fill.a);
-    SDL_RenderFillRect(renderer, &middle);
+    {
+        /* one shape, so the see-through colour lies once everywhere */
+        SDL_Vertex v[STEPS + 1];
+        int indices[STEPS * 3];
+        memset(v, 0, sizeof(v));
+        v[STEPS].position.x = (b->x0 + b->x1) / 2.0f;
+        v[STEPS].position.y = cy;
+        v[STEPS].color = fill;
+        for (int i = 0; i < half; ++i) {
+            const float a = PI_F * (float)i / (float)(half - 1);
+            v[i].position.x = b->x1 - r + r * sinf(a);
+            v[i].position.y = cy - r * cosf(a);
+            v[half + i].position.x = b->x0 + r - r * sinf(a);
+            v[half + i].position.y = cy + r * cosf(a);
+            v[i].color = v[half + i].color = fill;
+        }
+        for (int i = 0; i < STEPS; ++i) {
+            indices[3 * i] = STEPS;
+            indices[3 * i + 1] = i;
+            indices[3 * i + 2] = (i + 1) % STEPS;
+        }
+        SDL_RenderGeometry(renderer, NULL, v, STEPS + 1, indices, STEPS * 3);
+    }
     {
         SDL_SetRenderDrawColorFloat(renderer, edge.r, edge.g, edge.b, edge.a);
         const SDL_FRect top = {b->x0 + r, b->y0, b->x1 - b->x0 - 2.0f * r, width};
@@ -334,7 +352,7 @@ static void pill(SDL_Renderer *renderer, const KhdaysTouchBox *b, SDL_FColor fil
 static void label(SDL_Renderer *renderer, float cx, float cy, float height, float alpha, const char *s)
 {
     int w = 0, h = 0;
-    SDL_Texture *t = khdays_ui_font_text(renderer, s, &w, &h);
+    SDL_Texture *t = khdays_ui_font_load() ? khdays_ui_font_text(renderer, s, &w, &h) : NULL;
     if (t != NULL && h > 0) {
         const float k = height / (float)h;
         const SDL_FRect dst = {cx - (float)w * k / 2.0f, cy - height / 2.0f, (float)w * k, height};
@@ -469,10 +487,10 @@ int khdays_touch_draw(SDL_Renderer *renderer)
         const unsigned held = khdays_touch_input_pressed(&input);
         const float line = screen_now.density * screen_now.size * 1.5f;
         const Ink ink = {
-            {0.20f, 0.11f, 0.07f, 0.62f * alpha},
+            {0.20f, 0.11f, 0.07f, 0.90f * alpha},
             {1.00f, 0.82f, 0.45f, 0.85f * alpha},
             {1.00f, 1.00f, 1.00f, 0.90f * alpha},
-            alpha > 0.5f ? 1.0f : alpha * 2.0f,
+            alpha >= 0.5f ? 1.0f : alpha * 2.0f,
             line < 1.0f ? 1.0f : line,
         };
         SDL_GetRenderDrawBlendMode(renderer, &blend);

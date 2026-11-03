@@ -301,7 +301,7 @@ static void outline(SDL_Renderer *renderer, const KhdaysHudBox *b, SDL_FColor c)
 static void centred(SDL_Renderer *renderer, float cx, float cy, float height, SDL_Color c, const char *s)
 {
     int w = 0, h = 0;
-    SDL_Texture *t = khdays_ui_font_text(renderer, s, &w, &h);
+    SDL_Texture *t = khdays_ui_font_load() ? khdays_ui_font_text(renderer, s, &w, &h) : NULL;
     if (t != NULL && h > 0) {
         const float k = height / (float)h;
         const SDL_FRect dst = {cx - (float)w * k / 2.0f, cy - height / 2.0f, (float)w * k, height};
@@ -324,7 +324,7 @@ static void draw_bar(SDL_Renderer *renderer)
         const int shown = with_controls || (b != BAR_A && b != BAR_C && b != BAR_CUSTOM);
         names[b] = b == BAR_A ? "A" : b == BAR_C ? "C" : khdays_text(words[b]);
         widths[b] = 0.0f;
-        if (shown && khdays_ui_font_text(renderer, names[b], &w, &th) != NULL && th > 0) {
+        if (shown && khdays_ui_font_load() && khdays_ui_font_text(renderer, names[b], &w, &th) != NULL && th > 0) {
             widths[b] = (float)w * text / (float)th + 2.0f * pad;
             total += widths[b] + gap;
         }
