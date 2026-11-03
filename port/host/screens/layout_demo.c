@@ -2,6 +2,7 @@
  * where a real mouse's events go: nothing reaches any other window or the desktop. */
 #include "layout_demo.h"
 
+#include "layout_editor_screen.h"
 #include "../render/onescreen.h"
 #include "../../ui/layout_editor.h"
 #include "../../ui/situation.h"
@@ -68,8 +69,22 @@ static int SDLCALL run(void *unused)
                 while (!(khdays_onescreen_scene() == KHDAYS_SIT_FIELD && (khdays_onescreen_states() & (1u << KHDAYS_ST_HUD)))) {
                     SDL_Delay(FIELD_POLL_MS);
                 }
-            } else if (strcmp(word, "open") == 0) {
+            } else if (strcmp(word, "open") == 0 || strcmp(word, "ask") == 0) {
                 push_own(1);
+            } else if (strcmp(word, "done") == 0) {
+                push_own(3);
+            } else if (strcmp(word, "esc") == 0) {
+                SDL_Event e;
+                SDL_zero(e);
+                e.type = SDL_EVENT_KEY_DOWN;
+                e.key.windowID = demo_window;
+                e.key.scancode = SDL_SCANCODE_ESCAPE;
+                e.key.key = SDLK_ESCAPE;
+                e.key.down = true;
+                SDL_PushEvent(&e);
+                e.type = SDL_EVENT_KEY_UP;
+                e.key.down = false;
+                SDL_PushEvent(&e);
             } else if (strcmp(word, "shot") == 0) {
                 push_own(2);
             } else if (strcmp(word, "down") == 0) {
@@ -112,13 +127,18 @@ void khdays_layout_demo_start(SDL_Window *window)
     SDL_DetachThread(thread);
 }
 
-int khdays_layout_demo_event(const SDL_Event *event)
+int khdays_layout_demo_event(const SDL_Event *event, SDL_Renderer *renderer)
 {
     if (demo_event == 0 || event->type != demo_event) {
         return 0;
     }
     if (event->user.code == 1) {
         khdays_editor_request();
+    } else if (event->user.code == 3) {
+        float x, y;
+        khdays_layout_editor_done_at(renderer, &x, &y);
+        push_mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y);
+        push_mouse(SDL_EVENT_MOUSE_BUTTON_UP, x, y);
     } else {
         SDL_SetAtomicInt(&shot_wanted, 1);
     }

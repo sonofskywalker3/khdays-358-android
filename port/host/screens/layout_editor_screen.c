@@ -275,6 +275,14 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
     }
 }
 
+void khdays_layout_editor_done_at(SDL_Renderer *renderer, float *x, float *y)
+{
+    SDL_Window *const window = SDL_GetRenderWindow(renderer);
+    const float k = SDL_GetWindowPixelDensity(window) > 0.0f ? SDL_GetWindowPixelDensity(window) : 1.0f;
+    *x = (bar[BAR_DONE].x + bar[BAR_DONE].w / 2.0f) / k;
+    *y = (bar[BAR_DONE].y + bar[BAR_DONE].h / 2.0f) / k;
+}
+
 /* ---- Drawing ------------------------------------------------------------- */
 
 static void outline(SDL_Renderer *renderer, const KhdaysHudBox *b, SDL_FColor c)

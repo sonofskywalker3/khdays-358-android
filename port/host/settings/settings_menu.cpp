@@ -2199,6 +2199,11 @@ int khdays_settings_take_update_answer(void)
     return answer;
 }
 
+int khdays_settings_close(void)
+{
+    return try_close(false) ? 1 : 0;
+}
+
 int khdays_settings_is_open(void)
 {
     return m.open;

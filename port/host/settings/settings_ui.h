@@ -41,6 +41,10 @@ int khdays_settings_is_open(void);
  * since it opened, and khdays_settings_profile() gives it. */
 int khdays_settings_handle(const SDL_Event *event, SDL_Window *window);
 
+/* Closes the menu as going back out of it does (the layout editor takes over from it); 0 when it has something
+ * to ask first (an action left unbound) and stays open. */
+int khdays_settings_close(void);
+
 /* Lets time pass (for repeating a held direction, and for the time limit
  * when waiting for a key or button). */
 void khdays_settings_tick(void);

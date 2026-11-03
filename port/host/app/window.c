@@ -1023,6 +1023,16 @@ static int host_thread(void *unused)
             continue;
         }
 
+        if (khdays_layout_demo_event(&event, renderer)) {
+            if (!khdays_settings_is_open() && khdays_editor_take_request() && !khdays_layout_editor_is_open()) {
+                stop_game_for_menu();
+                khdays_layout_editor_open(renderer);
+            }
+            redraw(window, renderer);
+            if (!khdays_settings_is_open()) {
+                continue;
+            }
+        }
         /* Input. The devices always see it (they track what is held). While the
          * settings menu is open, the menu gets the input and the game none. */
         if (khdays_settings_is_open()) {
@@ -1052,9 +1062,11 @@ static int host_thread(void *unused)
             apply_changes();
             if (khdays_editor_take_request()) {
                 /* out of the menu, the game still stopped under the layout editor */
-                close_settings();
-                stop_game_for_menu();
-                khdays_layout_editor_open(renderer);
+                if (khdays_settings_close()) {
+                    close_settings();
+                    stop_game_for_menu();
+                    khdays_layout_editor_open(renderer);
+                }
                 redraw(window, renderer);
                 continue;
             }
@@ -1062,14 +1074,6 @@ static int host_thread(void *unused)
                 redraw(window, renderer);
                 drawn_at = SDL_GetTicks();
             }
-            continue;
-        }
-        if (khdays_layout_demo_event(&event)) {
-            if (khdays_editor_take_request() && !khdays_layout_editor_is_open()) {
-                stop_game_for_menu();
-                khdays_layout_editor_open(renderer);
-            }
-            redraw(window, renderer);
             continue;
         }
         if (khdays_layout_editor_is_open()) {
