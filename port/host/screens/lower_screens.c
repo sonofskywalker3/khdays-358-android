@@ -695,8 +695,8 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->seam = list_seam(ds, ds_rows);
         place->cut = list_track_cut(ds, place->foot);
         place->empty = list_rows_empty(ds, ds_rows);
-        *key = (int)((unsigned)place->seam << 23 | (unsigned)place->top << 15 | (unsigned)place->foot << 7 |
-                     ((unsigned)(LIST_TRACK_END - place->cut) & 127u) | (place->empty ? 1u << 31 : 0u));
+        *key = (int)((unsigned)(place->seam - LIST_SEAM0) << 24 | (unsigned)place->top << 16 |
+                     (unsigned)place->foot << 8 | (unsigned)place->cut | (place->empty ? 1u << 31 : 0u));
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;
