@@ -326,6 +326,23 @@ static void test_summary(void)
         }
         CHECK(seen[144] > 10);
     }
+    khdays_lower_free(&l);
+    /* text scrolled on to the row the added line comes from: the line from a blank row, no barcode */
+    summary(1);
+    for (int c = 24; c < 200; c += 2) {
+        put(c, 144, 0x2040e0u);
+    }
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
+    {
+        int seen[DS_H] = {0};
+        for (int oy = 0; oy < 223; ++oy) {
+            if (shows(&l, 100.5f, (float)oy + 0.5f, &x, &y)) {
+                ++seen[y];
+            }
+        }
+        CHECK(seen[144] <= 2);
+        CHECK(seen[145] > 10);
+    }
     /* the page's text scrolling by (dark and red letters across the middle): still the summary */
     summary(1);
     rect(24, 96, 232, 124, 0x3a3a3au);

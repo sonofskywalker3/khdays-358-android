@@ -302,7 +302,7 @@ static int tell_status(const uint32_t *ds)
 #define SUM_FOOT 168        /* ... above the scanline band, the white line and Embark / Back */
 #define SUM_SCAN 4          /* the band's scanlines, to fill above it */
 #define SUM_TRACK 216       /* the scroll track from here */
-#define SUM_TRACK_PLAIN 140 /* a row of it plain in every state */
+#define SUM_TRACK_TOP 60    /* a row of it plain, looked for from here (the thumb moves) */
 #define SUM_TRACK_END 146   /* its lower end (the down arrow) from here */
 #define SUM_LINE0 144       /* one ruled line of the page, added under the last ... */
 #define SUM_LINE1 160
@@ -333,6 +333,22 @@ static int tell_summary(const uint32_t *ds)
     return card_red(at(ds, SUM_CARD_LEFT, SUM_CARD_Y)) && card_red(at(ds, SUM_CARD_RIGHT, SUM_CARD_Y)) &&
            divider(ds, 170, SUM_LINE_SUM) == 176 && grey(page) && red(page) >= SUM_PAGE_MIN &&
            at(ds, SUM_MARGIN, 150) == page;
+}
+
+/* A row of the page with nothing on it, to add the line from: text scrolled to a row, repeated, is a barcode. */
+static int summary_blank_row(const uint32_t *ds)
+{
+    for (int k = 0; k < SUM_LINE0 - SUM_TRACK_TOP; ++k) {
+        const int y = k < SUM_RULE - SUM_LINE0 ? SUM_LINE0 + k : SUM_LINE0 - 1 - (k - (SUM_RULE - SUM_LINE0));
+        int plain = 1;
+        for (int x = SUM_MARGIN; x < SUM_TRACK && plain; ++x) {
+            plain = at(ds, x, y) == at(ds, SUM_MARGIN, y);
+        }
+        if (plain) {
+            return y;
+        }
+    }
+    return SUM_LINE0;
 }
 
 static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
@@ -600,9 +616,11 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;
+        const int blank = summary_blank_row(ds);
+        const int track_row = khdays_lower_plain_row(ds, SUM_TRACK_TOP, SUM_TRACK_END, SUM_TRACK, SUM_RIGHT);
         place->map = map_summary;
         place->split = tab_icons(ds); /* Mission Mode's L and R icons, kept at their own size */
-        *key = place->split;
+        *key = place->split + blank * 10 + track_row * 10000;
         place->zoom = (float)W / (float)(SUM_RIGHT - SUM_LEFT);
         if ((float)(SUM_FOOT + SUM_LINE1 - SUM_LINE0) * place->zoom > out_h - (float)(H - SUM_FOOT)) {
             return 0; /* a display too short for the added line */
@@ -611,12 +629,12 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         for (int y = 0; y < SUM_FOOT; ++y) {
             if (y == SUM_LINE1) {
                 for (int k = SUM_LINE0; k < SUM_LINE1; ++k) {
-                    place->rows[0][n++] = (int16_t)(k == SUM_RULE ? SUM_RULE : SUM_LINE0);
+                    place->rows[0][n++] = (int16_t)(k == SUM_RULE ? SUM_RULE : blank);
                 }
             }
             if (y == SUM_TRACK_END) {
                 for (int k = SUM_LINE0; k < SUM_LINE1; ++k) {
-                    place->rows[1][t++] = (int16_t)SUM_TRACK_PLAIN; /* the track's added rows, above its end */
+                    place->rows[1][t++] = (int16_t)track_row; /* the track's added rows, above its end */
                 }
             }
             place->rows[0][n++] = (int16_t)y;
