@@ -99,6 +99,13 @@ void khdays_layout_demo_start(SDL_Window *window)
         return;
     }
     SDL_strlcpy(script, e, sizeof(script));
+    {
+        int w = 0, h = 0;
+        const char *size = SDL_getenv("KHDAYS_LAYOUT_DEMO_WINDOW");
+        if (size != NULL && sscanf(size, "%d %d", &w, &h) == 2) {
+            SDL_SetWindowSize(window, w, h);
+        }
+    }
     demo_event = SDL_RegisterEvents(1);
     demo_window = SDL_GetWindowID(window);
     thread = SDL_CreateThread(run, "layout demo", NULL);

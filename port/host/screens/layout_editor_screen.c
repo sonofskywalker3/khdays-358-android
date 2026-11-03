@@ -26,6 +26,8 @@ enum { BAR_A, BAR_C, BAR_CUSTOM, BAR_SNAP, BAR_RESET, BAR_DONE, BAR_BUTTONS };
 #define HANDLE_POINTS 5.0f
 #define LINE_POINTS 1.5f
 #define LABEL_OF_BAR 0.55f
+#define UI_ROWS 540.0f         /* a point of the bar at the least: the window's height over this */
+#define NAME_POINTS 12.0f
 
 static const int moved_controls[] = {KHDAYS_TOUCH_STICK, KHDAYS_TOUCH_L,    KHDAYS_TOUCH_R,      KHDAYS_TOUCH_FACE,
                                      KHDAYS_TOUCH_LOCK,  KHDAYS_TOUCH_SELECT, KHDAYS_TOUCH_START, KHDAYS_TOUCH_GEAR};
@@ -38,6 +40,7 @@ static KhdaysHudPlace hud[KHDAYS_HUD_GROUPS];
 static KhdaysTouchLayout controls;
 static KhdaysTouchScreen screen;
 static float density_now;
+static float ui_unit;                  /* the bar's and the names' point: readable on any window */
 static SDL_FRect bar[BAR_BUTTONS];
 static int picture_columns;
 
@@ -96,6 +99,7 @@ static void read_screen(SDL_Renderer *renderer)
     int w = 0, h = 0;
     SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
     density_now = khdays_touch_density(renderer);
+    ui_unit = (float)h / UI_ROWS > density_now ? (float)h / UI_ROWS : density_now;
     memset(&screen, 0, sizeof(screen));
     screen.w = (float)w;
     screen.h = (float)h;
@@ -275,7 +279,7 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
 
 static void outline(SDL_Renderer *renderer, const KhdaysHudBox *b, SDL_FColor c)
 {
-    const float dash = DASH_POINTS * density_now, line = LINE_POINTS * density_now, handle = HANDLE_POINTS * density_now;
+    const float dash = DASH_POINTS * ui_unit, line = LINE_POINTS * ui_unit, handle = HANDLE_POINTS * ui_unit;
     SDL_SetRenderDrawColorFloat(renderer, c.r, c.g, c.b, c.a);
     for (float x = b->x0; x < b->x1; x += dash * 2.0f) {
         const float w = x + dash > b->x1 ? b->x1 - x : dash;
@@ -315,7 +319,7 @@ static void centred(SDL_Renderer *renderer, float cx, float cy, float height, SD
 static void draw_bar(SDL_Renderer *renderer)
 {
     static const int words[BAR_BUTTONS] = {0, 0, TXT_LAYOUT_CUSTOM, TXT_LAYOUT_SNAP, TXT_LAYOUT_RESET, TXT_LAYOUT_DONE};
-    const float h = BAR_H_POINTS * density_now, gap = BAR_GAP_POINTS * density_now, pad = BAR_PAD_POINTS * density_now;
+    const float h = BAR_H_POINTS * ui_unit, gap = BAR_GAP_POINTS * ui_unit, pad = BAR_PAD_POINTS * ui_unit;
     const float inner = h - 2.0f * gap, text = inner * LABEL_OF_BAR;
     float widths[BAR_BUTTONS], total = gap;
     const char *names[BAR_BUTTONS];
@@ -331,7 +335,22 @@ static void draw_bar(SDL_Renderer *renderer)
     }
     {
         float x = (screen.w - total) / 2.0f;
-        const float y = screen.h * BAR_DOWN;
+        /* where it covers the fewest of the pieces */
+        static const float downs[3] = {BAR_DOWN, 0.5f, 0.72f};
+        float y = screen.h * downs[0];
+        int fewest = editor.count + 1;
+        for (int d = 0; d < 3; ++d) {
+            const float top = screen.h * downs[d];
+            int covered = 0;
+            for (int i = 0; i < editor.count; ++i) {
+                const KhdaysHudBox *b = &editor.item[i].box;
+                covered += b->x0 < x + total && b->x1 > x && b->y0 < top + h && b->y1 > top;
+            }
+            if (covered < fewest) {
+                fewest = covered;
+                y = top;
+            }
+        }
         const SDL_FRect back = {x, y, total, h};
         SDL_SetRenderDrawColor(renderer, 25, 25, 32, 240);
         SDL_RenderFillRect(renderer, &back);
@@ -396,7 +415,7 @@ void khdays_layout_editor_draw(SDL_Renderer *renderer)
         }
         outline(renderer, &it->box, i == editor.held ? yellow : cyan);
         if (it->kind == ITEM_HUD) {
-            centred(renderer, (it->box.x0 + it->box.x1) / 2.0f, (it->box.y0 + it->box.y1) / 2.0f, 14.0f * density_now,
+            centred(renderer, (it->box.x0 + it->box.x1) / 2.0f, (it->box.y0 + it->box.y1) / 2.0f, NAME_POINTS * ui_unit,
                     (SDL_Color){255, 255, 255, 255}, khdays_text(group_words[it->id]));
         }
     }

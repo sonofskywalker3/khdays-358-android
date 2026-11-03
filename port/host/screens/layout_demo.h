@@ -1,6 +1,6 @@
 /* Showing the layout editor without anyone at the mouse, for the tests and a short film of it (KHDAYS_LAYOUT_DEMO, the
  * steps split by `;`, each `<milliseconds to wait> <field|open|down x y|move x y|up x y|shot|quit>`; `field` waits for
- * play, `shot` saves the window into KHDAYS_LAYOUT_DEMO_DIR). */
+ * play, `shot` saves the window into KHDAYS_LAYOUT_DEMO_DIR; KHDAYS_LAYOUT_DEMO_WINDOW "<w> <h>" sizes the window). */
 #ifndef KHDAYS_LAYOUT_DEMO_H
 #define KHDAYS_LAYOUT_DEMO_H
 
