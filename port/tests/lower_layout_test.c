@@ -159,6 +159,16 @@ static void test_field(void)
     CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
     dim(97); /* fading in from black */
     CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
+    /* no header, dimmed as the game dims it: the edge's tint gone */
+    field();
+    rect(0, 0, DS_W, 28, 0x141414u);
+    rect(24, 28, 232, 148, 0x868686u);
+    rect(32, 64, 97, 140, 0x000000u);
+    rect(24, 30, 232, 31, 0x4d4d4du);
+    CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
+    /* a grey line as bright as the white is no such edge */
+    rect(24, 30, 232, 31, 0x868686u);
+    CHECK(lay(&l) != KHDAYS_LOWER_FIELD);
     khdays_lower_free(&l);
 }
 

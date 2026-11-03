@@ -57,16 +57,21 @@ static int tab_icons(const uint32_t *ds)
 #define FIELD_EDGE_TINT 2  /* its red and blue alike */
 #define FIELD_WHITE_MIN 24 /* the line under the objective, dimmed too */
 #define FIELD_PANEL_MIN 24 /* the panel's white beside its lilac edge, fading in too */
+#define FIELD_EDGE_OF 100  /* the edge as a part of that white, in hundredths: 58 to 61 as seen */
+#define FIELD_EDGE_OF0 50
+#define FIELD_EDGE_OF1 70
 
 /* The panel's lilac top edge across row 30 and its white beside the boxes: there while the header is
  * still sliding in as a mission starts. */
 static int field_panel(const uint32_t *ds)
 {
     const uint32_t edge = at(ds, 128, FIELD_EDGE), plain = at(ds, 30, FIELD_PLAIN);
-    return red(edge) >= FIELD_EDGE_MIN && red(edge) > green(edge) && blue(edge) > green(edge) &&
+    /* the lilac's tint is lost when the game dims it (150, 142, 150 to 77 x 3): as bright against the white */
+    return red(edge) >= FIELD_EDGE_MIN && red(edge) >= green(edge) && blue(edge) >= green(edge) &&
            abs(red(edge) - blue(edge)) <= FIELD_EDGE_TINT && at(ds, 40, FIELD_EDGE) == edge &&
            at(ds, 220, FIELD_EDGE) == edge && grey(plain) && red(plain) >= FIELD_PANEL_MIN &&
-           at(ds, 220, FIELD_PLAIN) == plain;
+           at(ds, 220, FIELD_PLAIN) == plain && red(edge) * FIELD_EDGE_OF >= red(plain) * FIELD_EDGE_OF0 &&
+           red(edge) * FIELD_EDGE_OF <= red(plain) * FIELD_EDGE_OF1;
 }
 
 static int tell_field(const uint32_t *ds)
