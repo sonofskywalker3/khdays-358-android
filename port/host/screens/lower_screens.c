@@ -57,16 +57,21 @@ static int tab_icons(const uint32_t *ds)
 #define FIELD_EDGE_TINT 2  /* its red and blue alike */
 #define FIELD_WHITE_MIN 24 /* the line under the objective, dimmed too */
 #define FIELD_PANEL_MIN 24 /* the panel's white beside its lilac edge, fading in too */
+#define FIELD_EDGE_OF 100  /* the edge as a part of that white, in hundredths: 58 to 61 as seen */
+#define FIELD_EDGE_OF0 50
+#define FIELD_EDGE_OF1 70
 
 /* The panel's lilac top edge across row 30 and its white beside the boxes: there while the header is
  * still sliding in as a mission starts. */
 static int field_panel(const uint32_t *ds)
 {
     const uint32_t edge = at(ds, 128, FIELD_EDGE), plain = at(ds, 30, FIELD_PLAIN);
-    return red(edge) >= FIELD_EDGE_MIN && red(edge) > green(edge) && blue(edge) > green(edge) &&
+    /* the lilac's tint is lost when the game dims it (150, 142, 150 to 77 x 3): as bright against the white */
+    return red(edge) >= FIELD_EDGE_MIN && red(edge) >= green(edge) && blue(edge) >= green(edge) &&
            abs(red(edge) - blue(edge)) <= FIELD_EDGE_TINT && at(ds, 40, FIELD_EDGE) == edge &&
            at(ds, 220, FIELD_EDGE) == edge && grey(plain) && red(plain) >= FIELD_PANEL_MIN &&
-           at(ds, 220, FIELD_PLAIN) == plain;
+           at(ds, 220, FIELD_PLAIN) == plain && red(edge) * FIELD_EDGE_OF >= red(plain) * FIELD_EDGE_OF0 &&
+           red(edge) * FIELD_EDGE_OF <= red(plain) * FIELD_EDGE_OF1;
 }
 
 static int tell_field(const uint32_t *ds)
@@ -357,14 +362,17 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_FRAME_BOTTOM 176 /* the frame's lower border from here: the list grows down to it */
 #define LIST_SIDE_ROW 100     /* a row through the frame's sides and the scroll track */
 #define LIST_PLAIN0 20        /* the frame's sides and the track from here (the rows they grow by: plain ones) */
+#define LIST_IN_ROW0 12       /* the entries' rows from here */
 #define LIST_IN0 16           /* the entries' columns (the frame leaves its own out) */
 #define LIST_IN1 222
 #define LIST_TRACK0 222 /* the scroll track: its rounded end moves to its new bottom */
 #define LIST_TRACK1 243
 #define LIST_TRACK_END 173
 #define LIST_SHIFT 9    /* the left margin left out: the frame's left edge on the screen's */
-#define LIST_SEAM 191   /* plain from top to bottom, between the names and the crowns ... */
-#define LIST_WIDEN 20   /* ... repeated: the frame's right edge (244) on the screen's */
+#define LIST_SEAM 178  /* plain from top to bottom, between the names and the crowns or challenge marks ... */
+#define LIST_SEAM0 150 /* ... or the nearest column that is, on a list whose names run longer */
+#define LIST_SEAM1 221
+#define LIST_WIDEN 20 /* ... repeated: the frame's right edge (244) on the screen's */
 #define LIST_ARROW0 114 /* the down arrow under the list, kept in its middle */
 #define LIST_ARROW1 126
 #define LIST_ARROW_MOVE 1   /* the list's middle moves this far */
@@ -400,15 +408,44 @@ static int tell_missions(const uint32_t *ds)
            !uniform_row(ds, 14);
 }
 
-static float list_column(float ox)
+static float list_column(float ox, int seam)
 {
-    if (ox <= (float)(LIST_SEAM - LIST_SHIFT)) {
+    if (ox <= (float)(seam - LIST_SHIFT)) {
         return ox + LIST_SHIFT;
     }
-    if (ox <= (float)(LIST_SEAM - LIST_SHIFT + LIST_WIDEN)) {
-        return (float)LIST_SEAM + 0.5f;
+    if (ox <= (float)(seam - LIST_SHIFT + LIST_WIDEN)) {
+        return (float)seam + 0.5f;
     }
     return ox + (float)(LIST_SHIFT - LIST_WIDEN);
+}
+
+/* Column x the same as the next on the frame's entries: repeating it stretches nothing. */
+static int list_plain_column(const uint32_t *ds, int x)
+{
+    for (int y = LIST_IN_ROW0; y < LIST_FRAME_BOTTOM; ++y) {
+        if (at(ds, x, y) != at(ds, x + 1, y)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The column to repeat: the one in use while it stays plain, so that nothing moves as the list scrolls. */
+static int list_seam(const uint32_t *ds)
+{
+    static int seam = LIST_SEAM;
+    if (list_plain_column(ds, seam)) {
+        return seam;
+    }
+    for (int d = 0; LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM1; ++d) {
+        if (LIST_SEAM + d <= LIST_SEAM1 && list_plain_column(ds, LIST_SEAM + d)) {
+            return seam = LIST_SEAM + d;
+        }
+        if (LIST_SEAM - d >= LIST_SEAM0 && list_plain_column(ds, LIST_SEAM - d)) {
+            return seam = LIST_SEAM - d;
+        }
+    }
+    return seam;
 }
 
 static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
@@ -419,7 +456,7 @@ static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx
         *sy = oy;
         return 1;
     }
-    *sx = list_column(ox);
+    *sx = list_column(ox, p->seam);
     if (oy >= (float)LIST_FRAME_BOTTOM + e) {
         /* the lower border, the down arrow in the widened list's middle */
         *sy = oy - e;
@@ -558,7 +595,8 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->layers_off = LAYER_BG1 | LAYER_OBJ; /* the frame and the sprites: the entries alone */
         place->top = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, 0, LIST_IN0);
         place->foot = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, LIST_TRACK0, LIST_TRACK1);
-        *key = place->top * 1000 + place->foot;
+        place->seam = list_seam(ds);
+        *key = place->seam * 1000000 + place->top * 1000 + place->foot;
         return 1;
     case KHDAYS_LOWER_SUMMARY: {
         int n = 0;

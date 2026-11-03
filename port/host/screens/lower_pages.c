@@ -165,9 +165,10 @@ static int tell_panels(const uint32_t *ds)
 #define DAY_FRAME_Y 40 /* the list frame's top line, one dark grey across */
 #define DAY_FRAME_X0 16
 #define DAY_FRAME_X1 244
+#define DAY_ARROW_X0 112 /* the up arrow over that line once the list is scrolled, bobbing on and off it */
+#define DAY_ARROW_X1 128
 #define DAY_TRACK 224   /* the scroll track from here, ... */
-#define DAY_TRACK_X 230 /* ... its light grey at this column */
-#define DAY_EDGE_X 244  /* the frame's right edge */
+#define DAY_TRACK_X 230 /* ... its grey at this column */
 #define DAY_TRACK0 48
 #define DAY_TRACK1 175
 #define DAY_GAP0 48 /* the rows the slots are spaced at: above the first, between, below the last */
@@ -185,8 +186,10 @@ static int tell_day(const uint32_t *ds)
 {
     const uint32_t track = at(ds, DAY_TRACK_X, 100);
     return day_red(ds, 20) && day_red(ds, 100) && day_red(ds, 230) &&
-           uniform_span(ds, DAY_FRAME_Y, DAY_FRAME_X0, DAY_FRAME_X1) && grey(at(ds, DAY_FRAME_X0, DAY_FRAME_Y)) &&
-           sum(track) > sum(at(ds, DAY_EDGE_X, 100)) && blue(track) >= red(track) && red(track) == green(track);
+           uniform_span(ds, DAY_FRAME_Y, DAY_FRAME_X0, DAY_ARROW_X0) &&
+           uniform_span(ds, DAY_FRAME_Y, DAY_ARROW_X1, DAY_FRAME_X1) && grey(at(ds, DAY_FRAME_X0, DAY_FRAME_Y)) &&
+           at(ds, DAY_ARROW_X1, DAY_FRAME_Y) == at(ds, DAY_FRAME_X0, DAY_FRAME_Y) && blue(track) >= red(track) &&
+           red(track) == green(track); /* the track's or its thumb's grey, wherever the thumb is */
 }
 
 /* --- A mission's review: Rewards and Items Collected, each a list of ruled rows ------------------------

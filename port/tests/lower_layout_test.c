@@ -159,6 +159,16 @@ static void test_field(void)
     CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
     dim(97); /* fading in from black */
     CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
+    /* no header, dimmed as the game dims it: the edge's tint gone */
+    field();
+    rect(0, 0, DS_W, 28, 0x141414u);
+    rect(24, 28, 232, 148, 0x868686u);
+    rect(32, 64, 97, 140, 0x000000u);
+    rect(24, 30, 232, 31, 0x4d4d4du);
+    CHECK(lay(&l) == KHDAYS_LOWER_FIELD);
+    /* a grey line as bright as the white is no such edge */
+    rect(24, 30, 232, 31, 0x868686u);
+    CHECK(lay(&l) != KHDAYS_LOWER_FIELD);
     khdays_lower_free(&l);
 }
 
@@ -393,6 +403,35 @@ static void test_missions_grown(void)
     khdays_lower_free(&l);
 }
 
+/* The list widened at a column plain on all its rows: a challenge's marks beside its name are not stretched. */
+static void test_missions_seam(void)
+{
+    KhdaysLowerLayout l = {0};
+    KhdaysLowerPicture grown = pic;
+    int rows, x, y;
+    numbered();
+    rect(0, 14, DS_W, 15, 0x212121u);
+    put(100, 14, 0x4a4a4au);
+    rect(10, 20, 11, 180, 0x6b6b6bu);
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(16, 12, 222, 176, 0x101010u);  /* the entries' plain rows */
+    rect(222, 20, 248, 176, 0x6b6b6bu); /* the scroll track */
+    rect(236, 172, 244, 175, 0x949494u);
+    put(232, 175, 0x6b6b6bu);
+    for (int c = 170; c < 200; c += 2) {
+        put(c, 30, 0xffffffu); /* a name running on to the marks */
+    }
+    memset(overscan, 0, sizeof(overscan));
+    grown.overscan = &overscan[0][0][0];
+    grown.overscan_rows = 32 * SCALE;
+    grown.overscan_pitch = DS_W * SCALE * 4;
+    grown.overscan_row0 = 176;
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 165.5f, 100.5f, &x, &y) && x == 168); /* the nearest to 178 they leave plain */
+    khdays_lower_free(&l);
+}
+
 /* How many of the display's rows show DS row `row` at column x. */
 static int shown(const KhdaysLowerLayout *l, float x, int row)
 {
@@ -502,6 +541,9 @@ static void test_day(void)
     rect(16, 40, 244, 41, 0x080808u);   /* the frame's top line */
     rect(224, 41, 240, 176, 0xa5a5acu); /* the scroll track */
     rect(240, 41, 248, 176, 0x212121u); /* the frame's edge */
+    rect(116, 39, 124, 43, 0xc72434u);  /* the up arrow, over the line in a scrolled list */
+    CHECK(lay(&l) == KHDAYS_LOWER_DAY);
+    rect(224, 41, 240, 176, 0x242424u); /* the thumb elsewhere: the track's own grey */
     CHECK(lay(&l) == KHDAYS_LOWER_DAY);
     CHECK(shown(&l, 100.5f, 80) >= 5 && shown(&l, 100.5f, 144) >= 5); /* the rows between the slots */
     CHECK(shown(&l, 100.5f, 20) == 1);                                /* the card at its own size */
@@ -629,6 +671,7 @@ int main(void)
     test_summary();
     test_missions();
     test_missions_grown();
+    test_missions_seam();
     test_tutorials();
     test_diary();
     test_panels();
