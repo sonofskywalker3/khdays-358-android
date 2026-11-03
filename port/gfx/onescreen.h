@@ -301,16 +301,18 @@ KO_FN uint ko_pixel(float px, float py, float texel, uint x3d, uint shape_count,
         }
         break;
     }
-    image_r += through * group_alpha * group_r;
-    image_g += through * group_alpha * group_g;
-    image_b += through * group_alpha * group_b;
-    through *= 1.0f - (1.0f - group_through) * group_alpha;
-    if (through < 1.0f) {
-        result = (uint)(image_r + through * (float)(result & 255u) + 0.5f) |
-                 ((uint)(image_g + through * (float)((result >> 8) & 255u) + 0.5f) << 8) |
-                 ((uint)(image_b + through * (float)((result >> 16) & 255u) + 0.5f) << 16);
-        if (from < 0)
-            from = image_from;
+    if (group != 0xffffffffu) { /* an image reached this texel (none on most: no sums for them) */
+        image_r += through * group_alpha * group_r;
+        image_g += through * group_alpha * group_g;
+        image_b += through * group_alpha * group_b;
+        through *= 1.0f - (1.0f - group_through) * group_alpha;
+        if (through < 1.0f) {
+            result = (uint)(image_r + through * (float)(result & 255u) + 0.5f) |
+                     ((uint)(image_g + through * (float)((result >> 8) & 255u) + 0.5f) << 8) |
+                     ((uint)(image_b + through * (float)((result >> 16) & 255u) + 0.5f) << 16);
+            if (from < 0)
+                from = image_from;
+        }
     }
     if (rule == KOB_UPPER) {
         return ko_bright(result, upper_master);

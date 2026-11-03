@@ -49,6 +49,7 @@ typedef struct ComposeParams {
 static SDL_GPUDevice *device;
 static SDL_GPUComputePipeline *raster, *compose;
 static SDL_GPUBuffer *polys, *verts, *tiles, *vram, *records, *sequences;
+static int sequences_sent = 1; /* the last frame's native sequences on the card: the first frame clears them */
 static uint32_t polys_capacity, verts_capacity; /* entries in `polys` and `verts`: the most any list has had */
 static int fine;                                /* draw the 3D in 8 bits per channel (khdays_raster3d_set_fine) */
 static uint32_t tiles_capacity;                 /* entries in `tiles` */
@@ -228,6 +229,7 @@ void khdays_raster3d_close(void)
         SDL_ReleaseGPUTransferBuffer(device, upload);
     raster = compose = NULL;
     polys = verts = tiles = vram = records = sequences = NULL;
+    sequences_sent = 1;
     upload = NULL;
     upload_size = 0;
     SDL_free(tile_list);
@@ -842,7 +844,14 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         }
     }
     vram_valid = 1;
-    const uint32_t sequence_bytes = (uint32_t)sizeof(p->sequence3d_images);
+    /* the native sequences this list may draw: none on most frames (no KH2 replacement shown), and then only the
+     * first frame without them is sent, which clears those the frame before had */
+    int any_sequence = 0;
+    for (uint32_t i = 0; i < KSI_3D_PROGRAMS && !any_sequence; ++i) {
+        any_sequence = p->sequence3d_images[i].words[KSI_COUNT] != 0 || p->sequence3d_images[i].words[KSI_OUTPUT] != 0;
+    }
+    const uint32_t sequence_bytes = any_sequence || sequences_sent ? (uint32_t)sizeof(p->sequence3d_images) : 0u;
+    sequences_sent = any_sequence;
     size = poly_bytes + vert_bytes + tile_bytes + record_bytes + sequence_bytes +
            (uint32_t)nchanged * KHDAYS_FRAME_VRAM_PAGE;
     if (size > upload_size) {
@@ -877,7 +886,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
                record_bytes);
     }
     at += record_bytes;
-    memcpy(mapped + at, p->sequence3d_images, sequence_bytes);
+    if (sequence_bytes != 0) {
+        memcpy(mapped + at, p->sequence3d_images, sequence_bytes);
+    }
     at += sequence_bytes;
     for (int k = 0; k < nchanged; ++k) {
         const int n = changed[k];
