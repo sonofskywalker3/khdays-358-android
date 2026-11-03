@@ -63,6 +63,9 @@ void khdays_touch_input_down(KhdaysTouchInput *t, uint64_t id, float x, float y)
 void khdays_touch_input_move(KhdaysTouchInput *t, uint64_t id, float x, float y);
 void khdays_touch_input_up(KhdaysTouchInput *t, uint64_t id);
 
+/* The system took the finger back: let go, with nothing a release would do. */
+void khdays_touch_input_cancel(KhdaysTouchInput *t, uint64_t id);
+
 /* The control a job holds, for showing it pressed: a bit per KHDAYS_TOUCH_* control held. */
 unsigned khdays_touch_input_pressed(const KhdaysTouchInput *t);
 

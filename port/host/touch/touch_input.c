@@ -282,6 +282,15 @@ void khdays_touch_input_up(KhdaysTouchInput *t, uint64_t id)
     }
 }
 
+void khdays_touch_input_cancel(KhdaysTouchInput *t, uint64_t id)
+{
+    KhdaysTouchFinger *f = finger_of(t, id);
+    if (f != NULL) {
+        f->job = JOB_FREE;
+        held(t);
+    }
+}
+
 unsigned khdays_touch_input_pressed(const KhdaysTouchInput *t)
 {
     static const signed char control_of[] = {

@@ -181,6 +181,10 @@ static void test_fingers(void)
         CHECK(!t.stick_held);
         khdays_touch_input_up(&t, 6);
         CHECK(t.deck_serial == 1 && t.deck_row == 1);
+        /* a finger the system takes back taps nothing */
+        khdays_touch_input_down(&t, 8, 600.0f, 1650.0f);
+        khdays_touch_input_cancel(&t, 8);
+        CHECK(t.deck_serial == 1);
         /* a mode changing lets everything go */
         khdays_touch_input_down(&t, 7, ax, ay);
         khdays_touch_input_mode(&t, KHDAYS_TOUCH_MODE_NONE);

@@ -166,7 +166,7 @@ static void command_tap(const KhdaysInputSnapshot *in, int panel_open)
 {
     u32 session, context;
     int row;
-    if (in->deck_tap_serial == deck_tap_serial) {
+    if (in->deck_tap_serial == deck_tap_serial || in->ui_open) {
         return;
     }
     deck_tap_serial = in->deck_tap_serial;

@@ -124,9 +124,21 @@ static int wanted(void)
 #endif
 }
 
+/* Another mode lets go of what was held: the game hears of it at once, no event being on its way. */
+static void set_mode(int mode)
+{
+    if (mode != input.mode) {
+        const int any = input.buttons != 0 || input.lock_on || input.stick_held;
+        khdays_touch_input_mode(&input, mode);
+        if (any) {
+            khdays_devices_resend();
+        }
+    }
+}
+
 static void hide(void)
 {
-    khdays_touch_input_mode(&input, KHDAYS_TOUCH_MODE_NONE);
+    set_mode(KHDAYS_TOUCH_MODE_NONE);
     shown = 0;
     if (hud_published) {
         const KhdaysProfile *p = khdays_devices_profile();
@@ -475,7 +487,7 @@ int khdays_touch_draw(SDL_Renderer *renderer)
         preview.sized = 1;
     }
     situation = editing ? KHDAYS_TOUCH_MODE_FIELD : mode_now();
-    khdays_touch_input_mode(&input, situation);
+    set_mode(situation);
     SDL_GetRenderLogicalPresentation(renderer, &lw, &lh, &mode);
     SDL_SetRenderLogicalPresentation(renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
     if (!editing) {
@@ -577,6 +589,8 @@ int khdays_touch_event(const SDL_Event *event, SDL_Renderer *renderer)
                 khdays_touch_input_down(&input, id, x, y);
             } else if (event->type == SDL_EVENT_FINGER_MOTION) {
                 khdays_touch_input_move(&input, id, x, y);
+            } else if (event->type == SDL_EVENT_FINGER_CANCELED) {
+                khdays_touch_input_cancel(&input, id);
             } else {
                 khdays_touch_input_up(&input, id);
             }
@@ -652,6 +666,8 @@ void khdays_touch_release(void)
 void khdays_touch_apply(const KhdaysProfile *profile, KhdaysInputSnapshot *out)
 {
     static int stick_active, stick_sector = -1;
+    out->deck_tap_row = input.deck_row; /* in every snapshot: the game takes a change of the count for a tap */
+    out->deck_tap_serial = input.deck_serial;
     if (input.mode == KHDAYS_TOUCH_MODE_NONE || editing) {
         return;
     }
@@ -679,7 +695,5 @@ void khdays_touch_apply(const KhdaysProfile *profile, KhdaysInputSnapshot *out)
         if (!profile->enh.mouse_camera) {
             out->mouse_speed = 100;
         }
-        out->deck_tap_row = input.deck_row;
-        out->deck_tap_serial = input.deck_serial;
     }
 }

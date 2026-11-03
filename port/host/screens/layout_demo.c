@@ -121,7 +121,14 @@ int khdays_layout_demo_event(const SDL_Event *event)
 void khdays_layout_demo_frame(SDL_Renderer *renderer)
 {
     if (demo_event != 0 && SDL_CompareAndSwapAtomicInt(&shot_wanted, 1, 0)) {
-        SDL_Surface *s = SDL_RenderReadPixels(renderer, NULL);
+        /* the whole window, not the picture's letterboxed part */
+        SDL_RendererLogicalPresentation mode;
+        int lw = 0, lh = 0;
+        SDL_Surface *s;
+        SDL_GetRenderLogicalPresentation(renderer, &lw, &lh, &mode);
+        SDL_SetRenderLogicalPresentation(renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+        s = SDL_RenderReadPixels(renderer, NULL);
+        SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
         if (s != NULL && shot_dir != NULL) {
             char path[512];
             SDL_snprintf(path, sizeof(path), "%s/shot_%03d.bmp", shot_dir, shot_number++);

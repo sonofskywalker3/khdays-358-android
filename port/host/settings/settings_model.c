@@ -1121,8 +1121,8 @@ void khdays_model_command(KhdaysProfile *work, int command)
     case KHDAYS_CMD_RESTORE_VIDEO: khdays_video_default(&work->video); break;
     case KHDAYS_CMD_RESTORE_SOUND: khdays_sound_default(&work->sound); break;
     case KHDAYS_CMD_RESTORE_BOTH: khdays_profile_default(work); break;
-#ifdef __ANDROID__
     case KHDAYS_CMD_LAYOUT_EDIT: khdays_editor_request(); break;
+#ifdef __ANDROID__
     case KHDAYS_CMD_OPEN_SETUP: khdays_media_folder_open_setup(); break;
     case KHDAYS_CMD_FILES_ROM: khdays_media_folder_act("rom"); break;
     case KHDAYS_CMD_FILES_HD_IMPORT: khdays_media_folder_act("hd_import"); break;
