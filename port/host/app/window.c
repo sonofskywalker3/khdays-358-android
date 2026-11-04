@@ -987,6 +987,7 @@ static int host_thread(void *unused)
             khdays_hd_voice_stop(); /* a monologue's voice still heard */
             khdays_ui_font_forget();
             khdays_settings_renderer_gone();
+            khdays_layout_editor_renderer_gone();
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
             khdays_day_screen_renderer_gone();

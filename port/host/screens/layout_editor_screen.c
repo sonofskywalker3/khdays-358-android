@@ -254,6 +254,17 @@ static void lift_read(SDL_Renderer *renderer)
     }
 }
 
+void khdays_layout_editor_renderer_gone(void)
+{
+    SDL_DestroySurface(lift.with);
+    SDL_DestroyTexture(lift.piece);
+    lift.with = NULL;
+    lift.piece = NULL;
+    if (lift.stage != LIFT_NONE) {
+        lift.stage = LIFT_DONE; /* an outline alone until it is let go */
+    }
+}
+
 int khdays_layout_editor_wants_picture(void)
 {
     if (open_now && lift.stage == LIFT_HIDDEN) {
@@ -399,8 +410,8 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
         return 0;
     case SDL_EVENT_MOUSE_BUTTON_DOWN: {
         const float x = event->button.x * k, y = event->button.y * k;
-        if (event->button.button != SDL_BUTTON_LEFT) {
-            return 0;
+        if (event->button.button != SDL_BUTTON_LEFT || editor.held >= 0) {
+            return 0; /* (one piece at a time: another device's press changes nothing under the drag) */
         }
         for (int b = 0; b < BAR_BUTTONS; ++b) {
             const SDL_FPoint at = {x, y};
