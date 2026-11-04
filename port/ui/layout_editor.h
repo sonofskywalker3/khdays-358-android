@@ -44,6 +44,10 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y);
 /* The release: the item held settles on the snap's lines. Returns 1 when that moved it. */
 int khdays_editor_release(KhdaysLayoutEditor *e);
 
+/* A piece lifted from two pictures of `w` x `h` RGBA pixels, one with it and one without: in `with`, what differs keeps
+ * its colour and is opaque, the rest is clear. So it can be drawn moving over the second without making pictures. */
+void khdays_editor_cutout(unsigned char *with, int with_pitch, const unsigned char *without, int without_pitch, int w, int h);
+
 /* A group's place with its box moved from (x0, y0) to where it is now, both in the picture's dots: the point moved
  * with it, measured from the sides nearest its new box. */
 KhdaysHudPlace khdays_editor_place(const KhdaysHudPlace *now, const KhdaysHudBox *from, const KhdaysHudBox *to, int group,

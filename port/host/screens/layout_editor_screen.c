@@ -43,6 +43,25 @@ static float ui_unit;                  /* the bar's and the names' point: readab
 static SDL_FRect bar[BAR_BUTTONS];
 static int picture_columns;
 
+/* A group being dragged is not made in the picture again for each move, which took a weak chip 40 ms: it is lifted out
+ * of one still picture, by comparing it with one made without the group, and drawn moving over that. */
+enum {
+    LIFT_NONE,
+    LIFT_READ_WITH,    /* the next frame's picture has it */
+    LIFT_HIDDEN,       /* the group is put out of sight: the picture is to be made again */
+    LIFT_READ_WITHOUT, /* the next frame's picture does not have it */
+    LIFT_DONE          /* the group moves on the screen alone; its texture, if any picture showed it */
+};
+#define LIFT_OUT_OF_SIGHT 4096.0f /* DS dots */
+static struct {
+    int stage;
+    int item;
+    SDL_Rect rect;       /* the window's part read, the item's whole with its room */
+    KhdaysHudBox from;   /* the item's box when lifted */
+    SDL_Surface *with;
+    SDL_Texture *piece;
+} lift;
+
 static float dots_to_x(float dots)
 {
     return controls.dots_x + dots * controls.dot;
@@ -155,6 +174,94 @@ int khdays_layout_editor_is_open(void)
     return open_now;
 }
 
+static void lift_begin(int index)
+{
+    const KhdaysEditorItem *it = &editor.item[index];
+    KhdaysHudBox whole;
+    float scale;
+    if (it->kind != ITEM_HUD) {
+        return;
+    }
+    lift.item = index;
+    lift.from = it->box;
+    if (!khdays_hud_layout_box(it->id, picture_columns, &whole, &scale)) {
+        lift.stage = LIFT_DONE; /* no picture shows it: a stand-in, nothing to lift */
+        return;
+    }
+    {
+        const int x0 = (int)SDL_floorf(it->box.x0 - it->room.x0), y0 = (int)SDL_floorf(it->box.y0 - it->room.y0);
+        const int x1 = (int)SDL_ceilf(it->box.x1 + it->room.x1), y1 = (int)SDL_ceilf(it->box.y1 + it->room.y1);
+        lift.rect.x = x0 < 0 ? 0 : x0;
+        lift.rect.y = y0 < 0 ? 0 : y0;
+        lift.rect.w = (x1 > (int)screen.w ? (int)screen.w : x1) - lift.rect.x;
+        lift.rect.h = (y1 > (int)screen.h ? (int)screen.h : y1) - lift.rect.y;
+    }
+    lift.stage = lift.rect.w > 0 && lift.rect.h > 0 ? LIFT_READ_WITH : LIFT_DONE;
+}
+
+/* Back in the pictures, where the places say. Returns whether it had been lifted. */
+static int lift_end(void)
+{
+    const int lifted = lift.stage != LIFT_NONE;
+    lift.stage = LIFT_NONE;
+    SDL_DestroySurface(lift.with);
+    SDL_DestroyTexture(lift.piece);
+    lift.with = NULL;
+    lift.piece = NULL;
+    if (lifted) {
+        khdays_hud_layout_set(hud);
+    }
+    return lifted;
+}
+
+static SDL_Surface *read_rgba(SDL_Renderer *renderer)
+{
+    SDL_Surface *read = SDL_RenderReadPixels(renderer, &lift.rect);
+    SDL_Surface *rgba = read != NULL ? SDL_ConvertSurface(read, SDL_PIXELFORMAT_RGBA32) : NULL;
+    SDL_DestroySurface(read);
+    return rgba;
+}
+
+/* Reads this frame's picture for a lift, before anything of the editor's is over it. */
+static void lift_read(SDL_Renderer *renderer)
+{
+    if (lift.stage == LIFT_READ_WITH) {
+        KhdaysHudPlace hidden[KHDAYS_HUD_GROUPS];
+        const int group = editor.item[lift.item].id;
+        lift.with = read_rgba(renderer);
+        if (lift.with == NULL) {
+            lift.stage = LIFT_DONE; /* moves as an outline; where it ends is still right */
+            return;
+        }
+        memcpy(hidden, hud, sizeof(hidden));
+        hidden[group] = khdays_hud_place_moved(group, LIFT_OUT_OF_SIGHT, 0.0f);
+        khdays_hud_layout_set(hidden);
+        lift.stage = LIFT_HIDDEN;
+    } else if (lift.stage == LIFT_READ_WITHOUT) {
+        SDL_Surface *without = read_rgba(renderer);
+        if (without != NULL && without->w == lift.with->w && without->h == lift.with->h) {
+            khdays_editor_cutout((unsigned char *)lift.with->pixels, lift.with->pitch, (const unsigned char *)without->pixels,
+                                 without->pitch, lift.with->w, lift.with->h);
+            lift.piece = SDL_CreateTextureFromSurface(renderer, lift.with);
+            if (lift.piece != NULL) {
+                SDL_SetTextureBlendMode(lift.piece, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(lift.piece, SDL_SCALEMODE_NEAREST);
+            }
+        }
+        SDL_DestroySurface(without);
+        lift.stage = LIFT_DONE;
+    }
+}
+
+int khdays_layout_editor_wants_picture(void)
+{
+    if (open_now && lift.stage == LIFT_HIDDEN) {
+        lift.stage = LIFT_READ_WITHOUT;
+        return 1;
+    }
+    return 0;
+}
+
 /* What was dragged into the places; returns whether a HUD's group moved. */
 static int take_drag(int index, const KhdaysHudBox *before)
 {
@@ -165,9 +272,8 @@ static int take_drag(int index, const KhdaysHudBox *before)
         const KhdaysHudBox to = {(it->box.x0 - controls.dots_x) / controls.dot, (it->box.y0 - controls.dots_y) / controls.dot,
                                  (it->box.x1 - controls.dots_x) / controls.dot, (it->box.y1 - controls.dots_y) / controls.dot};
         hud[it->id] = khdays_editor_place(&hud[it->id], &from, &to, it->id, picture_columns);
-        khdays_hud_layout_set(hud);
         base_layout = KHDAYS_TOUCH_LAYOUT_CUSTOM;
-        return 1;
+        return 0; /* lifted: into the pictures when let go (lift_end) */
     }
     {
         KhdaysTouchBox *b = &controls.box[it->id];
@@ -219,6 +325,7 @@ static void window_changed(SDL_Renderer *renderer)
 {
     KhdaysHudPlace kept[KHDAYS_TOUCH_CONTROLS];
     const int layout = base_layout;
+    lift_end();
     control_places(kept);
     editor.held = -1;
     read_screen(renderer);
@@ -230,6 +337,7 @@ static void window_changed(SDL_Renderer *renderer)
 
 static void finish(int keep, int *changed)
 {
+    lift_end();
     open_now = 0;
     khdays_touch_edit(NULL);
     if (keep) {
@@ -303,7 +411,9 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
                 return 0;
             }
         }
-        khdays_editor_press(&editor, x, y);
+        if (khdays_editor_press(&editor, x, y) >= 0) {
+            lift_begin(editor.held);
+        }
         return 0;
     }
     case SDL_EVENT_MOUSE_MOTION:
@@ -321,6 +431,7 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
         if (khdays_editor_release(&editor)) {
             *moved = take_drag(index, &before);
         }
+        *moved |= lift_end();
         return 0;
     }
     default: return 0;
@@ -446,6 +557,13 @@ void khdays_layout_editor_draw(SDL_Renderer *renderer)
     SDL_SetRenderLogicalPresentation(renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
     SDL_GetRenderDrawBlendMode(renderer, &blend);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    lift_read(renderer);
+    if (lift.stage == LIFT_DONE && lift.piece != NULL) {
+        const KhdaysHudBox *b = &editor.item[lift.item].box;
+        const SDL_FRect at = {(float)lift.rect.x + b->x0 - lift.from.x0, (float)lift.rect.y + b->y0 - lift.from.y0,
+                              (float)lift.rect.w, (float)lift.rect.h};
+        SDL_RenderTexture(renderer, lift.piece, NULL, &at);
+    }
     if (editor.snap) {
         const float dot = density_now > 1.0f ? density_now : 1.0f;
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 90);
