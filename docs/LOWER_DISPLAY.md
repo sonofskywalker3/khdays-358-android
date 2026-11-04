@@ -25,7 +25,8 @@ list, told by its marks reaching columns 208-212, widens past them on every page
 they stay put as it scrolls, its marks' rows before them, as far right as on the DS, a
 name's long enough to reach them past them; a page of ranks close after long names widens in the
 last gap before them. A list of crowns or ranks widens before them on every page (the
-plain columns after them are never used), so they stay put. The list's last page has the
+plain columns after them are never used; a name closing up to a rank, the gap between
+them, however narrow), so they stay put. The list's last page has the
 thumb on the track's end: the rows the track grows by go in above it, so it still ends the
 track, and its extra rows show black, no entry being under it. Extra rows one colour
 under the entries are nothing the game drew (the theater's list) and show black too.

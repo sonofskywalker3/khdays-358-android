@@ -392,7 +392,8 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_SEAM1 221
 #define LIST_SEAM_LAST 190 /* ... and never past a crown or a rank (from column 193, or sooner): both then stay put */
 #define LIST_BAR_LAST 217 /* ... the last column inside the selected entry's bar */
-#define LIST_RANK_GAP 174 /* ... or this, just before a rank (they all start at 175), a name closing up to it */
+#define LIST_RANK_GAP0 171 /* ... or the first plain one of these, before a rank (they start about 175), a name */
+#define LIST_RANK_GAP1 177 /* closing up to it: the first, a thick stroke of the rank's first letter being plain too */
 #define LIST_SEAM_RUN 8 /* ... among this many plain columns: wider than a gap between letters or words */
 #define LIST_SEAM_GAP 4 /* ... or, the row's rank close after a long name, this many: wider than between letters */
 #define LIST_MARKS0 208 /* a challenge's marks reach these columns; a crown or a rank stops short of them */
@@ -501,15 +502,17 @@ static int list_seam(const uint32_t *ds, int ds_rows)
             return seam = l;
         }
     }
-    if (!marks && plain[LIST_RANK_GAP - LIST_SEAM0] && !plain[LIST_RANK_GAP + 1 - LIST_SEAM0]) {
-        return seam = LIST_RANK_GAP;
+    for (int x = LIST_RANK_GAP0; !marks && x <= LIST_RANK_GAP1; ++x) {
+        if (plain[x - LIST_SEAM0]) {
+            return seam = x;
+        }
     }
     for (int x = LIST_SEAM_LAST; !marks && x >= LIST_SEAM0; --x) {
         if (list_clear_column(plain, x, LIST_SEAM_GAP)) {
             return seam = x;
         }
     }
-    for (int x = LIST_BAR_LAST; x >= LIST_SEAM0; --x) {
+    for (int x = marks ? LIST_BAR_LAST : LIST_SEAM_LAST; x >= LIST_SEAM0; --x) {
         if (plain[x - LIST_SEAM0]) {
             return seam = x;
         }

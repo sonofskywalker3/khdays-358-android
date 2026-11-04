@@ -570,12 +570,16 @@ static void test_missions_pages(void)
     for (int c = 150; c < 173; c += 2) {
         put(c, 40, 0xffffffu);
     }
-    for (int c = 175; c < 207; c += 1) {
+    put(175, 30, 0xffffffu); /* its first letter's thick stroke: two columns the same */
+    for (int c = 176; c < 207; c += 2) {
         put(c, 30, 0xffffffu);
     }
     khdays_lower_sample(&grown, ds, &rows);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
     CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    CHECK(shows(&l, 186.5f, 30.5f, &x, &y) && x == 175); /* the rank whole, the name too */
+    CHECK(shows(&l, 187.5f, 30.5f, &x, &y) && x == 176);
+    CHECK(shows(&l, 163.5f, 40.5f, &x, &y) && x == 172);
     khdays_lower_free(&l);
     /* a challenge's list before it leaves no column past the crowns behind */
     list_frame();
