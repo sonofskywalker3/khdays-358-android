@@ -4,20 +4,13 @@
 #define KHDAYS_TOUCH_INPUT_H
 
 #include "touch_layout.h"
+#include "touch_needs.h"
 
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* What the controls are for now. */
-enum {
-    KHDAYS_TOUCH_MODE_NONE,  /* nothing shown or held */
-    KHDAYS_TOUCH_MODE_FIELD, /* play: stick, camera, buttons, the command deck */
-    KHDAYS_TOUCH_MODE_MENU,  /* D-pad and buttons */
-    KHDAYS_TOUCH_MODE_TALK   /* an event, a movie: a tap is A, a small Start */
-};
 
 #define KHDAYS_TOUCH_FINGERS 10
 #define KHDAYS_TOUCH_DECK_ROWS 3

@@ -1077,6 +1077,11 @@ static int host_thread(void *unused)
             continue;
         }
         if (khdays_layout_editor_is_open()) {
+            /* One picture for the events waiting, as the settings menu above: a finger's moves come twice (as
+             * itself and as the mouse), faster than the display, and a picture each -- every one waiting for its
+             * refresh -- left the piece further and further behind the finger. */
+            static Uint64 editor_drawn_at;
+            static int editor_moved;
             int changed = 0, moved = 0;
             const int editor_closed = khdays_layout_editor_event(&event, renderer, &changed, &moved);
             khdays_devices_handle(&event, renderer);
@@ -1085,13 +1090,18 @@ static int host_thread(void *unused)
                 khdays_settings_path(path, sizeof(path));
                 khdays_profile_save(khdays_devices_profile(), path, notice);
             }
-            if (moved) {
-                khdays_present_refresh_now();
+            editor_moved |= moved;
+            if (editor_closed || !SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST) || SDL_GetTicks() - editor_drawn_at >= 16) {
+                if (editor_moved) {
+                    khdays_present_refresh_now();
+                    editor_moved = 0;
+                }
+                if (editor_closed) {
+                    resume_game_after_menu();
+                }
+                redraw(window, renderer);
+                editor_drawn_at = SDL_GetTicks();
             }
-            if (editor_closed) {
-                resume_game_after_menu();
-            }
-            redraw(window, renderer);
             continue;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.scancode == SDL_SCANCODE_F12) {

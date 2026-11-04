@@ -5,6 +5,7 @@
 #include "../host/touch/touch_input.h"
 #include "../host/touch/touch_layout.h"
 #include "../ui/layout_editor.h"
+#include "../ui/situation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -219,6 +220,56 @@ static void test_fingers(void)
     }
 }
 
+/* No screen of the game leaves a touch screen without controls; a display of the lower screen's own takes touches. */
+static void test_needs(void)
+{
+    static const int menus[] = {KHDAYS_SIT_TITLE, KHDAYS_SIT_LOAD_MENU, KHDAYS_SIT_SAVE_MENU, KHDAYS_SIT_CAMP_MENU,
+                                KHDAYS_SIT_PAUSE, KHDAYS_SIT_TUTORIAL, KHDAYS_SIT_SHOP, KHDAYS_SIT_MISSION_REVIEW,
+                                KHDAYS_SIT_GAME_OVER, KHDAYS_SIT_WORLD_SELECTOR, KHDAYS_SIT_UNKNOWN};
+    const KhdaysTouchSituation play = {0, 0, KHDAYS_SIT_FIELD, 1}, event = {0, 0, KHDAYS_SIT_FIELD, 0};
+    const KhdaysTouchSituation movie = {0, 1, KHDAYS_SIT_FIELD, 1};
+    for (int scene = 0; scene < KHDAYS_SITUATIONS; ++scene) {
+        for (int hud = 0; hud < 2; ++hud) {
+            KhdaysTouchSituation s = {0, 0, scene, hud};
+            CHECK(khdays_touch_needs_mode(&s) != KHDAYS_TOUCH_MODE_NONE);
+            s.port_menu = 1;
+            CHECK(khdays_touch_needs_mode(&s) == KHDAYS_TOUCH_MODE_NONE);
+        }
+    }
+    for (size_t i = 0; i < sizeof(menus) / sizeof(menus[0]); ++i) {
+        const KhdaysTouchSituation s = {0, 0, menus[i], 0};
+        CHECK(khdays_touch_needs_mode(&s) == KHDAYS_TOUCH_MODE_MENU);
+    }
+    CHECK(khdays_touch_needs_mode(&play) == KHDAYS_TOUCH_MODE_FIELD);
+    CHECK(khdays_touch_needs_mode(&event) == KHDAYS_TOUCH_MODE_TALK);
+    CHECK(khdays_touch_needs_mode(&movie) == KHDAYS_TOUCH_MODE_TALK);
+    CHECK(khdays_touch_needs_window(0, 0) && khdays_touch_needs_window(1, 0) && khdays_touch_needs_window(1, 1));
+    CHECK(!khdays_touch_needs_window(0, 1));
+}
+
+/* What the editor outlines: the drawn part of a group, without the blank its shapes keep. */
+static void test_visible(void)
+{
+    KhdaysHudBox b;
+    khdays_hud_layout_set(NULL);
+    khdays_hud_layout_begin();
+    khdays_hud_layout_note(KHDAYS_HUD_DECK, 5.0f, 96.0f, 98.3f, 186.0f, 0.8333f);
+    khdays_hud_layout_note(KHDAYS_HUD_PARTY, 240.0f, 104.0f, 338.0f, 186.0f, 0.7667f);
+    khdays_hud_layout_note(KHDAYS_HUD_MISSION, 5.0f, 5.0f, 129.0f, 25.0f, 0.5f);
+    khdays_hud_layout_end();
+    CHECK(khdays_hud_layout_visible(KHDAYS_HUD_DECK, 342, &b));
+    CHECK(fabsf(b.y0 - (96.0f + 52.0f * 0.8333f)) < 0.01f && b.y1 == 186.0f && b.x0 == 5.0f && b.x1 < 98.3f);
+    CHECK(khdays_hud_layout_visible(KHDAYS_HUD_PARTY, 342, &b));
+    CHECK(b.y0 > 104.0f && b.y1 == 186.0f && b.x0 > 240.0f);
+    CHECK(khdays_hud_layout_visible(KHDAYS_HUD_MISSION, 342, &b));
+    CHECK(b.x0 == 5.0f && b.y0 == 5.0f && b.x1 == 129.0f && b.y1 == 25.0f); /* no blank kept */
+    khdays_hud_layout_begin();
+    khdays_hud_layout_note(KHDAYS_HUD_PARTY, 240.0f, 89.0f, 338.0f, 186.0f, 0.7667f); /* four members */
+    khdays_hud_layout_end();
+    CHECK(khdays_hud_layout_visible(KHDAYS_HUD_PARTY, 342, &b));
+    CHECK(b.y0 == 89.0f);
+}
+
 static void test_places(void)
 {
     KhdaysHudPlace places[KHDAYS_HUD_GROUPS];
@@ -271,9 +322,15 @@ static void test_editor(void)
     CHECK(khdays_editor_item_at(&e, 5.0f, 5.0f) == -1);
     CHECK(khdays_editor_press(&e, 5.0f, 5.0f) == -1 && !khdays_editor_drag(&e, 50.0f, 50.0f));
     CHECK(khdays_editor_press(&e, 110.0f, 110.0f) == 0);
-    /* follows the point where it was held, on the grid */
+    /* follows the point where it was held exactly, not by the grid's steps; settles on the grid when let go */
     CHECK(khdays_editor_drag(&e, 214.0f, 123.0f));
-    CHECK(e.item[0].box.x0 == 200.0f && e.item[0].box.y0 == 110.0f && e.item[0].box.x1 == 400.0f);
+    CHECK(e.item[0].box.x0 == 204.0f && e.item[0].box.y0 == 113.0f && e.item[0].box.x1 == 404.0f);
+    CHECK(khdays_editor_drag(&e, 215.0f, 123.0f) && e.item[0].box.x0 == 205.0f);
+    CHECK(khdays_editor_release(&e) && e.held == -1);
+    CHECK(e.item[0].box.x0 == 210.0f && e.item[0].box.y0 == 110.0f && e.item[0].box.x1 == 410.0f);
+    CHECK(khdays_editor_press(&e, 300.0f, 300.0f) == 0);
+    CHECK(!khdays_editor_release(&e)); /* already on it */
+    CHECK(khdays_editor_press(&e, 300.0f, 300.0f) == 0);
     /* stays wholly inside */
     khdays_editor_drag(&e, 5000.0f, 5000.0f);
     CHECK(e.item[0].box.x1 == 1000.0f && e.item[0].box.y1 == 500.0f);
@@ -319,6 +376,8 @@ int main(int argc, char **argv)
     test_fingers();
     test_places();
     test_editor();
+    test_needs();
+    test_visible();
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;

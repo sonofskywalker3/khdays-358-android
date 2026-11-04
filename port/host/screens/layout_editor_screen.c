@@ -23,7 +23,6 @@ enum { BAR_A, BAR_C, BAR_CUSTOM, BAR_SNAP, BAR_RESET, BAR_DONE, BAR_BUTTONS };
 #define BAR_PAD_POINTS 11.0f
 #define BAR_DOWN 0.28f         /* of the window's height */
 #define DASH_POINTS 7.0f
-#define HANDLE_POINTS 5.0f
 #define LINE_POINTS 1.5f
 #define LABEL_OF_BAR 0.55f
 #define UI_ROWS 540.0f         /* a point of the bar at the least: the window's height over this */
@@ -56,8 +55,7 @@ static float dots_to_y(float dots)
 
 static void group_box(int group, KhdaysHudBox *box)
 {
-    float scale;
-    if (!khdays_hud_layout_box(group, picture_columns, box, &scale)) {
+    if (!khdays_hud_layout_visible(group, picture_columns, box)) {
         khdays_hud_layout_box_expected(group, picture_columns, screen.hud, box);
     }
 }
@@ -97,7 +95,7 @@ static void read_screen(SDL_Renderer *renderer)
 {
     const KhdaysProfile *p = khdays_devices_profile();
     int w = 0, h = 0;
-    SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
+    SDL_GetRenderOutputSize(renderer, &w, &h); /* the window's whole: the current one is the letterboxed picture's */
     density_now = khdays_touch_density(renderer);
     ui_unit = (float)h / UI_ROWS > density_now ? (float)h / UI_ROWS : density_now;
     memset(&screen, 0, sizeof(screen));
@@ -307,7 +305,14 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
             }
         }
         return 0;
-    case SDL_EVENT_MOUSE_BUTTON_UP: khdays_editor_release(&editor); return 0;
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+        const int index = editor.held;
+        const KhdaysHudBox before = index >= 0 ? editor.item[index].box : (KhdaysHudBox){0};
+        if (khdays_editor_release(&editor)) {
+            *moved = take_drag(index, &before);
+        }
+        return 0;
+    }
     default: return 0;
     }
 }
@@ -324,7 +329,7 @@ void khdays_layout_editor_done_at(SDL_Renderer *renderer, float *x, float *y)
 
 static void outline(SDL_Renderer *renderer, const KhdaysHudBox *b, SDL_FColor c)
 {
-    const float dash = DASH_POINTS * ui_unit, line = LINE_POINTS * ui_unit, handle = HANDLE_POINTS * ui_unit;
+    const float dash = DASH_POINTS * ui_unit, line = LINE_POINTS * ui_unit;
     SDL_SetRenderDrawColorFloat(renderer, c.r, c.g, c.b, c.a);
     for (float x = b->x0; x < b->x1; x += dash * 2.0f) {
         const float w = x + dash > b->x1 ? b->x1 - x : dash;
@@ -337,13 +342,6 @@ static void outline(SDL_Renderer *renderer, const KhdaysHudBox *b, SDL_FColor c)
         const SDL_FRect left = {b->x0, y, line, h}, right = {b->x1 - line, y, line, h};
         SDL_RenderFillRect(renderer, &left);
         SDL_RenderFillRect(renderer, &right);
-    }
-    {
-        const SDL_FRect corners[4] = {{b->x0 - handle / 2.0f, b->y0 - handle / 2.0f, handle, handle},
-                                      {b->x1 - handle / 2.0f, b->y0 - handle / 2.0f, handle, handle},
-                                      {b->x0 - handle / 2.0f, b->y1 - handle / 2.0f, handle, handle},
-                                      {b->x1 - handle / 2.0f, b->y1 - handle / 2.0f, handle, handle}};
-        SDL_RenderFillRects(renderer, corners, 4);
     }
 }
 
@@ -363,7 +361,7 @@ static void centred(SDL_Renderer *renderer, float cx, float cy, float height, SD
 
 static void draw_bar(SDL_Renderer *renderer)
 {
-    static const int words[BAR_BUTTONS] = {0, 0, TXT_LAYOUT_CUSTOM, TXT_LAYOUT_SNAP, TXT_LAYOUT_RESET, TXT_LAYOUT_DONE};
+    static const int words[BAR_BUTTONS] = {TXT_TOUCH_LAYOUT_A, TXT_TOUCH_LAYOUT_C, TXT_TOUCH_LAYOUT_CUSTOM, TXT_LAYOUT_SNAP, TXT_LAYOUT_RESET, TXT_LAYOUT_DONE};
     const float h = BAR_H_POINTS * ui_unit, gap = BAR_GAP_POINTS * ui_unit, pad = BAR_PAD_POINTS * ui_unit;
     const float inner = h - 2.0f * gap, text = inner * LABEL_OF_BAR;
     float widths[BAR_BUTTONS], total = gap;
@@ -371,7 +369,7 @@ static void draw_bar(SDL_Renderer *renderer)
     for (int b = 0; b < BAR_BUTTONS; ++b) {
         int w = 0, th = 0;
         const int shown = with_controls || (b != BAR_A && b != BAR_C && b != BAR_CUSTOM);
-        names[b] = b == BAR_A ? "A" : b == BAR_C ? "C" : khdays_text(words[b]);
+        names[b] = khdays_text(words[b]);
         widths[b] = 0.0f;
         if (shown && khdays_ui_font_load() && khdays_ui_font_text(renderer, names[b], &w, &th) != NULL && th > 0) {
             widths[b] = (float)w * text / (float)th + 2.0f * pad;

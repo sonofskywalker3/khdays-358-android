@@ -65,10 +65,6 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
     h = b->y1 - b->y0;
     x0 = x - e->grab_x;
     y0 = y - e->grab_y;
-    if (e->snap && e->grid > 0.0f) {
-        x0 = roundf(x0 / e->grid) * e->grid;
-        y0 = roundf(y0 / e->grid) * e->grid;
-    }
     x0 = kept_inside(x0, w, e->area.x0, e->area.x1);
     y0 = kept_inside(y0, h, e->area.y0, e->area.y1);
     if (x0 == b->x0 && y0 == b->y0) {
@@ -81,9 +77,28 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
     return 1;
 }
 
-void khdays_editor_release(KhdaysLayoutEditor *e)
+int khdays_editor_release(KhdaysLayoutEditor *e)
 {
+    KhdaysHudBox *b;
+    float w, h, x0, y0;
+    const int held = e->held;
     e->held = -1;
+    if (held < 0 || !e->snap || e->grid <= 0.0f) {
+        return 0;
+    }
+    b = &e->item[held].box;
+    w = b->x1 - b->x0;
+    h = b->y1 - b->y0;
+    x0 = kept_inside(roundf(b->x0 / e->grid) * e->grid, w, e->area.x0, e->area.x1);
+    y0 = kept_inside(roundf(b->y0 / e->grid) * e->grid, h, e->area.y0, e->area.y1);
+    if (x0 == b->x0 && y0 == b->y0) {
+        return 0;
+    }
+    b->x0 = x0;
+    b->y0 = y0;
+    b->x1 = x0 + w;
+    b->y1 = y0 + h;
+    return 1;
 }
 
 KhdaysHudPlace khdays_editor_place(const KhdaysHudPlace *now, const KhdaysHudBox *from, const KhdaysHudBox *to, int group,
