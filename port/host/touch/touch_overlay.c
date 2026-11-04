@@ -85,6 +85,15 @@ static void tell_view(int mode)
     for (int r = 0; r < KHDAYS_TOUCH_DECK_ROWS; ++r) {
         memcpy(&s.boxes[(KHDAYS_TOUCH_CONTROLS + r) * 4], &input.deck_rows[r], 4 * sizeof(float));
     }
+    if (mode == KHDAYS_TOUCH_MODE_MENU && !editing && !khdays_present_one_picture() &&
+        p->touch.layout != KHDAYS_TOUCH_LAYOUT_CUSTOM) {
+        /* both screens shown whole, as wide as the window: L and R in its top corners, clear of the picture */
+        const KhdaysTouchBox *l = &input.layout.box[KHDAYS_TOUCH_L], *r = &input.layout.box[KHDAYS_TOUCH_R];
+        const KhdaysTouchBox top_l = {l->x0, l->x0, l->x1, l->x0 + l->y1 - l->y0};
+        const KhdaysTouchBox top_r = {r->x0, l->x0, r->x1, l->x0 + r->y1 - r->y0};
+        memcpy(&s.boxes[KHDAYS_TOUCH_L * 4], &top_l, sizeof(top_l));
+        memcpy(&s.boxes[KHDAYS_TOUCH_R * 4], &top_r, sizeof(top_r));
+    }
     if (!view_told || memcmp(&s, &view_shown, sizeof(s)) != 0) {
         view_shown = s;
         view_told = 1;
