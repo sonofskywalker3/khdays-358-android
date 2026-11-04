@@ -5,6 +5,12 @@
 
 #define KD_OPAQUE 0x8000u
 
+/* whether these flags ask for the one-screen picture's sources (kd_split); a shader made for one case
+ * says which (compose2d.hlsl) */
+#ifndef KD_SPLIT_ON
+#define KD_SPLIT_ON(flags) (((flags) & KDF_SPLIT) != 0u)
+#endif
+
 KD_FN int kd_s16(uint v)
 {
     return (int)((v & 0xffffu) ^ 0x8000u) - 0x8000;
@@ -1177,20 +1183,20 @@ KD_FN uint kd_pixel(int x, int row)
     const uint fine = flags & KDF_FINE;
     uint result;
     if (display == 0u || (display == 1u && (flags & KDF_FORCED_BLANK))) {
-        if ((flags & KDF_SPLIT) != 0u) {
+        if (KD_SPLIT_ON(flags)) {
             return 0x01ffffffu; /* white, shown, with nothing of the 3D */
         }
         return fine != 0u ? 0xffffffu : 0x3f3f3fu; /* white */
     }
     if (display == 2u) {
         result = KD_VRAM16((uint)(row * 256 + x) * 2u) & 0x7fffu;
-        if ((flags & KDF_SPLIT) != 0u) {
+        if (KD_SPLIT_ON(flags)) {
             return kd_fine(result) | 0x01000000u;
         }
         if (fine != 0u)
             result = kd_fine(result);
     } else if (display == 3u) {
-        if ((flags & KDF_SPLIT) != 0u) {
+        if (KD_SPLIT_ON(flags)) {
             return 0x01000000u;
         }
         result = 0u; /* the main memory display mode: not modelled, black */
@@ -1235,7 +1241,7 @@ KD_FN uint kd_pixel(int x, int row)
                     under[through] = 0u;
                 }
             }
-            if ((flags & KDF_SPLIT) != 0u) {
+            if (KD_SPLIT_ON(flags)) {
                 uint with[4];
                 for (b = 0; b < 4; ++b) {
                     with[b] = color[b];
