@@ -13,18 +13,25 @@ enum {
     KHDAYS_TOUCH_MODE_NONE,  /* nothing shown or held */
     KHDAYS_TOUCH_MODE_FIELD, /* play: stick, camera, buttons, the command deck */
     KHDAYS_TOUCH_MODE_MENU,  /* D-pad and buttons */
-    KHDAYS_TOUCH_MODE_TALK   /* an event, a movie: a tap is A, a small Start */
+    KHDAYS_TOUCH_MODE_TALK,  /* a movie: a tap is A, a small Start */
+    KHDAYS_TOUCH_MODE_EVENT  /* an event: the menu's controls to show it can be answered, and a tap elsewhere is A */
 };
 
 typedef struct KhdaysTouchSituation {
     int port_menu; /* the settings or a movie's pause are over the game: they take touches themselves */
     int hd_movie;  /* an HD movie plays */
     int scene;     /* KHDAYS_SIT_* (ui/situation.h) */
-    int hud;       /* the field's HUD shows (without it, an event) */
+    int event;     /* the field shows an event or a person's words: the player does not move Roxas */
 } KhdaysTouchSituation;
 
 /* The controls for a situation: every one of the game's screens gets some. */
 int khdays_touch_needs_mode(const KhdaysTouchSituation *situation);
+
+/* The mode to show from what mode_now says frame by frame: play and an event's controls swap only once it has
+ * said so for KHDAYS_TOUCH_SETTLE_FRAMES, so that the gaps between an event's lines do not blink them; any other
+ * change at once. `shown` and `waited` are the caller's, zero at first. */
+#define KHDAYS_TOUCH_SETTLE_FRAMES 15
+int khdays_touch_needs_settled(int mode, int *shown, int *waited);
 
 /* Whether a window can show them: not with the lower screen on a display of its own, which takes touches, unless
  * the one picture is what that window shows. */

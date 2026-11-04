@@ -13,7 +13,7 @@ int khdays_touch_needs_mode(const KhdaysTouchSituation *s)
     }
     switch (s->scene) {
     case KHDAYS_SIT_FIELD:
-    case KHDAYS_SIT_FIELD_3D_BOTH: return s->hud ? KHDAYS_TOUCH_MODE_FIELD : KHDAYS_TOUCH_MODE_TALK;
+    case KHDAYS_SIT_FIELD_3D_BOTH: return s->event ? KHDAYS_TOUCH_MODE_EVENT : KHDAYS_TOUCH_MODE_FIELD;
     case KHDAYS_SIT_MOVIE:
     case KHDAYS_SIT_INTRO:
     case KHDAYS_SIT_DAY_COUNTER:
@@ -21,6 +21,18 @@ int khdays_touch_needs_mode(const KhdaysTouchSituation *s)
     case KHDAYS_SIT_THE_END: return KHDAYS_TOUCH_MODE_TALK;
     default: return KHDAYS_TOUCH_MODE_MENU; /* the title, the camp's pages and tutorials, saves, the shop, reviews */
     }
+}
+
+int khdays_touch_needs_settled(int mode, int *shown, int *waited)
+{
+    const int swap = (mode == KHDAYS_TOUCH_MODE_FIELD && *shown == KHDAYS_TOUCH_MODE_EVENT) ||
+                     (mode == KHDAYS_TOUCH_MODE_EVENT && *shown == KHDAYS_TOUCH_MODE_FIELD);
+    if (swap && ++*waited < KHDAYS_TOUCH_SETTLE_FRAMES) {
+        return *shown;
+    }
+    *waited = 0;
+    *shown = mode;
+    return mode;
 }
 
 int khdays_touch_needs_window(int one_picture, int second_display)

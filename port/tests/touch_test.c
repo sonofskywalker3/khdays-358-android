@@ -208,6 +208,18 @@ static void test_fingers(void)
         CHECK(!t.tap_pulse && t.buttons == 0);
     }
     {
+        /* an event shows the menu's controls: they press, and a tap or a drag elsewhere is still A or a direction */
+        KhdaysTouchInput t = made(KHDAYS_TOUCH_MODE_EVENT);
+        const KhdaysTouchBox *d = &t.layout.box[KHDAYS_TOUCH_DPAD];
+        khdays_touch_input_down(&t, 1, d->x1 - 5.0f, (d->y0 + d->y1) / 2.0f);
+        CHECK(t.buttons == BIT(KHDAYS_ACT_RIGHT));
+        khdays_touch_input_up(&t, 1);
+        CHECK(!t.tap_pulse && t.buttons == 0);
+        khdays_touch_input_down(&t, 2, 1000.0f, 300.0f);
+        khdays_touch_input_up(&t, 2);
+        CHECK(t.tap_pulse && t.buttons == BIT(KHDAYS_ACT_A));
+    }
+    {
         /* a menu: what is not a control is the picture's */
         KhdaysTouchInput t = made(KHDAYS_TOUCH_MODE_MENU);
         const KhdaysTouchBox *d = &t.layout.box[KHDAYS_TOUCH_DPAD];
@@ -226,11 +238,12 @@ static void test_needs(void)
     static const int menus[] = {KHDAYS_SIT_TITLE, KHDAYS_SIT_LOAD_MENU, KHDAYS_SIT_SAVE_MENU, KHDAYS_SIT_CAMP_MENU,
                                 KHDAYS_SIT_PAUSE, KHDAYS_SIT_TUTORIAL, KHDAYS_SIT_SHOP, KHDAYS_SIT_MISSION_REVIEW,
                                 KHDAYS_SIT_GAME_OVER, KHDAYS_SIT_WORLD_SELECTOR, KHDAYS_SIT_UNKNOWN};
-    const KhdaysTouchSituation play = {0, 0, KHDAYS_SIT_FIELD, 1}, event = {0, 0, KHDAYS_SIT_FIELD, 0};
-    const KhdaysTouchSituation movie = {0, 1, KHDAYS_SIT_FIELD, 1};
+    const KhdaysTouchSituation play = {0, 0, KHDAYS_SIT_FIELD, 0}, event = {0, 0, KHDAYS_SIT_FIELD, 1};
+    const KhdaysTouchSituation movie = {0, 1, KHDAYS_SIT_FIELD, 0};
+    int shown = KHDAYS_TOUCH_MODE_EVENT, waited = 0;
     for (int scene = 0; scene < KHDAYS_SITUATIONS; ++scene) {
-        for (int hud = 0; hud < 2; ++hud) {
-            KhdaysTouchSituation s = {0, 0, scene, hud};
+        for (int in_event = 0; in_event < 2; ++in_event) {
+            KhdaysTouchSituation s = {0, 0, scene, in_event};
             CHECK(khdays_touch_needs_mode(&s) != KHDAYS_TOUCH_MODE_NONE);
             s.port_menu = 1;
             CHECK(khdays_touch_needs_mode(&s) == KHDAYS_TOUCH_MODE_NONE);
@@ -241,8 +254,18 @@ static void test_needs(void)
         CHECK(khdays_touch_needs_mode(&s) == KHDAYS_TOUCH_MODE_MENU);
     }
     CHECK(khdays_touch_needs_mode(&play) == KHDAYS_TOUCH_MODE_FIELD);
-    CHECK(khdays_touch_needs_mode(&event) == KHDAYS_TOUCH_MODE_TALK);
+    CHECK(khdays_touch_needs_mode(&event) == KHDAYS_TOUCH_MODE_EVENT);
     CHECK(khdays_touch_needs_mode(&movie) == KHDAYS_TOUCH_MODE_TALK);
+    /* a gap between an event's lines keeps its controls; a longer one, or any other change, does not wait */
+    for (int i = 0; i < KHDAYS_TOUCH_SETTLE_FRAMES - 1; ++i) {
+        CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_FIELD, &shown, &waited) == KHDAYS_TOUCH_MODE_EVENT);
+    }
+    CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_EVENT, &shown, &waited) == KHDAYS_TOUCH_MODE_EVENT && waited == 0);
+    for (int i = 0; i < KHDAYS_TOUCH_SETTLE_FRAMES; ++i) {
+        khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_FIELD, &shown, &waited);
+    }
+    CHECK(shown == KHDAYS_TOUCH_MODE_FIELD);
+    CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_MENU, &shown, &waited) == KHDAYS_TOUCH_MODE_MENU);
     CHECK(khdays_touch_needs_window(0, 0) && khdays_touch_needs_window(1, 0) && khdays_touch_needs_window(1, 1));
     CHECK(!khdays_touch_needs_window(0, 1));
 }

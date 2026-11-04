@@ -57,7 +57,7 @@ static int deck_row_at(const KhdaysTouchInput *t, float x, float y)
 static int job_at(const KhdaysTouchInput *t, float x, float y)
 {
     if (t->view_has_controls) {
-        if (t->mode == KHDAYS_TOUCH_MODE_TALK) {
+        if (t->mode == KHDAYS_TOUCH_MODE_TALK || t->mode == KHDAYS_TOUCH_MODE_EVENT) {
             return JOB_TAP;
         }
         if (t->mode == KHDAYS_TOUCH_MODE_FIELD) {
@@ -69,6 +69,7 @@ static int job_at(const KhdaysTouchInput *t, float x, float y)
     case KHDAYS_TOUCH_MODE_TALK:
         return in_control(t, KHDAYS_TOUCH_START, x, y) ? JOB_START : JOB_TAP;
     case KHDAYS_TOUCH_MODE_MENU:
+    case KHDAYS_TOUCH_MODE_EVENT:
         if (in_control(t, KHDAYS_TOUCH_DPAD, x, y)) {
             return JOB_DPAD;
         }
@@ -96,6 +97,9 @@ static int job_at(const KhdaysTouchInput *t, float x, float y)
     }
     if (t->mode == KHDAYS_TOUCH_MODE_MENU) {
         return JOB_FREE;
+    }
+    if (t->mode == KHDAYS_TOUCH_MODE_EVENT) {
+        return JOB_TAP;
     }
     if (in_control(t, KHDAYS_TOUCH_LOCK, x, y)) {
         return JOB_LOCK;

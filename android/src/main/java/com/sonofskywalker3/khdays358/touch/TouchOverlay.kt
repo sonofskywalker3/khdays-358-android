@@ -17,6 +17,7 @@ object TouchOverlay {
     const val MODE_FIELD = 1
     const val MODE_MENU = 2
     const val MODE_TALK = 3
+    const val MODE_EVENT = 4
 
     /** Numbered as port/host/touch/touch_layout.h's KHDAYS_TOUCH_*. */
     const val STICK = 0

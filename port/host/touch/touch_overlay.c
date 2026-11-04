@@ -85,7 +85,7 @@ static void tell_view(int mode)
     for (int r = 0; r < KHDAYS_TOUCH_DECK_ROWS; ++r) {
         memcpy(&s.boxes[(KHDAYS_TOUCH_CONTROLS + r) * 4], &input.deck_rows[r], 4 * sizeof(float));
     }
-    if (mode == KHDAYS_TOUCH_MODE_MENU && !editing && !khdays_present_one_picture() &&
+    if ((mode == KHDAYS_TOUCH_MODE_MENU || mode == KHDAYS_TOUCH_MODE_EVENT) && !editing && !khdays_present_one_picture() &&
         p->touch.layout != KHDAYS_TOUCH_LAYOUT_CUSTOM) {
         /* both screens shown whole, as wide as the window: L and R in its top corners, clear of the picture */
         const KhdaysTouchBox *l = &input.layout.box[KHDAYS_TOUCH_L], *r = &input.layout.box[KHDAYS_TOUCH_R];
@@ -152,13 +152,14 @@ static void read_preview(void)
 /* What the controls are for now (touch_needs.h). */
 static int mode_now(void)
 {
+    static int settled_mode, settled_wait;
     KhdaysTouchSituation s;
     int row, skip;
     s.port_menu = khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip);
     s.hd_movie = khdays_movie_hd_showing();
     s.scene = khdays_onescreen_scene();
-    s.hud = (khdays_onescreen_states() & (1u << KHDAYS_ST_HUD)) != 0u;
-    return khdays_touch_needs_mode(&s);
+    s.event = (khdays_onescreen_states() & ((1u << KHDAYS_ST_DIALOG) | (1u << KHDAYS_ST_SCENE))) != 0u;
+    return khdays_touch_needs_settled(khdays_touch_needs_mode(&s), &settled_mode, &settled_wait);
 }
 
 /* Whether the player's settings show the controls now. */

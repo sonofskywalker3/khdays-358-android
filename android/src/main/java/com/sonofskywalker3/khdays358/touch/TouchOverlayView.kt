@@ -189,7 +189,7 @@ class TouchOverlayView(context: Context) : View(context) {
             }
             gear = on
         }
-        if (mode == TouchOverlay.MODE_MENU) {
+        if (mode == TouchOverlay.MODE_MENU || mode == TouchOverlay.MODE_EVENT) {
             inputs += TouchOverlay.DPAD to DPad(art, { bits -> dpadBits = bits }, box(TouchOverlay.DPAD))
             return
         }

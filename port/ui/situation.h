@@ -51,6 +51,8 @@ enum {
                               * memories under the game's noise (host/render/onescreen.c) */
     KHDAYS_ST_MISSION_PANEL_MOD,
     KHDAYS_ST_INFORMATION_MOD, /* a sequence replaces the native information crops */
+    KHDAYS_ST_SCENE,           /* an event's scene runs (Ov023_SceneRun, not closing), its text showing or not: the
+                                * player has no control of Roxas; a mission's information at its start leaves it */
     KHDAYS_STATES
 };
 
