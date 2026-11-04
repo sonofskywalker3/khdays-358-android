@@ -141,6 +141,8 @@ void khdays_hud_layout_end(void)
     SDL_SetAtomicInt(&seen_now, next);
 }
 
+#define PARTY_TWO_ROWS 110.0f /* the party's shape is taller than this with four members */
+
 static void moved_box(int group, int columns, KhdaysHudBox *box)
 {
     float dx, dy;
@@ -160,6 +162,30 @@ int khdays_hud_layout_box(int group, int columns, KhdaysHudBox *box, float *scal
     *box = s->box;
     *scale = s->scale;
     moved_box(group, columns, box);
+    return 1;
+}
+
+int khdays_hud_layout_visible(int group, int columns, KhdaysHudBox *box)
+{
+    /* the blank in the shapes' rectangles, in the source's dots of the group's first shape, from each side */
+    static const KhdaysHudBox blank[KHDAYS_HUD_GROUPS] = {
+        [KHDAYS_HUD_MAP] = {6.0f, 0.0f, 3.0f, 39.0f},    /* the enemy's health, with one locked on, under the map */
+        [KHDAYS_HUD_DECK] = {0.0f, 52.0f, 24.0f, 0.0f},  /* the reaction command, when offered, over the deck */
+        [KHDAYS_HUD_PARTY] = {31.0f, 55.0f, 2.0f, 0.0f}, /* two members; four fill the rows */
+    };
+    float scale;
+    KhdaysHudBox b, e;
+    if (!khdays_hud_layout_box(group, columns, &b, &scale)) {
+        return 0;
+    }
+    e = blank[group];
+    if (group == KHDAYS_HUD_PARTY && (b.y1 - b.y0) / scale > PARTY_TWO_ROWS) {
+        e.y0 = 0.0f;
+    }
+    box->x0 = b.x0 + e.x0 * scale;
+    box->y0 = b.y0 + e.y0 * scale;
+    box->x1 = b.x1 - e.x1 * scale;
+    box->y1 = b.y1 - e.y1 * scale;
     return 1;
 }
 

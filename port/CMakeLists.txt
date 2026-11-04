@@ -548,6 +548,7 @@ add_library(khdays-host-input STATIC
     ui/layout_editor.c               # dragging them
     host/touch/touch_layout.c        # the on-screen controls: their places,
     host/touch/touch_input.c         # what the fingers hold,
+    host/touch/touch_needs.c         # which of them each screen needs,
     host/app/devices.c
     host/settings/settings_model.c        # the settings menu: its content,
     host/settings/settings_menu.cpp       # its screen in Dear ImGui,
@@ -1135,7 +1136,7 @@ target_compile_options(khdays-lower-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-lower-layout COMMAND khdays-lower-layout-test)
 
 # The on-screen controls' places and what fingers hold (host/touch/).
-add_executable(khdays-touch-test tests/touch_test.c host/touch/touch_layout.c host/touch/touch_input.c ui/hud_layout.c ui/layout_editor.c)
+add_executable(khdays-touch-test tests/touch_test.c host/touch/touch_layout.c host/touch/touch_input.c host/touch/touch_needs.c ui/hud_layout.c ui/layout_editor.c)
 target_link_libraries(khdays-touch-test PRIVATE SDL3::SDL3)
 add_test(NAME khdays-touch COMMAND khdays-touch-test)
 

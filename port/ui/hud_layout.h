@@ -64,6 +64,10 @@ void khdays_hud_layout_end(void);
  * and the scale of its first shape. Returns 0 when no picture has shown it yet. Any thread. */
 int khdays_hud_layout_box(int group, int columns, KhdaysHudBox *box, float *scale);
 
+/* That box without the room its shapes keep blank (the reaction command's over the deck, the allies' over the
+ * player's health): what the last picture drew of the group. Returns 0 when no picture has shown it yet. */
+int khdays_hud_layout_visible(int group, int columns, KhdaysHudBox *box);
+
 /* That box for a group no picture has shown yet: about where and how large the port's composition has it, at the
  * HUD's factor `hud`, for placing it all the same. */
 void khdays_hud_layout_box_expected(int group, int columns, float hud, KhdaysHudBox *box);

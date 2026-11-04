@@ -37,11 +37,11 @@ int khdays_editor_item_at(const KhdaysLayoutEditor *e, float x, float y);
 /* A press: takes the item there; returns it, or -1. */
 int khdays_editor_press(KhdaysLayoutEditor *e, float x, float y);
 
-/* A motion with an item held: moves it, snapped and inside the area. Returns 1 when it moved. */
+/* A motion with an item held: moves it under the point, inside the area. Returns 1 when it moved. */
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y);
 
-/* The release. */
-void khdays_editor_release(KhdaysLayoutEditor *e);
+/* The release: the item held settles on the snap's lines. Returns 1 when that moved it. */
+int khdays_editor_release(KhdaysLayoutEditor *e);
 
 /* A group's place with its box moved from (x0, y0) to where it is now, both in the picture's dots: the point moved
  * with it, measured from the sides nearest its new box. */

@@ -4,6 +4,7 @@
 #include "touch_overlay.h"
 
 #include "touch_input.h"
+#include "../android/bottom_screen.h"
 #include "../android/touch_gear.h"
 #include "../app/devices.h"
 #include "../render/gpu_present.h"
@@ -77,28 +78,16 @@ static void read_preview(void)
 #endif
 }
 
-/* What the controls are for now. */
+/* What the controls are for now (touch_needs.h). */
 static int mode_now(void)
 {
-    const int scene = khdays_onescreen_scene();
+    KhdaysTouchSituation s;
     int row, skip;
-    if (khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip)) {
-        return KHDAYS_TOUCH_MODE_NONE;
-    }
-    if (khdays_movie_hd_showing()) {
-        return KHDAYS_TOUCH_MODE_TALK;
-    }
-    switch (scene) {
-    case KHDAYS_SIT_FIELD:
-    case KHDAYS_SIT_FIELD_3D_BOTH:
-        return (khdays_onescreen_states() & (1u << KHDAYS_ST_HUD)) ? KHDAYS_TOUCH_MODE_FIELD : KHDAYS_TOUCH_MODE_TALK;
-    case KHDAYS_SIT_MOVIE:
-    case KHDAYS_SIT_INTRO:
-    case KHDAYS_SIT_DAY_COUNTER:
-    case KHDAYS_SIT_THOUGHTS:
-    case KHDAYS_SIT_THE_END: return KHDAYS_TOUCH_MODE_TALK;
-    default: return KHDAYS_TOUCH_MODE_MENU;
-    }
+    s.port_menu = khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip);
+    s.hd_movie = khdays_movie_hd_showing();
+    s.scene = khdays_onescreen_scene();
+    s.hud = (khdays_onescreen_states() & (1u << KHDAYS_ST_HUD)) != 0u;
+    return khdays_touch_needs_mode(&s);
 }
 
 /* Whether the player's settings show the controls now. */
@@ -109,7 +98,7 @@ static int wanted(void)
         return 1;
     }
 #if defined(__ANDROID__)
-    if (p->touch.mode == KHDAYS_TOUCH_OFF || !khdays_present_one_picture()) {
+    if (p->touch.mode == KHDAYS_TOUCH_OFF || !khdays_touch_needs_window(khdays_present_one_picture(), khdays_bottom_attached())) {
         return 0;
     }
     if (p->touch.mode == KHDAYS_TOUCH_WITHOUT_PAD && khdays_devices_gamepad() != NULL &&
@@ -151,7 +140,7 @@ int khdays_touch_available(void)
 {
     read_preview();
 #if defined(__ANDROID__)
-    return khdays_present_one_picture();
+    return khdays_touch_needs_window(khdays_present_one_picture(), khdays_bottom_attached());
 #else
     return preview.density > 0.0f;
 #endif
