@@ -390,7 +390,9 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_SEAM 178  /* plain from top to bottom, between the names and the crowns or challenge marks ... */
 #define LIST_SEAM0 150 /* ... or the nearest column that is, on a list whose names run longer */
 #define LIST_SEAM1 221
+#define LIST_SEAM_LAST 190 /* ... and never past a crown or a rank (from column 193, or sooner): both then stay put */
 #define LIST_BAR_LAST 217 /* ... the last column inside the selected entry's bar */
+#define LIST_RANK_GAP 174 /* ... or this, just before a rank (they all start at 175), a name closing up to it */
 #define LIST_SEAM_RUN 8 /* ... among this many plain columns: wider than a gap between letters or words */
 #define LIST_SEAM_GAP 4 /* ... or, the row's rank close after a long name, this many: wider than between letters */
 #define LIST_MARKS0 208 /* a challenge's marks reach these columns; a crown or a rank stops short of them */
@@ -474,7 +476,8 @@ static int list_clear_column(const uint8_t *plain, int x, int wanted)
  * past its marks, for the rows a long name reaches them on (list_row_seams has the others); it is never one before the
  * marks for a page without a long name, so that they stay where they are. Another list: the one in use while
  * it stays clear, so that nothing moves as the list scrolls; else the nearest clear one; else the last gap before its
- * ranks, its crowns as far right as on its other pages; else that last one too. */
+ * ranks, its crowns as far right as on its other pages; else that last one too. The plain columns after a crown are
+ * no choice: widening there leaves the crown where the DS has it, left of the other pages'. */
 static int list_seam(const uint32_t *ds, int ds_rows)
 {
     static int seam = LIST_SEAM;
@@ -486,19 +489,22 @@ static int list_seam(const uint32_t *ds, int ds_rows)
     for (int x = LIST_MARKS0; x <= LIST_MARKS1; ++x) {
         marks |= !plain[x - LIST_SEAM0];
     }
-    if (!marks && list_clear_column(plain, seam, LIST_SEAM_RUN)) {
+    if (!marks && seam <= LIST_SEAM_LAST && list_clear_column(plain, seam, LIST_SEAM_RUN)) {
         return seam;
     }
-    for (int d = 0; !marks && (LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM1); ++d) {
+    for (int d = 0; !marks && (LIST_SEAM - d >= LIST_SEAM0 || LIST_SEAM + d <= LIST_SEAM_LAST); ++d) {
         const int r = LIST_SEAM + d, l = LIST_SEAM - d;
-        if (r <= LIST_SEAM1 && list_clear_column(plain, r, LIST_SEAM_RUN)) {
+        if (r <= LIST_SEAM_LAST && list_clear_column(plain, r, LIST_SEAM_RUN)) {
             return seam = r;
         }
         if (l >= LIST_SEAM0 && list_clear_column(plain, l, LIST_SEAM_RUN)) {
             return seam = l;
         }
     }
-    for (int x = LIST_SEAM; !marks && x >= LIST_SEAM0; --x) {
+    if (!marks && plain[LIST_RANK_GAP - LIST_SEAM0] && !plain[LIST_RANK_GAP + 1 - LIST_SEAM0]) {
+        return seam = LIST_RANK_GAP;
+    }
+    for (int x = LIST_SEAM_LAST; !marks && x >= LIST_SEAM0; --x) {
         if (list_clear_column(plain, x, LIST_SEAM_GAP)) {
             return seam = x;
         }
@@ -548,10 +554,14 @@ static int list_track_cut(const uint32_t *ds, int foot)
 }
 
 /* The extra rows one colour under the entries, not black: the game draws nothing there (the theater's list keeps its
- * entries in the layers left out, and they show what is behind them). */
-static int list_rows_empty(const uint32_t *ds, int ds_rows)
+ * entries in the layers left out, and they show what is behind them). Or the list's last page, the thumb on the
+ * track's end: no entry is under it, and what the rows hold is an entry already shown. */
+static int list_rows_empty(const uint32_t *ds, int ds_rows, int cut)
 {
     const uint32_t c = ds_rows > H ? at(ds, LIST_IN0, H) : 0u;
+    if (cut < LIST_TRACK_END) {
+        return 1;
+    }
     if (c == 0u) {
         return 0;
     }
@@ -728,7 +738,7 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->foot = khdays_lower_plain_row(ds, LIST_PLAIN0, LIST_TRACK_END, LIST_TRACK0, LIST_TRACK1);
         place->seam = list_seam(ds, ds_rows);
         place->cut = list_track_cut(ds, place->foot);
-        place->empty = list_rows_empty(ds, ds_rows);
+        place->empty = list_rows_empty(ds, ds_rows, place->cut);
         *key = (int)((unsigned)(place->seam - LIST_SEAM0) << 24 | (unsigned)place->top << 16 |
                      (unsigned)place->foot << 8 | (unsigned)place->cut | (place->empty ? 1u << 31 : 0u)) ^
                (int)list_row_seams(ds, ds_rows, place->row_seam);

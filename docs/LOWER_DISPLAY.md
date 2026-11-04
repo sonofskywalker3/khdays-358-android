@@ -24,9 +24,11 @@ The column widened is one among 8 plain ones, so no long name is split; a challe
 list, told by its marks reaching columns 208-212, widens past them on every page, so
 they stay put as it scrolls, its marks' rows before them, as far right as on the DS, a
 name's long enough to reach them past them; a page of ranks close after long names widens in the
-last gap before them. The list's last page has the thumb on the track's end: the rows
-the track grows by go in above it, so it still ends the track. Extra rows one colour
-under the entries are nothing the game drew (the theater's list) and show black.
+last gap before them. A list of crowns or ranks widens before them on every page (the
+plain columns after them are never used), so they stay put. The list's last page has the
+thumb on the track's end: the rows the track grows by go in above it, so it still ends the
+track, and its extra rows show black, no entry being under it. Extra rows one colour
+under the entries are nothing the game drew (the theater's list) and show black too.
 
 The lower picture arrives at the display's width (`host/android/bottom_screen.c`).
 Its DS pixels, read at their middles, tell the screen (`lower_screens.c` and

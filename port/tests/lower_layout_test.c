@@ -565,9 +565,43 @@ static void test_missions_pages(void)
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
     CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
     khdays_lower_free(&l);
-    /* the last page */
+    /* ranks over the crowns, a name two columns before them, the only 8 plain ones past the crowns: the crowns stay */
+    list_frame();
+    for (int c = 150; c < 173; c += 2) {
+        put(c, 40, 0xffffffu);
+    }
+    for (int c = 175; c < 207; c += 1) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* a challenge's list before it leaves no column past the crowns behind */
+    list_frame();
+    for (int c = 186; c < 216; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    khdays_lower_free(&l);
+    list_frame();
+    for (int c = 193; c < 207; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* the last page: nothing under its entries, whatever the rows hold */
     list_frame();
     rect(224, 130, 238, 176, 0xa6a6a6u);
+    for (int line = 0; line < 32 * SCALE; ++line) {
+        for (int c = 60 * SCALE; c < 100 * SCALE; ++c) {
+            overscan[line][c][1] = 0xff;
+            overscan[line][c][3] = 0xff;
+        }
+    }
     khdays_lower_sample(&grown, ds, &rows);
     CHECK(khdays_lower_screen(ds, rows) == KHDAYS_LOWER_MISSIONS);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
@@ -576,7 +610,10 @@ static void test_missions_pages(void)
     CHECK(map_row(&l, 243.5f, 129.5f) == 129);
     CHECK(map_row(&l, 243.5f, 135.5f) == 20);
     CHECK(map_row(&l, 243.5f, 174.5f + (float)OUT_H / SCALE - DS_H) == 174);
+    CHECK(!shows(&l, 100.5f, 190.5f, &x, &y));
+    CHECK(!khdays_lower_touch(&l, 100 * SCALE, 190 * SCALE, &x, &y));
     khdays_lower_free(&l);
+    memset(overscan, 0, sizeof(overscan));
     /* the theater's: the entries in the layers left out, the extra rows one colour */
     list_frame();
     for (int line = 0; line < 32 * SCALE; ++line) {
