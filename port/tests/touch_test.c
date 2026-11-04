@@ -256,7 +256,7 @@ static void test_needs(void)
     CHECK(khdays_touch_needs_mode(&play) == KHDAYS_TOUCH_MODE_FIELD);
     CHECK(khdays_touch_needs_mode(&event) == KHDAYS_TOUCH_MODE_EVENT);
     CHECK(khdays_touch_needs_mode(&movie) == KHDAYS_TOUCH_MODE_TALK);
-    /* a gap between an event's lines keeps its controls; a longer one, or any other change, does not wait */
+    /* a gap between an event's lines keeps its controls; a longer one ends them; anything else does not wait */
     for (int i = 0; i < KHDAYS_TOUCH_SETTLE_FRAMES - 1; ++i) {
         CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_FIELD, &shown, &waited) == KHDAYS_TOUCH_MODE_EVENT);
     }
@@ -265,6 +265,7 @@ static void test_needs(void)
         khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_FIELD, &shown, &waited);
     }
     CHECK(shown == KHDAYS_TOUCH_MODE_FIELD);
+    CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_EVENT, &shown, &waited) == KHDAYS_TOUCH_MODE_EVENT);
     CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_MENU, &shown, &waited) == KHDAYS_TOUCH_MODE_MENU);
     CHECK(khdays_touch_needs_window(0, 0) && khdays_touch_needs_window(1, 0) && khdays_touch_needs_window(1, 1));
     CHECK(!khdays_touch_needs_window(0, 1));

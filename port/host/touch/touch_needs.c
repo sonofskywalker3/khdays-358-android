@@ -25,9 +25,7 @@ int khdays_touch_needs_mode(const KhdaysTouchSituation *s)
 
 int khdays_touch_needs_settled(int mode, int *shown, int *waited)
 {
-    const int swap = (mode == KHDAYS_TOUCH_MODE_FIELD && *shown == KHDAYS_TOUCH_MODE_EVENT) ||
-                     (mode == KHDAYS_TOUCH_MODE_EVENT && *shown == KHDAYS_TOUCH_MODE_FIELD);
-    if (swap && ++*waited < KHDAYS_TOUCH_SETTLE_FRAMES) {
+    if (mode == KHDAYS_TOUCH_MODE_FIELD && *shown == KHDAYS_TOUCH_MODE_EVENT && ++*waited < KHDAYS_TOUCH_SETTLE_FRAMES) {
         return *shown;
     }
     *waited = 0;
