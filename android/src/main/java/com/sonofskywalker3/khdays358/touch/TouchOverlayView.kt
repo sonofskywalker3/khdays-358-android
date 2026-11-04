@@ -117,6 +117,7 @@ class TouchOverlayView(context: Context) : View(context) {
 
     /** Whatever was held is let go, and the game told so. `fingers`: those handed to SDL too. */
     private fun letGo(fingers: Boolean) {
+        gear = false // let go, not tapped: its release opens nothing
         inputs.forEach { it.second.reset() }
         faceBits = 0
         dpadBits = 0
@@ -125,7 +126,6 @@ class TouchOverlayView(context: Context) : View(context) {
         stickHeld = false
         stickX = 0f
         stickY = 0f
-        gear = false
         editing = null
         editingPointer = -1
         if (fingers) {
@@ -161,6 +161,7 @@ class TouchOverlayView(context: Context) : View(context) {
 
     private fun rebuild() {
         val art = art
+        letGo(false) // the fingers on the old controls have nothing to let go of on the new
         inputs.clear()
         if (art == null || width == 0 || mode == TouchOverlay.MODE_NONE) {
             return
@@ -251,6 +252,7 @@ class TouchOverlayView(context: Context) : View(context) {
                 forward(event, i, MotionEvent.ACTION_CANCEL)
             }
         }
+        gear = false
         inputs.forEach { it.second.reset() }
     }
 
