@@ -338,6 +338,13 @@ static void test_editor(void)
     CHECK(e.item[0].box.x0 == 0.0f && e.item[0].box.y0 == 0.0f);
     khdays_editor_release(&e);
     CHECK(!khdays_editor_drag(&e, 10.0f, 10.0f));
+    /* what the outline leaves out stays on the screen too */
+    e.item[1].room = (KhdaysHudBox){0.0f, 40.0f, 0.0f, 0.0f};
+    CHECK(khdays_editor_press(&e, 160.0f, 160.0f) == 1);
+    khdays_editor_drag(&e, 160.0f, 0.0f);
+    CHECK(e.item[1].box.y0 == 40.0f);
+    khdays_editor_release(&e);
+    CHECK(e.item[1].box.y0 == 40.0f);
     {
         /* a control's place, from its nearest sides, back to the same box; on a wider window as far from the right */
         const KhdaysHudBox b = {800.0f, 400.0f, 900.0f, 480.0f};

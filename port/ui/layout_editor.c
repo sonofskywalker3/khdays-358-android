@@ -53,6 +53,14 @@ static float kept_inside(float start, float size, float low, float high)
     return start < low ? low : start;
 }
 
+/* An item's corner kept so that it and its room lie inside the area. */
+static void item_inside(const KhdaysLayoutEditor *e, const KhdaysEditorItem *it, float w, float h, float *x0, float *y0)
+{
+    const KhdaysHudBox *r = &it->room;
+    *x0 = kept_inside(*x0 - r->x0, w + r->x0 + r->x1, e->area.x0, e->area.x1) + r->x0;
+    *y0 = kept_inside(*y0 - r->y0, h + r->y0 + r->y1, e->area.y0, e->area.y1) + r->y0;
+}
+
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
 {
     KhdaysHudBox *b;
@@ -65,8 +73,7 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
     h = b->y1 - b->y0;
     x0 = x - e->grab_x;
     y0 = y - e->grab_y;
-    x0 = kept_inside(x0, w, e->area.x0, e->area.x1);
-    y0 = kept_inside(y0, h, e->area.y0, e->area.y1);
+    item_inside(e, &e->item[e->held], w, h, &x0, &y0);
     if (x0 == b->x0 && y0 == b->y0) {
         return 0;
     }
@@ -89,8 +96,9 @@ int khdays_editor_release(KhdaysLayoutEditor *e)
     b = &e->item[held].box;
     w = b->x1 - b->x0;
     h = b->y1 - b->y0;
-    x0 = kept_inside(roundf(b->x0 / e->grid) * e->grid, w, e->area.x0, e->area.x1);
-    y0 = kept_inside(roundf(b->y0 / e->grid) * e->grid, h, e->area.y0, e->area.y1);
+    x0 = roundf(b->x0 / e->grid) * e->grid;
+    y0 = roundf(b->y0 / e->grid) * e->grid;
+    item_inside(e, &e->item[held], w, h, &x0, &y0);
     if (x0 == b->x0 && y0 == b->y0) {
         return 0;
     }

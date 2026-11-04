@@ -370,6 +370,33 @@ static void theater_music_line(const char *line)
 /* Draws the last frame, with the FPS and ping displays and the settings menu
  * over it. Draws nothing while the graphics card is lost (the loop recreates
  * it). */
+static void redraw(SDL_Window *window, SDL_Renderer *renderer);
+
+/* The layout editor's picture. One for the events waiting, as the settings menu's: a finger's moves come twice (as
+ * itself and as the mouse), faster than the display, and a picture each -- every one waiting for its refresh -- left
+ * the piece further and further behind the finger. */
+#define EDITOR_REDRAW_LATE_MS 16
+static Uint64 editor_drawn_at;
+static int editor_moved;   /* a group moved since: the picture is made again */
+static int editor_undrawn; /* something for the next picture */
+
+/* Whether the game's own events wait: not SDL's sentinel, which its waiting takes silently. */
+static int events_waiting(void)
+{
+    return SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_POLL_SENTINEL - 1) || SDL_HasEvents(SDL_EVENT_POLL_SENTINEL + 1, SDL_EVENT_LAST);
+}
+
+static void editor_picture(SDL_Window *window, SDL_Renderer *renderer)
+{
+    if (editor_moved) {
+        khdays_present_refresh_now();
+        editor_moved = 0;
+    }
+    redraw(window, renderer);
+    editor_undrawn = 0;
+    editor_drawn_at = SDL_GetTicks();
+}
+
 static void redraw(SDL_Window *window, SDL_Renderer *renderer)
 {
     int pictures, frames, fps, corner_rows;
@@ -910,6 +937,9 @@ static int host_thread(void *unused)
                 redraw(window, renderer);
             }
         }
+        if (editor_undrawn && (!events_waiting() || SDL_GetTicks() - editor_drawn_at >= EDITOR_REDRAW_LATE_MS)) {
+            editor_picture(window, renderer);
+        }
         if (khdays_present_lost()) {
             /* the port noticed it itself (SDL's renderer does not on D3D12):
              * handle it like SDL's event */
@@ -1077,11 +1107,6 @@ static int host_thread(void *unused)
             continue;
         }
         if (khdays_layout_editor_is_open()) {
-            /* One picture for the events waiting, as the settings menu above: a finger's moves come twice (as
-             * itself and as the mouse), faster than the display, and a picture each -- every one waiting for its
-             * refresh -- left the piece further and further behind the finger. */
-            static Uint64 editor_drawn_at;
-            static int editor_moved;
             int changed = 0, moved = 0;
             const int editor_closed = khdays_layout_editor_event(&event, renderer, &changed, &moved);
             khdays_devices_handle(&event, renderer);
@@ -1091,16 +1116,11 @@ static int host_thread(void *unused)
                 khdays_profile_save(khdays_devices_profile(), path, notice);
             }
             editor_moved |= moved;
-            if (editor_closed || !SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST) || SDL_GetTicks() - editor_drawn_at >= 16) {
-                if (editor_moved) {
-                    khdays_present_refresh_now();
-                    editor_moved = 0;
-                }
-                if (editor_closed) {
-                    resume_game_after_menu();
-                }
+            editor_undrawn = 1;
+            if (editor_closed) {
+                editor_picture(window, renderer);
+                resume_game_after_menu();
                 redraw(window, renderer);
-                editor_drawn_at = SDL_GetTicks();
             }
             continue;
         }
