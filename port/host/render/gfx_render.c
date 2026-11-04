@@ -9,6 +9,11 @@
 #include "../../runtime/display/frame_package.h"
 #include "generated/capture_cs.h"
 #include "generated/compose2d_cs.h"
+#if defined(__ANDROID__)
+#include "generated/compose2d_plain_cs.h"
+#include "generated/compose2d_split_cs.h"
+#include "generated/compose2d_wide_cs.h"
+#endif
 #include "generated/onescreen_cs.h"
 #include "generated/shrink_cs.h"
 #include "../../gfx/onescreen.h"
@@ -53,6 +58,9 @@ static const struct {
 
 static SDL_GPUDevice *device;
 static SDL_GPUComputePipeline *compose;
+/* Instead of it where its driver can't compile all of it (make_compose_parts): one for each kind of frame. */
+static SDL_GPUComputePipeline *compose_wide, *compose_plain, *compose_split;
+static SDL_GPUComputePipeline *compose_engine[2]; /* this frame's, by what the engine's description ended up as */
 /* Eight buffers per pass, the most SDL's GPU API binds. The layers' and sprites' memory buffers also
  * hold the map of their replaced (HD) tiles; each description buffer also holds its palettes. */
 static SDL_GPUBuffer *memory[AREAS], *desc[2], *layer3d;
@@ -329,6 +337,36 @@ static SDL_GPUComputePipeline *make_pipeline_of(const unsigned char *dxil, unsig
     return SDL_CreateGPUComputePipeline(device, &info);
 }
 
+/* What draws a frame with this description. */
+static SDL_GPUComputePipeline *compose_for(uint32_t wide, uint32_t flags)
+{
+    if (compose != NULL) {
+        return compose;
+    }
+    return wide != 0 ? compose_wide : (flags & KDF_SPLIT) != 0 ? compose_split : compose_plain;
+}
+
+#if defined(__ANDROID__)
+/* The whole shader takes Mali's compiler over 3 GB of the process's memory (a Mali-G57, measured 2026-11-03: it
+ * fails, or the process is aborted with it, so it can't be tried first); the three parts peak at 220-580 MB
+ * and 2-3 s each. */
+static int compose_too_big_here(void)
+{
+    const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(device), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
+    return SDL_strstr(name, "Mali") != NULL;
+}
+
+static void make_compose_parts(void)
+{
+    compose_wide = make_pipeline_of(NULL, 0, compose2d_wide_cs_spirv, compose2d_wide_cs_spirv_size, NULL, 1,
+                                    COMPOSE2D_WIDE_CS_ENTRY, 8, 3);
+    compose_plain = make_pipeline_of(NULL, 0, compose2d_plain_cs_spirv, compose2d_plain_cs_spirv_size, NULL, 1,
+                                     COMPOSE2D_PLAIN_CS_ENTRY, 8, 3);
+    compose_split = make_pipeline_of(NULL, 0, compose2d_split_cs_spirv, compose2d_split_cs_spirv_size, NULL, 1,
+                                     COMPOSE2D_SPLIT_CS_ENTRY, 8, 3);
+}
+#endif
+
 static SDL_GPUComputePipeline *make_pipeline(void)
 {
     return make_pipeline_of(compose2d_cs_dxil, compose2d_cs_dxil_size, compose2d_cs_spirv, compose2d_cs_spirv_size,
@@ -603,7 +641,14 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
 {
     int ok;
     device = d;
-    compose = make_pipeline();
+#if defined(__ANDROID__)
+    if (compose_too_big_here()) {
+        make_compose_parts();
+    } else
+#endif
+    {
+        compose = make_pipeline();
+    }
     shrinker = make_pipeline_of(shrink_cs_dxil, shrink_cs_dxil_size, shrink_cs_spirv, shrink_cs_spirv_size,
                                 shrink_cs_msl, shrink_cs_msl_size, SHRINK_CS_ENTRY, 0, 2);
     onescreen = make_pipeline_of(onescreen_cs_dxil, onescreen_cs_dxil_size, onescreen_cs_spirv, onescreen_cs_spirv_size,
@@ -619,7 +664,8 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     piece_buffer = make_buffer(piece_buffer_bytes);
     no_backdrop = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
                                SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
-    ok = compose != NULL && onescreen != NULL && shape_buffer != NULL && key_buffer != NULL && piece_buffer != NULL &&
+    ok = (compose != NULL || (compose_wide != NULL && compose_plain != NULL && compose_split != NULL)) &&
+         onescreen != NULL && shape_buffer != NULL && key_buffer != NULL && piece_buffer != NULL &&
          no_backdrop != NULL;
     for (int a = 0; a < AREAS; ++a) {
         memory[a] = make_buffer(area_bytes(a));
@@ -763,6 +809,14 @@ void khdays_gfx_render_close(void)
     shape_buffer = key_buffer = NULL;
     if (compose != NULL)
         SDL_ReleaseGPUComputePipeline(device, compose);
+    compose = NULL;
+    if (compose_wide != NULL)
+        SDL_ReleaseGPUComputePipeline(device, compose_wide);
+    if (compose_plain != NULL)
+        SDL_ReleaseGPUComputePipeline(device, compose_plain);
+    if (compose_split != NULL)
+        SDL_ReleaseGPUComputePipeline(device, compose_split);
+    compose_wide = compose_plain = compose_split = NULL;
     for (int a = 0; a < AREAS; ++a) {
         if (memory[a] != NULL)
             SDL_ReleaseGPUBuffer(device, memory[a]);
@@ -1243,6 +1297,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
             /* the one-screen picture's sources: the 2D apart from the 3D, in 8 bits, no master brightness */
             ((uint32_t *)(mapped + at))[KD_FLAGS] |= KDF_SPLIT | KDF_FINE;
         }
+        compose_engine[e] =
+            compose_for(((const uint32_t *)(mapped + at))[KD_WIDE], ((const uint32_t *)(mapped + at))[KD_FLAGS]);
         at += KHDAYS_DESC_WORDS * 4;
         memcpy(mapped + at, p->palette2d + 0x400 * e, 0x400);
         at += 0x400;
@@ -1519,7 +1575,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[2].texture = screen[e];
         io[2].cycle = true;
         pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
-        SDL_BindGPUComputePipeline(pass, compose);
+        SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
         SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8,
@@ -1563,7 +1619,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
             io[2].texture = rows_texture;
             io[2].cycle = true;
             pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
-            SDL_BindGPUComputePipeline(pass, compose);
+            SDL_BindGPUComputePipeline(pass, compose_engine[1]);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
             SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
             SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);
@@ -1605,7 +1661,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[2].texture = shop_screen[s][v];
         io[2].cycle = true;
         pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
-        SDL_BindGPUComputePipeline(pass, compose);
+        SDL_BindGPUComputePipeline(pass, compose_for(0, 0)); /* shop_description: neither wider nor split */
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
         SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);

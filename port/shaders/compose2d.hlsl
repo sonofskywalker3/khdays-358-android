@@ -91,6 +91,15 @@ uint layer3d_at(uint x, int row)
 #define KD_SPRITE_ROW(row, word) desc.Load((KD_ROWS_AT + ((uint)(row) & 255u) * 4u + (word)) * 4u)
 #define KD_LOW_BIT(m) firstbitlow(m)
 
+// A part of this shader for a compiler that runs out of memory on the whole of it (gfx_render.c compose_for):
+// the wider picture's, or the DS's columns' with or without the one-screen picture's sources. Each is only
+// used for the frames its name says, so what it leaves out is not reached.
+#if defined(COMPOSE2D_PART_PLAIN)
+#define KD_SPLIT_ON(flags) false
+#elif defined(COMPOSE2D_PART_SPLIT)
+#define KD_SPLIT_ON(flags) true
+#endif
+
 #include "../gfx/compose.h"
 
 float channel8(uint c6)
@@ -107,8 +116,14 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     }
     g_fx = id.x % scale;
     g_fy = id.y % scale;
+#if defined(COMPOSE2D_PART_WIDE)
+    c6 = kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
+#elif defined(COMPOSE2D_PART_PLAIN) || defined(COMPOSE2D_PART_SPLIT)
+    c6 = kd_pixel((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
+#else
     c6 = KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale) + (int)row0)
                                  : kd_pixel((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
+#endif
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u) {
         // the one-screen picture's source: K in 8 bits, its alpha 0 (not shown over
         // the 3D) or 1 + the 3D's factor x 254 (kd_split)
