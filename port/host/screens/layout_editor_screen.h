@@ -21,6 +21,9 @@ int khdays_layout_editor_is_open(void);
  * (the caller saves it). Sets *moved when the picture is to be made again for a group's new place. */
 int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, int *changed, int *moved);
 
+/* Its textures freed before their renderer goes. */
+void khdays_layout_editor_renderer_gone(void);
+
 /* Whether, a piece just lifted, the picture is to be made once more without it, now. */
 int khdays_layout_editor_wants_picture(void);
 
