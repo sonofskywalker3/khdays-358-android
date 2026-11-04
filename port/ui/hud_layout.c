@@ -94,6 +94,15 @@ void khdays_hud_layout_set(const KhdaysHudPlace *places)
     SDL_SetAtomicInt(&shown, next);
 }
 
+/* How far a group from `low` to `high` may move and still lie between 0 and `size`. */
+static float kept_on_picture(float move, float low, float high, float size)
+{
+    if (high + move > size) {
+        move = size - high;
+    }
+    return low + move < 0.0f ? -low : move;
+}
+
 void khdays_hud_layout_offset(int group, int columns, float *dx, float *dy)
 {
     const int now = SDL_GetAtomicInt(&shown);
@@ -103,6 +112,14 @@ void khdays_hud_layout_offset(int group, int columns, float *dx, float *dy)
         const float c = (float)columns;
         *dx = across(p->side_x, p->x, c) - across(groups[group].side_x, 0.0f, c);
         *dy = across(p->side_y, p->y, PICTURE_ROWS) - across(groups[group].side_y, 0.0f, PICTURE_ROWS);
+        {
+            /* a place from before the picture's edges were kept (or from another window): nothing is drawn past them */
+            const Seen *s = &seen[SDL_GetAtomicInt(&seen_now)][group];
+            if (s->any) {
+                *dx = kept_on_picture(*dx, s->box.x0, s->box.x1, c);
+                *dy = kept_on_picture(*dy, s->box.y0, s->box.y1, PICTURE_ROWS);
+            }
+        }
     }
 }
 

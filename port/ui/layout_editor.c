@@ -58,8 +58,16 @@ static float kept_inside(float start, float size, float low, float high)
 static void item_inside(const KhdaysLayoutEditor *e, const KhdaysEditorItem *it, float w, float h, float *x0, float *y0)
 {
     const KhdaysHudBox *r = &it->room;
-    *x0 = kept_inside(*x0 - r->x0, w + r->x0 + r->x1, e->area.x0, e->area.x1) + r->x0;
-    *y0 = kept_inside(*y0 - r->y0, h + r->y0 + r->y1, e->area.y0, e->area.y1) + r->y0;
+    const KhdaysHudBox *o = &it->only;
+    KhdaysHudBox a = e->area;
+    if (o->x1 > o->x0 && o->y1 > o->y0) {
+        a.x0 = o->x0 > a.x0 ? o->x0 : a.x0;
+        a.y0 = o->y0 > a.y0 ? o->y0 : a.y0;
+        a.x1 = o->x1 < a.x1 ? o->x1 : a.x1;
+        a.y1 = o->y1 < a.y1 ? o->y1 : a.y1;
+    }
+    *x0 = kept_inside(*x0 - r->x0, w + r->x0 + r->x1, a.x0, a.x1) + r->x0;
+    *y0 = kept_inside(*y0 - r->y0, h + r->y0 + r->y1, a.y0, a.y1) + r->y0;
 }
 
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)

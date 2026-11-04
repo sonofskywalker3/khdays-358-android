@@ -358,6 +358,17 @@ static void test_editor(void)
     /* stays wholly inside */
     khdays_editor_drag(&e, 5000.0f, 5000.0f);
     CHECK(e.item[0].box.x1 == 1000.0f && e.item[0].box.y1 == 500.0f);
+    {
+        /* what the picture draws stays on the picture, inside the window */
+        KhdaysLayoutEditor p = e;
+        p.item[0].box = (KhdaysHudBox){100.0f, 100.0f, 300.0f, 300.0f};
+        p.item[0].only = (KhdaysHudBox){0.0f, 50.0f, 1000.0f, 450.0f};
+        CHECK(khdays_editor_press(&p, 105.0f, 105.0f) == 0);
+        khdays_editor_drag(&p, 105.0f, 900.0f);
+        CHECK(p.item[0].box.y1 == 450.0f);
+        khdays_editor_drag(&p, 105.0f, -900.0f);
+        CHECK(p.item[0].box.y0 == 50.0f);
+    }
     khdays_editor_drag(&e, -500.0f, -500.0f);
     CHECK(e.item[0].box.x0 == 0.0f && e.item[0].box.y0 == 0.0f);
     khdays_editor_release(&e);

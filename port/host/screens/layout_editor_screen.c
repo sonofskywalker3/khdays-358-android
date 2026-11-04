@@ -63,6 +63,8 @@ static struct {
     SDL_Texture *piece;
 } lift;
 
+#define PICTURE_DOT_ROWS 192.0f /* the picture's height in its DS dots: the HUD is drawn in it */
+
 static float dots_to_x(float dots)
 {
     return controls.dots_x + dots * controls.dot;
@@ -97,6 +99,10 @@ static void items(void)
         it->box.y0 = dots_to_y(b.y0);
         it->box.y1 = dots_to_y(b.y1);
         memset(&it->room, 0, sizeof(it->room));
+        it->only.x0 = dots_to_x(0.0f);
+        it->only.y0 = dots_to_y(0.0f);
+        it->only.x1 = dots_to_x((float)picture_columns);
+        it->only.y1 = dots_to_y(PICTURE_DOT_ROWS);
         if (khdays_hud_layout_box(g, picture_columns, &whole, &scale)) {
             /* what the outline leaves out still stays on the screen */
             it->room.x0 = (b.x0 - whole.x0) * controls.dot;
@@ -112,6 +118,7 @@ static void items(void)
             it->kind = ITEM_CONTROL;
             it->id = moved_controls[c];
             memset(&it->room, 0, sizeof(it->room));
+            memset(&it->only, 0, sizeof(it->only));
             it->box.x0 = b->x0;
             it->box.y0 = b->y0;
             it->box.x1 = b->x1;
