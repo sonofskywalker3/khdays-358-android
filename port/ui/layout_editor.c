@@ -2,6 +2,7 @@
 #include "layout_editor.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int requested;
@@ -107,6 +108,19 @@ int khdays_editor_release(KhdaysLayoutEditor *e)
     b->x1 = x0 + w;
     b->y1 = y0 + h;
     return 1;
+}
+
+void khdays_editor_cutout(unsigned char *with, int with_pitch, const unsigned char *without, int without_pitch, int w, int h)
+{
+    enum { DIFFERS = 6 }; /* out of 255: what a picture's rounding does not reach */
+    for (int y = 0; y < h; ++y) {
+        unsigned char *a = with + (size_t)y * (size_t)with_pitch;
+        const unsigned char *b = without + (size_t)y * (size_t)without_pitch;
+        for (int x = 0; x < w; ++x, a += 4, b += 4) {
+            const int differs = abs(a[0] - b[0]) > DIFFERS || abs(a[1] - b[1]) > DIFFERS || abs(a[2] - b[2]) > DIFFERS;
+            a[3] = differs ? 255 : 0;
+        }
+    }
 }
 
 KhdaysHudPlace khdays_editor_place(const KhdaysHudPlace *now, const KhdaysHudBox *from, const KhdaysHudBox *to, int group,

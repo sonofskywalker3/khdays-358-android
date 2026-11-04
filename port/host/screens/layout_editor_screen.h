@@ -21,6 +21,9 @@ int khdays_layout_editor_is_open(void);
  * (the caller saves it). Sets *moved when the picture is to be made again for a group's new place. */
 int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, int *changed, int *moved);
 
+/* Whether, a piece just lifted, the picture is to be made once more without it, now. */
+int khdays_layout_editor_wants_picture(void);
+
 /* Where the Done button is, as a mouse event's coordinates (for the demonstration, layout_demo.h). */
 void khdays_layout_editor_done_at(SDL_Renderer *renderer, float *x, float *y);
 

@@ -338,6 +338,12 @@ static void test_editor(void)
     CHECK(e.item[0].box.x0 == 0.0f && e.item[0].box.y0 == 0.0f);
     khdays_editor_release(&e);
     CHECK(!khdays_editor_drag(&e, 10.0f, 10.0f));
+    {
+        /* a piece lifted from a picture with it and one without: only what differs */
+        unsigned char with[8] = {200, 10, 10, 255, 50, 50, 50, 255}, without[8] = {10, 10, 10, 255, 52, 50, 50, 255};
+        khdays_editor_cutout(with, 8, without, 8, 2, 1);
+        CHECK(with[0] == 200 && with[3] == 255 && with[7] == 0);
+    }
     /* what the outline leaves out stays on the screen too */
     e.item[1].room = (KhdaysHudBox){0.0f, 40.0f, 0.0f, 0.0f};
     CHECK(khdays_editor_press(&e, 160.0f, 160.0f) == 1);

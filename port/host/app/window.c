@@ -393,6 +393,10 @@ static void editor_picture(SDL_Window *window, SDL_Renderer *renderer)
         editor_moved = 0;
     }
     redraw(window, renderer);
+    if (khdays_layout_editor_wants_picture()) {
+        khdays_present_refresh_now();
+        redraw(window, renderer);
+    }
     editor_undrawn = 0;
     editor_drawn_at = SDL_GetTicks();
 }
