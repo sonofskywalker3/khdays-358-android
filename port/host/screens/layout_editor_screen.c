@@ -66,7 +66,8 @@ static void items(void)
     editor.count = 0;
     khdays_hud_layout_set(hud);
     for (int g = 0; g < KHDAYS_HUD_GROUPS; ++g) {
-        KhdaysHudBox b;
+        KhdaysHudBox b, whole;
+        float scale;
         KhdaysEditorItem *it = &editor.item[editor.count++];
         group_box(g, &b);
         it->kind = ITEM_HUD;
@@ -75,6 +76,14 @@ static void items(void)
         it->box.x1 = dots_to_x(b.x1);
         it->box.y0 = dots_to_y(b.y0);
         it->box.y1 = dots_to_y(b.y1);
+        memset(&it->room, 0, sizeof(it->room));
+        if (khdays_hud_layout_box(g, picture_columns, &whole, &scale)) {
+            /* what the outline leaves out still stays on the screen */
+            it->room.x0 = (b.x0 - whole.x0) * controls.dot;
+            it->room.y0 = (b.y0 - whole.y0) * controls.dot;
+            it->room.x1 = (whole.x1 - b.x1) * controls.dot;
+            it->room.y1 = (whole.y1 - b.y1) * controls.dot;
+        }
     }
     if (with_controls) {
         for (size_t c = 0; c < sizeof(moved_controls) / sizeof(moved_controls[0]); ++c) {
@@ -82,6 +91,7 @@ static void items(void)
             const KhdaysTouchBox *b = &controls.box[moved_controls[c]];
             it->kind = ITEM_CONTROL;
             it->id = moved_controls[c];
+            memset(&it->room, 0, sizeof(it->room));
             it->box.x0 = b->x0;
             it->box.y0 = b->y0;
             it->box.x1 = b->x1;

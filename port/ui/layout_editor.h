@@ -15,6 +15,7 @@ typedef struct KhdaysEditorItem {
     int kind;         /* the caller's: what it is */
     int id;           /* ... and which */
     KhdaysHudBox box; /* where it is, in the window's pixels */
+    KhdaysHudBox room; /* how far past each side of it the area must still reach: what it sometimes draws there */
 } KhdaysEditorItem;
 
 typedef struct KhdaysLayoutEditor {
