@@ -250,7 +250,8 @@ static void add_chapter(const char *line)
     copy[bar - line] = '\0';
     {
         const char *name = bar[1] == ' ' ? bar + 2 : bar + 1;
-        c.name = (unsigned short *)SDL_iconv_string("UTF-16LE", "UTF-8", name, SDL_strlen(name) + 1);
+        /* without its final zero, which SDL adds: Android's iconv never gets past one, writing until memory ends */
+        c.name = (unsigned short *)SDL_iconv_string("UTF-16LE", "UTF-8", name, SDL_strlen(name));
     }
     word = SDL_strtok_r(copy, " \t", &rest); /* "chapter", its day, its artwork, then its videos */
     for (int k = 0; word != NULL && ok; ++k, word = SDL_strtok_r(NULL, " \t", &rest)) {
