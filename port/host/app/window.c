@@ -1057,6 +1057,17 @@ static int host_thread(void *unused)
             continue;
         }
 
+        if (khdays_touch_view_event(&event)) {
+            if (khdays_touch_take_settings() && !khdays_settings_is_open()) {
+                khdays_touch_release();
+                settings_key();
+                redraw(window, renderer);
+            }
+            if (khdays_layout_editor_is_open()) {
+                editor_undrawn = 1;
+            }
+            continue;
+        }
         if (khdays_layout_demo_event(&event, renderer)) {
             if (!khdays_settings_is_open() && khdays_editor_take_request() && !khdays_layout_editor_is_open()) {
                 stop_game_for_menu();

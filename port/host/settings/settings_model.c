@@ -39,7 +39,8 @@ static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT
 static const int antialiasing_values[4] = {1, 2, 3, 4};
 static const char *autosaves[3], *save_files[2];
 static const char *hud_anchors[9], *mission_visibility[2];
-static const char *touch_modes[KHDAYS_TOUCH_MODES], *touch_layouts[3];
+static const char *touch_modes[KHDAYS_TOUCH_MODES], *touch_layouts[3], *touch_styles[KHDAYS_TOUCH_STYLES];
+static char touch_style_names[KHDAYS_TOUCH_STYLES][24];
 static const int hud_anchor_values[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 /* the choices' order on screen: file 99 (the default) first */
 static const int autosave_values[3] = {KHDAYS_AUTOSAVE_FILE99, KHDAYS_AUTOSAVE_PLAYED, KHDAYS_AUTOSAVE_OFF};
@@ -60,6 +61,10 @@ void khdays_model_refresh(const KhdaysProfile *work)
     touch_layouts[0] = khdays_text(TXT_TOUCH_LAYOUT_A);
     touch_layouts[1] = khdays_text(TXT_TOUCH_LAYOUT_C);
     touch_layouts[2] = khdays_text(TXT_TOUCH_LAYOUT_CUSTOM);
+    for (int i = 0; i < KHDAYS_TOUCH_STYLES; ++i) {
+        SDL_snprintf(touch_style_names[i], sizeof(touch_style_names[i]), "%s %d", khdays_text(TXT_TOUCH_STYLE_WORD), i + 1);
+        touch_styles[i] = touch_style_names[i];
+    }
     mission_visibility[0] = khdays_text(TXT_HUD_ALWAYS);
     mission_visibility[1] = khdays_text(TXT_HUD_PAUSE_ONLY);
     stick_roles[0] = khdays_text(TXT_NOTHING);
@@ -268,6 +273,9 @@ static void build_touch(Builder *b, KhdaysProfile *w)
     r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_TOUCH_VIBRATION, khdays_text(TXT_TOUCH_VIBRATION));
     r->value = &w->touch.vibration;
     r->note = khdays_text(TXT_TOUCH_VIBRATION_NOTE);
+    r->apply = KHDAYS_APPLY_NOW;
+    r = add_choice(b, KHDAYS_SET_TOUCH_STYLE, TXT_TOUCH_STYLE, &w->touch.style, touch_styles, KHDAYS_TOUCH_STYLES);
+    r->note = khdays_text(TXT_TOUCH_STYLE_NOTE);
     r->apply = KHDAYS_APPLY_NOW;
     r = add_command(b, KHDAYS_SET_LAYOUT_EDIT, TXT_LAYOUT_EDIT, KHDAYS_CMD_LAYOUT_EDIT);
     r->note = khdays_text(TXT_LAYOUT_EDIT_NOTE);

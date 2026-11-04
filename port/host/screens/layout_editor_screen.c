@@ -15,7 +15,7 @@
 #include <string.h>
 
 enum { ITEM_HUD, ITEM_CONTROL };
-enum { BAR_A, BAR_C, BAR_CUSTOM, BAR_SNAP, BAR_RESET, BAR_DONE, BAR_BUTTONS };
+enum { BAR_A, BAR_C, BAR_CUSTOM, BAR_SNAP, BAR_RESIZE, BAR_RESET, BAR_DONE, BAR_BUTTONS };
 
 #define GRID_POINTS 12.0f      /* the snap's lines */
 #define BAR_H_POINTS 34.0f
@@ -42,6 +42,7 @@ static float density_now;
 static float ui_unit;                  /* the bar's and the names' point: readable on any window */
 static SDL_FRect bar[BAR_BUTTONS];
 static int picture_columns;
+static int resizing;                   /* a finger on a control resizes it (Android's view) */
 
 /* A group being dragged is not made in the picture again for each move, which took a weak chip 40 ms: it is lifted out
  * of one still picture, by comparing it with one made without the group, and drawn moving over that. */
@@ -105,7 +106,7 @@ static void items(void)
         }
     }
     if (with_controls) {
-        for (size_t c = 0; c < sizeof(moved_controls) / sizeof(moved_controls[0]); ++c) {
+        for (size_t c = 0; !khdays_touch_edit_can_resize() && c < sizeof(moved_controls) / sizeof(moved_controls[0]); ++c) {
             KhdaysEditorItem *it = &editor.item[editor.count++];
             const KhdaysTouchBox *b = &controls.box[moved_controls[c]];
             it->kind = ITEM_CONTROL;
@@ -290,6 +291,19 @@ static int take_drag(int index, const KhdaysHudBox *before)
     return 0;
 }
 
+void khdays_layout_editor_control_box(int control, float x0, float y0, float x1, float y1)
+{
+    if (open_now && control >= 0 && control < KHDAYS_TOUCH_CONTROLS) {
+        const KhdaysTouchBox box = {x0, y0, x1, y1};
+        controls.box[control] = box;
+        if (control == KHDAYS_TOUCH_STICK) {
+            controls.box[KHDAYS_TOUCH_DPAD] = box;
+        }
+        khdays_touch_edit(&controls);
+        base_layout = KHDAYS_TOUCH_LAYOUT_CUSTOM;
+    }
+}
+
 /* The controls' places as they are now, in points from their nearest sides. */
 static void control_places(KhdaysHudPlace *out)
 {
@@ -339,6 +353,8 @@ static void finish(int keep, int *changed)
 {
     lift_end();
     open_now = 0;
+    resizing = 0;
+    khdays_touch_edit_resizing(0);
     khdays_touch_edit(NULL);
     if (keep) {
         KhdaysProfile p = *khdays_devices_profile();
@@ -394,6 +410,10 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
                 case BAR_C: load(KHDAYS_TOUCH_LAYOUT_C); break;
                 case BAR_CUSTOM: load(KHDAYS_TOUCH_LAYOUT_CUSTOM); break;
                 case BAR_SNAP: editor.snap = !editor.snap; break;
+                case BAR_RESIZE:
+                    resizing = !resizing;
+                    khdays_touch_edit_resizing(resizing);
+                    break;
                 case BAR_RESET:
                     if (with_controls) {
                         load(KHDAYS_TOUCH_LAYOUT_C);
@@ -482,14 +502,16 @@ static void centred(SDL_Renderer *renderer, float cx, float cy, float height, SD
 
 static void draw_bar(SDL_Renderer *renderer)
 {
-    static const int words[BAR_BUTTONS] = {TXT_TOUCH_LAYOUT_A, TXT_TOUCH_LAYOUT_C, TXT_TOUCH_LAYOUT_CUSTOM, TXT_LAYOUT_SNAP, TXT_LAYOUT_RESET, TXT_LAYOUT_DONE};
+    static const int words[BAR_BUTTONS] = {TXT_TOUCH_LAYOUT_A, TXT_TOUCH_LAYOUT_C, TXT_TOUCH_LAYOUT_CUSTOM, TXT_LAYOUT_SNAP,
+                                           TXT_LAYOUT_RESIZE,  TXT_LAYOUT_RESET,   TXT_LAYOUT_DONE};
     const float h = BAR_H_POINTS * ui_unit, gap = BAR_GAP_POINTS * ui_unit, pad = BAR_PAD_POINTS * ui_unit;
     const float inner = h - 2.0f * gap, text = inner * LABEL_OF_BAR;
     float widths[BAR_BUTTONS], total = gap;
     const char *names[BAR_BUTTONS];
     for (int b = 0; b < BAR_BUTTONS; ++b) {
         int w = 0, th = 0;
-        const int shown = with_controls || (b != BAR_A && b != BAR_C && b != BAR_CUSTOM);
+        const int shown = b == BAR_RESIZE ? with_controls && khdays_touch_edit_can_resize()
+                                          : with_controls || (b != BAR_A && b != BAR_C && b != BAR_CUSTOM);
         names[b] = khdays_text(words[b]);
         widths[b] = 0.0f;
         if (shown && khdays_ui_font_load() && khdays_ui_font_text(renderer, names[b], &w, &th) != NULL && th > 0) {
@@ -510,6 +532,10 @@ static void draw_bar(SDL_Renderer *renderer)
                 const KhdaysHudBox *b = &editor.item[i].box;
                 covered += b->x0 < x + total && b->x1 > x && b->y0 < top + h && b->y1 > top;
             }
+            for (size_t c = 0; with_controls && c < sizeof(moved_controls) / sizeof(moved_controls[0]); ++c) {
+                const KhdaysTouchBox *b = &controls.box[moved_controls[c]];
+                covered += b->x0 < x + total && b->x1 > x && b->y0 < top + h && b->y1 > top; /* the view would take the touch */
+            }
             if (covered < fewest) {
                 fewest = covered;
                 y = top;
@@ -520,7 +546,7 @@ static void draw_bar(SDL_Renderer *renderer)
         SDL_RenderFillRect(renderer, &back);
         x += gap;
         for (int b = 0; b < BAR_BUTTONS; ++b) {
-            const int lit = (b == BAR_SNAP && editor.snap) || (b == BAR_A && base_layout == KHDAYS_TOUCH_LAYOUT_A) ||
+            const int lit = (b == BAR_SNAP && editor.snap) || (b == BAR_RESIZE && resizing) || (b == BAR_A && base_layout == KHDAYS_TOUCH_LAYOUT_A) ||
                             (b == BAR_C && base_layout == KHDAYS_TOUCH_LAYOUT_C) ||
                             (b == BAR_CUSTOM && base_layout == KHDAYS_TOUCH_LAYOUT_CUSTOM);
             SDL_FRect r = {x, y + gap, widths[b], inner};

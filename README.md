@@ -271,6 +271,12 @@ DS's R), the command menu on the D-pad, the camera on the right stick and
 SELECT on View / the touch pad, and switches on the enhancements it uses.
 The keyboard is not changed.
 
+### On-screen controls (Android)
+
+On a touch screen with one picture, buttons show over the game. Settings -> Controls chooses Layout 1, Layout 2 or Custom, the buttons' style (eight), their opacity, size and vibration. **Move the HUD...** drags the HUD's pieces and the buttons, and **Resize buttons** makes a drag change a button's size instead.
+
+The buttons' art is Kenney's [Mobile Controls](https://kenney.nl/assets/mobile-controls) (CC0), and their code is based on [Cemu Android's](https://github.com/SSimco/Cemu) input overlay (MPL 2.0); see `THIRD_PARTY_NOTICES.md`.
+
 ## Picture
 
 By default the picture is the DS's: each screen 256x192, drawn exactly as the

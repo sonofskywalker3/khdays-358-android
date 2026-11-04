@@ -429,6 +429,7 @@ int khdays_profile_repair(KhdaysProfile *p)
         changed += clamp(&p->touch.opacity, 20, 100);
         changed += clamp(&p->touch.size, 60, 160);
         changed += clamp(&p->touch.vibration, 0, 1);
+        changed += clamp(&p->touch.style, 0, KHDAYS_TOUCH_STYLES - 1);
         changed += clamp(&p->video.menu_size, 1, KHDAYS_MENU_SIZE_MAX);
         changed += clamp(&p->video.subtitle_size, 1, KHDAYS_SUBTITLE_SIZE_MAX);
         changed += clamp(&p->video.display, 0, KHDAYS_DISPLAY_COUNT - 1);
@@ -1313,12 +1314,13 @@ static const char *const touch_control_names[KHDAYS_TOUCH_CONTROLS_KEPT] = {
 static const char *const place_sides_x[3] = {"left", "middle", "right"};
 static const char *const place_sides_y[3] = {"top", "middle", "bottom"};
 
-/* A place as the file writes it: `<left|middle|right> <top|bottom> <x> <y>`. Left unset when it is not one. */
+/* A place as the file writes it: `<left|middle|right> <top|bottom> <x> <y>`, a control's then its own `<w> <h>`. Left
+ * unset when it is not one. */
 static void read_place(const char *value, KhdaysHudPlace *p)
 {
     char sx[16], sy[16];
-    float x, y;
-    if (SDL_sscanf(value, "%15s %15s %f %f", sx, sy, &x, &y) != 4) {
+    float x, y, w = 0.0f, h = 0.0f;
+    if (SDL_sscanf(value, "%15s %15s %f %f %f %f", sx, sy, &x, &y, &w, &h) < 4) {
         return;
     }
     for (int a = 0; a < 3; ++a) {
@@ -1329,6 +1331,8 @@ static void read_place(const char *value, KhdaysHudPlace *p)
                 p->side_y = b;
                 p->x = x;
                 p->y = y;
+                p->w = w;
+                p->h = h;
             }
         }
     }
@@ -1341,6 +1345,7 @@ void khdays_touch_default(KhdaysTouch *t)
     t->opacity = 60;
     t->size = 100;
     t->vibration = 1;
+    t->style = 0;
 }
 
 /* [touch]: the on-screen controls. A value not understood leaves the default. */
@@ -1365,6 +1370,8 @@ static void read_touch(Reader *r, const char *key, const char *value, const char
         t->size = end != value && *end == '\0' ? (int)n : t->size;
     } else if (SDL_strcasecmp(key, "vibration") == 0) {
         t->vibration = SDL_strcasecmp(value, "on") == 0;
+    } else if (SDL_strcasecmp(key, "style") == 0) {
+        t->style = end != value && *end == '\0' ? (int)n - 1 : t->style;
     } else {
         for (int i = 0; i < KHDAYS_TOUCH_CONTROLS_KEPT; ++i) {
             if (SDL_strcasecmp(key, touch_control_names[i]) == 0) {
@@ -1843,14 +1850,16 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# size: percent of the default size, 60 to 160\n"
             "size = %d\n"
             "# vibration: a short buzz at a press\n"
-            "vibration = %s\n",
+            "vibration = %s\n"
+            "# style: the buttons' look, 1 to 8\n"
+            "style = %d\n",
             modes[p->touch.mode], layouts[p->touch.layout], p->touch.opacity, p->touch.size,
-            p->touch.vibration ? "on" : "off");
+            p->touch.vibration ? "on" : "off", p->touch.style + 1);
         for (int i = 0; i < KHDAYS_TOUCH_CONTROLS_KEPT; ++i) {
             const KhdaysHudPlace *c = &p->touch.control[i];
             if (c->set) {
-                add(&t, "%s = %s %s %.2f %.2f\n", touch_control_names[i], place_sides_x[c->side_x], place_sides_y[c->side_y],
-                    (double)c->x, (double)c->y);
+                add(&t, "%s = %s %s %.2f %.2f %.2f %.2f\n", touch_control_names[i], place_sides_x[c->side_x],
+                    place_sides_y[c->side_y], (double)c->x, (double)c->y, (double)c->w, (double)c->h);
             }
         }
     }

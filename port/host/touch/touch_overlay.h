@@ -21,6 +21,14 @@ int khdays_touch_draw(SDL_Renderer *renderer);
 /* One SDL event, before the rest see it. Returns 1 when it was the controls'. */
 int khdays_touch_event(const SDL_Event *event, SDL_Renderer *renderer);
 
+/* What the controls' view said (Android; host/android/touch_bridge.h). Returns 1 when the event was that. */
+int khdays_touch_view_event(const SDL_Event *event);
+
+/* While the layout editor is open: a finger on a control resizes it, not moves it. Whether this build can: Android's
+ * view. */
+void khdays_touch_edit_resizing(int resizing);
+int khdays_touch_edit_can_resize(void);
+
 /* 1 once after the controls' gear was tapped. */
 int khdays_touch_take_settings(void);
 

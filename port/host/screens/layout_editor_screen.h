@@ -17,6 +17,9 @@ void khdays_layout_editor_open(SDL_Renderer *renderer);
 
 int khdays_layout_editor_is_open(void);
 
+/* A control where the system's view left it (Android: that view moves and resizes them). */
+void khdays_layout_editor_control_box(int control, float x0, float y0, float x1, float y1);
+
 /* One SDL event while it is open. Returns 1 when it has closed; *changed is set when the profile was changed by that
  * (the caller saves it). Sets *moved when the picture is to be made again for a group's new place. */
 int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, int *changed, int *moved);

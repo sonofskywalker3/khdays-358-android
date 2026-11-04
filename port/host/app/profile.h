@@ -289,6 +289,7 @@ typedef enum KhdaysTouchMode {
 } KhdaysTouchMode;
 
 #define KHDAYS_TOUCH_CONTROLS_KEPT 9 /* host/touch/touch_layout.h KHDAYS_TOUCH_CONTROLS */
+#define KHDAYS_TOUCH_STYLES 8        /* android/src/main/assets/touch/style1 .. style8 */
 
 typedef struct KhdaysTouch {
     int mode;      /* KhdaysTouchMode */
@@ -296,6 +297,7 @@ typedef struct KhdaysTouch {
     int opacity;   /* percent, 20..100 */
     int size;      /* percent of the default size, 60..160 */
     int vibration; /* a short buzz at a press */
+    int style;     /* the art, from 0 (assets/touch/styleN) */
     KhdaysHudPlace control[KHDAYS_TOUCH_CONTROLS_KEPT]; /* the player's own layout's: in points (host/touch/touch_layout.h) */
 } KhdaysTouch;
 

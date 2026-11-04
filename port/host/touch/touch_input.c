@@ -56,6 +56,15 @@ static int deck_row_at(const KhdaysTouchInput *t, float x, float y)
 /* The job a finger takes landing here in this mode, JOB_FREE when no control is there. */
 static int job_at(const KhdaysTouchInput *t, float x, float y)
 {
+    if (t->view_has_controls) {
+        if (t->mode == KHDAYS_TOUCH_MODE_TALK) {
+            return JOB_TAP;
+        }
+        if (t->mode == KHDAYS_TOUCH_MODE_FIELD) {
+            return deck_row_at(t, x, y) >= 0 ? JOB_DECK : JOB_CAMERA;
+        }
+        return JOB_FREE;
+    }
     switch (t->mode) {
     case KHDAYS_TOUCH_MODE_TALK:
         return in_control(t, KHDAYS_TOUCH_START, x, y) ? JOB_START : JOB_TAP;

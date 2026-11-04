@@ -381,11 +381,63 @@ static void test_editor(void)
     }
 }
 
+/* With the system's view on the controls, what reaches here is the rest: never a control the view has answered. */
+static void test_view_has_controls(void)
+{
+    KhdaysTouchInput t = made(KHDAYS_TOUCH_MODE_FIELD);
+    const KhdaysTouchBox *a = &t.layout.box[KHDAYS_TOUCH_FACE];
+    const float ax = (a->x0 + a->x1) / 2.0f, ay = (a->y0 + a->y1) / 2.0f;
+    t.view_has_controls = 1;
+    /* over the buttons' place, and over the stick's half: both can only be a drag of the camera */
+    khdays_touch_input_down(&t, 1u, ax, ay);
+    khdays_touch_input_move(&t, 1u, ax + 30.0f, ay);
+    CHECK(t.buttons == 0);
+    CHECK(t.camera_x == 30.0f);
+    khdays_touch_input_up(&t, 1u);
+    khdays_touch_input_down(&t, 2u, 10.0f, ay);
+    CHECK(!t.stick_held);
+    khdays_touch_input_up(&t, 2u);
+    /* the deck's rows are still the game's */
+    t.deck_rows[1].x0 = 100.0f;
+    t.deck_rows[1].x1 = 200.0f;
+    t.deck_rows[1].y0 = 100.0f;
+    t.deck_rows[1].y1 = 120.0f;
+    {
+        const uint8_t serial = t.deck_serial;
+        khdays_touch_input_down(&t, 3u, 150.0f, 110.0f);
+        khdays_touch_input_up(&t, 3u);
+        CHECK(t.deck_serial == (uint8_t)(serial + 1u) && t.deck_row == 1);
+    }
+    /* an event's tap is A, wherever it lands */
+    khdays_touch_input_mode(&t, KHDAYS_TOUCH_MODE_TALK);
+    khdays_touch_input_down(&t, 4u, ax, ay);
+    khdays_touch_input_up(&t, 4u);
+    CHECK(t.tap_pulse && (t.buttons & (1u << KHDAYS_ACT_A)) != 0);
+    t.tap_pulse = 0;
+    /* a menu's touches go on to the game */
+    khdays_touch_input_mode(&t, KHDAYS_TOUCH_MODE_MENU);
+    CHECK(!khdays_touch_input_wants(&t, ax, ay));
+}
+
+/* A control's own size stays with its place, in the units asked for, on any window. */
+static void test_control_size(void)
+{
+    const KhdaysHudBox b = {800.0f, 300.0f, 1000.0f, 500.0f};
+    const KhdaysHudPlace p = khdays_editor_control_place(&b, 1000.0f, 500.0f, 2.0f);
+    KhdaysHudBox back;
+    CHECK(p.w == 100.0f && p.h == 100.0f);
+    khdays_editor_control_box(&p, 50.0f, 50.0f, 2000.0f, 1000.0f, 2.0f, &back);
+    CHECK(back.x1 - back.x0 == 200.0f && back.y1 - back.y0 == 200.0f);
+    CHECK(back.x1 == 2000.0f && back.y1 == 1000.0f);
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
     test_layouts();
+    test_view_has_controls();
+    test_control_size();
     test_fingers();
     test_places();
     test_editor();

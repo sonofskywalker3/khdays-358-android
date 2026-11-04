@@ -26,6 +26,10 @@ int khdays_ui_font_width(const char *utf8);
  * available. The texture is cached and owned here. */
 SDL_Texture *khdays_ui_font_text(SDL_Renderer *renderer, const char *utf8, int *width, int *height);
 
+/* `utf8` as white ARGB pixels on clear, for what draws outside SDL; freed with SDL_free. NULL when the font is not
+ * available. */
+Uint32 *khdays_ui_font_pixels(const char *utf8, int *width, int *height);
+
 /* Drops every cached texture (before their renderer goes away). */
 void khdays_ui_font_forget(void);
 

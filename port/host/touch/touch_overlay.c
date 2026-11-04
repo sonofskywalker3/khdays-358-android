@@ -5,10 +5,14 @@
 
 #include "touch_input.h"
 #include "../android/bottom_screen.h"
+#if defined(__ANDROID__)
+#include "../android/touch_bridge.h"
+#endif
 #include "../android/touch_gear.h"
 #include "../app/devices.h"
 #include "../render/gpu_present.h"
 #include "../render/onescreen.h"
+#include "../screens/layout_editor_screen.h"
 #include "../screens/movie_pause.h"
 #include "../screens/ui_font.h"
 #include "../settings/settings_ui.h"
@@ -48,6 +52,64 @@ static int mouse_is_ours;     /* the touch's mouse press went to the controls: s
 static uint16_t last_buttons; /* for the vibration */
 static SDL_Haptic *haptic;
 static int haptic_tried;
+
+#if defined(__ANDROID__)
+/* What the fingers on the view hold (touch_bridge.h). */
+static struct {
+    uint16_t buttons;
+    int lock_on, stick_held;
+    float stick_x, stick_y;
+} view_held;
+static KhdaysTouchShown view_shown; /* what the view was last told */
+static int view_told;
+static int view_labels;
+static int view_resizing;
+static float view_w, view_h;
+
+/* The view is told when something changed. */
+static void tell_view(int mode)
+{
+    const KhdaysProfile *p = khdays_devices_profile();
+    KhdaysTouchShown s;
+    memset(&s, 0, sizeof(s));
+    s.mode = mode;
+    s.edit = editing ? (view_resizing ? 2 : 1) : 0;
+    s.style = p->touch.style;
+    s.opacity = p->touch.opacity;
+    s.vibration = p->touch.vibration;
+    s.w = view_w;
+    s.h = view_h;
+    for (int i = 0; i < KHDAYS_TOUCH_CONTROLS; ++i) {
+        memcpy(&s.boxes[i * 4], &input.layout.box[i], 4 * sizeof(float));
+    }
+    for (int r = 0; r < KHDAYS_TOUCH_DECK_ROWS; ++r) {
+        memcpy(&s.boxes[(KHDAYS_TOUCH_CONTROLS + r) * 4], &input.deck_rows[r], 4 * sizeof(float));
+    }
+    if (!view_told || memcmp(&s, &view_shown, sizeof(s)) != 0) {
+        view_shown = s;
+        view_told = 1;
+        khdays_touch_bridge_show(&s);
+    }
+}
+
+/* The words on Select and Start, once the game's font is there. */
+static void tell_view_labels(void)
+{
+    int sw = 0, sh = 0, tw = 0, th = 0;
+    Uint32 *select, *start;
+    if (view_labels || !khdays_ui_font_load()) {
+        return;
+    }
+    view_labels = 1;
+    select = khdays_ui_font_pixels("SELECT", &sw, &sh);
+    start = khdays_ui_font_pixels("START", &tw, &th);
+    if (select != NULL && start != NULL && sh == th) {
+        khdays_touch_bridge_labels(select, sw, start, tw, sh);
+    }
+    SDL_free(select);
+    SDL_free(start);
+}
+#endif
 
 /* The preview's settings: density 0 when off. */
 static struct {
@@ -117,7 +179,11 @@ static int wanted(void)
 static void set_mode(int mode)
 {
     if (mode != input.mode) {
-        const int any = input.buttons != 0 || input.lock_on || input.stick_held;
+        int any = input.buttons != 0 || input.lock_on || input.stick_held;
+#if defined(__ANDROID__)
+        any |= view_held.buttons != 0 || view_held.lock_on || view_held.stick_held;
+        memset(&view_held, 0, sizeof(view_held));
+#endif
         khdays_touch_input_mode(&input, mode);
         if (any) {
             khdays_devices_resend();
@@ -129,6 +195,11 @@ static void hide(void)
 {
     set_mode(KHDAYS_TOUCH_MODE_NONE);
     shown = 0;
+#if defined(__ANDROID__)
+    if (view_told && view_shown.mode != KHDAYS_TOUCH_MODE_NONE) {
+        tell_view(KHDAYS_TOUCH_MODE_NONE);
+    }
+#endif
     if (hud_published) {
         const KhdaysProfile *p = khdays_devices_profile();
         khdays_hud_layout_set(p->hud_layout.custom ? p->hud_layout.place : NULL); /* the player's, or the composition's */
@@ -223,6 +294,7 @@ static void place(SDL_Renderer *renderer)
 }
 
 /* ---- Drawing ------------------------------------------------------------- */
+#if !defined(__ANDROID__) /* there the controls are a view of their own, and answer however slowly the game draws */
 
 static void disc(SDL_Renderer *renderer, float cx, float cy, float r, SDL_FColor colour)
 {
@@ -461,10 +533,14 @@ static void draw_lock(SDL_Renderer *renderer, const Ink *ink, unsigned held)
     SDL_RenderFillRect(renderer, &down);
 }
 
+#endif /* !__ANDROID__ */
+
 int khdays_touch_draw(SDL_Renderer *renderer)
 {
     SDL_RendererLogicalPresentation mode;
+#if !defined(__ANDROID__)
     SDL_BlendMode blend;
+#endif
     int lw = 0, lh = 0, situation;
     read_preview();
     if (renderer == NULL || (!wanted() && !editing)) {
@@ -483,6 +559,17 @@ int khdays_touch_draw(SDL_Renderer *renderer)
         place(renderer);
     }
     shown = situation != KHDAYS_TOUCH_MODE_NONE;
+#if defined(__ANDROID__)
+    {
+        int w = 0, h = 0;
+        input.view_has_controls = 1;
+        SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
+        view_w = (float)w;
+        view_h = (float)h;
+        tell_view_labels();
+        tell_view(situation);
+    }
+#else
     if (shown) {
         const float alpha = (float)khdays_devices_profile()->touch.opacity / 100.0f;
         const unsigned held = khdays_touch_input_pressed(&input);
@@ -518,8 +605,54 @@ int khdays_touch_draw(SDL_Renderer *renderer)
         }
         SDL_SetRenderDrawBlendMode(renderer, blend);
     }
+#endif
     SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
     return 1;
+}
+
+int khdays_touch_view_event(const SDL_Event *event)
+{
+#if defined(__ANDROID__)
+    KhdaysTouchBridgeEvent e;
+    if (!khdays_touch_bridge_take(event, &e)) {
+        return 0;
+    }
+    if (e.kind == KHDAYS_TOUCH_BRIDGE_HELD) {
+        view_held.buttons = e.bits;
+        view_held.lock_on = e.lock_on;
+        view_held.stick_held = e.stick_held;
+        view_held.stick_x = e.stick_x;
+        view_held.stick_y = e.stick_y;
+        touched_last = 1; /* the controls stay while the screen is what is played */
+        khdays_devices_resend();
+    } else if (e.kind == KHDAYS_TOUCH_BRIDGE_GEAR) {
+        input.settings = 1;
+    } else if (e.kind == KHDAYS_TOUCH_BRIDGE_BOX) {
+        khdays_layout_editor_control_box(e.control, e.x0, e.y0, e.x1, e.y1);
+    }
+    return 1;
+#else
+    (void)event;
+    return 0;
+#endif
+}
+
+void khdays_touch_edit_resizing(int resizing)
+{
+#if defined(__ANDROID__)
+    view_resizing = resizing;
+#else
+    (void)resizing;
+#endif
+}
+
+int khdays_touch_edit_can_resize(void)
+{
+#if defined(__ANDROID__)
+    return 1;
+#else
+    return 0;
+#endif
 }
 
 /* ---- Fingers ------------------------------------------------------------- */
@@ -648,6 +781,9 @@ int khdays_touch_take_settings(void)
 void khdays_touch_release(void)
 {
     khdays_touch_input_release(&input);
+#if defined(__ANDROID__)
+    memset(&view_held, 0, sizeof(view_held));
+#endif
     mouse_is_ours = 0;
     last_buttons = 0;
 }
@@ -660,12 +796,21 @@ void khdays_touch_apply(const KhdaysProfile *profile, KhdaysInputSnapshot *out)
     if (input.mode == KHDAYS_TOUCH_MODE_NONE || editing) {
         return;
     }
-    out->ds_buttons |= input.buttons;
-    out->ds_buttons_field |= input.buttons;
+#if defined(__ANDROID__)
+    const uint16_t held_buttons = input.buttons | view_held.buttons;
+    const float held_x = view_held.stick_x, held_y = view_held.stick_y;
+    const int held_lock = view_held.lock_on;
+#else
+    const uint16_t held_buttons = input.buttons;
+    const float held_x = input.stick_x, held_y = input.stick_y;
+    const int held_lock = input.lock_on;
+#endif
+    out->ds_buttons |= held_buttons;
+    out->ds_buttons_field |= held_buttons;
     if (input.mode == KHDAYS_TOUCH_MODE_FIELD) {
         const KhdaysStick stick = {KHDAYS_STICK_DPAD, STICK_DEAD, STICK_HYSTERESIS};
-        const int sx = (int)(fmaxf(-1.0f, fminf(1.0f, input.stick_x)) * 32767.0f);
-        const int sy = (int)(fmaxf(-1.0f, fminf(1.0f, input.stick_y)) * 32767.0f);
+        const int sx = (int)(fmaxf(-1.0f, fminf(1.0f, held_x)) * 32767.0f);
+        const int sy = (int)(fmaxf(-1.0f, fminf(1.0f, held_y)) * 32767.0f);
         const uint16_t bits = khdays_stick_dpad(sx, sy, &stick, &stick_active, &stick_sector);
         const double counts = (double)COUNTS_A_POINT / (double)screen_now.density;
         out->ds_buttons |= bits;
@@ -674,7 +819,7 @@ void khdays_touch_apply(const KhdaysProfile *profile, KhdaysInputSnapshot *out)
             out->move_x = (int16_t)sx;
             out->move_y = (int16_t)-sy;
         }
-        if (input.lock_on) {
+        if (held_lock) {
             out->actions |= KHDAYS_ACTION_LOCK_ON;
         }
         /* the fingers' own camera and lock-on, whatever the settings say for the gamepad */

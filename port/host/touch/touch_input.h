@@ -26,6 +26,7 @@ typedef struct KhdaysTouchFinger {
 typedef struct KhdaysTouchInput {
     KhdaysTouchLayout layout;
     int mode;
+    int view_has_controls; /* a view of the system's own answers on the controls: what reaches here is the rest */
     float stick_radius;
     float stick_zone;                                  /* the stick lands left of this, the camera right of it */
     float tap_travel;                                  /* an event's tap dragged further is a direction */

@@ -143,11 +143,17 @@ KhdaysHudPlace khdays_editor_control_place(const KhdaysHudBox *box, float w, flo
     p.side_y = (box->y0 + box->y1) / 2.0f >= h / 2.0f ? KHDAYS_HUD_AT_END : KHDAYS_HUD_AT_START;
     p.x = (p.side_x == KHDAYS_HUD_AT_END ? w - box->x1 : box->x0) / unit;
     p.y = (p.side_y == KHDAYS_HUD_AT_END ? h - box->y1 : box->y0) / unit;
+    p.w = (box->x1 - box->x0) / unit;
+    p.h = (box->y1 - box->y0) / unit;
     return p;
 }
 
 void khdays_editor_control_box(const KhdaysHudPlace *p, float bw, float bh, float w, float h, float unit, KhdaysHudBox *out)
 {
+    if (p->w > 0.0f && p->h > 0.0f) {
+        bw = p->w * unit;
+        bh = p->h * unit;
+    }
     out->x0 = p->side_x == KHDAYS_HUD_AT_END ? w - p->x * unit - bw : p->x * unit;
     out->y0 = p->side_y == KHDAYS_HUD_AT_END ? h - p->y * unit - bh : p->y * unit;
     out->x0 = kept_inside(out->x0, bw, 0.0f, w);

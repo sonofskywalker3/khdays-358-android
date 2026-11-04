@@ -379,6 +379,7 @@ else()
             host/net/https_android.c             # the update check and download through the app's Kotlin side
             host/app/update_install_android.c    # the update's APK put in place by Android's installer
             host/android/app_class.c
+            host/android/touch_bridge.c          # the on-screen controls' view and the game
             host/android/game_surface.c          # frames presented only while the game's surface is there
             host/android/media_folder.c          # the player's folder for the mods and HD videos
             host/android/saves_folder.c)         # the save files in a folder of the player's own

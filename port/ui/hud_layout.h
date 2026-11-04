@@ -28,6 +28,7 @@ typedef struct KhdaysHudPlace {
     int side_x; /* KHDAYS_HUD_AT_*: left, middle, right */
     int side_y; /* top, bottom (never the middle) */
     float x, y; /* inwards from the side (from the middle: rightwards) */
+    float w, h; /* an on-screen control's own size in the same units; 0: the layout's */
 } KhdaysHudPlace;
 
 /* A rectangle of the picture, in its DS dots. */
