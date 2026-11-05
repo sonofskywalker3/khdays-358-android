@@ -291,6 +291,11 @@ static const char *const displays[KHDAYS_DISPLAY_COUNT] = {"window", "borderless
  * with the DS's two screens. */
 static int default_aspect(int one_screen)
 {
+#if defined(__ANDROID__)
+    if (one_screen) {
+        return KHDAYS_ASPECT_WINDOW; /* a phone's or a tablet's whole screen, whatever its shape */
+    }
+#endif
     return one_screen ? KHDAYS_ASPECT_16_9 : KHDAYS_ASPECT_4_3;
 }
 
