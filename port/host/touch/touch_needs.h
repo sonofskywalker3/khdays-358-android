@@ -14,7 +14,7 @@ enum {
     KHDAYS_TOUCH_MODE_FIELD, /* play: stick, camera, buttons, the command deck */
     KHDAYS_TOUCH_MODE_MENU,  /* D-pad and buttons */
     KHDAYS_TOUCH_MODE_TALK,  /* a movie: a tap is A, a small Start */
-    KHDAYS_TOUCH_MODE_EVENT  /* an event: the menu's controls to show it can be answered, and a tap elsewhere is A */
+    KHDAYS_TOUCH_MODE_EVENT  /* an event: the menu's controls, which answer it */
 };
 
 typedef struct KhdaysTouchSituation {

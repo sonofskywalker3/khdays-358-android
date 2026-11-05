@@ -57,7 +57,7 @@ static int deck_row_at(const KhdaysTouchInput *t, float x, float y)
 static int job_at(const KhdaysTouchInput *t, float x, float y)
 {
     if (t->view_has_controls) {
-        if (t->mode == KHDAYS_TOUCH_MODE_TALK || t->mode == KHDAYS_TOUCH_MODE_EVENT) {
+        if (t->mode == KHDAYS_TOUCH_MODE_TALK) {
             return JOB_TAP;
         }
         if (t->mode == KHDAYS_TOUCH_MODE_FIELD) {
@@ -95,11 +95,8 @@ static int job_at(const KhdaysTouchInput *t, float x, float y)
     if (in_control(t, KHDAYS_TOUCH_GEAR, x, y)) {
         return JOB_GEAR;
     }
-    if (t->mode == KHDAYS_TOUCH_MODE_MENU) {
+    if (t->mode == KHDAYS_TOUCH_MODE_MENU || t->mode == KHDAYS_TOUCH_MODE_EVENT) {
         return JOB_FREE;
-    }
-    if (t->mode == KHDAYS_TOUCH_MODE_EVENT) {
-        return JOB_TAP;
     }
     if (in_control(t, KHDAYS_TOUCH_LOCK, x, y)) {
         return JOB_LOCK;
@@ -183,15 +180,6 @@ static void held(KhdaysTouchInput *t)
         case JOB_LOCK: t->lock_on = 1; break;
         case JOB_SELECT: t->buttons |= 1u << KHDAYS_ACT_SELECT; break;
         case JOB_START: t->buttons |= 1u << KHDAYS_ACT_START; break;
-        case JOB_TAP: {
-            /* an event's answers (Yes, No) have no D-pad on the screen: a drag moves through them */
-            const float dx = f->x - f->x0, dy = f->y - f->y0;
-            if (hypotf(dx, dy) >= t->tap_travel) {
-                t->buttons |= 1u << (fabsf(dx) > fabsf(dy) ? (dx > 0.0f ? KHDAYS_ACT_RIGHT : KHDAYS_ACT_LEFT)
-                                                          : (dy > 0.0f ? KHDAYS_ACT_DOWN : KHDAYS_ACT_UP));
-            }
-            break;
-        }
         default: break;
         }
     }

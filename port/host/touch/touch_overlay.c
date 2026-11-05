@@ -29,9 +29,9 @@
 #define PI_F 3.14159265f
 
 #define STICK_ZONE 0.5f       /* of the window's width: a finger landing left of it is the stick */
-#define TAP_TRAVEL 30.0f      /* points: a tap in an event dragged further is a direction */
+#define TAP_TRAVEL 30.0f      /* points: a movie's tap dragged further is no tap */
 #define COUNTS_A_POINT 2.1f   /* the mouse camera's counts for a point dragged: the window's width half a turn */
-#define STICK_DEAD 25         /* percent */
+#define STICK_DEAD 12         /* percent: more is a walk that starts late under a thumb */
 #define STICK_HYSTERESIS 5
 #define DEFAULT_DENSITY 2.0f  /* points when the system says nothing */
 #define MOUSE_FINGER 1u       /* the preview's mouse */

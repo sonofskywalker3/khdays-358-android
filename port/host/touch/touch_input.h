@@ -29,7 +29,7 @@ typedef struct KhdaysTouchInput {
     int view_has_controls; /* a view of the system's own answers on the controls: what reaches here is the rest */
     float stick_radius;
     float stick_zone;                                  /* the stick lands left of this, the camera right of it */
-    float tap_travel;                                  /* an event's tap dragged further is a direction */
+    float tap_travel;                                  /* a movie's tap dragged further is no tap */
     KhdaysTouchBox deck_rows[KHDAYS_TOUCH_DECK_ROWS];  /* where the deck's rows are; empty when not shown */
     KhdaysTouchFinger finger[KHDAYS_TOUCH_FINGERS];
 
@@ -41,7 +41,7 @@ typedef struct KhdaysTouchInput {
     uint8_t deck_row;    /* the row tapped last */
     uint8_t deck_serial; /* counts the taps */
     int settings;        /* the gear was tapped; the caller clears it */
-    int tap_pulse;       /* an event's tap just ended: A held for this one snapshot; the caller clears it */
+    int tap_pulse;       /* a movie's tap just ended: A held for this one snapshot; the caller clears it */
 } KhdaysTouchInput;
 
 /* Nothing held. The layout, the zone and the rows stay. */

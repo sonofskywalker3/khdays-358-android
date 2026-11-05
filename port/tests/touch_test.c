@@ -193,7 +193,7 @@ static void test_fingers(void)
         CHECK(!khdays_touch_input_wants(&t, ax, ay));
     }
     {
-        /* an event: a tap is A as it ends, a drag a direction and no A */
+        /* a movie: a tap is A as it ends, a drag nothing */
         KhdaysTouchInput t = made(KHDAYS_TOUCH_MODE_TALK);
         khdays_touch_input_down(&t, 1, 1000.0f, 1000.0f);
         CHECK(t.buttons == 0);
@@ -203,12 +203,12 @@ static void test_fingers(void)
         t.buttons = 0;
         khdays_touch_input_down(&t, 2, 1000.0f, 1000.0f);
         khdays_touch_input_move(&t, 2, 1000.0f, 1100.0f);
-        CHECK(t.buttons == BIT(KHDAYS_ACT_DOWN));
+        CHECK(t.buttons == 0);
         khdays_touch_input_up(&t, 2);
         CHECK(!t.tap_pulse && t.buttons == 0);
     }
     {
-        /* an event shows the menu's controls: they press, and a tap or a drag elsewhere is still A or a direction */
+        /* an event shows the menu's controls: they press, and a tap or a drag elsewhere is nothing */
         KhdaysTouchInput t = made(KHDAYS_TOUCH_MODE_EVENT);
         const KhdaysTouchBox *d = &t.layout.box[KHDAYS_TOUCH_DPAD];
         khdays_touch_input_down(&t, 1, d->x1 - 5.0f, (d->y0 + d->y1) / 2.0f);
@@ -216,8 +216,10 @@ static void test_fingers(void)
         khdays_touch_input_up(&t, 1);
         CHECK(!t.tap_pulse && t.buttons == 0);
         khdays_touch_input_down(&t, 2, 1000.0f, 300.0f);
+        khdays_touch_input_move(&t, 2, 1000.0f, 500.0f);
+        CHECK(t.buttons == 0);
         khdays_touch_input_up(&t, 2);
-        CHECK(t.tap_pulse && t.buttons == BIT(KHDAYS_ACT_A));
+        CHECK(!t.tap_pulse && t.buttons == 0);
     }
     {
         /* a menu: what is not a control is the picture's */

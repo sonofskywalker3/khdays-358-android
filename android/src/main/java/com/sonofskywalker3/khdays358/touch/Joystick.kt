@@ -5,7 +5,7 @@
  *
  * Ported from Cemu Android's input overlay (https://github.com/SSimco/Cemu,
  * src/android/app/src/main/java/info/cemu/cemu/emulation/inputoverlay/inputs/Joystick.kt) and changed for
- * this game: pictures in place of drawn shapes, a zone for the thumb to land in, its middle following the thumb.
+ * this game: pictures in place of drawn shapes, a push from where the thumb lands, its middle following the thumb.
  */
 package com.sonofskywalker3.khdays358.touch
 
@@ -16,12 +16,12 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * The stick: it comes under the thumb wherever that lands in `zone`, and its middle follows a thumb gone past
- * its edge, so turning back answers at once. x and y run from -1 to 1, y growing downwards.
+ * The stick: a thumb landing on it pushes it that way at once, and its middle follows a thumb gone past its edge,
+ * so turning back answers at once. It takes no finger where `free` says no. x and y run from -1 to 1, y growing downwards.
  */
 class Joystick(
     private val art: ControlArt,
-    private val zone: (Float, Float) -> Boolean,
+    private val free: (Float, Float) -> Boolean,
     private val onStick: (held: Boolean, x: Float, y: Float) -> Unit,
     rect: Rect,
 ) : Input(rect) {
@@ -61,10 +61,8 @@ class Joystick(
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = event.actionIndex
                 if (currentPointerId == -1 && isInside(event.getX(i), event.getY(i))) {
-                    centerX = event.getX(i)
-                    centerY = event.getY(i)
                     currentPointerId = event.getPointerId(i)
-                    updateState(true, 0f, 0f)
+                    pushTo(event.getX(i), event.getY(i))
                     return true
                 }
             }
@@ -81,21 +79,25 @@ class Joystick(
             MotionEvent.ACTION_MOVE -> {
                 val i = if (currentPointerId == -1) -1 else event.findPointerIndex(currentPointerId)
                 if (i >= 0) {
-                    var x = (event.getX(i) - centerX) / radius
-                    var y = (event.getY(i) - centerY) / radius
-                    val norm = sqrt(x * x + y * y)
-                    if (norm > 1f) {
-                        centerX += x * radius * (1f - 1f / norm)
-                        centerY += y * radius * (1f - 1f / norm)
-                        x /= norm
-                        y /= norm
-                    }
-                    updateState(true, x, y)
+                    pushTo(event.getX(i), event.getY(i))
                     return true
                 }
             }
         }
         return false
+    }
+
+    private fun pushTo(fingerX: Float, fingerY: Float) {
+        var x = (fingerX - centerX) / radius
+        var y = (fingerY - centerY) / radius
+        val norm = sqrt(x * x + y * y)
+        if (norm > 1f) {
+            centerX += x * radius * (1f - 1f / norm)
+            centerY += y * radius * (1f - 1f / norm)
+            x /= norm
+            y /= norm
+        }
+        updateState(true, x, y)
     }
 
     override fun reset() {
@@ -110,8 +112,8 @@ class Joystick(
         art.drawStick(canvas, centerX, centerY, radius, innerX, innerY, pressed)
     }
 
-    /** Where the stick takes a finger in play. */
-    override fun isInside(x: Float, y: Float) = zone(x, y)
+    /** Where the stick takes a finger in play: anywhere else is the camera's. */
+    override fun isInside(x: Float, y: Float) = isOnBox(x, y) && free(x, y)
 
     /** Its own box, for moving it about. */
     fun isOnBox(x: Float, y: Float) = rect.contains(x.toInt(), y.toInt())

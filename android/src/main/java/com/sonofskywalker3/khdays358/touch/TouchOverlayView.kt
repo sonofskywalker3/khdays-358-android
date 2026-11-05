@@ -28,7 +28,7 @@ import kotlin.math.max
  * The on-screen controls, a plain view over the game's surface, drawn and answering on Android's own thread however
  * slowly the game draws. A window's second finger goes to whichever view has its first, whatever it lands on, so
  * this one takes every finger while it shows and hands those that miss its controls to SDL itself, one by one: to
- * the game they are touches as any other (the camera, the command deck, an event's tap, the layout editor).
+ * the game they are touches as any other (the camera, the command deck, a movie's tap, the layout editor).
  */
 @SuppressLint("ViewConstructor")
 class TouchOverlayView(context: Context) : View(context) {
@@ -195,10 +195,9 @@ class TouchOverlayView(context: Context) : View(context) {
         }
         inputs += button(TouchOverlay.LOCK, art, ControlArt.Shape.ROUND, art.icon("target")) { on -> lockOn = on }
         val stickBox = box(TouchOverlay.STICK)
-        val stickOnLeft = stickBox.centerX() < width / 2
         inputs += TouchOverlay.STICK to Joystick(
             art,
-            { x, y -> (if (stickOnLeft) x < width / 2f else x >= width / 2f) && !onDeck(x, y) },
+            { x, y -> !onDeck(x, y) },
             { held, x, y ->
                 stickHeld = held
                 stickX = x
