@@ -505,7 +505,8 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
         const int nintendo = type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO ||
                              type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT ||
                              type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT ||
-                             type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR || type == SDL_GAMEPAD_TYPE_GAMECUBE;
+                             type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR || type == SDL_GAMEPAD_TYPE_GAMECUBE ||
+                             khdays_devices_pad_marked(pad);
         const char *input_name = khdays_pad_input_name(input);
         if (input_name == NULL) {
             return 0;

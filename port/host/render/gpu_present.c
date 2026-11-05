@@ -14,6 +14,7 @@
 #include "two_screens.h"
 #include "../screens/ds_select_pages.h"
 #include "../../ui/composition.h"
+#include "../../ui/text.h"
 #include "../screens/movie_pause.h"
 #include "../screens/ui_text.h"
 #include "../screens/shop_screen.h"
@@ -1773,6 +1774,7 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
         uint32_t off = 0;
         khdays_bottom_wanted_rows(&row0, &count, &off);
         khdays_gfx_render_set_lower_rows(row0, port2d_drawn ? count : 0, off);
+        khdays_ui_text_lower_rows(port2d_drawn ? count : 0);
     }
     bottom_show_finished();
     if (port_screen) {

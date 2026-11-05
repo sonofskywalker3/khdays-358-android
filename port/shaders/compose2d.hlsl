@@ -17,6 +17,7 @@ ByteAddressBuffer hd : register(t7, space0);         // the replacements (host/r
 [[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, for source3d 2
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> out_screen : register(u2, space1);
+[[vk::image_format("r32ui")]] RWTexture2D<uint> layers1x : register(u3, space1); // layers2d.hlsl's, read only
 
 cbuffer Params : register(b0, space2) {
     uint scale;         // N
@@ -35,7 +36,8 @@ cbuffer Params : register(b0, space2) {
     uint4 fog_table[2]; // FOG_TABLE, four entries per uint
     uint row0;          // the DS row of the target's first (rows past the DS's 192 for a taller display)
     uint layers_off;    // layers left out (KDF_BG_ON_SHIFT's bits, KDF_OBJ_ON): compose.h KD_LAYERS_OFF
-    uint2 pad;
+    uint layers1x_rows; // layers1x: each layer's rows from row0 (0: none; the layers looked up here)
+    uint pad;
 };
 
 #include "finish3d.hlsli"
@@ -88,6 +90,21 @@ uint layer3d_at(uint x, int row)
 #define KD_LEFT_OUT_OBJ(i) (KD_DESC(KD_LEFT_OUT) != 0u ? (desc.Load((KD_LEFT_AT + KE_LEFT_CELL_WORDS + ((i) >> 5)) * 4u) >> ((i) & 31u)) & 1u : 0u)
 // after them each row's sprites (gfx_render.c sprite_rows): 4 words a row, of 256
 #define KD_ROWS_AT (KD_LEFT_AT + (KD_DESC(KD_LEFT_OUT) != 0u ? KE_LEFT_CELL_WORDS + KE_LEFT_OBJ_WORDS : 0u))
+// A layer's colour at a DS pixel from layers2d.hlsl's pass where it has one (LAYER_LIVE: looked up here,
+// as its replacement's texel depends on the place inside the DS pixel, or it is the 3D)
+#define LAYER_LIVE 0xffffffffu
+uint kd_layer(int b, int x, int row); // compose.h, included below
+uint layer_at(int b, int x, int row)
+{
+    if (layers1x_rows != 0u && x >= 0 && x < 256 && row >= (int)row0 && row < (int)(row0 + layers1x_rows)) {
+        const uint c = layers1x[uint2((uint)x, (uint)b * layers1x_rows + (uint)row - row0)];
+        if (c != LAYER_LIVE) {
+            return c;
+        }
+    }
+    return kd_layer(b, x, row);
+}
+#define KD_LAYER_AT(b, x, row) layer_at((b), (x), (row))
 #define KD_SPRITE_ROW(row, word) desc.Load((KD_ROWS_AT + ((uint)(row) & 255u) * 4u + (word)) * 4u)
 #define KD_LOW_BIT(m) firstbitlow(m)
 

@@ -22,7 +22,7 @@ static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's pol
 // cards (vkd3d too) read a StructuredBuffer by the view's stride, so all its elements were the first.
 ByteAddressBuffer polys : register(t0, space0);
 ByteAddressBuffer verts : register(t1, space0);
-ByteAddressBuffer tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, then polygon indices
+ByteAddressBuffer tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, then each tile's polygons: index, columns (gpu_raster3d.c build_tiles)
 ByteAddressBuffer vram : register(t3, space0);         // the texture slots (512 KB), then the palette slots (96 KB)
 ByteAddressBuffer hd : register(t4, space0); // the replacements (host/render/gpu_hd.h): 4 words each, then their texels (RGBA8, red low)
 ByteAddressBuffer sequences : register(t5, space0); // retained native sequences in this 3D list
@@ -53,6 +53,8 @@ cbuffer Params : register(b0, space2) {
     uint nverts;
     uint entries;
     uint4 toon[4];    // TOON_TABLE, two entries per uint
+    uint probe;       // 1: no plot (cover only); 2: plot untextured; 3: cover by rows only (no edges); 4: nothing per polygon
+    uint3 pad;
 };
 
 #define TEX_PAL 0x80000u
@@ -74,6 +76,12 @@ Polygon polygon_at(uint i)
     p.flags = (int)c.x;
     p.replacement = (int)c.y;
     return p;
+}
+
+// Only a vertex's place on the screen, for the row setup.
+float2 vertex_xy(int i)
+{
+    return asfloat(verts.Load2((uint)i * 40u));
 }
 
 Vertex vertex_at(int i)
@@ -111,7 +119,10 @@ uint tex16(uint address)
 // A palette address is always even: both bytes are in one word.
 uint pal16(uint address)
 {
-    address = TEX_PAL + address % 0x18000u;
+    while (address >= 0x18000u) { // the slots repeat (no integer division on the card: a long sequence)
+        address -= 0x18000u;
+    }
+    address += TEX_PAL;
     return (vram.Load(address & ~3u) >> ((address & 2u) * 8u)) & 0xffffu;
 }
 
@@ -224,7 +235,7 @@ bool pixel_art(Polygon p)
 {
     float screen = 0.0f, texels = 0.0f;
     for (int i = 0; i < p.count; ++i) {
-        const Vertex a = vertex_at(p.first + i), b = vertex_at(p.first + (i + 1) % p.count);
+        const Vertex a = vertex_at(p.first + i), b = vertex_at(p.first + (i + 1 < p.count ? i + 1 : 0));
         if (a.w != 4096.0f) {
             return false;
         }
@@ -605,9 +616,9 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     {
         const uint format = (p.tex >> 26) & 7u;
         int rt = cmax, gt = cmax, bt = cmax, at6 = 63, at5 = 31;
-        const int unit = fine != 0u ? 256 : 64; // the modulation's divisor
+        const int unit = fine != 0u ? 8 : 6; // the modulation's divisor, as a shift: 256 or 64
         const int av6 = expand_alpha(alpha);
-        const bool textured = format != 0u && (disp3dcnt & 1u) != 0u;
+        const bool textured = format != 0u && (disp3dcnt & 1u) != 0u && probe != 2u;
         if (textured) {
             precise float sf = at.s * w / 16.0f;
             precise float tf = at.t * w / 16.0f;
@@ -644,9 +655,9 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
             const uint t16 = toon_entry((uint)(rv >> 1));
             const int rs = channel5((int)(t16 & 31u)), gs = channel5((int)((t16 >> 5) & 31u)),
                       bs = channel5((int)((t16 >> 10) & 31u));
-            r = ((rt + 1) * (rs + 1) - 1) / unit;
-            gg = ((gt + 1) * (gs + 1) - 1) / unit;
-            b = ((bt + 1) * (bs + 1) - 1) / unit;
+            r = ((rt + 1) * (rs + 1) - 1) >> unit;
+            gg = ((gt + 1) * (gs + 1) - 1) >> unit;
+            b = ((bt + 1) * (bs + 1) - 1) >> unit;
             if ((disp3dcnt & 2u) != 0u) {
                 r = min(r + rs, cmax);
                 gg = min(gg + gs, cmax);
@@ -654,9 +665,9 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
             }
             a = ((at6 + 1) * (av6 + 1) - 1) / 64;
         } else {  // modulation (and shadow)
-            r = ((rt + 1) * (rv + 1) - 1) / unit;
-            gg = ((gt + 1) * (gv + 1) - 1) / unit;
-            b = ((bt + 1) * (bv + 1) - 1) / unit;
+            r = ((rt + 1) * (rv + 1) - 1) >> unit;
+            gg = ((gt + 1) * (gv + 1) - 1) >> unit;
+            b = ((bt + 1) * (bv + 1) - 1) >> unit;
             a = ((at6 + 1) * (av6 + 1) - 1) / 64;
         }
         a >>= 1;  // back to 5 bits
@@ -705,40 +716,55 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     }
 }
 
-// Whether polygon `p` covers pixel (x, y) of the target, gpu3d.c's
-// draw_polygon on the target's grid (the vertices scaled by N), and if so
-// its attributes there and whether it is an edge pixel. Each polygon covers
-// what it covers at N x, no more (a quarter of a DS pixel more on each side
-// bloated every model, a mod's many small triangles most).
-bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
+// A polygon's setup on one row of the target, gpu3d.c's draw_polygon on the target's grid (the vertices
+// scaled by N): the rows it covers, and on this row where its left and right edges cross (xl, xr) and the
+// vertices and places along the edges their attributes come from (la/lb at lf: one vertex when lf < 0).
+// Made once per row by the group (cs_main) and shared by the row's pixels.
+struct RowSetup {
+    int y0, y1;      // the rows covered; y0 > y1: none (or the polygon left out)
+    float xl, xr;
+    int la, lb, ra, rb;
+    float lf, rf;
+    uint found;      // 1: the row is crossed
+    Attrs al, ar;    // the attributes at xl and xr
+};
+
+RowSetup row_setup(Polygon p, int y)
 {
     const float n = (float)scale;
-    const int rows = (int)height, columns = (int)width;
+    const int rows = (int)height;
     precise float ymin = p.ymin * n;
     precise float ymax = p.ymax * n;
+    RowSetup r;
     int y0 = (int)ceil(ymin - 0.5f);
     int y1 = (int)ceil(ymax - 0.5f) - 1;
-    float xl = 1e9f, xr = -1e9f;
-    Attrs al = (Attrs)0, ar = (Attrs)0;
-    bool found = false;
-    pa = (Attrs)0;
-    edge = 0u;
+    r.xl = 1e9f;
+    r.xr = -1e9f;
+    r.la = r.lb = r.ra = r.rb = 0;
+    r.lf = r.rf = -1.0f;
+    r.found = 0u;
+    r.al = (Attrs)0;
+    r.ar = (Attrs)0;
     if (p.count < 1 || p.first < 0 || (uint)p.first + (uint)p.count > nverts) {
-        return false;  // the host leaves such a polygon out (gpu_raster3d.c unusable): never read past the list
+        r.y0 = 1;  // the host leaves such a polygon out (gpu_raster3d.c unusable): never read past the list
+        r.y1 = 0;
+        return r;
     }
     if (y1 < y0) {  // flatter than a pixel row: one row
         y0 = y1 = (int)floor(ymin);
     }
     if (y0 < 0) y0 = 0;
     if (y1 > rows - 1) y1 = rows - 1;
+    r.y0 = y0;
+    r.y1 = y1;
     if (y < y0 || y > y1) {
-        return false;
+        return r;
     }
     {
         precise float cy = (float)y + 0.5f;
         for (int i = 0; i < p.count; ++i) {
-            const Vertex va = vertex_at(p.first + i);
-            const Vertex vb = vertex_at(p.first + (i + 1) % p.count);
+            const int ia = p.first + i, ib = p.first + (i + 1 < p.count ? i + 1 : 0);
+            const float2 va = vertex_xy(ia), vb = vertex_xy(ib);
             precise float ay = va.y * n;
             precise float by = vb.y * n;
             precise float ax = (va.x - (float)origin_x) * n;
@@ -747,43 +773,34 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
             if (hi == lo) {
                 if (y0 != y1 || (int)floor(lo) != y) continue;
                 // a horizontal edge on a single-row polygon: both ends
-                if (ax < xl) { xl = ax; al = attrs_of(va); }
-                if (ax > xr) { xr = ax; ar = attrs_of(va); }
-                if (bx < xl) { xl = bx; al = attrs_of(vb); }
-                if (bx > xr) { xr = bx; ar = attrs_of(vb); }
-                found = true;
+                if (ax < r.xl) { r.xl = ax; r.la = ia; r.lf = -1.0f; }
+                if (ax > r.xr) { r.xr = ax; r.ra = ia; r.rf = -1.0f; }
+                if (bx < r.xl) { r.xl = bx; r.la = ib; r.lf = -1.0f; }
+                if (bx > r.xr) { r.xr = bx; r.ra = ib; r.rf = -1.0f; }
+                r.found = 1u;
                 continue;
             }
             if (cy < lo || cy > hi) continue;
             {
                 precise float f = (cy - ay) / (by - ay);
                 precise float ex = ax + (bx - ax) * f;
-                const Attrs e = lerp_attrs(attrs_of(va), attrs_of(vb), f);
-                if (ex < xl) { xl = ex; al = e; }
-                if (ex > xr) { xr = ex; ar = e; }
-                found = true;
+                if (ex < r.xl) { r.xl = ex; r.la = ia; r.lb = ib; r.lf = f; }
+                if (ex > r.xr) { r.xr = ex; r.ra = ia; r.rb = ib; r.rf = f; }
+                r.found = 1u;
             }
         }
     }
-    if (!found) {
-        return false;
-    }
-    {
-        // the pixels covered
-        const int x0 = (int)ceil(xl - 0.5f);
-        int x1 = (int)ceil(xr - 0.5f) - 1;
-        precise float span = xr - xl;
-        if (x1 < x0) x1 = x0;  // at least a pixel: lines and dots
-        if (x < x0 || x > x1 || x >= columns) {
-            return false;
+    if (r.found != 0u) {
+        r.al = attrs_of(vertex_at(r.la));
+        r.ar = attrs_of(vertex_at(r.ra));
+        if (r.lf >= 0.0f) {
+            r.al = lerp_attrs(r.al, attrs_of(vertex_at(r.lb)), r.lf);
         }
-        {
-            precise float f = span > 0.0f ? (((float)x + 0.5f) - xl) / span : 0.0f;
-            pa = lerp_attrs(al, ar, f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f);
+        if (r.rf >= 0.0f) {
+            r.ar = lerp_attrs(r.ar, attrs_of(vertex_at(r.rb)), r.rf);
         }
-        edge = (x == x0 || x == x1 || y == y0 || y == y1) ? 1u : 0u;
     }
-    return true;
+    return r;
 }
 
 // The rear plane (gpu3d.c rear_plane): the clear colour, depth and polygon
@@ -823,36 +840,101 @@ Pixel rear_plane(int x, int y)
     return px;
 }
 
+// The group's 8 x 8 pixels lie in one tile. Its polygons are taken 8 at a time: thread (j, r) sets
+// polygon j up on row r (row_setup), shared through the group's memory in parts, so a pixel reads
+// only what it needs: the row's crossing first, the attributes once it is covered.
+#define CHUNK 8
+groupshared uint g_index[CHUNK];
+groupshared float4 g_cross[CHUNK][8]; // [polygon][row of the group]: xl, xr, found, y0 | y1 << 16
+groupshared float4 g_attr_a[CHUNK][8]; // the attributes at xl: iw, r, g, b ...
+groupshared float4 g_attr_b[CHUNK][8]; // ... s, t, z, a
+groupshared float4 g_attr_c[CHUNK][8]; // and at xr
+groupshared float4 g_attr_d[CHUNK][8];
+
+// Whether the polygon set up as chunk entry k on the group's row `r` covers pixel (x, y), and if so its
+// attributes there and whether it is an edge pixel. Each polygon covers what it covers at N x, no more
+// (a quarter of a DS pixel more on each side bloated every model, a mod's many small triangles most).
+bool cover(uint k, uint r, int x, int y, out Attrs pa, out uint edge)
+{
+    const int columns = (int)width;
+    const float4 cross = g_cross[k][r];
+    pa = (Attrs)0;
+    edge = 0u;
+    if (cross.z == 0.0f) {
+        return false;
+    }
+    {
+        // the pixels covered
+        const int x0 = (int)ceil(cross.x - 0.5f);
+        int x1 = (int)ceil(cross.y - 0.5f) - 1;
+        precise float span = cross.y - cross.x;
+        const uint rows01 = asuint(cross.w);
+        if (x1 < x0) x1 = x0;  // at least a pixel: lines and dots
+        if (x < x0 || x > x1 || x >= columns) {
+            return false;
+        }
+        {
+            const float4 a = g_attr_a[k][r], b = g_attr_b[k][r], c = g_attr_c[k][r], d = g_attr_d[k][r];
+            Attrs al, ar;
+            al.iw = a.x; al.r = a.y; al.g = a.z; al.b = a.w; al.s = b.x; al.t = b.y; al.z = b.z; al.a = b.w;
+            ar.iw = c.x; ar.r = c.y; ar.g = c.z; ar.b = c.w; ar.s = d.x; ar.t = d.y; ar.z = d.z; ar.a = d.w;
+            precise float f = span > 0.0f ? (((float)x + 0.5f) - cross.x) / span : 0.0f;
+            pa = lerp_attrs(al, ar, f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f);
+        }
+        edge = (x == x0 || x == x1 || y == (int)(rows01 & 0xffffu) || y == (int)(rows01 >> 16)) ? 1u : 0u;
+    }
+    return true;
+}
+
 [numthreads(8, 8, 1)]
-void cs_main(uint3 id : SV_DispatchThreadID)
+void cs_main(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
     const int x = (int)id.x, y = (int)id.y;
     const uint wbuffer = (swap_params >> 1) & 1u;
-    Pixel px;
-    uint tile, first, last;
-    if (id.x >= width || id.y >= height) {
-        return;
-    }
-    px = rear_plane(x, y);
-    tile = min(id.y / scale / 8u, tiles_y - 1u) * tiles_x + min(id.x / scale / 8u, tiles_x - 1u);
-    first = tiles.Load(tile * 4u);
-    last = min(tiles.Load((tile + 1u) * 4u), entries);
+    const uint tile = min(group.y * 8u / scale / 8u, tiles_y - 1u) * tiles_x + min(group.x * 8u / scale / 8u, tiles_x - 1u);
+    const uint first = tiles.Load(tile * 4u);
+    const uint last = min(tiles.Load((tile + 1u) * 4u), entries);
+    const bool inside = id.x < width && id.y < height; // a pixel past the edge still takes part in the chunks
+    Pixel px = rear_plane(x, y);
     bool marker_started=false;
-    for (uint k = first; k < last; ++k) {
-        const uint index = tiles.Load(k * 4u);
-        if (index >= npolys) {
-            continue;
-        }
-        const Polygon p = polygon_at(index);
-        Attrs at;
-        uint edge;
-        if (cover(p, x, y, at, edge)) {
-            if (((uint)p.flags&0x40u)!=0u && !marker_started) {
-                px.trans_id=0xffu; // The first marker must not share a translucent ID with the world.
-                marker_started=true;
+    for (uint base = first; base + 1u < last; base += 2u * CHUNK) {
+        const uint n = min((uint)CHUNK, (last - base) / 2u);
+        if (local.x < n) {
+            // this thread sets polygon local.x of the chunk up on the group's row local.y
+            const uint2 entry = tiles.Load2((base + 2u * local.x) * 4u);
+            RowSetup r = (RowSetup)0;
+            r.y0 = 1; // past the list: none
+            r.y1 = 0;
+            if (entry.x < npolys) {
+                r = row_setup(polygon_at(entry.x), (int)(group.y * 8u + local.y));
             }
-            plot(p, px, at, edge, wbuffer);
+            g_index[local.x] = entry.x;
+            g_cross[local.x][local.y] = float4(r.xl, r.xr, r.found != 0u ? 1.0f : 0.0f,
+                                               asfloat(((uint)r.y0 & 0xffffu) | ((uint)r.y1 << 16)));
+            g_attr_a[local.x][local.y] = float4(r.al.iw, r.al.r, r.al.g, r.al.b);
+            g_attr_b[local.x][local.y] = float4(r.al.s, r.al.t, r.al.z, r.al.a);
+            g_attr_c[local.x][local.y] = float4(r.ar.iw, r.ar.r, r.ar.g, r.ar.b);
+            g_attr_d[local.x][local.y] = float4(r.ar.s, r.ar.t, r.ar.z, r.ar.a);
         }
+        GroupMemoryBarrierWithGroupSync();
+        if (inside) {
+            for (uint k = 0u; k < n; ++k) {
+                Attrs at;
+                uint edge;
+                if (cover(k, local.y, x, y, at, edge)) {
+                    const Polygon p = polygon_at(g_index[k]);
+                    if (((uint)p.flags&0x40u)!=0u && !marker_started) {
+                        px.trans_id=0xffu; // The first marker must not share a translucent ID with the world.
+                        marker_started=true;
+                    }
+                    plot(p, px, at, edge, wbuffer);
+                }
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    if (!inside) {
+        return;
     }
     out_color[id.xy] = (uint)px.r | ((uint)px.g << 8) | ((uint)px.b << 16) | ((uint)px.a << 24) |
                        (px.over2d << 29) | (px.translucent << 31);

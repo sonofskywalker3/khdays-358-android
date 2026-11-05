@@ -31,9 +31,7 @@ void khdays_hud_settings_default(int values[KHDAYS_OPT_COUNT])
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
         values[i] = 0;
     values[KHDAYS_OPT_FONT] = 1;
-#if !defined(__ANDROID__)
     values[KHDAYS_OPT_PRIZES] = 1; /* made only with the HD menus' HD PACK: shown once made */
-#endif
     values[KHDAYS_OPT_MISSION_ANCHOR] = 1;
     values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 8;
 }

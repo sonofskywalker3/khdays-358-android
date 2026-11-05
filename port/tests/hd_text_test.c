@@ -985,7 +985,20 @@ static void command_menu_selections(int primary_row)
         emit();
         CHECK(c->extra != NULL);
         int ox = -1, oy = -1;
-        CHECK(shown_at(c, &layer, &ox, &oy));
+        CHECK(shown_at(c, &layer, 0, &ox, &oy));
+        if (cycle == 0) {
+            /* only under the screen (a list's next entry on a taller display): shown when those rows are */
+            static uint16_t keep[sizeof(map_cells) / sizeof(map_cells[0])];
+            int under_x = -1, under_y = -1;
+            memcpy(keep, map_cells, sizeof(map_cells));
+            memset(map_cells, 0, sizeof(map_cells));
+            for (int col = 0; col < 8; ++col)
+                map_cells[25 * 32 + 1 + col] = (uint16_t)((0xd0 + primary_row * 16 + col) | 0xf000);
+            CHECK(!shown_at(c, &layer, 0, &under_x, &under_y));
+            CHECK(shown_at(c, &layer, 32, &under_x, &under_y));
+            CHECK(under_x == 1 && under_y == 25 - primary_row * 2);
+            memcpy(map_cells, keep, sizeof(map_cells));
+        }
         for (int row = 0; row < 3; ++row) {
             const int indent = row == selected ? 2 : 1;
             const int source_y = (row == 0 ? primary_row : row + 2) * 2;

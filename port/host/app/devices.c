@@ -187,6 +187,11 @@ static int marked_pad(SDL_Gamepad *gamepad)
     return SDL_GetGamepadVendor(gamepad) == AYN_VENDOR;
 }
 
+int khdays_devices_pad_marked(SDL_Gamepad *gamepad)
+{
+    return marked_pad(gamepad);
+}
+
 /* The face button in a position, for a pad that names them by their Nintendo
  * marks (the swap is its own reverse). */
 static SDL_GamepadButton by_position(SDL_GamepadButton button, int by_mark)

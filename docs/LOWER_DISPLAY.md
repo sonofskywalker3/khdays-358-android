@@ -15,6 +15,22 @@ single display): One shows the game as one picture on the upper display, as on
 a single display, and the lower display the logo; a screen that one picture
 does not make shows on the two displays as with Two.
 
+A list's next entry, shown under its frame from extra rows, takes a touch too (a second
+touch there, the entry now selected, opens it, as a second touch on a row does): it
+comes past the DS's 192 rows, and the game's list picks the row under its view (the
+hook on `*_MissionListTouchRow`, `runtime/input/input.c khdays_input_touch_below`). Its HD
+text comes from the canvases those rows show (`ui/text.c khdays_ui_text_lower_rows`).
+The column widened is one among 8 plain ones, so no long name is split; a challenge's
+list, told by its marks reaching columns 208-212, widens past them on every page, so
+they stay put as it scrolls, its marks' rows before them, as far right as on the DS, a
+name's long enough to reach them past them; a page of ranks close after long names widens in the
+last gap before them. A list of crowns or ranks widens before them on every page (the
+plain columns after them are never used; a name closing up to a rank, the gap between
+them, however narrow), so they stay put. The list's last page has the
+thumb on the track's end: the rows the track grows by go in above it, so it still ends the
+track, and its extra rows show black, no entry being under it. Extra rows one colour
+under the entries are nothing the game drew (the theater's list) and show black too.
+
 The lower picture arrives at the display's width (`host/android/bottom_screen.c`).
 Its DS pixels, read at their middles, tell the screen (`lower_screens.c` and
 `lower_pages.c`, each by a few pixels that hold while the game dims it too).

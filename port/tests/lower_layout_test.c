@@ -326,6 +326,23 @@ static void test_summary(void)
         }
         CHECK(seen[144] > 10);
     }
+    khdays_lower_free(&l);
+    /* text scrolled on to the row the added line comes from: the line from a blank row, no barcode */
+    summary(1);
+    for (int c = 24; c < 200; c += 2) {
+        put(c, 144, 0x2040e0u);
+    }
+    CHECK(lay(&l) == KHDAYS_LOWER_SUMMARY);
+    {
+        int seen[DS_H] = {0};
+        for (int oy = 0; oy < 223; ++oy) {
+            if (shows(&l, 100.5f, (float)oy + 0.5f, &x, &y)) {
+                ++seen[y];
+            }
+        }
+        CHECK(seen[144] <= 2);
+        CHECK(seen[145] > 10);
+    }
     /* the page's text scrolling by (dark and red letters across the middle): still the summary */
     summary(1);
     rect(24, 96, 232, 124, 0x3a3a3au);
@@ -430,6 +447,191 @@ static void test_missions_seam(void)
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
     CHECK(shows(&l, 165.5f, 100.5f, &x, &y) && x == 168); /* the nearest to 178 they leave plain */
     khdays_lower_free(&l);
+    for (int line = 4 * SCALE; line < 6 * SCALE; ++line) {
+        for (int c = 168 * SCALE; c < 169 * SCALE; ++c) {
+            memset(overscan[line][c], 0xff, 4); /* the next entry's words, on that column */
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(rows == DS_H + 32);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 160.5f, 100.5f, &x, &y) && x == 166); /* the nearest plain on them too */
+    /* a touch low on the longer scroll track: low on the game's, not the plain row shown there */
+    CHECK(khdays_lower_touch(&l, 240 * SCALE, 190 * SCALE, &x, &y) && x >= 222 && y > 150);
+    /* a touch on the next entry: past the DS's rows */
+    CHECK(khdays_lower_touch(&l, 60 * SCALE, 190 * SCALE, &x, &y) && y >= DS_H);
+    khdays_lower_free(&l);
+    /* a long name with only a gap between letters near 178: the column is past its end, the name whole */
+    memset(overscan, 0, sizeof(overscan));
+    numbered();
+    rect(10, 20, 11, 180, 0x6b6b6bu);
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(16, 12, 222, 176, 0x101010u);
+    rect(222, 20, 248, 176, 0x6b6b6bu);
+    rect(236, 172, 244, 175, 0x949494u);
+    put(232, 175, 0x6b6b6bu);
+    for (int c = 150; c < 190; c += 2) {
+        if (c != 178) {
+            put(c, 30, 0xffffffu);
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 181.5f, 100.5f, &x, &y) && x == 189);
+    khdays_lower_free(&l);
+    /* no room between names and marks (a challenge's): past them, inside the bar */
+    for (int c = 150; c < 216; c += 2) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 210.5f, 30.5f, &x, &y) && x == 217);
+    khdays_lower_free(&l);
+}
+
+/* The DS row the display's dot (ox, oy) shows, -1 none. */
+static int map_row(const KhdaysLowerLayout *l, float ox, float oy)
+{
+    const int32_t v = l->map[(size_t)(oy * SCALE) * (size_t)l->width + (size_t)(ox * SCALE)];
+    return v < 0 ? -1 : (v >> 12) / SCALE;
+}
+
+/* A list as the game draws it, for the pages below: entries plain, the frame and the track. */
+static void list_frame(void)
+{
+    memset(overscan, 0, sizeof(overscan));
+    numbered();
+    rect(0, 14, DS_W, 15, 0x212121u);
+    put(100, 14, 0x4a4a4au);
+    rect(10, 20, 11, 180, 0x6b6b6bu);
+    rect(9, 20, 10, 180, 0x4a4a4au);
+    rect(16, 12, 222, 176, 0x101010u);
+    rect(222, 20, 248, 176, 0x6b6b6bu);
+    rect(236, 172, 244, 175, 0x949494u);
+}
+
+/* A challenge's list keeps its column on a page with no long names; the last page, the thumb on the track's end, is
+ * still the list, the thumb ending the longer track; a list whose extra rows are one colour shows black there. */
+static void test_missions_pages(void)
+{
+    KhdaysLowerLayout l = {0};
+    KhdaysLowerPicture grown = pic;
+    int rows, x, y;
+    grown.overscan = &overscan[0][0][0];
+    grown.overscan_rows = 32 * SCALE;
+    grown.overscan_pitch = DS_W * SCALE * 4;
+    grown.overscan_row0 = 176;
+    /* the marks, and only short names */
+    list_frame();
+    for (int c = 186; c < 216; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    put(60, 40, 0xffffffu);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 200.5f, 30.5f, &x, &y) && x == 189); /* the marks widened before, as far right as the DS's */
+    khdays_lower_free(&l);
+    /* a name running up to them on its own row: it stays whole, the marks' row as before */
+    for (int c = 150; c < 184; c += 2) {
+        put(c, 22, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 174.5f, 22.5f, &x, &y) && x == 183);  /* the name's row: not widened there */
+    CHECK(shows(&l, 200.5f, 30.5f, &x, &y) && x == 189);
+    khdays_lower_free(&l);
+    /* a crown's: stops short of those columns, widened before it */
+    list_frame();
+    for (int c = 193; c < 207; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    put(214, 30, 0xffffffu); /* the bar's end */
+    put(218, 30, 0xffffffu);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* a page with ranks after long names, only a short gap between them: the crowns stay where they are */
+    list_frame();
+    for (int c = 150; c < 169; c += 2) {
+        put(c, 40, 0xffffffu);
+    }
+    for (int c = 175; c < 207; c += 2) {
+        put(c, 30, 0xffffffu);
+    }
+    put(214, 30, 0xffffffu);
+    put(218, 30, 0xffffffu);
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* ranks over the crowns, a name two columns before them, the only 8 plain ones past the crowns: the crowns stay */
+    list_frame();
+    for (int c = 150; c < 173; c += 2) {
+        put(c, 40, 0xffffffu);
+    }
+    put(175, 30, 0xffffffu); /* its first letter's thick stroke: two columns the same */
+    for (int c = 176; c < 207; c += 2) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    CHECK(shows(&l, 186.5f, 30.5f, &x, &y) && x == 175); /* the rank whole, the name too */
+    CHECK(shows(&l, 187.5f, 30.5f, &x, &y) && x == 176);
+    CHECK(shows(&l, 163.5f, 40.5f, &x, &y) && x == 172);
+    khdays_lower_free(&l);
+    /* a challenge's list before it leaves no column past the crowns behind */
+    list_frame();
+    for (int c = 186; c < 216; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    khdays_lower_free(&l);
+    list_frame();
+    for (int c = 193; c < 207; c += 3) {
+        put(c, 30, 0xffffffu);
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(shows(&l, 215.5f, 100.5f, &x, &y) && x == 204);
+    khdays_lower_free(&l);
+    /* the last page: nothing under its entries, whatever the rows hold */
+    list_frame();
+    rect(224, 130, 238, 176, 0xa6a6a6u);
+    for (int line = 0; line < 32 * SCALE; ++line) {
+        for (int c = 60 * SCALE; c < 100 * SCALE; ++c) {
+            overscan[line][c][1] = 0xff;
+            overscan[line][c][3] = 0xff;
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_screen(ds, rows) == KHDAYS_LOWER_MISSIONS);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(l.screen == KHDAYS_LOWER_MISSIONS);
+    /* under the thumb's place the track's plain row; the thumb's last row at the bottom of the longer track */
+    CHECK(map_row(&l, 243.5f, 129.5f) == 129);
+    CHECK(map_row(&l, 243.5f, 135.5f) == 20);
+    CHECK(map_row(&l, 243.5f, 174.5f + (float)OUT_H / SCALE - DS_H) == 174);
+    CHECK(!shows(&l, 100.5f, 190.5f, &x, &y));
+    CHECK(!khdays_lower_touch(&l, 100 * SCALE, 190 * SCALE, &x, &y));
+    khdays_lower_free(&l);
+    memset(overscan, 0, sizeof(overscan));
+    /* the theater's: the entries in the layers left out, the extra rows one colour */
+    list_frame();
+    for (int line = 0; line < 32 * SCALE; ++line) {
+        for (int c = 0; c < DS_W * SCALE; ++c) {
+            overscan[line][c][2] = 0xff;
+            overscan[line][c][3] = 0xff;
+        }
+    }
+    khdays_lower_sample(&grown, ds, &rows);
+    CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
+    CHECK(!shows(&l, 100.5f, 190.5f, &x, &y));
+    CHECK(!khdays_lower_touch(&l, 100 * SCALE, 190 * SCALE, &x, &y));
+    khdays_lower_free(&l);
+    memset(overscan, 0, sizeof(overscan));
 }
 
 /* How many of the display's rows show DS row `row` at column x. */
@@ -672,6 +874,7 @@ int main(void)
     test_missions();
     test_missions_grown();
     test_missions_seam();
+    test_missions_pages();
     test_tutorials();
     test_diary();
     test_panels();

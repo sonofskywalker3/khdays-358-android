@@ -341,6 +341,8 @@ never belong in the repository.
   beside the DS's columns counted. 4: the port's own 2D (`gfx_render.c`) of
   both screens at 2x, drawn looking only at the sprites each row lists and
   again looking at every sprite, must be the same pixels.
+  `KHDAYS_RENDER_2D3D_OUT=DIR` writes each package's 2D (both screens, and
+  engine A's over its 3D) raw, to compare builds of the shaders byte for byte.
 - `save_test.c`: the save written so a crash cannot corrupt it: a child process
   writes two 64 KB images in turn as fast as it can and is stopped at a random
   moment, 100 times; the file must be one of the two, whole.

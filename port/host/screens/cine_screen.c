@@ -70,6 +70,8 @@ static struct {
     SDL_AtomicInt stop;
     int art_now, art_before; /* arts' indices, -1 none */
     Uint64 art_since;        /* when art_now came in */
+    Uint64 loaded_at;        /* when load() ended */
+    int loads;               /* how many times the list was loaded */
 } s;
 
 /* ---- The artworks ----------------------------------------------------------------------------- */
@@ -86,6 +88,8 @@ static int SDLCALL read_arts(void *unused)
         }
         SDL_SetAtomicInt(&a->read, 1);
     }
+    SDL_Log("theater list: %d artworks read, %u ms after the list loaded", s.art_count,
+            (unsigned)(SDL_GetTicks() - s.loaded_at));
     return 0;
 }
 
@@ -246,7 +250,8 @@ static void add_chapter(const char *line)
     copy[bar - line] = '\0';
     {
         const char *name = bar[1] == ' ' ? bar + 2 : bar + 1;
-        c.name = (unsigned short *)SDL_iconv_string("UTF-16LE", "UTF-8", name, SDL_strlen(name) + 1);
+        /* without its final zero, which SDL adds: Android's iconv never gets past one, writing until memory ends */
+        c.name = (unsigned short *)SDL_iconv_string("UTF-16LE", "UTF-8", name, SDL_strlen(name));
     }
     word = SDL_strtok_r(copy, " \t", &rest); /* "chapter", its day, its artwork, then its videos */
     for (int k = 0; word != NULL && ok; ++k, word = SDL_strtok_r(NULL, " \t", &rest)) {
@@ -331,6 +336,7 @@ static int load(SDL_Renderer *renderer, int language)
         (file_text = (char *)SDL_LoadFile(path, &file_size)) == NULL) {
         return 0;
     }
+    SDL_Log("theater list: %s read, %u bytes, at %u ms", path, (unsigned)file_size, (unsigned)SDL_GetTicks());
     snprintf(folder, sizeof(folder), "%s", path);
     slash = strrchr(folder, '/');
     if (strrchr(folder, '\\') > slash) {
@@ -345,6 +351,11 @@ static int load(SDL_Renderer *renderer, int language)
         next = strchr(line, '\n');
         if (next != NULL) {
             *next++ = '\0';
+        }
+        if (SDL_strncmp(line, "atlas ", 6) == 0 || SDL_strncmp(line, "font ", 5) == 0 ||
+            SDL_strncmp(line, "chapter ", 8) == 0 || SDL_strncmp(line, "scene ", 6) == 0) {
+            /* the lines that read other files, said first: one that never ends shows which it is */
+            SDL_Log("theater list: at %u ms: %.48s", (unsigned)SDL_GetTicks(), line);
         }
         if (khdays_layout_line(&s.layout, line, folder)) {
             continue;
@@ -380,11 +391,13 @@ static int load(SDL_Renderer *renderer, int language)
         forget();
         return 0;
     }
+    SDL_Log("theater list: its lines done at %u ms", (unsigned)SDL_GetTicks());
     if (reader == NULL) {
         reader = khdays_rom_reader_new();
     }
     snprintf(path, sizeof(path), "UI/thr/thr_%s.s.z", codes[language]);
     khdays_layout_strings(reader, path, &s.strings, s.layout.who);
+    SDL_Log("theater list: its strings read at %u ms (%d)", (unsigned)SDL_GetTicks(), s.strings.count);
     return 1;
 }
 
@@ -548,8 +561,13 @@ int khdays_cine_screen_draw(SDL_Renderer *renderer)
     }
     if (renderer != s.layout.renderer || v.language != s.tried) {
         const Scene *sc;
+        const Uint64 began = SDL_GetTicks();
+        SDL_Log("theater list: opening at %u ms, language %d", (unsigned)began, v.language);
         s.tried = v.language;
         s.ok = load(renderer, v.language);
+        s.loaded_at = SDL_GetTicks();
+        SDL_Log("theater list: load %d %s in %u ms (%d chapters, %d artworks)", ++s.loads, s.ok ? "done" : "failed",
+                (unsigned)(s.loaded_at - began), s.chapter_count, s.art_count);
         s.cursor = s.first = 0;
         sc = s.ok ? scene_of(v.movies[v.cursor]) : NULL;
         if (s.ok) {

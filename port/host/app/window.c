@@ -469,7 +469,13 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     khdays_settings_draw(renderer, window);
     khdays_layout_demo_frame(renderer);
     drawn = SDL_GetTicksNS();
-    SDL_RenderPresent(renderer);
+    if (!SDL_RenderPresent(renderer)) {
+        static int said;
+        if (!said) {
+            said = 1;
+            SDL_Log("window: the picture could not be shown: %s", SDL_GetError());
+        }
+    }
     khdays_present_redraw_took(drawn - began, SDL_GetTicksNS() - drawn); /* (the shop's timings) */
 #if defined(__ANDROID__)
     khdays_game_surface_frame_end();

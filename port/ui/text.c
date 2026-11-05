@@ -2771,12 +2771,12 @@ static int canvas_char(const Canvas *c, const KhdaysBgLayer *l, uint32_t entry)
 
 /* The primary translation preserves the canvas's existing layout anchor.
    Other visible cells share one bounded image, regardless of their translations. */
-static int shown_at(const Canvas *c, const KhdaysBgLayer *l, int *ox, int *oy)
+static int shown_at(const Canvas *c, const KhdaysBgLayer *l, int below, int *ox, int *oy)
 {
     uint16_t votes[64 * 64] = {0};
     int best = 0;
     const int x0 = l->hofs >> 3, y0 = l->vofs >> 3;
-    const int x1 = (l->hofs + KHDAYS_SCREEN_W - 1) >> 3, y1 = (l->vofs + KHDAYS_SCREEN_H - 1) >> 3;
+    const int x1 = (l->hofs + KHDAYS_SCREEN_W - 1) >> 3, y1 = (l->vofs + KHDAYS_SCREEN_H + below - 1) >> 3;
     for (int cy = y0; cy <= y1; ++cy) {
         for (int cx = x0; cx <= x1; ++cx) {
             const int k = canvas_char(c, l, khdays_bg_map_entry(c->engine, l, cx, cy));
@@ -2795,9 +2795,17 @@ static int shown_at(const Canvas *c, const KhdaysBgLayer *l, int *ox, int *oy)
     return best != 0;
 }
 
+/* The rows under the lower screen the host's picture shows (khdays_ui_text_lower_rows). */
+static volatile int lower_rows;
+
+void khdays_ui_text_lower_rows(int rows)
+{
+    lower_rows = rows;
+}
+
 /* BG character memory is shared. An upload entry point does not identify
    the layer whose tilemap actually displays those characters. */
-static int display_layer(Canvas *c, KhdaysBgLayer *l, int *ox, int *oy)
+static int display_layer_within(Canvas *c, KhdaysBgLayer *l, int below, int *ox, int *oy)
 {
     const int uploaded = c->bg;
     for (int attempt = -1; attempt < 4; ++attempt) {
@@ -2812,7 +2820,7 @@ static int display_layer(Canvas *c, KhdaysBgLayer *l, int *ox, int *oy)
             l->hofs = caption_x;
             l->vofs = caption_y;
         }
-        if (!shown_at(c, l, ox, oy))
+        if (!shown_at(c, l, below, ox, oy))
             continue;
         if (tracing() && bg != uploaded)
             say("canvas %08x displayed on engine %c BG%d via shared character memory (upload BG%d)", c->cc,
@@ -2821,6 +2829,13 @@ static int display_layer(Canvas *c, KhdaysBgLayer *l, int *ox, int *oy)
         return 1;
     }
     return 0;
+}
+
+/* On the screen; else, on the lower screen, in the rows a taller display shows under it (a list's next entry). */
+static int display_layer(Canvas *c, KhdaysBgLayer *l, int *ox, int *oy)
+{
+    return display_layer_within(c, l, 0, ox, oy) ||
+           (c->engine && lower_rows > 0 && display_layer_within(c, l, lower_rows, ox, oy));
 }
 
 /* Paint one mapped tile in tile-local coordinates, including PNG-only artwork. */
@@ -3538,7 +3553,7 @@ static void emit(void)
         KhdaysUiElement anchor = e;
         int anchor_cells = -1;
         for (int ex = x - lw; !information && ex < KHDAYS_SCREEN_W; ex += lw) {
-            for (int ey = y - lh; ey < KHDAYS_SCREEN_H; ey += lh) {
+            for (int ey = y - lh; ey < KHDAYS_SCREEN_H + (c->engine ? lower_rows : 0); ey += lh) {
                 if (ex + c->area_w * 8 > 0 && ey + c->area_h * 8 > 0) {
                     e.x = (float)ex;
                     e.y = (float)ey;

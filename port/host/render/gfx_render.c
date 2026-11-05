@@ -14,6 +14,7 @@
 #include "generated/compose2d_split_cs.h"
 #include "generated/compose2d_wide_cs.h"
 #endif
+#include "generated/layers2d_cs.h"
 #include "generated/onescreen_cs.h"
 #include "generated/shrink_cs.h"
 #include "../../gfx/onescreen.h"
@@ -30,8 +31,14 @@ typedef struct Compose2dParams {
     uint32_t fog_color, fog_offset, fine, offset3d;
     uint32_t edge_colors[4];
     uint32_t fog_table[8];
-    uint32_t row0, layers_off, pad[2]; /* rows past the DS's (lower_layout.h), layers left out */
+    uint32_t row0, layers_off;   /* rows past the DS's (lower_layout.h), layers left out */
+    uint32_t layers1x_rows, pad; /* layers2d.hlsl's rows from row0, or 0 */
 } Compose2dParams;
+
+/* layers2d.hlsl's constant buffer, register for register. */
+typedef struct Layers2dParams {
+    uint32_t rows, row0, layers_off, pad;
+} Layers2dParams;
 
 /* onescreen.hlsl's constant buffer, register for register. */
 typedef struct OneScreenParams {
@@ -69,6 +76,55 @@ static uint32_t hd2d_version[KHDAYS_FRAME_HD2D_PAGES]; /* the change counts of t
 #define DESC_BYTES (KHDAYS_DESC_WORDS * 4u + 0x400u) /* the description, then the palettes */
 /* ... then the screen's elements (gfx/elements.h); each buffer grows to the most any frame needed */
 static uint32_t desc_bytes[2];
+
+/* KHDAYS_GPU_SKIP=a,b: passes not dispatched, to measure what each costs (the picture is then wrong) */
+/* KHDAYS_GPU_TIME: each submission waited for, after the card is idle, and its time said every 120 */
+static int gpu_submit_timed(SDL_GPUDevice *dev, SDL_GPUCommandBuffer *cmd, const char *label)
+{
+    static const char *labels[8];
+    static double total_ms[8];
+    static int count[8];
+    SDL_GPUFence *fence;
+    Uint64 t0;
+    int k = 0;
+    if (SDL_getenv("KHDAYS_GPU_TIME") == NULL) {
+        return SDL_SubmitGPUCommandBuffer(cmd);
+    }
+    while (k < 7 && labels[k] != NULL && SDL_strcmp(labels[k], label) != 0) {
+        ++k;
+    }
+    labels[k] = label;
+    SDL_WaitForGPUIdle(dev); /* what came before not counted */
+    t0 = SDL_GetTicksNS();
+    fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    if (fence == NULL) {
+        return 0;
+    }
+    SDL_WaitForGPUFences(dev, true, &fence, 1);
+    SDL_ReleaseGPUFence(dev, fence);
+    total_ms[k] += (double)(SDL_GetTicksNS() - t0) / 1e6;
+    if (++count[k] == 120) {
+        fprintf(stderr, "gpu time: %s %.2f ms on average\n", label, total_ms[k] / count[k]);
+        total_ms[k] = 0.0;
+        count[k] = 0;
+    }
+    return 1;
+}
+
+/* KHDAYS_GPU_TIME: the work so far submitted and timed as `label`, a new command buffer for the rest */
+static void gpu_split(SDL_GPUDevice *dev, SDL_GPUCommandBuffer **cmd, const char *label)
+{
+    if (SDL_getenv("KHDAYS_GPU_TIME") != NULL) {
+        gpu_submit_timed(dev, *cmd, label);
+        *cmd = SDL_AcquireGPUCommandBuffer(dev);
+    }
+}
+
+static int gpu_skip(const char *pass)
+{
+    const char *list = SDL_getenv("KHDAYS_GPU_SKIP");
+    return list != NULL && SDL_strstr(list, pass) != NULL;
+}
 
 #define SPRITE_ROW_BYTES (256u * 4u * 4u) /* each row's sprites: a bit each, 128 */
 
@@ -118,6 +174,9 @@ static Uint32 area_bytes(int a)
 }
 static SDL_GPUTexture *dummy3d[2]; /* bound in place of the 3D targets at 1x */
 static SDL_GPUTexture *screen[2];
+/* layers2d.hlsl: each engine's layers at each DS pixel, looked up once, before compose2d.hlsl's pass */
+static SDL_GPUComputePipeline *layers_pipeline;
+static SDL_GPUTexture *layers1x[2];
 /* The lower screen's rows past the DS's 192 (or under its frame) for a taller second display, composed
  * with some layers left out (host/screens/lower_layout.h): asked for, then drawn into `rows_texture`. */
 static int rows_row0, rows_count, rows_scale, rows_drawn;
@@ -359,18 +418,24 @@ static int compose_too_big_here(void)
 static void make_compose_parts(void)
 {
     compose_wide = make_pipeline_of(NULL, 0, compose2d_wide_cs_spirv, compose2d_wide_cs_spirv_size, NULL, 1,
-                                    COMPOSE2D_WIDE_CS_ENTRY, 8, 3);
+                                    COMPOSE2D_WIDE_CS_ENTRY, 8, 4);
     compose_plain = make_pipeline_of(NULL, 0, compose2d_plain_cs_spirv, compose2d_plain_cs_spirv_size, NULL, 1,
-                                     COMPOSE2D_PLAIN_CS_ENTRY, 8, 3);
+                                     COMPOSE2D_PLAIN_CS_ENTRY, 8, 4);
     compose_split = make_pipeline_of(NULL, 0, compose2d_split_cs_spirv, compose2d_split_cs_spirv_size, NULL, 1,
-                                     COMPOSE2D_SPLIT_CS_ENTRY, 8, 3);
+                                     COMPOSE2D_SPLIT_CS_ENTRY, 8, 4);
 }
 #endif
+
+static SDL_GPUComputePipeline *make_layers_pipeline(void)
+{
+    return make_pipeline_of(layers2d_cs_dxil, layers2d_cs_dxil_size, layers2d_cs_spirv, layers2d_cs_spirv_size,
+                            layers2d_cs_msl, layers2d_cs_msl_size, LAYERS2D_CS_ENTRY, 8, 1);
+}
 
 static SDL_GPUComputePipeline *make_pipeline(void)
 {
     return make_pipeline_of(compose2d_cs_dxil, compose2d_cs_dxil_size, compose2d_cs_spirv, compose2d_cs_spirv_size,
-                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 3);
+                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 4);
 }
 
 static void drop_shrunk(Shrunk *s)
@@ -602,7 +667,8 @@ static int shrink(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *big, int w, int h, 
     pass = SDL_BeginGPUComputePass(cmd, io, 2, NULL, 0);
     SDL_BindGPUComputePipeline(pass, shrinker);
     SDL_PushGPUComputeUniformData(cmd, 0, &params, sizeof(params));
-    SDL_DispatchGPUCompute(pass, (Uint32)(sw + 7) / 8, (Uint32)(sh + 7) / 8, 1);
+    if (!gpu_skip("shrink"))
+        SDL_DispatchGPUCompute(pass, (Uint32)(sw + 7) / 8, (Uint32)(sh + 7) / 8, 1);
     SDL_EndGPUComputePass(pass);
     return 1;
 }
@@ -676,8 +742,12 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         desc_bytes[e] = DESC_BYTES + SPRITE_ROW_BYTES;
 
         dummy3d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
-        ok = ok && desc[e] != NULL && dummy3d[e] != NULL;
+        layers1x[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+                                   KHDAYS_FRAME_W, 4 * KHDAYS_FRAME_H);
+        ok = ok && desc[e] != NULL && dummy3d[e] != NULL && layers1x[e] != NULL;
     }
+    layers_pipeline = make_layers_pipeline();
+    ok = ok && layers_pipeline != NULL;
     layer3d = make_buffer(KHDAYS_FRAME_PIXELS * 4);
     ok = ok && layer3d != NULL && khdays_gpu_hd_open(d);
     ok = ok && khdays_sequence_gpu_open(d);
@@ -827,9 +897,15 @@ void khdays_gfx_render_close(void)
             SDL_ReleaseGPUBuffer(device, desc[e]);
         if (dummy3d[e] != NULL)
             SDL_ReleaseGPUTexture(device, dummy3d[e]);
+        if (layers1x[e] != NULL)
+            SDL_ReleaseGPUTexture(device, layers1x[e]);
         desc[e] = NULL;
         dummy3d[e] = NULL;
+        layers1x[e] = NULL;
     }
+    if (layers_pipeline != NULL)
+        SDL_ReleaseGPUComputePipeline(device, layers_pipeline);
+    layers_pipeline = NULL;
     if (layer3d != NULL)
         SDL_ReleaseGPUBuffer(device, layer3d);
     if (upload != NULL)
@@ -1289,6 +1365,20 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
              * A only when its 3D is drawn in 8 bits too, or it has no 3D */
             ((uint32_t *)(mapped + at))[KD_FLAGS] |= KDF_FINE;
         }
+        if (SDL_getenv("KHDAYS_GPU_DROP") != NULL) {
+            /* KHDAYS_GPU_DROP=bg0,bg1,bg2,bg3,el: left out of the description, to measure their cost */
+            const char *drop = SDL_getenv("KHDAYS_GPU_DROP");
+            uint32_t *d = (uint32_t *)(mapped + at);
+            for (int b = 0; b < 4; ++b) {
+                const char name[4] = {'b', 'g', (char)('0' + b), 0};
+                if (SDL_strstr(drop, name) != NULL) {
+                    d[KD_FLAGS] &= ~(1u << (KDF_BG_ON_SHIFT + b));
+                }
+            }
+            if (SDL_strstr(drop, "el") != NULL) {
+                d[KD_ELEMENTS] = 0;
+            }
+        }
         if (one != NULL && e == 0 && whole_a) {
             /* engine A whole, its 3D in it (whole_a), without the master brightness: the port's screen draws the
              * game's fade itself */
@@ -1532,7 +1622,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
      * alone) they are not composed */
     for (int e = 0; e < (one != NULL && one->shape_count == 0 ? 0 : 2); ++e) {
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[4];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         const int b = e == 1;
@@ -1569,24 +1659,46 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         in[5] = memory[VRAM];
         in[6] = layer3d;
         in[7] = khdays_gpu_hd_buffer();
+        if (!gpu_skip("layers")) {
+            /* each layer's colour at each DS pixel, looked up once for the N x N output pixels */
+            Layers2dParams lp;
+            SDL_GPUStorageTextureReadWriteBinding lio[1];
+            SDL_GPUComputePass *lpass;
+            SDL_zero(lp);
+            lp.rows = KHDAYS_FRAME_H;
+            SDL_zeroa(lio);
+            lio[0].texture = layers1x[e];
+            lio[0].cycle = true;
+            lpass = SDL_BeginGPUComputePass(cmd, lio, 1, NULL, 0);
+            SDL_BindGPUComputePipeline(lpass, layers_pipeline);
+            SDL_BindGPUComputeStorageBuffers(lpass, 0, in, 8);
+            SDL_PushGPUComputeUniformData(cmd, 0, &lp, sizeof(lp));
+            SDL_DispatchGPUCompute(lpass, KHDAYS_FRAME_W / 8, KHDAYS_FRAME_H / 8, 1);
+            SDL_EndGPUComputePass(lpass);
+            gpu_split(device, &cmd, e == 0 ? "layers A" : "layers B");
+            cp.layers1x_rows = KHDAYS_FRAME_H;
+        }
         SDL_zeroa(io);
         io[0].texture = e == 0 && raster ? color3d : dummy3d[0]; /* read only: the 3D pass's output, not cycled */
         io[1].texture = e == 0 && raster ? attr3d : dummy3d[1];
         io[2].texture = screen[e];
         io[2].cycle = true;
-        pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+        io[3].texture = layers1x[e]; /* read only */
+        pass = SDL_BeginGPUComputePass(cmd, io, 4, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
-        SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8,
-                               1); /* the shader skips pixels past the edge */
+        if (!gpu_skip(e == 0 ? "2da" : "2db"))
+            SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8,
+                                   1); /* the shader skips pixels past the edge */
         SDL_EndGPUComputePass(pass);
+        gpu_split(device, &cmd, e == 0 ? "2d A" : "2d B");
     }
     rows_drawn = 0;
     if (rows_count > 0 && p->upper == 0 && one == NULL) {
         /* the lower screen's (engine B's) rows asked for, apart from the DS's own */
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[4];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         if (rows_texture == NULL || rows_scale != scale) {
@@ -1618,12 +1730,15 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
             io[1].texture = dummy3d[1];
             io[2].texture = rows_texture;
             io[2].cycle = true;
-            pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+            io[3].texture = layers1x[1]; /* (bound for the pipeline; no rows of it are read: layers1x_rows 0) */
+            pass = SDL_BeginGPUComputePass(cmd, io, 4, NULL, 0);
             SDL_BindGPUComputePipeline(pass, compose_engine[1]);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
             SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
-            SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);
+            if (!gpu_skip("rows"))
+                SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);
             SDL_EndGPUComputePass(pass);
+            gpu_split(device, &cmd, "rows");
             rows_drawn = 1;
         }
     }
@@ -1638,7 +1753,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     for (int i = 0; i < shop_count; ++i) {
         const int s = shop_s[i], v = shop_v[i], b = engine_on(p, s) == 1;
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[4];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         SDL_zero(cp);
@@ -1660,7 +1775,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[1].texture = dummy3d[1];
         io[2].texture = shop_screen[s][v];
         io[2].cycle = true;
-        pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+        io[3].texture = layers1x[b]; /* (bound for the pipeline; no rows of it are read: layers1x_rows 0) */
+        pass = SDL_BeginGPUComputePass(cmd, io, 4, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_for(0, 0)); /* shop_description: neither wider nor split */
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1749,8 +1865,10 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         SDL_BindGPUComputePipeline(pass, onescreen);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 4);
         SDL_PushGPUComputeUniformData(cmd, 0, &op, sizeof(op));
-        SDL_DispatchGPUCompute(pass, (op.width + 7) / 8, (op.height + 7) / 8, 1);
+        if (!gpu_skip("one"))
+            SDL_DispatchGPUCompute(pass, (op.width + 7) / 8, (op.height + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);
+        gpu_split(device, &cmd, "one");
     }
     if (blend) {
         if (one != NULL) {
@@ -1772,7 +1890,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
             }
         }
     }
-    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+    if (!gpu_submit_timed(device, cmd, "2d")) {
         valid = 0;
         return 0;
     }

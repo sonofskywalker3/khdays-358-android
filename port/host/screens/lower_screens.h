@@ -21,6 +21,10 @@ struct KhdaysLowerPlace {
                                                `split` and (when not 0) `split2` */
     int split, split2;
     int seam; /* a column repeated to widen the picture */
+    int cut;   /* a list's scroll track: the row its added rows go in at */
+    int empty; /* a list's extra rows: nothing the game drew, black instead */
+    /* a challenge's list: the column its entries' rows repeat, by the row in the sampled DS pixels (0: `seam`) */
+    int16_t row_seam[KHDAYS_LOWER_ROWS_MAX];
     /* extra rows it shows (a source row of KHDAYS_LOWER_ROWS + DS row): DS rows from row0, `rows` of them,
      * composed with layers_off's layers left out; row_count is how many (compose.h KD_LAYERS_OFF) */
     int row0, row_count;
@@ -28,6 +32,9 @@ struct KhdaysLowerPlace {
 };
 
 /* KHDAYS_LOWER_* of the DS's pixels (lower_layout.h khdays_lower_sample). */
+/* A touch `at` (0 to 1) down a list on the display, on its scroll track from DS column ds_x: the row of the game's. */
+void khdays_lower_list_track_touch(int ds_x, float at, int *ds_y);
+
 int khdays_lower_screens_tell(const uint32_t *ds, int ds_rows);
 
 /* Fills `place` for `screen` on a picture out_h DS dots high, and `key` with what it measured; 0 when

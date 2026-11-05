@@ -9,6 +9,9 @@
 /* Registers the part's elements (at start). */
 void khdays_ui_text_init(void);
 void khdays_ui_text_settings_changed(void);
+/* How many rows under the lower screen the host's picture shows (a taller second display): canvases there get
+ * their HD text too. */
+void khdays_ui_text_lower_rows(int rows);
 
 /* What the hooks follow: a text renderer attached to a layer and let go; a canvas added to a tile
  * surface; a block of the game's heaps freed (a canvas whose buffer it was is gone); and characters

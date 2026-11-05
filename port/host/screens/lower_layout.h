@@ -11,7 +11,7 @@
 
 #define KHDAYS_LOWER_DS_W 256
 #define KHDAYS_LOWER_DS_H 192
-#define KHDAYS_LOWER_OVERSCAN 32 /* (the DS's rows sampled are the screen's 192 alone) */
+#define KHDAYS_LOWER_OVERSCAN 32 /* the extra rows sampled, after the screen's 192 */
 #define KHDAYS_LOWER_ROWS 1000   /* a place's row from here on: the extra rows' (lower_screens.h), DS row - this */
 
 /* The screens laid out (KHDAYS_LOWER_NONE: the DS's shape, centred, black bars). */
@@ -64,7 +64,8 @@ typedef struct KhdaysLowerLayout {
 } KhdaysLowerLayout;
 
 /* The DS's pixels of the picture at their middles, 0x00RRGGBB, row by row: what the screens are told
- * by. `ds` holds KHDAYS_LOWER_DS_W x (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN); *ds_rows is 192. */
+ * by. `ds` holds KHDAYS_LOWER_DS_W x (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN); *ds_rows is 192 and the extra
+ * rows there are. */
 void khdays_lower_sample(const KhdaysLowerPicture *picture, uint32_t *ds, int *ds_rows);
 
 /* Which screen the DS's pixels show (KHDAYS_LOWER_NONE when none it knows). */
