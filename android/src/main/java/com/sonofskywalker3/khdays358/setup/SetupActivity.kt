@@ -1,6 +1,7 @@
 package com.sonofskywalker3.khdays358.setup
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -15,6 +16,7 @@ import android.provider.OpenableColumns
 import android.text.format.Formatter
 import android.util.Log
 import android.util.TypedValue
+import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -434,7 +436,10 @@ class SetupActivity : Activity() {
     }
 
     private fun play() {
-        startActivity(Intent(this, MainActivity::class.java))
+        // The game opens on the main display, even when its icon was tapped on a second
+        // screen (the Thor's lower one): the lower screen is drawn there by the game itself.
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY)
+        startActivity(Intent(this, MainActivity::class.java), options.toBundle())
         finish()
     }
 
