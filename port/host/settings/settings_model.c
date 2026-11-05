@@ -1071,7 +1071,11 @@ void khdays_model_set_choice(KhdaysProfile *work, const KhdaysRow *row, int choi
     if (((row->value == &work->video.one_screen && work->video.one_screen) ||
          (row->value == &work->video.one_screen_second && work->video.one_screen_second)) &&
         work->video.aspect == KHDAYS_ASPECT_4_3) {
+#if defined(__ANDROID__)
+        work->video.aspect = KHDAYS_ASPECT_WINDOW; /* the default for one screen */
+#else
         work->video.aspect = KHDAYS_ASPECT_16_9; /* the default for one screen */
+#endif
     }
 }
 

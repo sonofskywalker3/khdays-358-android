@@ -428,8 +428,8 @@ static int columns_now(void)
     case KHDAYS_ASPECT_16_10: return 308;
     case KHDAYS_ASPECT_WINDOW:
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
-        /* the window's width at the picture's height: 384 lines for two screens, 192 for one */
-        n = ph > 0 ? (int)((double)pw * (video.one_screen ? H : 2 * H) / ph) & ~1 : W;
+        /* the window's width at the picture's height: 384 lines for two screens in it, 192 for one or a display of its own */
+        n = ph > 0 ? (int)((double)pw * (video.one_screen || two_displays ? H : 2 * H) / ph) & ~1 : W;
         return n < W ? W : n > 3 * W ? 3 * W : n;
     default: return W;
     }

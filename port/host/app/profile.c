@@ -257,7 +257,11 @@ void khdays_video_default(KhdaysVideo *v)
      * pixels to show */
     v->internal_resolution = KHDAYS_RESOLUTION_WINDOW;
     v->antialiasing = 1;            /* off: 2x is four times the 3D's work */
+#if defined(__ANDROID__)
+    v->aspect = KHDAYS_ASPECT_WINDOW; /* for one screen: a phone's or a tablet's whole screen; two screens use 4:3 */
+#else
     v->aspect = KHDAYS_ASPECT_16_9; /* for one screen; two screens use 4:3 */
+#endif
     v->smooth_scaling = 0;
     v->second_screen_aspect = KHDAYS_SECOND_SCREEN_FULLSCREEN;
     v->texture_smoothing = 0;
