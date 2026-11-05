@@ -160,6 +160,10 @@ static int mode_now(void)
     s.hd_movie = khdays_movie_hd_showing();
     s.scene = khdays_onescreen_scene();
     s.event = (khdays_onescreen_states() & ((1u << KHDAYS_ST_DIALOG) | (1u << KHDAYS_ST_SCENE))) != 0u;
+    {
+        int selected, lit, language;
+        s.movie_pause = khdays_movie_hd_movie_pause(&selected, &lit, &language) || khdays_onescreen_paused();
+    }
     return khdays_touch_needs_settled(khdays_touch_needs_mode(&s), &settled_mode, &settled_wait);
 }
 

@@ -1321,6 +1321,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         one_drawn = 0;
         backdrop_moving = 0;
         khdays_shop_screen_wanted(video.one_screen); /* the shop's moogle turned to its menu on one screen */
+        khdays_onescreen_note_pause(p); /* the touch controls answer a movie's pause in any layout */
         if (video.one_screen) {
             /* One screen: first the situation and its composition. A picture of the upper or lower screen is
              * made by the one-screen pass, as wide as the 3D list; "side by side" and "stacked" show the two

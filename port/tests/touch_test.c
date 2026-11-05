@@ -258,6 +258,16 @@ static void test_needs(void)
     CHECK(khdays_touch_needs_mode(&play) == KHDAYS_TOUCH_MODE_FIELD);
     CHECK(khdays_touch_needs_mode(&event) == KHDAYS_TOUCH_MODE_EVENT);
     CHECK(khdays_touch_needs_mode(&movie) == KHDAYS_TOUCH_MODE_TALK);
+    {
+        /* a movie's pause (Continue, Skip) is answered with the D-pad and A, HD or the game's own */
+        const KhdaysTouchSituation hd_paused = {0, 1, KHDAYS_SIT_MOVIE, 0, 0, 1};
+        const KhdaysTouchSituation ds_paused = {0, 0, KHDAYS_SIT_MOVIE, 0, 0, 1};
+        CHECK(khdays_touch_needs_mode(&hd_paused) == KHDAYS_TOUCH_MODE_MENU);
+        CHECK(khdays_touch_needs_mode(&ds_paused) == KHDAYS_TOUCH_MODE_MENU);
+        /* the field's own pause keeps the field's controls */
+        const KhdaysTouchSituation field_paused = {0, 0, KHDAYS_SIT_FIELD, 0, 0, 1};
+        CHECK(khdays_touch_needs_mode(&field_paused) == KHDAYS_TOUCH_MODE_FIELD);
+    }
     /* a gap between an event's lines keeps its controls; a longer one ends them; anything else does not wait */
     for (int i = 0; i < KHDAYS_TOUCH_SETTLE_FRAMES - 1; ++i) {
         CHECK(khdays_touch_needs_settled(KHDAYS_TOUCH_MODE_FIELD, &shown, &waited) == KHDAYS_TOUCH_MODE_EVENT);

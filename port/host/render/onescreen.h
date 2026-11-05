@@ -29,6 +29,10 @@ int khdays_onescreen_makes_picture(const KhdaysFramePackage *package);
 int khdays_onescreen_scene(void);
 /* Its states (1 << KHDAYS_ST_*); any thread. */
 unsigned khdays_onescreen_states(void);
+/* Whether the game's pause is open (the last package's gPauseMode), for other threads; noted from every
+ * package, whatever the screens' layout. */
+int khdays_onescreen_paused(void);
+void khdays_onescreen_note_pause(const KhdaysFramePackage *p);
 
 /* The Moogle Shop's DS screens composed apart (its thread) since the last call: how many times, their
  * milliseconds in all and the longest, and the game's pictures alike to the last (not composed). */

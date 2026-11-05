@@ -12,7 +12,7 @@ int khdays_touch_needs_mode(const KhdaysTouchSituation *s)
         return KHDAYS_TOUCH_MODE_NONE;
     }
     if (s->hd_movie) {
-        return KHDAYS_TOUCH_MODE_TALK;
+        return s->movie_pause ? KHDAYS_TOUCH_MODE_MENU : KHDAYS_TOUCH_MODE_TALK;
     }
     switch (s->scene) {
     case KHDAYS_SIT_FIELD:
@@ -21,7 +21,7 @@ int khdays_touch_needs_mode(const KhdaysTouchSituation *s)
     case KHDAYS_SIT_INTRO:
     case KHDAYS_SIT_DAY_COUNTER:
     case KHDAYS_SIT_THOUGHTS:
-    case KHDAYS_SIT_THE_END: return KHDAYS_TOUCH_MODE_TALK;
+    case KHDAYS_SIT_THE_END: return s->movie_pause ? KHDAYS_TOUCH_MODE_MENU : KHDAYS_TOUCH_MODE_TALK;
     default: return KHDAYS_TOUCH_MODE_MENU; /* the title, the camp's pages and tutorials, saves, the shop, reviews */
     }
 }

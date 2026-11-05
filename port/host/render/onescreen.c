@@ -52,6 +52,20 @@ unsigned khdays_onescreen_states(void)
 {
     return (unsigned)SDL_GetAtomicInt(&states_shown);
 }
+
+static SDL_AtomicInt paused_shown; /* situation inputs' pause_mode, for other threads (khdays_onescreen_paused) */
+
+int khdays_onescreen_paused(void)
+{
+    return SDL_GetAtomicInt(&paused_shown) != 0;
+}
+
+void khdays_onescreen_note_pause(const KhdaysFramePackage *p)
+{
+    if ((p->wants & KHDAYS_WANT_SITUATION) && p->situation.taken) {
+        SDL_SetAtomicInt(&paused_shown, p->situation.pause_mode);
+    }
+}
 static int told = 0; /* the first situation was written to the log */
 /* The package decided last, and how many times it has been decided again (each one more of its
  * frame in the situation's history, as an alike VBlank after it): the next package's alike ones

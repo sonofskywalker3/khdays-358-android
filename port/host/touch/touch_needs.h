@@ -23,6 +23,7 @@ typedef struct KhdaysTouchSituation {
     int scene;     /* KHDAYS_SIT_* (ui/situation.h) */
     int event;     /* the field shows an event or a person's words: the player does not move Roxas */
     int settings;  /* Game Settings is over the game */
+    int movie_pause; /* a pause (Continue, Skip) is open over a movie: it is answered with the D-pad and A */
 } KhdaysTouchSituation;
 
 /* The controls for a situation: every one of the game's screens gets some. */
