@@ -351,8 +351,8 @@ static void test_editor(void)
     CHECK(khdays_editor_press(&e, 110.0f, 110.0f) == 0);
     /* follows the point where it was held exactly, not by the grid's steps; settles on the grid when let go */
     {
-        /* a piece stops at another of its kind with what either sometimes draws counted, slides along it, passes
-         * over one of another kind, and can leave one it was already over */
+        /* a piece goes anywhere while held; on release one of its kind under it makes way, to where the piece came
+         * from if it fits, else to the nearest free place, and one of another kind stays */
         KhdaysLayoutEditor o;
         memset(&o, 0, sizeof(o));
         o.area = (KhdaysHudBox){0.0f, 0.0f, 1000.0f, 1000.0f};
@@ -360,22 +360,54 @@ static void test_editor(void)
         o.count = 3;
         o.item[0].box = (KhdaysHudBox){100.0f, 100.0f, 200.0f, 200.0f};
         o.item[1].box = (KhdaysHudBox){500.0f, 100.0f, 600.0f, 200.0f};
-        o.item[1].room.x0 = 50.0f;
         o.item[2].kind = 1;
-        o.item[2].box = (KhdaysHudBox){300.0f, 100.0f, 400.0f, 200.0f};
+        o.item[2].box = (KhdaysHudBox){500.0f, 100.0f, 600.0f, 200.0f};
         CHECK(khdays_editor_press(&o, 150.0f, 150.0f) == 0);
-        khdays_editor_drag(&o, 900.0f, 150.0f);
-        CHECK(o.item[0].box.x1 == 450.0f); /* over the other kind, up to the room */
-        khdays_editor_drag(&o, 900.0f, 500.0f);
-        CHECK(o.item[0].box.y0 == 450.0f && o.item[0].box.x1 == 450.0f); /* down along it */
-        khdays_editor_drag(&o, 900.0f, 500.0f);
-        CHECK(o.item[0].box.x0 == 850.0f); /* below it, on across */
+        khdays_editor_drag(&o, 550.0f, 150.0f);
+        CHECK(o.item[0].box.x0 == 500.0f);
         khdays_editor_release(&o);
-        o.item[0].box = (KhdaysHudBox){520.0f, 120.0f, 620.0f, 220.0f};
-        CHECK(khdays_editor_press(&o, 610.0f, 210.0f) == 0);
-        khdays_editor_drag(&o, 650.0f, 210.0f);
-        CHECK(o.item[0].box.x0 == 560.0f); /* out of the one it was over */
+        CHECK(o.made_way == 2u && o.item[1].box.x0 == 100.0f && o.item[2].box.x0 == 500.0f);
+        /* where it came from is taken now: the nearest free place */
+        o.item[1].box = (KhdaysHudBox){500.0f, 300.0f, 600.0f, 400.0f};
+        o.item[2].kind = 0;
+        o.item[2].box = (KhdaysHudBox){100.0f, 100.0f, 200.0f, 200.0f};
+        o.item[0].box = (KhdaysHudBox){500.0f, 100.0f, 600.0f, 200.0f};
+        o.grid = 10.0f;
+        o.snap = 1;
+        CHECK(khdays_editor_press(&o, 550.0f, 150.0f) == 0);
+        o.from_x = 100.0f; /* (as if taken from under the other) */
+        o.from_y = 100.0f;
+        khdays_editor_drag(&o, 550.0f, 350.0f);
         khdays_editor_release(&o);
+        CHECK(o.made_way == 2u && o.item[0].box.y0 == 300.0f);
+        CHECK(o.item[1].box.y0 == 400.0f || o.item[1].box.y0 == 200.0f || o.item[1].box.x0 == 600.0f ||
+              o.item[1].box.x0 == 400.0f);
+        /* a gap of exactly its size, on none of the grid's lines */
+        memset(&o, 0, sizeof(o));
+        o.area = (KhdaysHudBox){0.0f, 0.0f, 340.0f, 100.0f};
+        o.held = -1;
+        o.count = 4;
+        o.grid = 12.0f;
+        o.item[0].box = (KhdaysHudBox){0.0f, 0.0f, 105.0f, 100.0f};
+        o.item[1].box = (KhdaysHudBox){105.0f, 0.0f, 205.0f, 100.0f};
+        o.item[2].box = (KhdaysHudBox){205.0f, 0.0f, 245.0f, 100.0f};
+        o.item[3].box = (KhdaysHudBox){245.0f, 0.0f, 340.0f, 100.0f};
+        CHECK(khdays_editor_press(&o, 225.0f, 50.0f) == 2);
+        khdays_editor_drag(&o, 125.0f, 50.0f);
+        khdays_editor_release(&o);
+        CHECK(o.item[2].box.x0 == 105.0f && o.item[1].box.x0 == 145.0f && o.made_way == 2u);
+        /* no room anywhere: the piece goes back and nothing else moves */
+        memset(&o, 0, sizeof(o));
+        o.area = (KhdaysHudBox){0.0f, 0.0f, 200.0f, 100.0f};
+        o.held = -1;
+        o.count = 2;
+        o.grid = 10.0f;
+        o.item[0].box = (KhdaysHudBox){0.0f, 0.0f, 100.0f, 100.0f};
+        o.item[1].box = (KhdaysHudBox){100.0f, 0.0f, 200.0f, 100.0f};
+        o.item[1].room.x0 = 100.0f; /* it needs the whole width */
+        CHECK(khdays_editor_press(&o, 50.0f, 50.0f) == 0);
+        khdays_editor_drag(&o, 90.0f, 50.0f);
+        CHECK(khdays_editor_release(&o) && o.item[0].box.x0 == 0.0f && o.item[1].box.x0 == 100.0f && o.made_way == 0u);
     }
     CHECK(khdays_editor_drag(&e, 214.0f, 123.0f));
     CHECK(e.item[0].box.x0 == 204.0f && e.item[0].box.y0 == 113.0f && e.item[0].box.x1 == 404.0f);

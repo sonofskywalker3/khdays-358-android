@@ -838,16 +838,15 @@ void khdays_touch_apply(const KhdaysProfile *profile, KhdaysInputSnapshot *out)
         const double counts = (double)COUNTS_A_POINT / (double)screen_now.density;
         out->ds_buttons |= bits;
         out->ds_buttons_field |= bits;
-        if (bits != 0) {
+        if (profile->enh.analog_movement && bits != 0) {
             out->move_x = (int16_t)sx;
             out->move_y = (int16_t)-sy;
         }
         if (held_lock) {
-            out->actions |= KHDAYS_ACTION_LOCK_ON;
+            out->actions |= KHDAYS_ACTION_LOCK_BUTTON;
         }
-        /* the fingers' own camera, lock-on and movement in the stick's direction, whatever the settings say for
-         * the gamepad */
-        out->enhancements |= KHDAYS_ENH_SEPARATE_LOCK_ON | KHDAYS_ENH_MOUSE_CAMERA | KHDAYS_ENH_ANALOG_MOVEMENT;
+        /* the fingers' own camera and lock-on, whatever the settings say for the gamepad */
+        out->enhancements |= KHDAYS_ENH_SEPARATE_LOCK_ON | KHDAYS_ENH_MOUSE_CAMERA;
         out->mouse_x += (int32_t)floor(input.camera_x * counts * (profile->enh.camera_invert_x ? -1.0 : 1.0));
         out->mouse_y += (int32_t)floor(input.camera_y * counts * (profile->enh.camera_invert_y ? 1.0 : -1.0));
         if (!profile->enh.mouse_camera) {

@@ -466,8 +466,16 @@ int khdays_layout_editor_event(const SDL_Event *event, SDL_Renderer *renderer, i
     case SDL_EVENT_MOUSE_BUTTON_UP: {
         const int index = editor.held;
         const KhdaysHudBox before = index >= 0 ? editor.item[index].box : (KhdaysHudBox){0};
+        KhdaysEditorItem items_before[KHDAYS_EDITOR_ITEMS];
+        memcpy(items_before, editor.item, sizeof(items_before));
         if (khdays_editor_release(&editor)) {
             *moved = take_drag(index, &before);
+        }
+        for (int i = 0; i < editor.count; ++i) {
+            if (editor.made_way & (1u << i)) {
+                take_drag(i, &items_before[i].box);
+                *moved = 1;
+            }
         }
         *moved |= lift_end();
         return 0;

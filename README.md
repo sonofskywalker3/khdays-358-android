@@ -243,6 +243,8 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Auto lock-on:** a lock lost by anything but letting it go, such as the target
+  dying, locks on again by the same two R presses. Off by default.
 - **Chase Camera: Free:** on the camp's Config page drawn on one screen,
   Chase Camera has a third value after the game's Auto and Manual. Free is
   the game's Manual, except that walking no longer pulls the camera's tilt

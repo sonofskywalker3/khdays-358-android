@@ -2082,6 +2082,37 @@ static void test_lock_sequencer(void)
     khdays_lock_sequencer_reset(&s);
     CHECK(lock_frame(&s, on, 0, 0, R, 1) == 0);
     CHECK(lock_frame(&s, on, 0, 0, 0, 1) == R);
+    {
+        /* the one button: a tap locks on or goes to the next, held it lets go; a lock lost locks on again */
+        KhdaysLockAssist a;
+        const uint32_t lon = 1u << KHDAYS_LOCK_ON, next = 1u << KHDAYS_LOCK_NEXT;
+        memset(&a, 0, sizeof(a));
+        CHECK(khdays_lock_assist_frame(&a, 1, 0, 0, 1, 0, 0, 100) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 0, 0, 101) == lon);
+        CHECK(khdays_lock_assist_frame(&a, 1, 0, 0, 1, 1, 0, 110) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 1, 0, 111) == next);
+        CHECK(khdays_lock_assist_frame(&a, 1, 0, 0, 1, 1, 0, 120) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 1, 0, 0, 1, 1, 0, 120 + KHDAYS_LOCK_HOLD_FRAMES) == lon);
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 1, 0, 121 + KHDAYS_LOCK_HOLD_FRAMES) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 1, 0, 0, 0, 0, 0, 200) == lon); /* no lock-on here: the DS's R */
+        memset(&a, 0, sizeof(a));
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 1, 1, 300) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 0, 1, 301) == 1u << KHDAYS_LOCK_AUTO); /* lost */
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 0, 1, 302) == 0);   /* once */
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 1, 1, 303) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 0, lon, 0, 1, 1, 1, 304) == 0); /* let go by the player */
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 0, 1, 305) == 0);   /* not locked again */
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 1, 1, 306) == 0);
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 1, 1, 1, 1, 307) == 0);   /* R's double press */
+        CHECK(khdays_lock_assist_frame(&a, 0, 0, 0, 1, 0, 1, 308) == 0);
+        {
+            /* an automatic lock still waiting when a target is locked by hand: dropped, no letting go */
+            KhdaysLockSequencer q;
+            khdays_lock_sequencer_reset(&q);
+            CHECK(khdays_lock_sequencer_frame(&q, 1u << KHDAYS_LOCK_AUTO, 1, 0, 0, R, 0) == 0); /* R held: it waits */
+            CHECK(khdays_lock_sequencer_frame(&q, 0, 1, 1, 0, 0, 1) == 0);
+        }
+    }
     CHECK(khdays_lock_sequencer_frame(&s, on, 0, 0, 0, 0, 1) == R);
     CHECK(khdays_lock_sequencer_frame(&s, on, 0, 0, 0, 0, 1) == R); /* held */
     CHECK(khdays_lock_sequencer_frame(&s, 0, 0, 0, 0, 0, 1) == 0);  /* let go */

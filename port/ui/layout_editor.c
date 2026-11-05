@@ -39,12 +39,17 @@ int khdays_editor_item_at(const KhdaysLayoutEditor *e, float x, float y)
 int khdays_editor_press(KhdaysLayoutEditor *e, float x, float y)
 {
     e->held = khdays_editor_item_at(e, x, y);
+    e->made_way = 0;
     if (e->held >= 0) {
         e->grab_x = x - e->item[e->held].box.x0;
         e->grab_y = y - e->item[e->held].box.y0;
+        e->from_x = e->item[e->held].box.x0;
+        e->from_y = e->item[e->held].box.y0;
     }
     return e->held;
 }
+
+#define EDITOR_SEARCH_STEP 16.0f /* pixels between the places tried when no grid is set */
 
 static float kept_inside(float start, float size, float low, float high)
 {
@@ -86,47 +91,88 @@ static int boxes_meet(const KhdaysHudBox *a, const KhdaysHudBox *b)
     return a->x0 < b->x1 && a->x1 > b->x0 && a->y0 < b->y1 && a->y1 > b->y0;
 }
 
-/* The held item's move from where it is, stopped at the others of its kind: across, then down, so that it slides
- * along what it meets. One already over another (from an older layout) can leave it, and is not held by it. */
-static void item_clear(const KhdaysLayoutEditor *e, int held, float w, float h, float *x0, float *y0)
+static KhdaysHudBox item_whole_now(const KhdaysEditorItem *it)
 {
-    const KhdaysEditorItem *me = &e->item[held];
-    const KhdaysHudBox from = item_whole(me, me->box.x0, me->box.y0, w, h);
+    return item_whole(it, it->box.x0, it->box.y0, it->box.x1 - it->box.x0, it->box.y1 - it->box.y0);
+}
+
+/* Whether an item at a place is on the area and on none of the others of its kind. */
+static int item_free_at(const KhdaysLayoutEditor *e, int index, float *x0, float *y0)
+{
+    const KhdaysEditorItem *it = &e->item[index];
+    const float w = it->box.x1 - it->box.x0, h = it->box.y1 - it->box.y0;
+    KhdaysHudBox at;
+    item_inside(e, it, w, h, x0, y0);
+    at = item_whole(it, *x0, *y0, w, h);
     for (int i = 0; i < e->count; ++i) {
-        KhdaysHudBox other;
-        if (i == held || e->item[i].kind != me->kind) {
-            continue;
-        }
-        other = item_whole(&e->item[i], e->item[i].box.x0, e->item[i].box.y0, e->item[i].box.x1 - e->item[i].box.x0,
-                           e->item[i].box.y1 - e->item[i].box.y0);
-        if (boxes_meet(&from, &other) || from.y0 >= other.y1 || from.y1 <= other.y0) {
-            continue;
-        }
-        if (from.x1 <= other.x0 && *x0 + w + me->room.x1 > other.x0) {
-            *x0 = other.x0 - w - me->room.x1;
-        } else if (from.x0 >= other.x1 && *x0 - me->room.x0 < other.x1) {
-            *x0 = other.x1 + me->room.x0;
-        }
-    }
-    {
-        const KhdaysHudBox across = item_whole(me, *x0, me->box.y0, w, h);
-        for (int i = 0; i < e->count; ++i) {
-            KhdaysHudBox other;
-            if (i == held || e->item[i].kind != me->kind) {
-                continue;
-            }
-            other = item_whole(&e->item[i], e->item[i].box.x0, e->item[i].box.y0, e->item[i].box.x1 - e->item[i].box.x0,
-                               e->item[i].box.y1 - e->item[i].box.y0);
-            if (boxes_meet(&across, &other) || across.x0 >= other.x1 || across.x1 <= other.x0) {
-                continue;
-            }
-            if (across.y1 <= other.y0 && *y0 + h + me->room.y1 > other.y0) {
-                *y0 = other.y0 - h - me->room.y1;
-            } else if (across.y0 >= other.y1 && *y0 - me->room.y0 < other.y1) {
-                *y0 = other.y1 + me->room.y0;
+        if (i != index && e->item[i].kind == it->kind) {
+            const KhdaysHudBox other = item_whole_now(&e->item[i]);
+            if (boxes_meet(&at, &other)) {
+                return 0;
             }
         }
     }
+    return 1;
+}
+
+static void item_place(KhdaysEditorItem *it, float x0, float y0)
+{
+    const float w = it->box.x1 - it->box.x0, h = it->box.y1 - it->box.y0;
+    it->box.x0 = x0;
+    it->box.y0 = y0;
+    it->box.x1 = x0 + w;
+    it->box.y1 = y0 + h;
+}
+
+/* An item moved out from under another: to `prefer` if it fits there, else to the nearest free place. */
+static int item_make_way(KhdaysLayoutEditor *e, int index, float prefer_x, float prefer_y)
+{
+    const float step = e->grid > 0.0f ? e->grid : EDITOR_SEARCH_STEP;
+    const float from_x = e->item[index].box.x0, from_y = e->item[index].box.y0;
+    float best_x = 0.0f, best_y = 0.0f, best = -1.0f;
+    const KhdaysEditorItem *me = &e->item[index];
+    const float w = me->box.x1 - me->box.x0, h = me->box.y1 - me->box.y0;
+    float xs[2 * KHDAYS_EDITOR_ITEMS + 1], ys[2 * KHDAYS_EDITOR_ITEMS + 1];
+    int edges = 0;
+    float x = prefer_x, y = prefer_y;
+    if (item_free_at(e, index, &x, &y)) {
+        item_place(&e->item[index], x, y);
+        return 1;
+    }
+    /* touching another's side: a gap of exactly its size lies on none of the steps */
+    xs[edges] = from_x;
+    ys[edges++] = from_y;
+    for (int i = 0; i < e->count; ++i) {
+        if (i != index && e->item[i].kind == me->kind) {
+            const KhdaysHudBox o = item_whole_now(&e->item[i]);
+            xs[edges] = o.x0 - w - me->room.x1;
+            ys[edges++] = o.y0 - h - me->room.y1;
+            xs[edges] = o.x1 + me->room.x0;
+            ys[edges++] = o.y1 + me->room.y0;
+        }
+    }
+    for (float ty = e->area.y0; ty < e->area.y1 + edges * step; ty += step) {
+        for (float tx = e->area.x0; tx < e->area.x1 + edges * step; tx += step) {
+            /* past the area's end: the sides' places in place of a step */
+            const int ex = tx < e->area.x1 ? -1 : (int)((tx - e->area.x1) / step);
+            const int ey = ty < e->area.y1 ? -1 : (int)((ty - e->area.y1) / step);
+            x = ex < 0 ? tx : xs[ex < edges ? ex : edges - 1];
+            y = ey < 0 ? ty : ys[ey < edges ? ey : edges - 1];
+            if (item_free_at(e, index, &x, &y)) {
+                const float d = (x - from_x) * (x - from_x) + (y - from_y) * (y - from_y);
+                if (best < 0.0f || d < best) {
+                    best = d;
+                    best_x = x;
+                    best_y = y;
+                }
+            }
+        }
+    }
+    if (best < 0.0f) {
+        return 0;
+    }
+    item_place(&e->item[index], best_x, best_y);
+    return 1;
 }
 
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
@@ -142,7 +188,6 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
     x0 = x - e->grab_x;
     y0 = y - e->grab_y;
     item_inside(e, &e->item[e->held], w, h, &x0, &y0);
-    item_clear(e, e->held, w, h, &x0, &y0);
     if (x0 == b->x0 && y0 == b->y0) {
         return 0;
     }
@@ -155,28 +200,42 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
 
 int khdays_editor_release(KhdaysLayoutEditor *e)
 {
-    KhdaysHudBox *b;
-    float w, h, x0, y0;
+    KhdaysEditorItem saved[KHDAYS_EDITOR_ITEMS];
+    KhdaysEditorItem *it;
+    KhdaysHudBox was, whole;
+    float x0, y0;
     const int held = e->held;
     e->held = -1;
-    if (held < 0 || !e->snap || e->grid <= 0.0f) {
+    e->made_way = 0;
+    if (held < 0) {
         return 0;
     }
-    b = &e->item[held].box;
-    w = b->x1 - b->x0;
-    h = b->y1 - b->y0;
-    x0 = roundf(b->x0 / e->grid) * e->grid;
-    y0 = roundf(b->y0 / e->grid) * e->grid;
-    item_inside(e, &e->item[held], w, h, &x0, &y0);
-    item_clear(e, held, w, h, &x0, &y0);
-    if (x0 == b->x0 && y0 == b->y0) {
-        return 0;
+    it = &e->item[held];
+    was = it->box;
+    if (e->snap && e->grid > 0.0f) {
+        x0 = roundf(it->box.x0 / e->grid) * e->grid;
+        y0 = roundf(it->box.y0 / e->grid) * e->grid;
+        item_inside(e, it, it->box.x1 - it->box.x0, it->box.y1 - it->box.y0, &x0, &y0);
+        item_place(it, x0, y0);
     }
-    b->x0 = x0;
-    b->y0 = y0;
-    b->x1 = x0 + w;
-    b->y1 = y0 + h;
-    return 1;
+    memcpy(saved, e->item, sizeof(saved));
+    whole = item_whole_now(it);
+    for (int i = 0; i < e->count; ++i) {
+        if (i != held && e->item[i].kind == it->kind) {
+            const KhdaysHudBox other = item_whole_now(&e->item[i]);
+            if (boxes_meet(&whole, &other)) {
+                if (!item_make_way(e, i, e->from_x, e->from_y)) {
+                    /* no room for it anywhere: the piece goes back, and nothing else moves */
+                    memcpy(e->item, saved, sizeof(saved));
+                    item_place(it, e->from_x, e->from_y);
+                    e->made_way = 0;
+                    return 1;
+                }
+                e->made_way |= 1u << i;
+            }
+        }
+    }
+    return memcmp(&was, &it->box, sizeof(was)) != 0;
 }
 
 void khdays_editor_cutout(unsigned char *with, int with_pitch, const unsigned char *without, int without_pitch, int w, int h)

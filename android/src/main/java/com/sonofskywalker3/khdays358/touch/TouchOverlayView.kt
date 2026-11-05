@@ -65,6 +65,7 @@ class TouchOverlayView(context: Context) : View(context) {
 
     private var editing: Pair<Int, Input>? = null
     private var editingPointer = -1
+    private var editingFrom = Rect()
     private var lastX = 0f
     private var lastY = 0f
 
@@ -297,6 +298,7 @@ class TouchOverlayView(context: Context) : View(context) {
                 }
                 if (under != null) {
                     editing = under
+                    editingFrom = under.second.boundingRectangle()
                     editingPointer = event.getPointerId(i)
                     lastX = x
                     lastY = y
@@ -317,12 +319,12 @@ class TouchOverlayView(context: Context) : View(context) {
                     if (edit == EDIT_SIZE) {
                         val diff = if (abs(dx) > abs(dy)) dx else dy
                         if (diff != 0) {
-                            input.resizeBy(diff, width, height, minSize, otherBoxes(input))
+                            input.resizeBy(diff, width, height, minSize)
                             lastX = event.getX(p)
                             lastY = event.getY(p)
                         }
                     } else if (dx != 0 || dy != 0) {
-                        input.moveBy(dx, dy, width, height, otherBoxes(input))
+                        input.moveBy(dx, dy, width, height)
                         lastX += dx
                         lastY += dy
                     }
@@ -347,12 +349,72 @@ class TouchOverlayView(context: Context) : View(context) {
         }
     }
 
-    /** Where the other controls are: one is not moved over another, where a thumb would press both. */
-    private fun otherBoxes(input: Input) = inputs.filter { it.second !== input }.map { it.second.boundingRectangle() }
+    /** Whether a box of this size fits here, in the view and on no control but `except`. */
+    private fun freeAt(box: Rect, except: Input): Boolean =
+        box.left >= 0 && box.top >= 0 && box.right <= width && box.bottom <= height &&
+            inputs.none { it.second !== except && Rect.intersects(box, it.second.boundingRectangle()) }
+
+    /** A control out from under another, where a thumb would press both: to `prefer`, else the nearest free place. */
+    private fun makeWay(input: Input, prefer: Rect): Boolean {
+        val from = input.boundingRectangle()
+        val try0 = Rect(prefer.left, prefer.top, prefer.left + from.width(), prefer.top + from.height())
+        if (freeAt(try0, input)) {
+            input.moveTo(try0.left, try0.top)
+            return true
+        }
+        var best: Rect? = null
+        var bestDistance = Long.MAX_VALUE
+        val step = max(minSize / 4, 1)
+        // touching another's side too: a gap of exactly its size lies on none of the steps
+        val others = inputs.filter { it.second !== input }.map { it.second.boundingRectangle() }
+        val lefts = (0..(width - from.width()) step step).toList() + others.flatMap { listOf(it.left - from.width(), it.right) }
+        val tops = (0..(height - from.height()) step step).toList() + others.flatMap { listOf(it.top - from.height(), it.bottom) }
+        for (top in tops) {
+            for (left in lefts) {
+                val box = Rect(left, top, left + from.width(), top + from.height())
+                if (freeAt(box, input)) {
+                    val dx = (left - from.left).toLong()
+                    val dy = (top - from.top).toLong()
+                    val distance = dx * dx + dy * dy
+                    if (distance < bestDistance) {
+                        bestDistance = distance
+                        best = box
+                    }
+                }
+            }
+        }
+        val found = best ?: return false
+        input.moveTo(found.left, found.top)
+        return true
+    }
+
+    /** The control let go: those under it make way. With no room for one, it goes back and nothing else moves. */
+    private fun settle(input: Input): List<Pair<Int, Input>> {
+        val before = inputs.map { it.second to it.second.boundingRectangle() }
+        val moved = mutableListOf<Pair<Int, Input>>()
+        for ((control, other) in inputs) {
+            if (other !== input && Rect.intersects(input.boundingRectangle(), other.boundingRectangle())) {
+                if (!makeWay(other, editingFrom)) {
+                    before.forEach { (i, box) -> i.restore(box) }
+                    val from = editingFrom
+                    val size = input.boundingRectangle()
+                    if (size.width() == from.width()) {
+                        input.restore(from)
+                    } else {
+                        input.restore(Rect(size.left, size.top, size.left + from.width(), size.top + from.height()))
+                    }
+                    return emptyList()
+                }
+                moved += control to other
+            }
+        }
+        return moved
+    }
 
     /** The control let go: the game keeps its new box, in its own pixels. */
     private fun place() {
         val (control, input) = editing ?: return
+        val moved = settle(input)
         val r = input.boundingRectangle()
         val kx = gameWidth / max(width, 1)
         val ky = gameHeight / max(height, 1)
@@ -360,6 +422,10 @@ class TouchOverlayView(context: Context) : View(context) {
         editing = null
         editingPointer = -1
         TouchOverlay.nativeControlBox(control, r.left * kx, r.top * ky, r.right * kx, r.bottom * ky)
+        for ((other, input2) in moved) {
+            val b = input2.boundingRectangle()
+            TouchOverlay.nativeControlBox(other, b.left * kx, b.top * ky, b.right * kx, b.bottom * ky)
+        }
         invalidate()
     }
 

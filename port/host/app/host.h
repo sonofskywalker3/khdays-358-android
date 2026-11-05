@@ -72,6 +72,7 @@ enum {
     KHDAYS_ACTION_MENU_DOWN = 1 << 4,
     KHDAYS_ACTION_MENU_LEFT = 1 << 5,
     KHDAYS_ACTION_MENU_RIGHT = 1 << 6,
+    KHDAYS_ACTION_LOCK_BUTTON = 1 << 16, /* no binding's: the on-screen button, tap and hold (sequencers.h) */
 };
 
 /* The optional enhancements that are switched on (KhdaysInputSnapshot.enhancements). */
@@ -81,6 +82,7 @@ enum {
     KHDAYS_ENH_DPAD_COMMAND_MENU = 1 << 2,
     KHDAYS_ENH_ANALOG_MOVEMENT = 1 << 3,
     KHDAYS_ENH_MOUSE_CAMERA = 1 << 4, /* the camera turned by the mouse's motion (the analog camera's join) */
+    KHDAYS_ENH_AUTO_LOCK = 1 << 6,    /* a lock lost by anything but letting it go locks on again */
     KHDAYS_ENH_CHASE_FREE = 1 << 5,   /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
 };
 

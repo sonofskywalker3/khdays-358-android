@@ -28,50 +28,36 @@ abstract class Input protected constructor(protected var rect: Rect) {
 
     abstract fun onTouch(event: MotionEvent): Boolean
 
-    /**
-     * The box moved by this much, staying inside the view and stopping at `others`: across, then down, so that it
-     * slides along what it meets. One already over another (from an older layout) can leave it, and is not held by it.
-     */
-    fun moveBy(dx: Int, dy: Int, maxWidth: Int, maxHeight: Int, others: List<Rect>) {
+    /** The box moved by this much, staying inside the view. */
+    fun moveBy(dx: Int, dy: Int, maxWidth: Int, maxHeight: Int) {
         val width = rect.width()
         val height = rect.height()
-        var left = min(max(rect.left + dx, 0), maxWidth - width)
-        var top = min(max(rect.top + dy, 0), maxHeight - height)
-        val clear = others.filterNot { Rect.intersects(rect, it) }
-        for (o in clear) {
-            if (rect.top < o.bottom && rect.bottom > o.top) {
-                if (rect.right <= o.left && left + width > o.left) {
-                    left = o.left - width
-                } else if (rect.left >= o.right && left < o.right) {
-                    left = o.right
-                }
-            }
-        }
-        for (o in clear) {
-            if (left < o.right && left + width > o.left) {
-                if (rect.bottom <= o.top && top + height > o.top) {
-                    top = o.top - height
-                } else if (rect.top >= o.bottom && top < o.bottom) {
-                    top = o.bottom
-                }
-            }
-        }
+        val left = min(max(rect.left + dx, 0), maxWidth - width)
+        val top = min(max(rect.top + dy, 0), maxHeight - height)
         rect = Rect(left, top, left + width, top + height)
         configure()
     }
 
-    /** The box grown by this much at its far corner, its shape kept, staying inside the view and off `others`. */
-    fun resizeBy(diff: Int, maxWidth: Int, maxHeight: Int, minSize: Int, others: List<Rect>) {
+    /** The box's corner put here, its size kept. */
+    fun moveTo(left: Int, top: Int) {
+        rect = Rect(left, top, left + rect.width(), top + rect.height())
+        configure()
+    }
+
+    /** The box as it was. */
+    fun restore(box: Rect) {
+        rect = Rect(box)
+        configure()
+    }
+
+    /** The box grown by this much at its far corner, its shape kept, staying inside the view. */
+    fun resizeBy(diff: Int, maxWidth: Int, maxHeight: Int, minSize: Int) {
         val newWidth = rect.width() + diff
         val newHeight = rect.height() + diff * rect.height() / max(rect.width(), 1)
         if (min(newWidth, newHeight) < minSize || rect.left + newWidth > maxWidth || rect.top + newHeight > maxHeight) {
             return
         }
-        val grown = Rect(rect.left, rect.top, rect.left + newWidth, rect.top + newHeight)
-        if (diff > 0 && others.any { !Rect.intersects(rect, it) && Rect.intersects(grown, it) }) {
-            return
-        }
-        rect = grown
+        rect = Rect(rect.left, rect.top, rect.left + newWidth, rect.top + newHeight)
         configure()
     }
 

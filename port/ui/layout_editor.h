@@ -27,6 +27,8 @@ typedef struct KhdaysLayoutEditor {
     int snap;
     int held;          /* the item being dragged, -1 none */
     float grab_x, grab_y;
+    float from_x, from_y; /* where it was taken from */
+    unsigned made_way;    /* the items the last release moved out from under it */
 } KhdaysLayoutEditor;
 
 /* The settings menu asks for the screen; the window opens it. */
@@ -39,11 +41,12 @@ int khdays_editor_item_at(const KhdaysLayoutEditor *e, float x, float y);
 /* A press: takes the item there; returns it, or -1. */
 int khdays_editor_press(KhdaysLayoutEditor *e, float x, float y);
 
-/* A motion with an item held: moves it under the point, inside the area, stopping at the others of its kind.
- * Returns 1 when it moved. */
+/* A motion with an item held: moves it under the point, inside the area. Returns 1 when it moved. */
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y);
 
-/* The release: the item held settles on the snap's lines. Returns 1 when that moved it. */
+/* The release: the item held settles on the snap's lines, and the others of its kind under it make way (made_way),
+ * to where it came from if they fit there, else to the nearest free place. With no room for one of them the item
+ * goes back where it came from. Returns 1 when this moved the item held. */
 int khdays_editor_release(KhdaysLayoutEditor *e);
 
 /* A piece lifted from two pictures of `w` x `h` RGBA pixels, one with it and one without: in `with`, what differs keeps
