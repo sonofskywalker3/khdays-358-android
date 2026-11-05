@@ -14,6 +14,7 @@
 #include <SDL3/SDL_stdinc.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 _Static_assert(KHDAYS_SETTINGS_KEY == SDL_SCANCODE_ESCAPE, "the settings key is Esc");
@@ -654,7 +655,8 @@ static void say_kept(KhdaysNotice notice, const char *format, ...)
     va_end(args);
 #if defined(__ANDROID__)
     (void)notice;
-    SDL_Log("%s", text);
+    fprintf(stderr, "%s
+", text);
 #else
     if (notice != NULL) {
         notice(text);
