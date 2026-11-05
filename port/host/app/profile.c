@@ -655,8 +655,7 @@ static void say_kept(KhdaysNotice notice, const char *format, ...)
     va_end(args);
 #if defined(__ANDROID__)
     (void)notice;
-    fprintf(stderr, "%s
-", text);
+    fprintf(stderr, "%s\n", text);
 #else
     if (notice != NULL) {
         notice(text);
