@@ -155,7 +155,8 @@ static int mode_now(void)
     static int settled_mode, settled_wait;
     KhdaysTouchSituation s;
     int row, skip;
-    s.port_menu = khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip);
+    s.settings = khdays_settings_is_open();
+    s.port_menu = khdays_movie_pause_menu(&row, &skip);
     s.hd_movie = khdays_movie_hd_showing();
     s.scene = khdays_onescreen_scene();
     s.event = (khdays_onescreen_states() & ((1u << KHDAYS_ST_DIALOG) | (1u << KHDAYS_ST_SCENE))) != 0u;
@@ -628,7 +629,19 @@ int khdays_touch_view_event(const SDL_Event *event)
         return 0;
     }
     if (e.kind == KHDAYS_TOUCH_BRIDGE_HELD) {
-        view_held.buttons = e.bits;
+        static uint16_t menu_held; /* pressed for Game Settings: the game never hears of them, even once it closes */
+        if (khdays_settings_is_open()) {
+            const uint16_t changed = (uint16_t)(menu_held ^ e.bits);
+            for (int action = 0; action < 16; ++action) {
+                if (changed & (1u << action)) {
+                    khdays_settings_view_button(action, (e.bits >> action) & 1u);
+                }
+            }
+            menu_held = e.bits;
+        } else {
+            menu_held &= e.bits;
+        }
+        view_held.buttons = (uint16_t)(e.bits & ~menu_held);
         view_held.lock_on = e.lock_on;
         view_held.stick_held = e.stick_held;
         view_held.stick_x = e.stick_x;

@@ -120,6 +120,12 @@ int khdays_settings_place(int what, int index, SDL_FRect *out);
 void khdays_settings_focus(int *section, int *in_rows, int *row, int *cell);
 int khdays_settings_row_info(int row, int *id, int *action);
 
+/* An on-screen control's action (KHDAYS_ACT_*) pressed or let go, as the button on a gamepad that does it here. */
+void khdays_settings_view_button(int action, int down);
+
+/* The on-screen gear over the settings: a step back, as the system's Back. */
+void khdays_settings_view_back(void);
+
 /* For the tests: the gamepad family the Controls section shows (KhdaysPadFamily). */
 int khdays_settings_pad_family(void);
 

@@ -5,6 +5,9 @@
 
 int khdays_touch_needs_mode(const KhdaysTouchSituation *s)
 {
+    if (s->settings) {
+        return KHDAYS_TOUCH_MODE_MENU; /* its text and arrows are small under a finger */
+    }
     if (s->port_menu) {
         return KHDAYS_TOUCH_MODE_NONE;
     }

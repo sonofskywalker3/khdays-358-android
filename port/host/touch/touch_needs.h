@@ -18,10 +18,11 @@ enum {
 };
 
 typedef struct KhdaysTouchSituation {
-    int port_menu; /* the settings or a movie's pause are over the game: they take touches themselves */
+    int port_menu; /* a movie's pause is over the game: it takes touches itself */
     int hd_movie;  /* an HD movie plays */
     int scene;     /* KHDAYS_SIT_* (ui/situation.h) */
     int event;     /* the field shows an event or a person's words: the player does not move Roxas */
+    int settings;  /* Game Settings is over the game */
 } KhdaysTouchSituation;
 
 /* The controls for a situation: every one of the game's screens gets some. */
