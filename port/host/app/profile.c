@@ -251,11 +251,18 @@ int khdays_server_char(int c)
            c == ':';
 }
 
+/* A tablet's whole screen would be about 9x, under 2 pictures a second; under 2x the HUD's small words break up. */
+#define ANDROID_DEFAULT_SCALE 2
+
 void khdays_video_default(KhdaysVideo *v)
 {
     /* the window's own size: on a PC the DS's 1x is too small to read, and HD models and textures need the
      * pixels to show */
+#if defined(__ANDROID__)
+    v->internal_resolution = ANDROID_DEFAULT_SCALE;
+#else
     v->internal_resolution = KHDAYS_RESOLUTION_WINDOW;
+#endif
     v->antialiasing = 1;            /* off: 2x is four times the 3D's work */
 #if defined(__ANDROID__)
     v->aspect = KHDAYS_ASPECT_WINDOW; /* for one screen: a phone's or a tablet's whole screen; two screens use 4:3 */
