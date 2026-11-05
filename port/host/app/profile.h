@@ -121,11 +121,14 @@ typedef struct KhdaysStick {
 
 typedef struct KhdaysEnhancements {
     int analog_camera;
-    int camera_speed; /* percent of the game's own turn rate, 10..300 */
+    int kh2_camera;       /* the field camera moves as KH2's */
+    int kh2_first_person; /* with it, Select is KH2's first person view */
+    int camera_speed;     /* percent of the game's own turn rate, 10..300 */
     int camera_invert_x;
     int camera_invert_y;
-    int mouse_camera; /* the camera turned by the mouse's motion, the mouse held by the window */
-    int mouse_speed;  /* percent, 10..300 */
+    int character_shadows; /* animated overhead silhouettes */
+    int mouse_camera;      /* the camera turned by the mouse's motion, the mouse held by the window */
+    int mouse_speed;       /* percent, 10..300 */
     int separate_lock_on;
     int dpad_command_menu;
     int analog_movement;
@@ -168,7 +171,7 @@ typedef enum KhdaysTwoScreens {
 
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
-    int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
+    int antialiasing;        /* 1 off, 2 FXAA: the 3D's edges smoothed once it is drawn */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
     int second_screen_aspect; /* KhdaysSecondScreenAspect: the lower screen on a second display */
@@ -188,7 +191,14 @@ typedef struct KhdaysVideo {
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
     int subtitle_size; /* the HD movies' subtitles' size, 1 (the theater's) to 5; set on a handheld */
     int display;       /* KhdaysDisplay: a window, a borderless one over the screen, or full screen */
+    int screen_resolution; /* [video] resolution: the full screen's mode or the window's size, width << 16 |
+                              height; 0 the desktop's (full screen) or as the player sized it (window) */
 } KhdaysVideo;
+
+/* [video] resolution's width and height. */
+#define KHDAYS_SCREEN_RESOLUTION(w, h) ((int)((unsigned)(w) << 16 | (unsigned)(h)))
+#define KHDAYS_SCREEN_WIDTH(r) ((int)((unsigned)(r) >> 16))
+#define KHDAYS_SCREEN_HEIGHT(r) ((int)((unsigned)(r) & 0xffffu))
 
 /* The window ([video] display): one that moves and resizes, one without borders
  * over the whole screen, or the screen the game's alone at the desktop's mode. */

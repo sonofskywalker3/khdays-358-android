@@ -215,6 +215,15 @@ of the game:
   (adjustable, and invertible, under Sticks and camera). On the DS the camera
   is turned by dragging on the touch screen, by Select's look view, or with
   L/R when the game's Config sets them to the camera.
+- **KH2 camera:** the field camera moves as Kingdom Hearts II's: further back the
+  higher it is, and free to turn while locked on, the view kept between you and the
+  target. Cutscenes keep the game's camera, and it needs the game's Controls on Type
+  A ([docs/KH2_CAMERA.md](docs/KH2_CAMERA.md)).
+- **KH2 first person view:** with the KH2 camera on, Select switches to first person
+  as in Kingdom Hearts II: the player fades out, and you can look around and strafe.
+- **KH2 models:** with the HD menus' HD PACK, Roxas and his keyblades are KH2's,
+  with their motions and cloth, from your own 1.5+2.5 ([docs/KH2_MODELS.md](docs/KH2_MODELS.md)).
+  On by default; off shows Days' own models.
 - **Mouse camera:** moving the mouse turns and tilts the field camera, through
   the same part of the game as the analog camera, at a speed of its own
   (Sticks and camera -> Mouse camera speed) and with the camera's inversions.
@@ -287,6 +296,10 @@ once:
   game alone, at your desktop's resolution). **Alt+Enter** switches between
   the window and the full screen you chose last (the borderless window if
   none) while the settings menu is closed, and keeps it.
+- **Screen resolution**: the desktop's (the default) or one of your screen's
+  own resolutions: full screen switches the screen to it, a window takes that
+  size (a borderless window always covers the screen at the desktop's). With
+  the internal resolution "The window's", the game is drawn at it.
 - **Internal resolution** (1x, 2x, 3x, 4x, 6x, 8x, or the window's own
   size): the 3D -- the field, the characters, the effects -- drawn at
   that many times the DS's pixels. "The window's" draws at the next whole
@@ -298,11 +311,12 @@ once:
   mod replaces it (below). It is the
   same picture, only sharper: the 3D follows the same rules as at 1x, and
   wherever the 2D covers or blends with it, it does so as on the DS.
-- **Antialiasing** (off, 2x, 3x, 4x): the picture made that many times
-  larger, then shrunk to the size shown, each pixel the average of what is
-  under it -- the 3D's edges come out smooth instead of in steps. 2x is four times the graphics
-  card's work, 4x sixteen; off by default, and the settings warn while it is on, as the internal
-  resolution already draws the 3D at the window's size or larger. (A mod's textures, and the HD
+- **Antialiasing** (off, FXAA): the 3D's edges smoothed once it is drawn,
+  at its own resolution -- each pixel on an edge blended with the one across
+  it by where it lies along the edge, so the edges come out smooth instead of
+  in steps, for little of the graphics card's time. The HUD, the menus and
+  the text stay sharp. Off by default. (A 3D drawn larger and shrunk, the
+  old way, is an internal resolution above the window's.) (A mod's textures, and the HD
   replacements, are read at the size they are drawn whatever this says:
   smaller copies of each are kept, so a model far away does not break into
   steps that flicker.)
@@ -334,7 +348,7 @@ once:
   game frame. Camera cuts and scene changes are not smoothed across. The 2D
   (HUD, menus, text) and the movies change when the game changes them.
 - **Show FPS**: a counter in the window's corner -- the pictures drawn a
-  second and the game's own frames a second.
+  second.
 - **Graphics API**: what draws the picture -- automatic (Direct3D 12 on
   Windows, Vulkan on a Steam Deck or under Proton), Direct3D 12 or Vulkan,
   changed at once. If
@@ -347,8 +361,9 @@ The choices are kept in the `[video]` section of `saves/settings.ini`:
 
 ```ini
 [video]
+resolution = desktop      # the desktop's (the default), or WIDTHxHEIGHT: full screen's mode, the window's size
 internal_resolution = window   # the window's size (the default), or a multiple: 2 to 16 in the settings
-antialiasing = off        # off, 2x, 3x or 4x: made that many times larger and shrunk
+antialiasing = off        # off or fxaa: the 3D's edges smoothed once it is drawn
 aspect = 16:9             # 4:3 (the DS's), 16:9, 16:10, or window
 two_screens = stacked     # with two screens: stacked (the DS's) or side-by-side
 scaling = sharp           # sharp (the DS's) or smooth
@@ -588,7 +603,7 @@ any resolution, with a file named after it:
 mods/<Mod>/graphics/<file>[#<entry>]/
 ├── tex/<texture>[@<palette>].png  # a 3D texture, any size (with any palette: <texture>.png)
 ├── chr/<n>.png                    # a 2D tile sheet, a whole multiple of its size
-└── mdl/<model>.gltf               # a model -- or .glb, or .fbx (<model>.bones.txt beside it pairs its joints)
+└── mdl/<model>.gltf               # a model -- or .glb, .fbx, or KH2's .mdlx (<model>.bones.txt beside it pairs its joints)
 ```
 
 `<file>` is the game file the graphic is loaded from and `#<entry>` its
@@ -604,15 +619,19 @@ game's animations: its joints named like the original's nodes follow them,
 sizes the model; `keep <node> ...` still draws the game's own shapes of
 those nodes, a chest's light rays under a new chest; `switch <setting>`
 draws the model only while that HD replacement of the settings is on, such
-as `kh2_prizes`), the rest move with their parents, and a rest pose far from
+as `kh2_prizes` or `kh2_models`), the rest move with their parents, and a rest pose far from
 the game's (a T-pose) is turned to match. A model may be glTF (`.gltf`, or
 `.glb` with its textures inside) or FBX (`.fbx`, binary or ASCII), taken in
 that order when more than one is there; an FBX in centimetres or with Z up is
 converted to glTF's metres and Y up, so the same model measures the same in
-either. Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
+either. A KH2 model (`.mdlx`, from your KINGDOM HEARTS II copy) comes with its
+own textures, its bones named `kh2_<index>`, KH2's centimetres made metres
+([`docs/KH2_MODELS.md`](docs/KH2_MODELS.md)). Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
 the file stores under another machine's path is found by its name beside the
 model -- and one that is missing is drawn white and named once in the log.
-The model's own animations are not used: the game's move it. While a mod's graphics are drawn,
+The model's own animations are not used: the game's move it. A model can also
+simulate its coat, cords and hair over that animation, set up in a text file
+beside it ([`docs/SECONDARY_MOTION.md`](docs/SECONDARY_MOTION.md)). While a mod's graphics are drawn,
 the 3D and the 2D's blending and brightness work in 8 bits a channel instead
 of the DS's 6 and 5. A file that cannot be used is named once in the log,
 and the original is drawn.
@@ -881,7 +900,7 @@ the connection error -- the port boots it again in the same window.
 | Path | What it is |
 |---|---|
 | `port/` | The port. `build.py` builds it; `tools/prepare.py` turns the decompilation's C into the game's PC sources |
-| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
+| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `camera/` the KH2 camera; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
 | `port/host/` | The PC's side. `app/` window, devices, profile, audio out; `render/` the graphics card and the one-screen picture; `screens/` the port's own screens; `settings/` the settings menu; `net/` sockets; `movies/` video decoding |
 | `port/hal/` | The NitroSDK's hardware layer, in C |
 | `port/gfx/`, `port/gpu/` | The 2D's description and composition and the 3D's geometry; the DS's graphics engines in software, the reference the picture is checked against |

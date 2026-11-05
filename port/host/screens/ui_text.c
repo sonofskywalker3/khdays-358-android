@@ -80,6 +80,18 @@ static const char *const texts[TXT_COUNT][5] = {
                               "Sequenza contatore cuori", "Secuencia del contador de corazones"},
     [TXT_HUD_PRIZES] = {"KH2 prizes and chests", "Prix et coffres de KH2", "Preise und Truhen aus KH2",
                         "Premi e forzieri di KH2", "Premios y cofres de KH2"},
+    [TXT_HUD_KH2_MODELS] = {"KH2 models", "Modèles de KH2", "Modelle aus KH2", "Modelli di KH2", "Modelos de KH2"},
+    [TXT_HUD_KH2_MODELS_NOTE] =
+        {"Roxas and his keyblades with KH2's models, motions and clothes, made by the HD PACK from your 1.5+2.5. Off "
+         "shows Days' own. Changes apply at once.",
+         "Roxas et ses Keyblades avec les modèles, mouvements et vêtements de KH2, créés par le HD PACK depuis votre "
+         "1.5+2.5. Désactivé, ceux de Days sont affichés. S’applique aussitôt.",
+         "Roxas und seine Schlüsselschwerter mit Modellen, Bewegungen und Kleidung aus KH2, vom HD PACK aus deiner "
+         "1.5+2.5 erstellt. Aus zeigt die von Days. Gilt sofort.",
+         "Roxas e i suoi Keyblade con modelli, movimenti e abiti di KH2, creati dall’HD PACK dalla tua 1.5+2.5. "
+         "Disattivato mostra quelli di Days. Si applica subito.",
+         "Roxas y sus llaves espada con los modelos, movimientos y ropa de KH2, hechos por el HD PACK desde tu 1.5+2.5. "
+         "Desactivado muestra los de Days. Se aplica al momento."},
     [TXT_HUD_PAUSE_TARGET] = {"Target in pause menu", "Cible dans le menu Pause", "Ziel im Pausenmenü",
                               "Bersaglio nel menu pausa", "Objetivo en el menú de pausa"},
     [TXT_HUD_INFORMATION_HUD] = {"HUD and control during INFORMATION", "ATH et commandes pendant INFORMATION",
@@ -304,6 +316,21 @@ static const char *const texts[TXT_COUNT][5] = {
                              "Der rechte Stick dreht die Kamera wie die Kamerasteuerung des Spiels.",
                              "La levetta destra gira la telecamera come i comandi del gioco.",
                              "La palanca derecha gira la cámara como los controles de cámara del juego."},
+    [TXT_ENH_KH2_CAMERA] = {"KH2 camera", "Caméra de KH2", "KH2-Kamera", "Telecamera di KH2", "Cámara de KH2"},
+    [TXT_ENH_KH2_CAMERA_NOTE] =
+        {"The field camera moves as in Kingdom Hearts II: further back the higher it is, and free to turn while locked on. Cutscenes keep the game's camera. Needs the game's Controls on Type A; the right stick needs the analog camera.",
+         "La caméra du terrain bouge comme dans Kingdom Hearts II : plus elle est haute, plus elle recule, et elle tourne librement pendant le verrouillage. Les cinématiques gardent la caméra du jeu. Il faut les Commandes du jeu sur Type A ; le stick droit demande la caméra analogique.",
+         "Die Feldkamera bewegt sich wie in Kingdom Hearts II: je höher, desto weiter zurück, und beim Erfassen frei drehbar. Zwischensequenzen behalten die Kamera des Spiels. Die Steuerung des Spiels muss auf Typ A stehen; der rechte Stick braucht die analoge Kamera.",
+         "La telecamera sul campo si muove come in Kingdom Hearts II: più è alta, più arretra, e gira liberamente durante il puntamento. I filmati mantengono la telecamera del gioco. I Comandi del gioco devono essere su Tipo A; la levetta destra richiede la telecamera analogica.",
+         "La cámara del campo se mueve como en Kingdom Hearts II: cuanto más alta, más lejos, y gira libremente al fijar un objetivo. Las escenas mantienen la cámara del juego. Los Controles del juego deben estar en Tipo A; la palanca derecha necesita la cámara analógica."},
+    [TXT_ENH_KH2_FIRST_PERSON] = {"KH2 first person view", "Vue subjective de KH2", "KH2-Ego-Perspektive",
+                                  "Visuale soggettiva di KH2", "Vista subjetiva de KH2"},
+    [TXT_ENH_KH2_FIRST_PERSON_NOTE] =
+        {"With the KH2 camera on, Select switches to first person as in Kingdom Hearts II: the player fades out, and you can look around and move.",
+         "Avec la caméra de KH2, Select passe en vue subjective comme dans Kingdom Hearts II : le personnage disparaît en fondu, et vous pouvez regarder autour et vous déplacer.",
+         "Mit der KH2-Kamera wechselt Select wie in Kingdom Hearts II in die Ego-Perspektive: Die Figur blendet aus, und du kannst dich umsehen und bewegen.",
+         "Con la telecamera di KH2, Select passa alla visuale soggettiva come in Kingdom Hearts II: il personaggio svanisce, e puoi guardarti intorno e muoverti.",
+         "Con la cámara de KH2, Select cambia a la vista subjetiva como en Kingdom Hearts II: el personaje se desvanece, y puedes mirar alrededor y moverte."},
     [TXT_ENH_LOCK_ON] = {"Separate lock-on", "Lock-on séparé", "Separates Erfassen", "Puntamento separato",
                          "Fijado separado"},
     [TXT_ENH_LOCK_ON_NOTE] = {"Lock on and switch target on their own buttons (the game's own lock-on: R twice).",
@@ -542,14 +569,16 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO] = {"Video", "Vidéo", "Video", "Video", "Vídeo"},
     [TXT_VIDEO_RESOLUTION] = {"Internal resolution", "Résolution interne", "Interne Auflösung", "Risoluzione interna",
                               "Resolución interna"},
-    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's pixels; menus and text keep theirs.",
-                                   "La 3D est dessinée à ce multiple des pixels de la DS ; menus et textes gardent "
-                                   "les leurs.",
-                                   "Das 3D wird mit so vielen DS-Pixeln gezeichnet; Menüs und Text behalten ihre.",
-                                   "Il 3D viene disegnato a questo multiplo dei pixel del DS; menu e testi tengono i "
-                                   "loro.",
-                                   "El 3D se dibuja a este múltiplo de los píxeles de la DS; menús y textos "
-                                   "conservan los suyos."},
+    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's 256x192, not the window's size; menus "
+                                   "and text keep theirs.",
+                                   "La 3D est dessinée à ce multiple des 256x192 de la DS, pas de la taille de la "
+                                   "fenêtre ; menus et textes gardent les leurs.",
+                                   "Das 3D wird mit diesem Vielfachen der 256x192 des DS gezeichnet, nicht der "
+                                   "Fenstergröße; Menüs und Text behalten ihre.",
+                                   "Il 3D viene disegnato a questo multiplo dei 256x192 del DS, non della finestra; "
+                                   "menu e testi tengono i loro.",
+                                   "El 3D se dibuja a este múltiplo de los 256x192 de la DS, no del tamaño de la "
+                                   "ventana; menús y textos conservan los suyos."},
 #if defined(__ANDROID__)
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the screen allows", "Selon l'écran", "Wie der Bildschirm erlaubt",
                                      "Quanto permette lo schermo", "Lo que permita la pantalla"},
@@ -558,51 +587,16 @@ static const char *const texts[TXT_COUNT][5] = {
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
 #endif
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
-    [TXT_VIDEO_ANTIALIASING_NOTE] = {"The picture is made this many times larger and shrunk: the 3D's edges come out "
-                                     "smooth. 2x is four times the work for the graphics card, 4x sixteen.",
-                                     "L'image est faite autant de fois plus grande puis réduite : les bords de la 3D "
-                                     "sont lisses. 2x demande quatre fois plus à la carte graphique, 4x seize.",
-                                     "Das Bild wird so viel größer gemacht und verkleinert: die Kanten des 3D werden "
-                                     "glatt. 2x ist die vierfache Arbeit für die Grafikkarte, 4x die sechzehnfache.",
-                                     "L'immagine è fatta tante volte più grande e poi ridotta: i bordi del 3D escono "
-                                     "lisci. 2x è quattro volte il lavoro per la scheda grafica, 4x sedici.",
-                                     "La imagen se hace tantas veces más grande y se reduce: los bordes del 3D salen "
-                                     "suaves. 2x es cuatro veces el trabajo de la tarjeta gráfica, 4x dieciséis."},
-#if defined(__ANDROID__)
-    [TXT_VIDEO_ANTIALIASING_WARNING] =
-        {"The internal resolution already draws the 3D at the screen's size or larger: antialiasing "
-         "multiplies that work, so the game can slow down and use much more of the graphics card. "
-         "Leave it Off unless your card has power to spare.",
-         "La résolution interne dessine déjà la 3D à la taille de l'écran ou plus : l'anticrénelage "
-         "multiplie ce travail, le jeu peut ralentir et solliciter bien plus la carte graphique. "
-         "Laissez-le sur Non si votre carte n'a pas de puissance à revendre.",
-         "Die interne Auflösung zeichnet das 3D schon in Bildschirmgröße oder größer: die Kantenglättung "
-         "vervielfacht diese Arbeit, das Spiel kann langsamer werden und die Grafikkarte viel stärker "
-         "belasten. Lass sie auf Aus, wenn deine Karte keine Leistung übrig hat.",
-         "La risoluzione interna disegna già il 3D alla dimensione dello schermo o più: l'antialiasing "
-         "moltiplica quel lavoro, il gioco può rallentare e impegnare molto di più la scheda grafica. "
-         "Lascialo su No se la tua scheda non ha potenza da vendere.",
-         "La resolución interna ya dibuja el 3D al tamaño de la pantalla o mayor: el antialiasing "
-         "multiplica ese trabajo, y el juego puede ir más lento y exigir mucho más a la tarjeta gráfica. "
-         "Déjalo en No salvo que tu tarjeta vaya sobrada."},
-#else
-    [TXT_VIDEO_ANTIALIASING_WARNING] =
-        {"The internal resolution already draws the 3D at the window's size or larger: antialiasing "
-         "multiplies that work, so the game can slow down and use much more of the graphics card. "
-         "Leave it Off unless your card has power to spare.",
-         "La résolution interne dessine déjà la 3D à la taille de la fenêtre ou plus : l'anticrénelage "
-         "multiplie ce travail, le jeu peut ralentir et solliciter bien plus la carte graphique. "
-         "Laissez-le sur Non si votre carte n'a pas de puissance à revendre.",
-         "Die interne Auflösung zeichnet das 3D schon in Fenstergröße oder größer: die Kantenglättung "
-         "vervielfacht diese Arbeit, das Spiel kann langsamer werden und die Grafikkarte viel stärker "
-         "belasten. Lass sie auf Aus, wenn deine Karte keine Leistung übrig hat.",
-         "La risoluzione interna disegna già il 3D alla dimensione della finestra o più: l'antialiasing "
-         "moltiplica quel lavoro, il gioco può rallentare e impegnare molto di più la scheda grafica. "
-         "Lascialo su No se la tua scheda non ha potenza da vendere.",
-         "La resolución interna ya dibuja el 3D al tamaño de la ventana o mayor: el antialiasing "
-         "multiplica ese trabajo, y el juego puede ir más lento y exigir mucho más a la tarjeta gráfica. "
-         "Déjalo en No salvo que tu tarjeta vaya sobrada."},
-#endif
+    [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
+                                     "card's work. The HUD, the menus and the text stay sharp.",
+                                     "Le FXAA lisse les bords de la 3D une fois dessinée, pour peu de travail de la "
+                                     "carte graphique. Le HUD, les menus et le texte restent nets.",
+                                     "FXAA glättet die Kanten des 3D, sobald es gezeichnet ist, mit wenig Arbeit für "
+                                     "die Grafikkarte. HUD, Menüs und Text bleiben scharf.",
+                                     "L'FXAA ammorbidisce i bordi del 3D una volta disegnato, con poco lavoro per la "
+                                     "scheda grafica. L'HUD, i menu e il testo restano nitidi.",
+                                     "El FXAA suaviza los bordes del 3D una vez dibujado, con poco trabajo para la "
+                                     "tarjeta gráfica. El HUD, los menús y el texto siguen nítidos."},
     [TXT_VIDEO_SCREENS] = {"Screens", "Écrans", "Bildschirme", "Schermi", "Pantallas"},
     [TXT_VIDEO_SCREENS_TWO] = {"Two (DS)", "Deux (DS)", "Zwei (DS)", "Due (DS)", "Dos (DS)"},
     [TXT_VIDEO_SCREENS_ONE] = {"One", "Un", "Einer", "Uno", "Una"},
@@ -801,6 +795,20 @@ static const char *const texts[TXT_COUNT][5] = {
          "Ventana: se puede mover y cambiar de tamaño. Ventana sin bordes: sin bordes, ocupando "
          "toda la pantalla. Pantalla completa: la pantalla solo para el juego, a la resolución del "
          "escritorio."},
+    [TXT_VIDEO_SCREEN_RESOLUTION] = {"Screen resolution", "Résolution de l'écran", "Bildschirmauflösung",
+                                     "Risoluzione dello schermo", "Resolución de pantalla"},
+    [TXT_VIDEO_SCREEN_DESKTOP] = {"Desktop", "Bureau", "Desktop", "Desktop", "Escritorio"},
+    [TXT_VIDEO_SCREEN_RESOLUTION_NOTE] =
+        {"Full screen: the screen's mode. Window: its size. With the internal resolution Window, the game "
+         "is drawn at it.",
+         "Plein écran : le mode de l'écran. Fenêtre : sa taille. Avec la résolution interne Fenêtre, le "
+         "jeu est dessiné à cette résolution.",
+         "Vollbild: der Modus des Bildschirms. Fenster: seine Größe. Mit der internen Auflösung Fenster "
+         "wird das Spiel in ihr gezeichnet.",
+         "Schermo intero: la modalità dello schermo. Finestra: la sua dimensione. Con la risoluzione "
+         "interna Finestra, il gioco è disegnato a questa risoluzione.",
+         "Pantalla completa: el modo de la pantalla. Ventana: su tamaño. Con la resolución interna "
+         "Ventana, el juego se dibuja a ella."},
     [TXT_VIDEO_SUBTITLES] = {"Subtitles", "Sous-titres", "Untertitel", "Sottotitoli", "Subtítulos"},
     [TXT_VIDEO_SUBTITLES_NOTE] = {"The subtitles over the game's movies. A new game asks for it too.",
                                   "Les sous-titres des cinématiques du jeu. Une nouvelle partie le demande aussi.",
@@ -836,7 +844,7 @@ static const char *const texts[TXT_COUNT][5] = {
                              "l'API grafica %s non può funzionare qui (%s); si usa la scelta del sistema",
                              "la API gráfica %s no puede funcionar aquí (%s); se usa la elección del sistema"},
     /* the corner's line: the pictures a second, then the game's frames a second */
-    [TXT_FPS_LINE] = {"%d FPS  game %d", "%d IPS  jeu %d", "%d FPS  Spiel %d", "%d FPS  gioco %d", "%d FPS  juego %d"},
+    [TXT_FPS_LINE] = {"%d FPS", "%d IPS", "%d FPS", "%d FPS", "%d FPS"},
     [TXT_VIDEO_NEEDS_GPU] = {"Needs the graphics card.", "Nécessite la carte graphique.", "Braucht die Grafikkarte.",
                              "Richiede la scheda grafica.", "Necesita la tarjeta gráfica."},
     [TXT_RESTORE_VIDEO] = {"Restore the video settings", "Rétablir la vidéo", "Video zurücksetzen",
@@ -1305,6 +1313,15 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_AUTOSAVE_FAILED] = {"Autosave failed: file %d", "Échec de la sauvegarde auto : fichier %d",
                              "Autospeichern fehlgeschlagen: Datei %d", "Salvataggio automatico non riuscito: file %d",
                              "Error al autoguardar: archivo %d"},
+    [TXT_CHARACTER_SHADOWS] = {"Enhanced character shadows", "Ombres des personnages améliorées",
+                               "Verbesserte Charakterschatten", "Ombre dei personaggi migliorate",
+                               "Sombras de personajes mejoradas"},
+    [TXT_CHARACTER_SHADOWS_NOTE] =
+        {"Soft animated silhouettes directly beneath characters, including replacement models.",
+         "Silhouettes animées et adoucies sous les personnages, modèles de remplacement inclus.",
+         "Weiche animierte Silhouetten direkt unter Charakteren, auch mit Ersatzmodellen.",
+         "Sagome animate e sfumate sotto i personaggi, inclusi i modelli sostitutivi.",
+         "Siluetas animadas y suaves bajo los personajes, incluidos los modelos de reemplazo."},
     [TXT_ENH_MOUSE] = {"Mouse camera", "Caméra à la souris", "Kamera mit der Maus", "Telecamera con il mouse",
                        "Cámara con el ratón"},
     [TXT_ENH_MOUSE_NOTE] = {"Moving the mouse turns the camera, up and down too. The window holds the mouse while "

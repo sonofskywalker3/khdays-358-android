@@ -38,8 +38,9 @@ int khdays_host_frame_wants(void);
  * changes between frames. */
 float khdays_host_frame_widen(void);
 
-/* The internal resolution the picture is composed at (1 to 8; 1 when headless), for what the game
- * thread draws at that resolution (the port's own elements). It only changes between frames. */
+/* The scale the picture's 2D is composed at (the window's, or the internal resolution when that is
+ * finer; 1 when headless), for what the game thread draws at that resolution (the port's own elements:
+ * HD text, the KH2 HUD's pictures). It only changes between frames. */
 int khdays_host_frame_scale(void);
 
 /* The video settings the game thread reads (KHDAYS_HOST_*): HD graphics from
@@ -80,8 +81,10 @@ enum {
     KHDAYS_ENH_SEPARATE_LOCK_ON = 1 << 1,
     KHDAYS_ENH_DPAD_COMMAND_MENU = 1 << 2,
     KHDAYS_ENH_ANALOG_MOVEMENT = 1 << 3,
-    KHDAYS_ENH_MOUSE_CAMERA = 1 << 4, /* the camera turned by the mouse's motion (the analog camera's join) */
-    KHDAYS_ENH_CHASE_FREE = 1 << 5,   /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
+    KHDAYS_ENH_MOUSE_CAMERA = 1 << 4,     /* the camera turned by the mouse's motion (the analog camera's join) */
+    KHDAYS_ENH_CHASE_FREE = 1 << 5,       /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
+    KHDAYS_ENH_KH2_CAMERA = 1 << 6,       /* the field camera moves as KH2's (runtime/camera/kh2_camera.c) */
+    KHDAYS_ENH_KH2_FIRST_PERSON = 1 << 7, /* with it, Select is KH2's first person view */
 };
 
 /* Everything the game needs to know about the player's input at one moment.
@@ -120,6 +123,9 @@ void khdays_host_input_take(KhdaysInputSnapshot *out);
 /* The DS buttons held (KHDAYS_KEY_* bits, runtime/input/input.h), from the latest
  * snapshot. */
 uint16_t khdays_host_buttons(void);
+
+/* KHDAYS_TRACE_LATENCY: the game sampled the pad at VBlank `vblank` (game thread). */
+void khdays_host_latency_sampled(uint32_t vblank);
 
 /* Where the mouse is held on the lower screen, in its pixels; returns 0 when
  * not touching. */

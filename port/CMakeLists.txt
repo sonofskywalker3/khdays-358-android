@@ -343,10 +343,18 @@ target_compile_options(khdays-hud-settings PRIVATE ${KHDAYS_C_FLAGS})
 add_library(khdays-gfx STATIC
     gfx/compose_cpu.c
     gfx/describe.c
+    gfx/character_shadow.c
     gfx/g3d_geometry.c
     gfx/g3d_interp.c)
 target_compile_options(khdays-gfx PRIVATE ${KHDAYS_C_FLAGS})
 target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
+add_executable(khdays-character-shadow-test tests/character_shadow_test.c)
+target_link_libraries(khdays-character-shadow-test PRIVATE khdays-gfx)
+target_compile_options(khdays-character-shadow-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-shadow COMMAND khdays-character-shadow-test)
+add_executable(khdays-character-shadow-hooks-test tests/character_shadow_hooks_test.c runtime/display/character_shadows.c)
+target_compile_options(khdays-character-shadow-hooks-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-shadow-hooks COMMAND khdays-character-shadow-hooks-test)
 
 # What differs by system: Windows' own calls, or POSIX's (host/posix/include/windows.h stands in for the
 # few Windows calls the portable files make).
@@ -521,13 +529,19 @@ target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/inclu
 target_compile_options(khdays-kh2-limit-timing-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-kh2-limit-timing COMMAND khdays-kh2-limit-timing-test)
 
-add_executable(khdays-kh2-gpu-test tests/kh2_sequence_gpu_test.cpp ui/heart_points.cpp host/render/kh2_sequence_gpu.c host/render/gpu_hd.c host/render/gpu_raster3d.c)
+add_executable(khdays-kh2-gpu-test tests/kh2_sequence_gpu_test.cpp ui/heart_points.cpp host/render/kh2_sequence_gpu.c host/render/gpu_hd.c host/render/gpu_raster3d.c host/render/gpu_native3d.c)
 target_link_libraries(khdays-kh2-gpu-test PRIVATE khdays-kh2-gauge khdays-gpu khdays-gfx SDL3::SDL3)
 target_compile_options(khdays-kh2-gpu-test PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-kh2-gpu COMMAND khdays-kh2-gpu-test)
 set_tests_properties(khdays-kh2-gpu PROPERTIES SKIP_RETURN_CODE 77)
+# the HD pictures on the card: growth, the 3D's pictures coming and going past the most (needs a card)
+add_executable(khdays-gpu-hd-test tests/gpu_hd_test.c host/render/gpu_hd.c)
+target_link_libraries(khdays-gpu-hd-test PRIVATE SDL3::SDL3)
+target_compile_options(khdays-gpu-hd-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-gpu-hd COMMAND khdays-gpu-hd-test)
+set_tests_properties(khdays-gpu-hd PROPERTIES SKIP_RETURN_CODE 77)
 
 add_executable(khdays-kh2-sequence-viewer tools/kh2_sequence_viewer.cpp host/render/png_io.c)
 target_include_directories(khdays-kh2-sequence-viewer PRIVATE "${stb_SOURCE_DIR}")
@@ -630,7 +644,10 @@ target_sources(khdays-native PRIVATE
     runtime/core/clock.c
     runtime/input/controls_hooks.c
     runtime/input/walk.c               # the Walk mod's analog walk animation
+    runtime/camera/kh2_camera.c
+    runtime/camera/kh2_camera_hooks.c
     runtime/core/diag.c
+    runtime/display/character_shadows.c
     runtime/display/display.c
     runtime/display/field_wipe.c      # the field's room change being drawn (the window covers widescreen beside it)
     runtime/core/events.c
@@ -688,6 +705,8 @@ target_sources(khdays-native PRIVATE
     runtime/missions/save_part.c       # ... kept beside each save file,
     runtime/missions/tables.c          # ... their rows in the game's tables,
     runtime/missions/worlds.c          # ... the worlds they are played in
+    runtime/rooms/slots.c              # a world's rooms' loaded slots, past the game's 24
+    runtime/rooms/added.cpp            # ... and the rooms the mods add to them
     runtime/missions/missions.c        # ... and all of it in the game
     runtime/characters/registry.c      # the mods' characters: read and numbered,
     runtime/characters/rules.c         # ... their forms' rules
@@ -737,6 +756,7 @@ target_sources(khdays-native PRIVATE
     host/render/gpu_present.c
     host/render/two_screens.c             # the two screens' places: stacked or side by side
     host/render/gpu_raster3d.c
+    host/render/gpu_native3d.c
     host/render/gfx_render.c
     host/render/kh2_sequence_gpu.c
     host/render/onescreen.c               # the one picture's situation and composition
@@ -758,6 +778,7 @@ target_sources(khdays-native PRIVATE
     host/screens/kh2_seq.cpp               # KH2's 2D sequences (the pause's, the story menu's buttons)
     runtime/display/frame_package.c
     runtime/display/gfx_check.c
+    runtime/display/texture_banks.c   # the 3D's texture memory past the DS's 512 KB
     runtime/core/origin.c
     runtime/mods/names.cpp
     runtime/mods/fonts.cpp
@@ -766,7 +787,20 @@ target_sources(khdays-native PRIVATE
     runtime/mods/textures.c
     runtime/mods/installed.c
     runtime/mods/models.cpp
+    runtime/mods/model_load.cpp         # ... a mod's model loaded and fitted to the game's skeleton
+    runtime/mods/model_bones.cpp        # ... its <model>.bones.txt
+    runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions
+    runtime/mods/model_own_skeleton.cpp # ... a mod's character's own skeleton
+    runtime/mods/model_hands.cpp        # ... a KH2 model's hands and cuffs
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
+    runtime/mods/face.cpp               # a KH2 face's eyes and mouth (TEXA), as KH2 plays them
+    runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
+    runtime/mods/secondary/rig.cpp      # ... cooked against the model
+    runtime/mods/secondary/collision.cpp
+    runtime/mods/secondary/solver.cpp   # ... the XPBD solver
+    runtime/mods/secondary/actor.cpp    # ... per actor, on the game's clock
+    runtime/mods/secondary/days_environment.cpp # ... the game's rooms, read
+    runtime/mods/secondary/model_link.cpp       # ... on models.cpp's draws
     runtime/mods/tiles2d.c
     runtime/mods/sheet_colours.c        # the colours each 2D sheet is drawn with, for the studio
     runtime/core/files.c
@@ -782,6 +816,7 @@ target_sources(khdays-native PRIVATE
     host/movies/music_schedule.c
     runtime/net/net_session.c          # the multiplayer's session
     runtime/net/mp_predict.c           # a guest's prediction of its own character
+    runtime/net/msg_overflow.c         # the game's reliable messages past its 32 slots
     ui/elements.c                  # the port's own presentation
     ui/layout.c
     ui/parts.c
@@ -835,6 +870,9 @@ target_sources(khdays-native PRIVATE
     ../assets/src/gltf_export.cpp
     ../assets/src/gltf.cpp         # a mod's models (runtime/mods/models.cpp)
     ../assets/src/fbx.cpp          # ... as FBX
+    ../assets/src/kh2_mdlx.cpp     # ... as KH2's (.mdlx; its BAR from khdays-kh2-sequence)
+    ../assets/src/kh2_map.cpp      # ... its model and textures
+    ../assets/src/kh2_motion.cpp   # ... and KH2's motions for it
     ../assets/src/image.cpp        # their textures in PNG, JPEG, TGA, BMP (its own stb_image)
     ../assets/src/graphics2d.cpp   # the game's 2D sheets, for the rooms' signal
     ../assets/src/cell.cpp         # their cells
@@ -914,14 +952,14 @@ target_link_libraries(khdays-native PRIVATE khdays-lua khdays-kh2-gauge khdays-k
 target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3)
 if(WIN32)
 target_link_libraries(khdays-native PRIVATE dbghelp winmm delayimp
-                      mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp)
+                      mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp dwmapi)
 # The DS's own addresses are held, inaccessible, first thing in main
 # (memory.c), so that an access at one stops the game. DLLs loaded with the
 # process could take them first: user32 maps the 20 MB desktop heap at the
 # lowest free address, right over main RAM's. So SDL's system DLLs (and
 # everything that pulls in user32) load on first use.
 foreach(dll user32 gdi32 imm32 ole32 oleaut32 version setupapi shell32 winmm dbghelp mfplat mfreadwrite ws2_32
-            iphlpapi winhttp)
+            iphlpapi winhttp dwmapi)
     target_link_options(khdays-native PRIVATE /DELAYLOAD:${dll}.dll)
 endforeach()
 
@@ -967,10 +1005,14 @@ target_compile_options(khdays-input-test PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-input COMMAND khdays-input-test)
+# The KH2 camera's arithmetic against KH2's numbers.
+add_executable(khdays-kh2-camera-test tests/kh2_camera_test.c runtime/camera/kh2_camera.c)
+target_compile_options(khdays-kh2-camera-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-kh2-camera COMMAND khdays-kh2-camera-test)
 # The course of an HD movie against a scripted game and video.
 add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/movies/scene_map.c
                runtime/core/clock.c runtime/core/folders.c)
-target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
+target_link_libraries(khdays-movie-hd-test PRIVATE winmm dwmapi)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
 # the Walk mod's clip from its folder (KHDAYS_WALK_CLIP: a Roxas walk, animations/walk/ro.khw); skipped without one
@@ -999,6 +1041,13 @@ if(KHDAYS_DECOMPRESSED)
     list(GET KHDAYS_DECOMPRESSED 0 KHDAYS_DECOMPRESSED_FIRST)
 endif()
 add_test(NAME khdays-missions COMMAND khdays-missions-test "${KHDAYS_DECOMPRESSED_FIRST}")
+# The rooms the mods add (runtime/rooms/): a world's archive with them, their indices and models; the slots past 24.
+add_executable(khdays-rooms-test tests/rooms_test.cpp runtime/rooms/added.cpp runtime/rooms/slots.c
+               runtime/missions/worlds.c host/render/png_io.c ../assets/src/message.cpp)
+target_include_directories(khdays-rooms-test PRIVATE ../assets/include "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-rooms-test PRIVATE SDL3::SDL3)
+target_compile_options(khdays-rooms-test PRIVATE $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17> $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-rooms COMMAND khdays-rooms-test)
 # The mods' characters (runtime/characters/): descriptions, refusals, numbers, movesets.
 add_executable(khdays-characters-test tests/characters_test.c runtime/characters/registry.c
     runtime/characters/rules.c runtime/characters/moveset.c)
@@ -1014,6 +1063,53 @@ add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
 target_compile_options(khdays-room-animation-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-room-animation COMMAND khdays-room-animation-test)
+# A KH2 face's texture animation (runtime/mods/face.cpp): scripts, held slots, defaults, jumps and stops.
+add_executable(khdays-face-test tests/face_test.cpp runtime/mods/face.cpp)
+target_include_directories(khdays-face-test PRIVATE ../assets/include)
+target_compile_options(khdays-face-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-face COMMAND khdays-face-test)
+
+add_executable(khdays-kh2-clock-test tests/kh2_clock_test.cpp)
+target_compile_options(khdays-kh2-clock-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-clock COMMAND khdays-kh2-clock-test)
+
+add_executable(khdays-attached-frame-test tests/attached_frame_test.cpp)
+target_compile_options(khdays-attached-frame-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-attached-frame COMMAND khdays-attached-frame-test)
+
+add_executable(khdays-hand-pose-test tests/hand_pose_test.cpp)
+target_compile_options(khdays-hand-pose-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-hand-pose COMMAND khdays-hand-pose-test)
+
+add_executable(khdays-cuff-fit-test tests/cuff_fit_test.cpp)
+target_compile_options(khdays-cuff-fit-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-cuff-fit COMMAND khdays-cuff-fit-test)
+
+add_executable(khdays-kh2-tail-test tests/kh2_tail_test.cpp)
+target_compile_options(khdays-kh2-tail-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-tail COMMAND khdays-kh2-tail-test)
+
+add_executable(khdays-kh2-moves-test tests/kh2_moves_test.cpp)
+target_compile_options(khdays-kh2-moves-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-moves COMMAND khdays-kh2-moves-test)
+
+# Secondary motion (runtime/mods/secondary): configuration, cooking, the solver and its clock, on
+# synthetic rigs; and on N_EX830 when KHDAYS_SECONDARY_ASSETS names the folder holding it.
+set(KHDAYS_SECONDARY_SOURCES
+    runtime/mods/secondary/config.cpp runtime/mods/secondary/rig.cpp runtime/mods/secondary/collision.cpp
+    runtime/mods/secondary/solver.cpp runtime/mods/secondary/actor.cpp)
+add_executable(khdays-secondary-motion-test tests/secondary_motion_test.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-motion-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
+# The offline replay, tuning and benchmark tool (tools/secondary_replay.cpp, docs/SECONDARY_MOTION.md).
+add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-replay PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
 target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)
@@ -1059,6 +1155,16 @@ add_executable(khdays-elements-test tests/elements_test.c)
 target_link_libraries(khdays-elements-test PRIVATE khdays-gfx)
 target_compile_options(khdays-elements-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-elements COMMAND khdays-elements-test)
+# The 3D's texture memory past the DS's: a file's bank, the draws from it, its textures decoded once.
+add_executable(khdays-texture-banks-test tests/texture_banks_test.c runtime/display/texture_banks.c)
+target_link_libraries(khdays-texture-banks-test PRIVATE khdays-gpu)
+target_compile_options(khdays-texture-banks-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-texture-banks COMMAND khdays-texture-banks-test)
+# A picture between two 3D lists: drawings matched by place, markers and jumps as the newer list.
+add_executable(khdays-g3d-interp-test tests/g3d_interp_test.c)
+target_link_libraries(khdays-g3d-interp-test PRIVATE khdays-gfx)
+target_compile_options(khdays-g3d-interp-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-g3d-interp COMMAND khdays-g3d-interp-test)
 # A mod's polygons into a list: the near plane only, a sky behind everything else.
 add_executable(khdays-mod-polygon-test tests/mod_polygon_test.c)
 target_link_libraries(khdays-mod-polygon-test PRIVATE khdays-gfx)
@@ -1242,7 +1348,7 @@ add_test(NAME khdays-sound COMMAND khdays-sound-test "${KHDAYS_ARM7_BIN_FIRST}")
 # Recorded frame packages (KHDAYS_RECORD_FRAMES, in saves/frames: the
 # player's game data, never in the repository) checked against the pictures
 # the game showed; skipped without recordings.
-add_executable(khdays-render-test tests/render_test.c host/render/gfx_render.c host/render/gpu_raster3d.c host/render/gpu_hd.c host/render/kh2_sequence_gpu.c runtime/display/frame_package.c)
+add_executable(khdays-render-test tests/render_test.c host/render/gfx_render.c host/render/gpu_raster3d.c host/render/gpu_native3d.c host/render/gpu_hd.c host/render/kh2_sequence_gpu.c runtime/display/frame_package.c)
 target_link_libraries(khdays-render-test PRIVATE khdays-gpu khdays-gfx SDL3::SDL3)
 target_compile_options(khdays-render-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-render COMMAND khdays-render-test "${CMAKE_CURRENT_SOURCE_DIR}/../saves/frames")
@@ -1295,6 +1401,13 @@ if(KHDAYS_ASAN)
     foreach(target IN LISTS KHDAYS_PORT_TARGETS)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE $<$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>:/fsanitize=address>)
+            # (the sanitizer's sections take ds_names.c past an object file's usual count)
+            target_compile_options(${target} PRIVATE $<$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>:/bigobj>)
+            # the libraries it links are built without the sanitizer: the standard containers' annotations off
+            # on both sides, so they link (overflows of the heap are still caught, only a container's own
+            # unused room is not)
+            target_compile_definitions(${target} PRIVATE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION
+                                                         _DISABLE_OPTIONAL_ANNOTATION)
             target_link_options(${target} PRIVATE /DEBUG /INCREMENTAL:NO)  # a report's lines
         endif()
     endforeach()

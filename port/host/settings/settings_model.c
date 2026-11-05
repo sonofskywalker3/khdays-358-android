@@ -34,8 +34,8 @@ enum { RESOLUTION_CHOICES = 17 };
 static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT], *scalings[2],
     *second_screens[KHDAYS_SECOND_SCREEN_COUNT], *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2],
     *two_screens_choices[KHDAYS_TWO_SCREENS_COUNT],
-    *backends[KHDAYS_BACKEND_COUNT], *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
-static const int antialiasing_values[4] = {1, 2, 3, 4};
+    *backends[KHDAYS_BACKEND_COUNT], *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[2];
+static const int antialiasing_values[2] = {1, 2};
 static const char *autosaves[3], *save_files[2];
 static const char *hud_anchors[9], *mission_visibility[2];
 static const int hud_anchor_values[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -44,6 +44,69 @@ static const int autosave_values[3] = {KHDAYS_AUTOSAVE_FILE99, KHDAYS_AUTOSAVE_P
 static const int save_files_values[2] = {1, 0};
 static const int resolution_values[RESOLUTION_CHOICES] = {
     1, KHDAYS_RESOLUTION_WINDOW, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+/* The screen resolutions: the desktop's, then the sizes of the screen's modes, largest first (and the
+ * profile's own if the screen has no such mode); grown as the screen needs. */
+static const char **screen_choices;
+static int *screen_values;
+static char (*screen_names)[32];
+static int screen_count, screen_room;
+
+static int add_screen_choice(int value)
+{
+    if (screen_count == screen_room) {
+        const int room = screen_room > 0 ? screen_room * 2 : 16;
+        const char **c = (const char **)SDL_realloc((void *)screen_choices, sizeof(*c) * (size_t)room);
+        int *v = c != NULL ? (int *)SDL_realloc(screen_values, sizeof(*v) * (size_t)room) : NULL;
+        char (*n)[32] = v != NULL ? (char (*)[32])SDL_realloc(screen_names, sizeof(*n) * (size_t)room) : NULL;
+        if (c != NULL)
+            screen_choices = c;
+        if (v != NULL)
+            screen_values = v;
+        if (n == NULL) {
+            return 0;
+        }
+        screen_names = n;
+        screen_room = room;
+    }
+    screen_values[screen_count] = value;
+    if (value == 0) {
+        SDL_strlcpy(screen_names[screen_count], khdays_text(TXT_VIDEO_SCREEN_DESKTOP), sizeof(screen_names[0]));
+    } else {
+        SDL_snprintf(screen_names[screen_count], sizeof(screen_names[0]), "%d x %d", KHDAYS_SCREEN_WIDTH(value),
+                     KHDAYS_SCREEN_HEIGHT(value));
+    }
+    for (int i = 0; i <= screen_count; ++i) {
+        screen_choices[i] = screen_names[i]; /* (the names may have moved) */
+    }
+    ++screen_count;
+    return 1;
+}
+
+/* The choices for `current`: the desktop's, the screen's modes (with the video on), `current` if neither. */
+static void screen_resolutions(int current)
+{
+    int found = current == 0;
+    screen_count = 0;
+    add_screen_choice(0);
+    if (SDL_WasInit(SDL_INIT_VIDEO)) {
+        int modes = 0;
+        SDL_DisplayMode **list = SDL_GetFullscreenDisplayModes(SDL_GetPrimaryDisplay(), &modes);
+        for (int i = 0; list != NULL && i < modes; ++i) {
+            const int value = KHDAYS_SCREEN_RESOLUTION(list[i]->w, list[i]->h);
+            int seen = 0;
+            for (int k = 0; k < screen_count; ++k) {
+                seen |= screen_values[k] == value;
+            }
+            if (!seen && add_screen_choice(value)) {
+                found |= value == current;
+            }
+        }
+        SDL_free(list);
+    }
+    if (!found) {
+        add_screen_choice(current);
+    }
+}
 /* texts put together from several parts */
 static char preset_line[160], kh2_note[1024], menu_note[512], automatic[64];
 
@@ -72,9 +135,7 @@ void khdays_model_refresh(const KhdaysProfile *work)
         }
     }
     antialiasings[0] = khdays_text(TXT_OFF);
-    antialiasings[1] = "2x";
-    antialiasings[2] = "3x";
-    antialiasings[3] = "4x";
+    antialiasings[1] = "FXAA";
     displays[KHDAYS_DISPLAY_WINDOW] = khdays_text(TXT_VIDEO_DISPLAY_WINDOW);
     displays[KHDAYS_DISPLAY_BORDERLESS] = khdays_text(TXT_VIDEO_DISPLAY_BORDERLESS);
     displays[KHDAYS_DISPLAY_FULLSCREEN] = khdays_text(TXT_VIDEO_DISPLAY_FULLSCREEN);
@@ -316,6 +377,10 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                  khdays_text(TXT_GAME_COMMAND_LIST), khdays_text(TXT_GAME_ONLY));
     add_switch(b, KHDAYS_SET_ENH_CAMERA, TXT_ENH_CAMERA, &e->analog_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
                khdays_text(TXT_ENH_CAMERA_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_KH2_CAMERA, TXT_ENH_KH2_CAMERA, &e->kh2_camera, 1,
+               khdays_text(TXT_ENH_KH2_CAMERA_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_KH2_FIRST_PERSON, TXT_ENH_KH2_FIRST_PERSON, &e->kh2_first_person, 1,
+               khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
@@ -331,6 +396,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
      * for two screens, where the game draws its own page */
     add_switch(b, KHDAYS_SET_ENH_CHASE_FREE, TXT_ENH_CHASE_FREE, &e->chase_free, 1,
                khdays_text(TXT_ENH_CHASE_FREE_NOTE));
+    add_switch(b, KHDAYS_SET_CHARACTER_SHADOWS, TXT_CHARACTER_SHADOWS, &e->character_shadows, 1,
+               khdays_text(TXT_CHARACTER_SHADOWS_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_REPLACEMENTS));
     add_switch(b, KHDAYS_SET_HUD_FONT, TXT_HUD_FONT, &e->hud[KHDAYS_OPT_FONT], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
@@ -354,6 +421,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_PRIZES, TXT_HUD_PRIZES, &e->hud[KHDAYS_OPT_PRIZES], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_KH2_MODELS, TXT_HUD_KH2_MODELS, &e->hud[KHDAYS_OPT_KH2_MODELS], 1,
+               khdays_text(TXT_HUD_KH2_MODELS_NOTE));
     add_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD], 1,
@@ -403,16 +472,22 @@ static void build_video(Builder *b, KhdaysProfile *w)
     if (!HANDHELD) { /* a handheld's picture is always its whole screen */
         add_choice(b, KHDAYS_SET_DISPLAY, TXT_VIDEO_DISPLAY, &v->display, displays, KHDAYS_DISPLAY_COUNT)->note =
             khdays_text(TXT_VIDEO_DISPLAY_NOTE);
+        screen_resolutions(v->screen_resolution);
+        r = add_choice(b, KHDAYS_SET_SCREEN_RESOLUTION, TXT_VIDEO_SCREEN_RESOLUTION, &v->screen_resolution,
+                       screen_choices, screen_count);
+        r->values = screen_values;
+        /* a borderless window covers the screen at the desktop's resolution */
+        r->available = v->display != KHDAYS_DISPLAY_BORDERLESS;
+        r->note = khdays_text(TXT_VIDEO_SCREEN_RESOLUTION_NOTE);
     }
-    r = add_choice(b, KHDAYS_SET_RESOLUTION, TXT_VIDEO_RESOLUTION, &v->internal_resolution,
-                              resolutions + first, RESOLUTION_CHOICES - first);
+    r = add_choice(b, KHDAYS_SET_RESOLUTION, TXT_VIDEO_RESOLUTION, &v->internal_resolution, resolutions + first,
+                   RESOLUTION_CHOICES - first);
     r->values = resolution_values + first;
     needs_graphics_card(b, r, TXT_VIDEO_RESOLUTION_NOTE);
-    r = add_choice(b, KHDAYS_SET_ANTIALIASING, TXT_VIDEO_ANTIALIASING, &v->antialiasing, antialiasings, 4);
+    r = add_choice(b, KHDAYS_SET_ANTIALIASING, TXT_VIDEO_ANTIALIASING, &v->antialiasing, antialiasings, 2);
     r->values = antialiasing_values;
     needs_graphics_card(b, r, TXT_VIDEO_ANTIALIASING_NOTE);
-    r->warning = khdays_text(TXT_VIDEO_ANTIALIASING_WARNING); /* on top of the internal resolution's */
-    r->safe = 1;                                              /* off */
+    r->safe = 1; /* off */
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_ASPECT, TXT_VIDEO_ASPECT, &v->aspect, aspects, KHDAYS_ASPECT_COUNT),
                         TXT_VIDEO_ASPECT_NOTE);
     if (!b->context->second_display) {

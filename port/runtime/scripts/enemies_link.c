@@ -18,7 +18,7 @@
 #include <string.h>
 
 extern void Ov002_CreateActorFromMarker(int nSourceIndex, int nRowIndex);
-extern int Ov002_GetEffectiveHeight(KhdaysRef row);
+extern int Ov002_GetMarkerEnemyLevel(KhdaysRef row);
 extern int Ov002_GetStateWord(void);
 extern void Ov107_AiState_LoadResistances(KhdaysRef actor, unsigned profile);
 extern int Ov107_MoveNodeAndRelayout(KhdaysRef node, KhdaysRef at);
@@ -87,15 +87,15 @@ const char *khdays_enemy_name(int id); /* enemy_names.c */
 #define AI_RETIRE 0x1e8u
 #define AI_LOAD_STATS 0x1ecu
 #define AI_ACTIVATE 0x1f0u
-#define AI_PLACE 0x1f4u  /* the home and its reach (Ov107_StoreHitInfo) */
+#define AI_PLACE 0x1f4u  /* the home and its reach (Ov107_SetHomeAndReach) */
 #define AI_HP_MAX 0x218u /* s16 */
 #define AI_HP 0x21au     /* s16 */
 #define AI_ATTACKER 0x25cu
-#define AI_ATTACKS 0x290u /* s16 each 6 bytes, 8 of them (Ov107_StoreSlotEvent) */
+#define AI_ATTACKS 0x290u /* s16 each 6 bytes, 8 of them (Ov107_SetAttackPower) */
 #define AI_BUSY 0x2e8u
 #define AI_SPAWNER 0x2d4u
 #define ATTACKS 8
-#define REACH (16 * 4096) /* the mission's spawners' (Ov002_ScriptCreateSlotObject's 9th) */
+#define REACH (16 * 4096) /* the mission's spawners' (Ov002_ScriptCreateSpawner's 9th) */
 #define MANAGER_IDS 0x48u /* gOv107ActorManager: an actor by its id (+2), made by Ov107_Scene_BuildIdTable */
 /* A hit as the players' attacks give it (Ov022_SendSweepHit's packet, Ov107_AiState_ApplyHit): u16 flags (4 a
  * physical hit, 0x80 no flinch), u16 its kinds (0x4000 a physical hit; the statuses' bits 0x80 burn, 0x8 freeze, 0x800
@@ -118,7 +118,7 @@ const char *khdays_enemy_name(int id); /* enemy_names.c */
 #define NODE_NEXT 0x4u
 #define NODE_ITEM 0xcu /* the element, whose first word is the actor (Ov107_Scene_BuildIdTable) */
 #define STANDING 0x100u
-#define LEVEL_MAX 0x78 /* Ov002_GetEffectiveHeight */
+#define LEVEL_MAX 0x78 /* Ov002_GetMarkerEnemyLevel */
 /* The enemies' overlays (Ov107_SpawnEntityClass, Ov107_LoadEnemyOverlay): six places of 0x1e00 bytes;
  * each kind has a build of its overlay for some of them (ov107's table, 0xff none), overlay 114 + the
  * build, which takes its size / 0x1e00 + 1 places. A kind's overlay is loaded as its first enemy is
@@ -197,6 +197,22 @@ static void wr8(KhdaysRef at, unsigned v)
 static unsigned ref_of(const void *p)
 {
     return p != NULL ? (unsigned)KHDAYS_REF(p) : 0;
+}
+
+static unsigned ids_table, ids_count; /* the actors' table by id, and the ids it was made for */
+
+void khdays_enemies_ids_built(const void *table, int count)
+{
+    ids_table = ref_of(table);
+    ids_count = count > 0 ? (unsigned)count : 0u;
+    if (traced()) {
+        fprintf(stderr, "enemies: f%u the actors' table by id made for %u ids\n", khdays_link_frame(), ids_count);
+    }
+}
+
+int khdays_enemies_ids_room(const void *table)
+{
+    return ref_of(table) == ids_table ? (int)ids_count : 0;
 }
 
 static int clamp(long long v, int low, int high)
@@ -470,7 +486,7 @@ static unsigned make_from(unsigned objs, int source, int row, int kind, const fl
     if (p != NULL) {
         actor = p->actor;
         if (Ov002_GetStateWord() != STATE_FLAT) {
-            set_level(actor, row_ref, clamp((long long)Ov002_GetEffectiveHeight(row_ref) + level, 1, LEVEL_MAX));
+            set_level(actor, row_ref, clamp((long long)Ov002_GetMarkerEnemyLevel(row_ref) + level, 1, LEVEL_MAX));
             keep_base(p);
         }
     } else {
@@ -485,7 +501,7 @@ static unsigned make_from(unsigned objs, int source, int row, int kind, const fl
             return 0;
         }
         if (level != 0 && Ov002_GetStateWord() != STATE_FLAT) {
-            set_level(actor, row_ref, clamp((long long)Ov002_GetEffectiveHeight(row_ref) + level, 1, LEVEL_MAX));
+            set_level(actor, row_ref, clamp((long long)Ov002_GetMarkerEnemyLevel(row_ref) + level, 1, LEVEL_MAX));
         }
         keep_base(p);
     }

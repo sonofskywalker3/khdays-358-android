@@ -88,6 +88,12 @@ unsigned khdays_link_frame(void)
     return rd32(KHDAYS_DS_gObjSystem + OBJ_FRAME);
 }
 
+double khdays_link_frame_seconds(void)
+{
+    const unsigned mode = *(const volatile unsigned char *)KHDAYS_W(KHDAYS_DS_gObjSystem);
+    return mode == 2 ? 1.0 / 60.0 : mode == 1 ? 3.0 / 60.0 : 2.0 / 60.0;
+}
+
 int khdays_link_paused(void)
 {
     /* main's loop: mode 1 runs the callbacks only, the objects stand still */
@@ -278,7 +284,7 @@ const char *khdays_link_set_actor_hp(unsigned actor, int hp)
     if (actor == 0) {
         return "no player";
     }
-    /* Ov022_ActorSetHp shows the HP on the player's gauge (Ov002_GetPanelWord0220), which the field's panel and
+    /* Ov022_ActorSetHp shows the HP on the player's gauge (Ov002_SetSeatHpGauge), which the field's panel and
      * its gauges have only once they are set up: while the field loads the actor is there before them */
     if (!khdays_overlay_loaded(OV_FIELD) || !khdays_game_ram(rd32(PANEL)) || !khdays_game_ram(rd32(GAUGES))) {
         return "not now";
