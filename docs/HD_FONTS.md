@@ -81,6 +81,12 @@ OBTAINED. HD PACK generation emits these two explicit entries. The Items rule
 covers both the Items list and the Use/Discard header; those views reuse the same
 cached item-name tiles. OBTAINED keeps its independent capture and font mapping.
 
+A third entry, `camp.mission_list.count`, is the mission list's "found / total"
+(each row's chests and items, `DrawMissionRow` in ov008 and ov025). The game draws
+it from x 2 in a 16-pixel slot, so it fits in 14 pixels unless the file names
+the scope: KH2's wider digits otherwise lose the last one at the slot's edge.
+`"original"` keeps them as drawn.
+
 Widths are fractional DS pixels, between 0.25 and 64. Optional `"x_offset"` defaults
 to 0 and moves a fitted run to the right; the entire configured region must remain
 inside the 64-pixel strip. Fitting never enlarges or moves a name that already fits.
@@ -190,6 +196,8 @@ expressed from the user's KH2/Days reference tables. No OpenKH implementation or
 reference JSON is distributed. First occurrences of duplicate punctuation win;
 fullwidth ASCII aliases use the corresponding normal glyph. Unicode Roman
 numerals I–XII use individual atlas pictures, preserving ordinary Latin I/V/X.
+Bytes 0xB4 and 0xB5 are Œ and œ, as both sheets draw them (French's cœur), not
+Æ and æ: Days's Æ and æ keep their original glyphs.
 The Days compatibility mappings use U+2165 → slot 88 and U+2167 → slot 93,
 as requested after inspecting Days' numeral artwork; this does not assert how
 the original game composes wider numerals. Both SYS and EVT sheets were checked:
@@ -471,6 +479,15 @@ flips and supplementary placements. Its native DS samples stay transparent;
 if the RGBA image cannot be allocated, those cells remain with the ordinary
 renderer. Original-sheet matching and file provenance requirements are unchanged.
 
+The HD-font preference changes retained text layout as well as artwork. The
+adapted SDK draw entry points evaluate a second scalar layout pass with the
+opposite font mode; that pass never invokes a game blitter. Captured glyphs retain
+both sets of positions, bearings, sizes, alignment and fitting, plus native glyph
+samples. Switching the preference selects the retained layout and invalidates
+primary, supplementary and sequence-text images. INFORMATION text revisions
+include the font mode, so its cached texture updates without restarting the
+message. Character crawls measure both prefixes, preserving their reveal state.
+
 Unchanged frames reuse images without painting or uploading. Primary tiles skip
 glyph-color scans when neither their dirty bit nor palette changes. Palette
 hashes are shared per engine during submission. Supplementary updates render
@@ -478,7 +495,7 @@ each distinct source tile/palette/flip once, then copy repeated placements.
 Palette keys include extended-palette selectors and the displayed BG slot.
 Serial submission reuses a fixed scratch tile; canvas membership uses a bitset.
 Primary and supplementary DS graphics planes stay at native resolution; the
-compositor scales their indexed pixels. Only PNG artwork uses output-resolution
+compositor scales their indexed pixels. Captured font operations and PNG artwork use output-resolution
 RGBA images. Matching-size, unflipped RGBA tile copies avoid resampling.
 PNG mapping changes dirty only their affected tiles. The mapping cache takes
 four bytes per canvas tile (at most 64 KiB) and introduces no additional image
@@ -525,9 +542,9 @@ CTest includes the runtime suites, NFTR decoder and generator-hook checks, with
 separate fixtures per build directory. Release tests retain assertion checks.
 
 The same suites run under AddressSanitizer in the `port/build.py --asan` tree.
-There are nine synthetic suites: camp scope selection, canvas/VRAM behavior,
+There are ten synthetic suites: camp scope selection, canvas/VRAM behavior,
 layout following, metadata/routing, secondary fallback, rasterization,
-raster-cache bounds, NFTR decoding and generated SDK layout.
+raster-cache bounds, NFTR decoding, generated SDK layout and live layout reflow.
 
 Canvas tests also check ordinary PNGs with HD fonts disabled, partial uploads
 beside retained text, transparent and indexed art, flips, scrolling and image

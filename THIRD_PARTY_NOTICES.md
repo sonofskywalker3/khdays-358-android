@@ -198,14 +198,17 @@ License: **Apache License 2.0** (<https://www.apache.org/licenses/LICENSE-2.0>),
 
 Project: Input Prompts 1.5A, by Kenney (<https://kenney.nl/assets/input-prompts>)
 
-Pinned archive: `kenney_input-prompts_1.5.zip` (5,070,075 bytes), fetched by CMake from
-`https://kenney.nl/media/pages/assets/input-prompts/8de120163f-1783763952/kenney_input-prompts_1.5.zip`, checked
-by its SHA-256 `ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1` (`port/CMakeLists.txt`).
+Source archive: `kenney_input-prompts_1.5.zip` (5,070,075 bytes, SHA-256
+`ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1`), once at
+`https://kenney.nl/media/pages/assets/input-prompts/8de120163f-1783763952/kenney_input-prompts_1.5.zip`; that
+address no longer serves it, so the files used are kept in the repository, unmodified and at the archive's own
+paths, with its `License.txt`: `port/resources/input_prompts/`.
 
-Usage: 72 of its 128-pixel PNGs (the `Double` folders of `Xbox Series`, `PlayStation Series` and
-`Nintendo Switch`: the buttons, triggers, sticks and D-pads the menu names, and five gamepads' pictures:
-Xbox Series, PlayStation 5, 4 and 3, Switch Pro), embedded unmodified in
-`khdays-native.exe` as bytes generated at configure time, drawn in the settings menu's Controls section.
+Usage: 121 of its 128-pixel PNGs (the `Double` folders of `Xbox Series`, `PlayStation Series`,
+`Nintendo Switch` and `Keyboard & Mouse`: the buttons, triggers, sticks, stick directions and D-pads the menu
+and the HD fonts' text name, the mouse's inputs, and five gamepads' pictures: Xbox Series, PlayStation 5, 4
+and 3, Switch Pro), embedded in `khdays-native.exe` as bytes generated at configure time, drawn in the settings
+menu's Controls section and in the HD fonts' text (`port/ui/button_icons.c`).
 
 License: **Creative Commons Zero (CC0 1.0)**, public domain (<http://creativecommons.org/publicdomain/zero/1.0/>),
 as the archive's `License.txt` states; crediting Kenney is not required, and is done here.
@@ -268,6 +271,17 @@ port, the components below, each unmodified. Their own license files travel with
 <https://github.com/GyanD/codexffmpeg>, GPL-3.0) into `setup/ffmpeg/` itself, only when the player
 runs it, and uses it only when its SHA-256 matches the one the tool names. It runs as a separate
 program; nothing of it is in the installer or the repository.
+## Kingdom Hearts Re:Collection's fonts (the Menu Overhaul's words)
+
+Project: Kingdom Hearts Re:Collection, by Televo -- a free archive of art assets and fonts
+(<https://github.com/Televo/kingdom-hearts-recollection>; the fonts also on DaFont, <https://www.dafont.com/khmenu.font>)
+
+License: free fonts, the author's terms "giving credit is much appreciated although not necessary"; no formal license.
+
+Usage: **not in this repository**. The installer carries KHMenu.otf and KHGummi.otf, taken from DaFont's
+package at build time (`installer/pinned.json` pins its SHA-256), into `installer/fonts/`; the Menu Overhaul's tools
+(`tools/mods/menu_overhaul.py`) draw the mod's words with them on the player's computer. `tools/hd/hd_pause.py` takes
+the same fonts from a folder the player gives.
 
 ## KH Melon Mix (acknowledgement)
 

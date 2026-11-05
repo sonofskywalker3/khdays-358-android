@@ -64,6 +64,23 @@ void khdays_hd_voice_play(const char *const *paths, int count)
     (void)count;
 }
 
+void khdays_hd_close_scene_end(void)
+{
+}
+
+int khdays_hd_voice_clock(char *name, size_t size, double *seconds)
+{
+    (void)name;
+    (void)size;
+    (void)seconds;
+    return 0;
+}
+
+int khdays_hd_voice_speaking(void)
+{
+    return 0;
+}
+
 void khdays_hd_voice_stop(void)
 {
 }

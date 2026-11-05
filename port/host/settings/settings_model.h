@@ -22,7 +22,7 @@ enum KhdaysSection {
     KHDAYS_SECTION_MULTIPLAYER,
     KHDAYS_SECTION_LANGUAGE,
     KHDAYS_SECTION_GENERAL,
-    KHDAYS_SECTION_MODS, /* only while a scripted mod is present (khdays_model_section_shown) */
+    KHDAYS_SECTION_MODS, /* only while a scripted mod or a native plugin is present (khdays_model_section_shown) */
     KHDAYS_SECTION_COUNT
 };
 
@@ -86,6 +86,7 @@ enum KhdaysSettingId {
     KHDAYS_SET_ENH_MENU,
     KHDAYS_SET_ENH_MOVEMENT,
     KHDAYS_SET_ENH_MOUSE,
+    KHDAYS_SET_ENH_CHASE_FREE,
     KHDAYS_SET_LEFT_STICK,
     KHDAYS_SET_RIGHT_STICK,
     KHDAYS_SET_LEFT_DEAD_ZONE,
@@ -104,6 +105,7 @@ enum KhdaysSettingId {
     KHDAYS_SET_ANTIALIASING,
     KHDAYS_SET_ASPECT,
     KHDAYS_SET_SCREENS,
+    KHDAYS_SET_TWO_SCREENS,
     KHDAYS_SET_HUD_SIZE,
     KHDAYS_SET_MENU_SIZE,
     KHDAYS_SET_SCALING,
@@ -148,6 +150,27 @@ enum KhdaysSettingId {
     KHDAYS_SET_MOD_LATER,
     KHDAYS_SET_MOD_RESUME,
     KHDAYS_SET_MOD_OPTION,
+    KHDAYS_SET_HUD_FONT,
+    KHDAYS_SET_HUD_MINIMAP,
+    KHDAYS_SET_HUD_PARTY_HP,
+    KHDAYS_SET_HUD_ENEMY_HP,
+    KHDAYS_SET_HUD_MISSION,
+    KHDAYS_SET_HUD_INFORMATION,
+    KHDAYS_SET_HUD_RETICLES,
+    KHDAYS_SET_HUD_LOCKED_ON,
+    KHDAYS_SET_HUD_NOTIFICATIONS,
+    KHDAYS_SET_HUD_HEART_POINTS,
+    KHDAYS_SET_HUD_PRIZES,
+    KHDAYS_SET_HUD_PAUSE_TARGET,
+    KHDAYS_SET_HUD_INFORMATION_HUD,
+    KHDAYS_SET_HUD_UI_PADDING,
+    KHDAYS_SET_HUD_MISSION_VISIBILITY,
+    KHDAYS_SET_HUD_MISSION_ANCHOR,
+    KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR,
+    /* its native code: the switch, then each plugin (`layer` its place among them) */
+    KHDAYS_SET_NATIVE_CODE,
+    KHDAYS_SET_PLUGIN_HEADING,
+    KHDAYS_SET_PLUGIN_STATE,
     KHDAYS_SET_COUNT
 };
 
@@ -219,7 +242,7 @@ int khdays_model_rows(int section, KhdaysProfile *work, const KhdaysModelContext
 int khdays_model_rows_into(int section, KhdaysProfile *work, const KhdaysModelContext *context, KhdaysRow *rows,
                            int room);
 
-/* Whether the menu shows a section: the Mods section only while a scripted mod is present. */
+/* Whether the menu shows a section: the Mods section only while a scripted mod or a native plugin is present. */
 int khdays_model_section_shown(int section);
 
 /* Enter on a command row (a mod's button, its place in the list, Resume, or the profile's commands). */

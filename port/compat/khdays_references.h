@@ -40,11 +40,14 @@ static __inline khdays_function_pointer khdays_host_function(khdays_ref referenc
 #if defined(_MSC_VER)
 #pragma section(".khdi$m", read, write)
 #pragma section(".khfr$m", read)
+#pragma section(".khrt$m", read)
 #define KHDAYS_IN_DATA_INITS __declspec(allocate(".khdi$m"))
 #define KHDAYS_IN_FUNCTION_RECORDS __declspec(allocate(".khfr$m"))
+#define KHDAYS_IN_ROUTE_RECORDS __declspec(allocate(".khrt$m"))
 #else
 #define KHDAYS_IN_DATA_INITS __attribute__((used, section("khdi")))
 #define KHDAYS_IN_FUNCTION_RECORDS __attribute__((used, section("khfr")))
+#define KHDAYS_IN_ROUTE_RECORDS __attribute__((used, section("khrt")))
 #endif
 
 /* A function reference the build numbers (one with no DS address: a static
@@ -53,6 +56,17 @@ static __inline khdays_function_pointer khdays_host_function(khdays_ref referenc
 struct khdays_function_record {
     khdays_ref reference;
     khdays_function_pointer function;
+};
+#pragma pack(pop)
+
+/* A routine of the game's a native plugin may replace (references/emit.py routed): its name, the pointer every call
+ * of it goes through, and its own body: in section .khrt$m (runtime/plugins/engine.c). */
+#pragma pack(push, 8)
+struct khdays_route_record {
+    const char *name;
+    void **route;
+    void *body;
+    void *unused; /* 32 bytes: whatever alignment the linker gives the section, no record straddles its padding */
 };
 #pragma pack(pop)
 

@@ -70,6 +70,8 @@ static struct {
     SDL_AtomicInt stop;
     int art_now, art_before; /* arts' indices, -1 none */
     Uint64 art_since;        /* when art_now came in */
+    Uint64 loaded_at;        /* when load() ended */
+    int loads;               /* how many times the list was loaded */
 } s;
 
 /* ---- The artworks ----------------------------------------------------------------------------- */
@@ -86,6 +88,8 @@ static int SDLCALL read_arts(void *unused)
         }
         SDL_SetAtomicInt(&a->read, 1);
     }
+    SDL_Log("theater list: %d artworks read, %u ms after the list loaded", s.art_count,
+            (unsigned)(SDL_GetTicks() - s.loaded_at));
     return 0;
 }
 
@@ -332,6 +336,7 @@ static int load(SDL_Renderer *renderer, int language)
         (file_text = (char *)SDL_LoadFile(path, &file_size)) == NULL) {
         return 0;
     }
+    SDL_Log("theater list: %s read, %u bytes, at %u ms", path, (unsigned)file_size, (unsigned)SDL_GetTicks());
     snprintf(folder, sizeof(folder), "%s", path);
     slash = strrchr(folder, '/');
     if (strrchr(folder, '\\') > slash) {
@@ -346,6 +351,11 @@ static int load(SDL_Renderer *renderer, int language)
         next = strchr(line, '\n');
         if (next != NULL) {
             *next++ = '\0';
+        }
+        if (SDL_strncmp(line, "atlas ", 6) == 0 || SDL_strncmp(line, "font ", 5) == 0 ||
+            SDL_strncmp(line, "chapter ", 8) == 0 || SDL_strncmp(line, "scene ", 6) == 0) {
+            /* the lines that read other files, said first: one that never ends shows which it is */
+            SDL_Log("theater list: at %u ms: %.48s", (unsigned)SDL_GetTicks(), line);
         }
         if (khdays_layout_line(&s.layout, line, folder)) {
             continue;
@@ -381,11 +391,13 @@ static int load(SDL_Renderer *renderer, int language)
         forget();
         return 0;
     }
+    SDL_Log("theater list: its lines done at %u ms", (unsigned)SDL_GetTicks());
     if (reader == NULL) {
         reader = khdays_rom_reader_new();
     }
     snprintf(path, sizeof(path), "UI/thr/thr_%s.s.z", codes[language]);
     khdays_layout_strings(reader, path, &s.strings, s.layout.who);
+    SDL_Log("theater list: its strings read at %u ms (%d)", (unsigned)SDL_GetTicks(), s.strings.count);
     return 1;
 }
 
@@ -449,6 +461,23 @@ static void draw_day(const KhdaysLayoutFrame *fr, int day, float top)
     }
 }
 
+/* KH2's firefly at the selected row's right end (layout_screen.h), as large beside the glove as KH2's
+ * beside its own. */
+static void firefly_at(const KhdaysLayoutFrame *fr, float right, float middle)
+{
+    const KhdaysLayoutPlace *g = khdays_layout_place(&s.layout, "glove");
+    const float unit = KHDAYS_FIREFLY_UNIT * (g != NULL && g->h > 0 ? g->h / 91.0f : 1.0f);
+    khdays_layout_firefly(s.layout.renderer, fr, KHDAYS_FIREFLY_CINE, right - 15.0f * unit, middle, unit, 1.0f);
+}
+
+static void firefly_row(const KhdaysLayoutFrame *fr, float top)
+{
+    const KhdaysLayoutPlace *r = khdays_layout_place(&s.layout, "row_selected");
+    if (r != NULL) {
+        firefly_at(fr, r->x + r->w, top + r->y + r->h / 2);
+    }
+}
+
 static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysCineView *v, int index, float top)
 {
     const Scene *sc = scene_of(v->movies[index]);
@@ -463,7 +492,8 @@ static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysCineView *v, int i
         }
     }
     if (index == v->cursor) {
-        khdays_layout_draw_placed(&s.layout, fr, "glove", 0, top, 1.0f);
+        khdays_layout_draw_placed(&s.layout, fr, "glove", khdays_layout_glove_sway(), top, 1.0f);
+        firefly_row(fr, top);
     }
     khdays_layout_draw_text(&s.layout, fr, "name", khdays_layout_string(&s.strings, THR_NAMES + index), 0, top, 1.0f);
     khdays_layout_draw_text(&s.layout, fr, "length", khdays_layout_string(&s.strings, THR_LENGTHS + index), 0, top,
@@ -485,7 +515,8 @@ static void draw_chapter_row(const KhdaysLayoutFrame *fr, int index, float top)
         }
     }
     if (index == s.cursor) {
-        khdays_layout_draw_placed(&s.layout, fr, "glove", 0, top, 1.0f);
+        khdays_layout_draw_placed(&s.layout, fr, "glove", khdays_layout_glove_sway(), top, 1.0f);
+        firefly_row(fr, top);
     }
     snprintf(length, sizeof(length), "%02d:%02d", c->seconds / 60, c->seconds % 60);
     for (int k = 0; k < (int)sizeof(length); ++k) {
@@ -530,8 +561,13 @@ int khdays_cine_screen_draw(SDL_Renderer *renderer)
     }
     if (renderer != s.layout.renderer || v.language != s.tried) {
         const Scene *sc;
+        const Uint64 began = SDL_GetTicks();
+        SDL_Log("theater list: opening at %u ms, language %d", (unsigned)began, v.language);
         s.tried = v.language;
         s.ok = load(renderer, v.language);
+        s.loaded_at = SDL_GetTicks();
+        SDL_Log("theater list: load %d %s in %u ms (%d chapters, %d artworks)", ++s.loads, s.ok ? "done" : "failed",
+                (unsigned)(s.loaded_at - began), s.chapter_count, s.art_count);
         s.cursor = s.first = 0;
         sc = s.ok ? scene_of(v.movies[v.cursor]) : NULL;
         if (s.ok) {

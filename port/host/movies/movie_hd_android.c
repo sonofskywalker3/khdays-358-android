@@ -1088,10 +1088,16 @@ int khdays_hd_picture_rgba(uint8_t **rgba, size_t *capacity, int *w, int *h)
     return found;
 }
 
+void khdays_hd_close_scene_end(void)
+{
+    khdays_hd_close(); /* (no theater's music here to keep playing) */
+}
+
 /* --- A voice over the game (khdays_hd_voice_play) ---------------------------------------------- */
 
 static pthread_mutex_t voice_lock = PTHREAD_MUTEX_INITIALIZER; /* guards the voice's stream against the pause and the volume */
 static pthread_mutex_t voice_control = PTHREAD_MUTEX_INITIALIZER; /* one start or stop at a time (game and window threads) */
+#define VOICE_QUIET_MS 700 /* the silence after the last word that still counts as speaking */
 static float voice_gain = 1.0f;                                 /* khdays_hd_voice_set_gain */
 static volatile int voice_paused;                               /* khdays_hd_voice_pause */
 
@@ -1102,6 +1108,16 @@ static struct {
     char **files;
     int count;
     SDL_AudioStream *sound; /* opened by the thread for the first file; destroyed once it has ended */
+    /* The voice's clock, under voice_lock: the seconds of sound put into the stream, where each file began
+     * among them, the files begun, their videos' names ("hd007b"), the format queued now, and whether the
+     * thread has put all it will. */
+    double put;
+    double *began; /* as many as the files */
+    int begun;
+    char **names;
+    int frame_bytes, rate;
+    volatile int done;
+    Uint64 quiet_since; /* when the last of it was heard (0: not yet) */
 } voice;
 
 /* The voice's stream, opened for `spec` the first time, else told the next file's format (what is
@@ -1150,7 +1166,7 @@ static SDL_AudioStream *voice_format(AMediaCodec *codec, int *frame_bytes, int *
 }
 
 /* One file's sound into the voice's stream, a little ahead of the device, to its end or a stop. */
-static void voice_file(const char *file)
+static void voice_file(const char *file, int nth)
 {
     Track t = {.fd = -1};
     SDL_AudioStream *stream = NULL;
@@ -1183,6 +1199,15 @@ static void voice_file(const char *file)
             if (stream == NULL) {
                 fprintf(stderr, "movies: the voice in %s cannot be played\n", file);
                 ended = 1;
+            } else {
+                pthread_mutex_lock(&voice_lock);
+                if (nth < voice.count && voice.began != NULL) {
+                    voice.began[nth] = voice.put;
+                    voice.begun = nth + 1;
+                }
+                voice.frame_bytes = frame_bytes;
+                voice.rate = rate;
+                pthread_mutex_unlock(&voice_lock);
             }
         } else if (o == -3) {
             fprintf(stderr, "movies: the voice in %s cannot be decoded; it ends there\n", file);
@@ -1192,8 +1217,12 @@ static void voice_file(const char *file)
                 size_t length = 0;
                 const uint8_t *data = AMediaCodec_getOutputBuffer(t.codec, (size_t)o, &length);
                 if (data != NULL) {
+                    const double seconds = (double)info.size / frame_bytes / rate;
+                    pthread_mutex_lock(&voice_lock); /* (the clock sees the sound and its count together) */
                     SDL_PutAudioStreamData(stream, data + info.offset, info.size);
-                    put += (double)info.size / frame_bytes / rate;
+                    voice.put += seconds;
+                    pthread_mutex_unlock(&voice_lock);
+                    put += seconds;
                 }
             }
             AMediaCodec_releaseOutputBuffer(t.codec, (size_t)o, false);
@@ -1213,8 +1242,9 @@ static void *voice_run(void *unused)
 {
     (void)unused;
     for (int i = 0; i < voice.count && !voice.stop; ++i) {
-        voice_file(voice.files[i]);
+        voice_file(voice.files[i], i);
     }
+    __atomic_store_n(&voice.done, 1, __ATOMIC_SEQ_CST);
     return NULL;
 }
 
@@ -1231,8 +1261,11 @@ static void voice_stop(void)
     }
     for (int i = 0; i < voice.count; ++i) {
         free(voice.files[i]);
+        free(voice.names[i]);
     }
     free(voice.files);
+    free(voice.names);
+    free(voice.began);
     memset(&voice, 0, sizeof(voice));
     pthread_mutex_unlock(&voice_lock);
 }
@@ -1246,33 +1279,108 @@ void khdays_hd_voice_stop(void)
 
 void khdays_hd_voice_play(const char *const *paths, int count)
 {
-    char **files;
+    char **files, **names;
+    double *began;
     int n = 0;
     pthread_mutex_lock(&voice_control);
     voice_stop();
-    if (count <= 0 || (files = (char **)calloc((size_t)count, sizeof(*files))) == NULL) {
+    if (count <= 0) {
+        pthread_mutex_unlock(&voice_control);
+        return;
+    }
+    files = (char **)calloc((size_t)count, sizeof(*files));
+    names = (char **)calloc((size_t)count, sizeof(*names));
+    began = (double *)calloc((size_t)count, sizeof(*began));
+    if (files == NULL || names == NULL || began == NULL) {
+        free(files);
+        free(names);
+        free(began);
         pthread_mutex_unlock(&voice_control);
         return;
     }
     for (int i = 0; i < count; ++i) {
         char *file = strdup(paths[i]);
         if (file != NULL) {
+            /* its video's name, for its subtitles: the path's file name without its extension */
+            const char *slash = strrchr(paths[i], '/');
+            char *dot;
+            names[n] = strdup(slash != NULL ? slash + 1 : paths[i]);
+            dot = names[n] != NULL ? strrchr(names[n], '.') : NULL;
+            if (dot != NULL) {
+                *dot = '\0';
+            }
             files[n++] = file;
         }
     }
     voice.files = files;
+    voice.names = names;
+    voice.began = began;
     voice.count = n;
     if (pthread_create(&voice.thread, NULL, voice_run, NULL) != 0) {
         for (int i = 0; i < n; ++i) {
             free(files[i]);
+            free(names[i]);
         }
         free(files);
+        free(names);
+        free(began);
         memset(&voice, 0, sizeof(voice));
         pthread_mutex_unlock(&voice_control);
         return;
     }
+    pthread_mutex_lock(&voice_lock);
     voice.have_thread = 1;
+    pthread_mutex_unlock(&voice_lock);
     pthread_mutex_unlock(&voice_control);
+}
+
+/* The seconds of the stream's sound not heard yet. Under voice_lock. */
+static double voice_unheard(void)
+{
+    if (voice.sound == NULL || voice.frame_bytes <= 0 || voice.rate <= 0) {
+        return 0.0;
+    }
+    return (double)SDL_GetAudioStreamQueued(voice.sound) / voice.frame_bytes / voice.rate;
+}
+
+int khdays_hd_voice_clock(char *name, size_t size, double *seconds)
+{
+    int found = 0;
+    pthread_mutex_lock(&voice_lock);
+    if (voice.have_thread && voice.sound != NULL && voice.begun > 0) {
+        const double heard = voice.put - voice_unheard();
+        int file = 0;
+        for (int i = 0; i < voice.begun; ++i) {
+            if (voice.began[i] <= heard) {
+                file = i;
+            }
+        }
+        snprintf(name, size, "%s", voice.names[file] != NULL ? voice.names[file] : "");
+        *seconds = heard - voice.began[file] > 0.0 ? heard - voice.began[file] : 0.0;
+        found = 1;
+    }
+    pthread_mutex_unlock(&voice_lock);
+    return found;
+}
+
+int khdays_hd_voice_speaking(void)
+{
+    int speaking = 0;
+    pthread_mutex_lock(&voice_lock);
+    if (voice.have_thread) {
+        if (!__atomic_load_n(&voice.done, __ATOMIC_SEQ_CST) || voice_paused || voice_unheard() > 0.0) {
+            voice.quiet_since = 0;
+            speaking = 1;
+        } else {
+            /* the last word heard: a moment's silence after it, as the theater leaves */
+            if (voice.quiet_since == 0) {
+                voice.quiet_since = SDL_GetTicks();
+            }
+            speaking = SDL_GetTicks() - voice.quiet_since < VOICE_QUIET_MS;
+        }
+    }
+    pthread_mutex_unlock(&voice_lock);
+    return speaking;
 }
 
 void khdays_hd_voice_pause(int pause)

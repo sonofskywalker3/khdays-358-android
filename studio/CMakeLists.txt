@@ -93,16 +93,28 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/font.cpp"               # the game's font: which characters it draws
     "${ROOT}/assets/src/graphics2d.cpp"         # 2D: palettes, tile sheets, screens
     "${ROOT}/assets/src/cell.cpp"               # and sprite cells
+    "${ROOT}/assets/src/kh2_bar.cpp"            # KH2's BAR archives, which its maps are read from
     "${ROOT}/assets/src/kh2_map.cpp"            # KH2's maps, from the player's 1.5+2.5 copy
     "${ROOT}/assets/src/kh2_room.cpp"           # made into a scene for glTF
     "${ROOT}/assets/src/dds.cpp"                # and their HD pictures
+    "${ROOT}/assets/src/kh2_sequence.cpp"       # KH2's sequences' quads (the prizes' effects)
+    "${ROOT}/port/gfx/kh2_sequence.cpp"         # ... drawn by the port's reference renderer
+    "${ROOT}/port/ui/prize_effects_model.cpp"   # a prize's effect, as the port reads it
     "${ROOT}/port/sound/replace.c"            # a mod's sound read as the port reads it
     "${ROOT}/port/sound/third_party_decoders.c"
     "${ROOT}/port/host/render/png_io.c"              # PNG in and out, indexed included
     "${ROOT}/port/host/movies/movie_hd_win.c"        # videos played as the port plays them (Media Foundation)
     "${ROOT}/port/host/movies/theater_music.c"       # ... with the theater's music
     "${ROOT}/port/host/movies/music_schedule.c"
-    "${ROOT}/port/runtime/mods/room_animation.cpp")  # a room that moves by itself, as the port moves it
+    "${ROOT}/port/runtime/mods/room_animation.cpp"   # a room that moves by itself, as the port moves it
+    "${ROOT}/port/runtime/missions/registry.c"       # a mod's new missions, as the port reads them
+    "${ROOT}/port/runtime/missions/field_store.c"
+    "${ROOT}/port/runtime/missions/tables.c"         # ... and the rows it adds for them
+    "${ROOT}/port/runtime/missions/worlds.c"
+    "${ROOT}/port/runtime/plugins/parameters.c"      # a mod's native plugin's parameters, as the port reads them
+    "${ROOT}/port/runtime/characters/registry.c"     # a mod's characters, as the port reads them
+    "${ROOT}/port/runtime/characters/rules.c"        # ... their forms' rules
+    "${ROOT}/port/runtime/characters/stats.c")       # ... their level tables
 target_include_directories(khdays-studio-port PUBLIC "${ROOT}/assets/include")
 target_include_directories(khdays-studio-port PUBLIC "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}")
 target_include_directories(khdays-studio-port PRIVATE "${stb_SOURCE_DIR}" "${dr_libs_SOURCE_DIR}")
@@ -118,7 +130,7 @@ set_source_files_properties("${ROOT}/port/sound/third_party_decoders.c" PROPERTI
 # are the port's to decide on, not this build's.
 target_compile_definitions(khdays-studio-port PRIVATE _CRT_SECURE_NO_WARNINGS)
 # The tool's own code reaches these by their directories.
-set(KHDAYS_STUDIO_PORT_HEADERS "${ROOT}/port/sound" "${ROOT}/port/host" "${ROOT}/port/runtime")
+set(KHDAYS_STUDIO_PORT_HEADERS "${ROOT}/port/sound" "${ROOT}/port/host" "${ROOT}/port/runtime" "${ROOT}/port")
 
 # --- The tool -------------------------------------------------------------------------
 set(KHDAYS_STUDIO_FLAGS /W4 /std:c++20 /EHsc /utf-8 /permissive-)
@@ -126,10 +138,16 @@ set(KHDAYS_STUDIO_FLAGS /W4 /std:c++20 /EHsc /utf-8 /permissive-)
 add_library(khdays-studio-core STATIC
     core/models/anim_replace.cpp
     core/models/bca0.cpp
+    core/characters/character_files.cpp
+    core/characters/character_forms.cpp
+    core/characters/character_pose.cpp
+    core/characters/form_rules.cpp
+    core/characters/game_items.cpp
     core/models/bones.cpp
     core/files/catalog.cpp
     core/files/catalog_tree.cpp
     core/mods/check.cpp
+    core/mods/plugin_parameters.cpp
     core/models/clip_import.cpp
     core/files/containers.cpp
     core/files/file_write.cpp
@@ -140,6 +158,9 @@ add_library(khdays-studio-core STATIC
     core/missions/mission_db.cpp
     core/missions/missions.cpp
     core/missions/mission_edit.cpp
+    core/missions/mission_names.cpp
+    core/missions/mission_build.cpp
+    core/missions/mod_missions.cpp
     core/missions/enemy_names.cpp
     core/texts/texts.cpp
     core/models/texture_export.cpp
@@ -149,6 +170,7 @@ add_library(khdays-studio-core STATIC
     core/mods/mods_log.cpp
     core/files/paths.cpp
     core/mods/process.cpp
+    core/mods/prizes.cpp
     core/rooms/kh2_source.cpp
     core/rooms/room_change.cpp
     core/rooms/room_collision.cpp
@@ -169,6 +191,7 @@ add_executable(khdays-studio
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/studio.rc   # the executable's icon (studio.ico)
     app/app.cpp
     app/views/browser.cpp
+    app/views/character_view.cpp
     app/cli.cpp
     app/views/console.cpp
     app/gpu_images.cpp
@@ -176,10 +199,13 @@ add_executable(khdays-studio
     app/main.cpp
     app/views/map_view.cpp
     app/views/mission_view.cpp
+    app/views/mission_map.cpp
     app/views/movie_view.cpp
     app/views/text_view.cpp
     app/views/mod_panel.cpp
     app/views/mods_console.cpp
+    app/views/plugin_parameters_view.cpp
+    app/views/prizes_view.cpp
     app/views/model_view.cpp
     app/preview3d.cpp
     app/save_dialog.cpp
@@ -208,6 +234,11 @@ add_executable(khdays-studio-tests
     tests/test_worlds.cpp
     tests/test_kh2.cpp
     tests/test_mods_log.cpp
+    tests/test_plugin_parameters.cpp
+    tests/test_characters.cpp
+    tests/test_character_forms.cpp
+    tests/test_texts.cpp
+    tests/test_prizes.cpp
     app/strings.cpp
     tests/test_strings.cpp)
 target_include_directories(khdays-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app")

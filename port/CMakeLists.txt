@@ -22,7 +22,7 @@ set(KHDAYS_VERSION_SUFFIX "" CACHE STRING "Appended to the VERSION file's versio
 string(APPEND KHDAYS_VERSION "${KHDAYS_VERSION_SUFFIX}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
 # only the files that tell it (the update check, the settings menu's corner): a new version rebuilds them alone
-set_source_files_properties(host/app/updates.c host/settings/settings_menu.cpp
+set_source_files_properties(host/app/updates.c host/settings/settings_menu.cpp runtime/plugins/plugins.c
                             PROPERTIES COMPILE_DEFINITIONS "KHDAYS_VERSION=\"${KHDAYS_VERSION}\"")
 
 set(KHDAYS_GEN "" CACHE PATH "Output directory of port/tools/prepare.py")
@@ -215,15 +215,9 @@ endif()
 
 # The gamepads' button icons and pictures in the settings menu: Kenney's Input Prompts 1.5, CC0 (THIRD_PARTY_NOTICES.md), the
 # 128-pixel PNGs of the buttons the menu names and of the five gamepads, in
-# the executable as the font is.
-FetchContent_Declare(
-    kenney_input_prompts
-    URL https://kenney.nl/media/pages/assets/input-prompts/8de120163f-1783763952/kenney_input-prompts_1.5.zip
-    URL_HASH SHA256=ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    SOURCE_SUBDIR none
-)
-FetchContent_MakeAvailable(kenney_input_prompts)
+# the executable as the font is. Kept in resources/input_prompts at the archive's own paths: Kenney's
+# site no longer serves the archive at a fixed address.
+set(KHDAYS_PAD_ICONS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources/input_prompts")
 set(KHDAYS_PAD_ICONS
     "Xbox Series:xbox_button_color_a" "Xbox Series:xbox_button_color_b" "Xbox Series:xbox_button_color_x"
     "Xbox Series:xbox_button_color_y" "Xbox Series:xbox_lb" "Xbox Series:xbox_rb" "Xbox Series:xbox_lt"
@@ -282,7 +276,9 @@ foreach(icon IN LISTS KHDAYS_PAD_ICONS)
     string(SUBSTRING "${icon}" 0 ${colon} icon_folder)
     math(EXPR colon "${colon} + 1")
     string(SUBSTRING "${icon}" ${colon} -1 icon_name)
-    file(READ "${kenney_input_prompts_SOURCE_DIR}/${icon_folder}/Double/${icon_name}.png" icon_hex HEX)
+    set(icon_file "${KHDAYS_PAD_ICONS_DIR}/${icon_folder}/Double/${icon_name}.png")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${icon_file}")
+    file(READ "${icon_file}" icon_hex HEX)
     string(LENGTH "${icon_hex}" icon_digits)
     math(EXPR icon_size "${icon_digits} / 2")
     string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," icon_bytes "${icon_hex}")
@@ -341,12 +337,16 @@ set_source_files_properties(sound/third_party_decoders.c PROPERTIES COMPILE_OPTI
 # The port's own graphics: the frame description made from what
 # the game asks for, and its composition -- shared with the GPU's shaders --
 # and the 3D geometry. Plain C with no SDL and no operating system calls.
+add_library(khdays-hud-settings STATIC host/app/hud_settings.c)
+target_link_libraries(khdays-hud-settings PUBLIC SDL3::SDL3)
+target_compile_options(khdays-hud-settings PRIVATE ${KHDAYS_C_FLAGS})
 add_library(khdays-gfx STATIC
     gfx/compose_cpu.c
     gfx/describe.c
     gfx/g3d_geometry.c
     gfx/g3d_interp.c)
 target_compile_options(khdays-gfx PRIVATE ${KHDAYS_C_FLAGS})
+target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
 
 # What differs by system: Windows' own calls, or POSIX's (host/posix/include/windows.h stands in for the
 # few Windows calls the portable files make).
@@ -391,6 +391,152 @@ else()
     endif()
 endif()
 
+
+# KH2's native 2D sequences and their reference renderer; also used by the
+# independent viewer, without the game or its generated sources.
+add_library(khdays-kh2-sequence STATIC
+    ../assets/src/kh2_bar.cpp
+    ../assets/src/kh2_sequence.cpp
+    ../assets/src/dds.cpp
+    ../assets/src/image.cpp
+    gfx/kh2_sequence.cpp
+    host/render/kh2_sequence_asset.cpp)
+target_include_directories(khdays-kh2-sequence PUBLIC ../assets/include)
+target_include_directories(khdays-kh2-sequence PRIVATE "${stb_SOURCE_DIR}")
+target_compile_options(khdays-kh2-sequence PRIVATE ${KHDAYS_CXX_FLAGS})
+
+add_library(khdays-kh2-gauge STATIC ui/kh2_hp_gauge.cpp ui/kh2_hp_config.cpp ui/kh2_enemy_gauge.cpp)
+target_link_libraries(khdays-kh2-gauge PUBLIC khdays-kh2-sequence khdays-hud-settings)
+target_compile_options(khdays-kh2-gauge PRIVATE ${KHDAYS_CXX_FLAGS})
+
+add_library(khdays-kh2-portrait STATIC ui/kh2_portrait.cpp)
+target_link_libraries(khdays-kh2-portrait PUBLIC khdays-kh2-sequence)
+target_compile_options(khdays-kh2-portrait PRIVATE ${KHDAYS_CXX_FLAGS})
+
+if(WIN32) # the KH2 pieces' tests and viewer
+add_executable(khdays-kh2-portrait-test tests/kh2_portrait_test.cpp ui/kh2_portrait_hud.cpp ui/kh2_party_hud.cpp ui/kh2_hud_labels.cpp)
+target_link_libraries(khdays-kh2-portrait-test PRIVATE khdays-kh2-portrait khdays-kh2-gauge)
+target_compile_options(khdays-kh2-portrait-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-portrait COMMAND khdays-kh2-portrait-test)
+
+add_executable(khdays-pause-target-test tests/pause_target_test.cpp ../assets/src/graphics2d.cpp)
+target_include_directories(khdays-pause-target-test PRIVATE ../assets/include)
+target_compile_options(khdays-pause-target-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-pause-target COMMAND khdays-pause-target-test)
+add_executable(khdays-pause-layout-test tests/pause_layout_test.cpp ../assets/src/graphics2d.cpp)
+target_include_directories(khdays-pause-layout-test PRIVATE ../assets/include)
+target_compile_options(khdays-pause-layout-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-pause-layout COMMAND khdays-pause-layout-test)
+# (copied beside the build: the objects' paths under a deep checkout pass what the compiler can open)
+set(KHDAYS_INFORMATION_FIXTURES "")
+foreach(fixture field/ov022_battle/Ov022_UpdateCommandInput scenes/ov002_field/Ov002_Hud_IsPanelOpen
+        scenes/ov002_field/Ov002_PushMapSnapshot scenes/ov002_field/Ov002_PopMapSnapshot
+        scenes/ov002_field/Ov002_SetPanelMode scenes/ov002_field/Ov002_SetBgOfs_main001c
+        scenes/ov002_field/Ov002_SetBgOfs_main0014 scenes/ov002_field/Ov002_UpdatePanelScroll)
+    get_filename_component(fixture_name "${fixture}" NAME)
+    configure_file("${KHDAYS_GEN}/rewritten/src/overlays/${fixture}.c" "${CMAKE_CURRENT_BINARY_DIR}/info/${fixture_name}.c" COPYONLY)
+    list(APPEND KHDAYS_INFORMATION_FIXTURES "${CMAKE_CURRENT_BINARY_DIR}/info/${fixture_name}.c")
+endforeach()
+add_executable(khdays-information-maps-test tests/information_maps_test.cpp ui/hud_options.cpp
+    tests/information_input_fixture.cpp
+    ${KHDAYS_INFORMATION_FIXTURES})
+target_include_directories(khdays-information-maps-test PRIVATE ../assets/include compat "${KHDAYS_GEN}")
+target_compile_options(khdays-information-maps-test PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:/W4;/EHsc>" "$<$<COMPILE_LANGUAGE:C>:/W0;/Zp4;/std:c17>")
+set_property(TARGET khdays-information-maps-test PROPERTY CXX_STANDARD 20)
+target_link_libraries(khdays-information-maps-test PRIVATE khdays-hud-settings)
+add_test(NAME khdays-information-maps COMMAND khdays-information-maps-test)
+add_test(NAME khdays-information-maps-disabled COMMAND khdays-information-maps-test --disabled)
+
+add_executable(khdays-kh2-sequence-test tests/kh2_sequence_test.cpp)
+target_link_libraries(khdays-kh2-sequence-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-sequence-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-sequence COMMAND khdays-kh2-sequence-test)
+
+add_executable(khdays-kh2-hud-test tests/kh2_hp_hud_test.cpp ui/kh2_hp_hud.cpp)
+target_link_libraries(khdays-kh2-hud-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-hud-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-hud COMMAND khdays-kh2-hud-test)
+
+add_executable(khdays-kh2-enemy-test tests/kh2_enemy_test.cpp ui/kh2_enemy_hud.cpp)
+target_link_libraries(khdays-kh2-enemy-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-enemy-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-enemy COMMAND khdays-kh2-enemy-test)
+add_test(NAME khdays-kh2-enemy-missing COMMAND khdays-kh2-enemy-test --missing)
+add_test(NAME khdays-kh2-enemy-legacy COMMAND khdays-kh2-enemy-test --no-config)
+add_test(NAME khdays-kh2-enemy-reference COMMAND khdays-kh2-enemy-test --reference)
+
+add_executable(khdays-heart-points-test tests/heart_points_test.cpp ui/heart_points.cpp)
+target_link_libraries(khdays-heart-points-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-heart-points-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-heart-points COMMAND khdays-heart-points-test)
+add_test(NAME khdays-heart-points-missing COMMAND khdays-heart-points-test --missing)
+add_test(NAME khdays-heart-points-disabled COMMAND khdays-heart-points-test --disabled)
+add_test(NAME khdays-heart-points-pickup-loop COMMAND khdays-heart-points-test --pickup-loop)
+add_test(NAME khdays-heart-points-final-tick COMMAND khdays-heart-points-test --final-tick)
+add_test(NAME khdays-heart-points-native-chain COMMAND khdays-heart-points-test --native-chain)
+
+add_executable(khdays-kh2-reticles-test tests/kh2_reticles_test.cpp ui/kh2_reticles.cpp)
+add_executable(khdays-kh2-information-test tests/kh2_information_test.cpp ui/kh2_information.cpp)
+target_link_libraries(khdays-kh2-information-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-information-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-information COMMAND khdays-kh2-information-test)
+add_test(NAME khdays-kh2-information-missing COMMAND khdays-kh2-information-test --missing)
+add_test(NAME khdays-kh2-information-legacy COMMAND khdays-kh2-information-test --legacy)
+add_executable(khdays-minimap-test tests/minimap_test.cpp ui/minimap_config.cpp)
+target_link_libraries(khdays-minimap-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-minimap-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-minimap COMMAND khdays-minimap-test)
+
+add_executable(khdays-kh2-mission-panel-test tests/kh2_mission_panel_test.cpp)
+target_link_libraries(khdays-kh2-mission-panel-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-mission-panel-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-mission-panel COMMAND khdays-kh2-mission-panel-test)
+add_test(NAME khdays-kh2-mission-panel-missing COMMAND khdays-kh2-mission-panel-test --missing)
+add_test(NAME khdays-kh2-mission-panel-legacy COMMAND khdays-kh2-mission-panel-test --legacy)
+add_test(NAME khdays-kh2-mission-panel-disabled COMMAND khdays-kh2-mission-panel-test --disabled)
+
+add_executable(khdays-kh2-obtained-test tests/kh2_obtained_test.cpp ui/kh2_obtained.cpp)
+target_link_libraries(khdays-kh2-obtained-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-obtained-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-obtained COMMAND khdays-kh2-obtained-test)
+add_test(NAME khdays-kh2-obtained-missing COMMAND khdays-kh2-obtained-test --missing)
+add_test(NAME khdays-kh2-obtained-legacy COMMAND khdays-kh2-obtained-test --legacy)
+target_link_libraries(khdays-kh2-reticles-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-reticles-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-reticles COMMAND khdays-kh2-reticles-test)
+add_test(NAME khdays-kh2-reticles-missing COMMAND khdays-kh2-reticles-test --missing)
+add_test(NAME khdays-kh2-reticles-optional COMMAND khdays-kh2-reticles-test --optional)
+add_test(NAME khdays-kh2-reticles-partial COMMAND khdays-kh2-reticles-test --partial)
+add_test(NAME khdays-kh2-reticles-legacy COMMAND khdays-kh2-reticles-test --legacy)
+
+# A prize picture drawn as a mod's effect (KH2's prizes): its file read, its frames as sequence quads.
+add_executable(khdays-prize-effects-test tests/prize_effects_test.cpp ui/prize_effects_model.cpp)
+target_link_libraries(khdays-prize-effects-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-prize-effects-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-prize-effects COMMAND khdays-prize-effects-test)
+
+add_executable(khdays-kh2-limit-timing-test tests/kh2_limit_timing_test.c)
+target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/include")
+target_compile_options(khdays-kh2-limit-timing-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-kh2-limit-timing COMMAND khdays-kh2-limit-timing-test)
+
+add_executable(khdays-kh2-gpu-test tests/kh2_sequence_gpu_test.cpp ui/heart_points.cpp host/render/kh2_sequence_gpu.c host/render/gpu_hd.c host/render/gpu_raster3d.c)
+target_link_libraries(khdays-kh2-gpu-test PRIVATE khdays-kh2-gauge khdays-gpu khdays-gfx SDL3::SDL3)
+target_compile_options(khdays-kh2-gpu-test PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-kh2-gpu COMMAND khdays-kh2-gpu-test)
+set_tests_properties(khdays-kh2-gpu PROPERTIES SKIP_RETURN_CODE 77)
+
+add_executable(khdays-kh2-sequence-viewer tools/kh2_sequence_viewer.cpp host/render/png_io.c)
+target_include_directories(khdays-kh2-sequence-viewer PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-kh2-sequence-viewer PRIVATE khdays-kh2-gauge SDL3::SDL3)
+target_compile_options(khdays-kh2-sequence-viewer PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+endif()
+
 # The input layer -- the control profile and its settings file, the
 # bindings, the devices, the settings menu (its FPS and ping displays in the
 # game's own font), and the runtime's pure parts of the enhancements (analog movement's
@@ -410,7 +556,8 @@ add_library(khdays-host-input STATIC
     host/screens/lower_screens.c     # screen by screen
     host/screens/lower_pages.c       # the lists drawn a page at a time, a fade
     runtime/scripts/queue.c          # the Mods page: what it asks of the mods,
-    runtime/scripts/view.c           # and what it shows of them
+    runtime/scripts/view.c           # and what it shows of them,
+    runtime/plugins/shown.c          # and of the native plugins
     host/render/png_io.c
     ${KHDAYS_INSTANCE_SOURCE}        # the player's slot on the PC
     runtime/input/analog.c
@@ -418,7 +565,7 @@ add_library(khdays-host-input STATIC
     ../assets/src/font.cpp       # the port's NFTR decoder
     ../assets/src/message.cpp)   # its LZ decompression
 target_include_directories(khdays-host-input PRIVATE ../assets/include "${stb_SOURCE_DIR}" "${KHDAYS_MENU_FONT_DIR}")
-target_link_libraries(khdays-host-input PUBLIC SDL3::SDL3 khdays-host-imgui)
+target_link_libraries(khdays-host-input PUBLIC SDL3::SDL3 khdays-host-imgui khdays-hud-settings)
 target_compile_options(khdays-host-input PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${KHDAYS_C_FLAGS}>
     $<$<COMPILE_LANGUAGE:CXX>:${KHDAYS_CXX_FLAGS}>)
@@ -482,8 +629,10 @@ target_sources(khdays-native PRIVATE
     runtime/core/data_init.c
     runtime/core/clock.c
     runtime/input/controls_hooks.c
+    runtime/input/walk.c               # the Walk mod's analog walk animation
     runtime/core/diag.c
     runtime/display/display.c
+    runtime/display/field_wipe.c      # the field's room change being drawn (the window covers widescreen beside it)
     runtime/core/events.c
     runtime/input/input.c
     runtime/input/replay.c
@@ -493,10 +642,15 @@ target_sources(khdays-native PRIVATE
     runtime/core/sha1.c               # SHA-1: the saves' signatures, the rooms' passwords
     runtime/menus/autosave.c           # the autosave after a cleared mission
     runtime/menus/savelist.c           # the port's save list over the game's
+    runtime/menus/saveworld.c          # the world of each save (the save page's pictures)
     runtime/menus/cinelist.c           # MODO CINE's list, read for the port to draw
+    runtime/menus/daycard.c            # the day's calendar card, read for the port to draw
     runtime/net/roomlist.c           # the port's list of Mission Mode's rooms over the game's
     runtime/menus/charselect.c         # Mission Mode's character select, read and steered for the port
+    runtime/menus/select_pages.c       # ... its pages
     runtime/menus/camp.c               # Mission Mode's camp menu, read for the port
+    runtime/menus/shop.c               # the Moogle Shop, read for the port (its moogle turned to the menu)
+    runtime/menus/enemy_viewer.c       # Enemy Profiles' model viewer: the game's own 3D of the enemy
     runtime/menus/retry.c              # Mission Mode's Retry in the pause
     runtime/menus/mission_start.c      # a mod's mission.start: the camp's own presses
     runtime/scripts/scripts.c          # gameplay mods' scripts: found, loaded, run at the frame point
@@ -505,6 +659,8 @@ target_sources(khdays-native PRIVATE
     runtime/scripts/order.c
     runtime/scripts/folders.cpp
     runtime/mods/list.c                # every mod folder, in load order, which are on
+    runtime/mods/days.c                # KH DS Project Editor's .days mods, copied out to be read
+    runtime/mods/zip_read.c            # a ZIP read from memory (the .days mods)
     runtime/scripts/mods_log.c
     runtime/scripts/api_events.c
     runtime/scripts/api_mod.c
@@ -527,6 +683,35 @@ target_sources(khdays-native PRIVATE
     runtime/battle/stop_data.c         # the Stop magic: its data file
     runtime/battle/stop_hold.c         # ... the enemies it holds and the damage they keep
     runtime/battle/stop_magic.c        # ... and its records, words and hold in the game
+    runtime/missions/registry.c        # the mods' new missions: read and numbered,
+    runtime/missions/field_store.c     # ... their progress where the game keeps a mission's,
+    runtime/missions/save_part.c       # ... kept beside each save file,
+    runtime/missions/tables.c          # ... their rows in the game's tables,
+    runtime/missions/worlds.c          # ... the worlds they are played in
+    runtime/missions/missions.c        # ... and all of it in the game
+    runtime/characters/registry.c      # the mods' characters: read and numbered,
+    runtime/characters/rules.c         # ... their forms' rules
+    runtime/characters/stats.c         # ... their level tables from [stats]
+    runtime/characters/forms.c         # ... their forms chosen for the seats
+    runtime/characters/characters.c    # ... their folders served and their numbers answered in the game
+    runtime/characters/moveset.c       # ... their [moveset] in their combo files
+    runtime/characters/packed.cpp      # ... packed as the game's
+    runtime/plugins/plugins.c          # the mods' native plugins (the KH Mod SDK, sdk/): found, loaded,
+    runtime/plugins/interfaces.c       # ... given services, events and hooks,
+    runtime/plugins/engine.c           # ... the engine by name,
+    runtime/plugins/actors.c           # ... the field's actors as handles,
+    runtime/plugins/characters.c       # ... the characters, with listeners for their actors,
+    runtime/plugins/combat.c           # ... hits of their own,
+    runtime/plugins/input.c            # ... the player's buttons,
+    runtime/plugins/parameters.c       # ... and the parameters their mods describe
+    runtime/missions/build.cpp         # ... a mission built from a mod's description, by khdays-studio's builder:
+    ../studio/core/missions/mission_build.cpp
+    ../studio/core/missions/missions.cpp
+    ../studio/core/missions/mission_db.cpp
+    ../studio/core/missions/command_names.cpp
+    ../studio/core/files/containers.cpp
+    ../studio/core/files/lz.cpp
+    ../studio/core/files/paths.cpp
     runtime/core/sha256.c             # SHA-256: the mods' fingerprints
     runtime/core/io_regs.c
     runtime/core/threads.c
@@ -550,17 +735,27 @@ target_sources(khdays-native PRIVATE
     host/app/sound_output.c
     host/settings/settings_sample.cpp       # the settings menu's volume samples
     host/render/gpu_present.c
+    host/render/two_screens.c             # the two screens' places: stacked or side by side
     host/render/gpu_raster3d.c
     host/render/gfx_render.c
+    host/render/kh2_sequence_gpu.c
     host/render/onescreen.c               # the one picture's situation and composition
+    host/render/onescreen_images.c
     host/screens/layout_screen.c           # the port's screens drawn from a mod's pieces
     host/screens/save_screen.c             # the port's save list on the screen
     host/screens/cine_screen.c             # MODO CINE's list as the HD theater's chapters
+    host/screens/day_screen.c              # the day's calendar card as the HD theater's chapter days
     host/screens/room_screen.c             # the port's list of Mission Mode's rooms on the screen
     host/screens/mod_screen.c              # a mod's screens and the title's mods' prompt
     host/screens/select_screen.c           # Mission Mode's character select on one screen
+    host/screens/ds_select_pages.c         # ... the game's own, on the mods' characters' pages
     host/screens/camp_screen.c             # Mission Mode's camp menu on one screen
+    host/screens/overhaul_camp_screen.c    # ... and the story's, with its pages, in the Menu Overhaul's look
+    host/screens/mod_faces.c               # ... and the mods' characters' faces and names on both
     host/screens/movie_pause.cpp           # the DS's scene pause over an HD movie
+    host/screens/shop_screen.c             # the Moogle Shop on one screen
+    host/screens/modern_pause.c            # the Menu Overhaul's pause (KH2's look) over HD movies and monologues
+    host/screens/kh2_seq.cpp               # KH2's 2D sequences (the pause's, the story menu's buttons)
     runtime/display/frame_package.c
     runtime/display/gfx_check.c
     runtime/core/origin.c
@@ -569,6 +764,7 @@ target_sources(khdays-native PRIVATE
     runtime/mods/font_raster.cpp
     runtime/mods/font_runtime.cpp
     runtime/mods/textures.c
+    runtime/mods/installed.c
     runtime/mods/models.cpp
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
     runtime/mods/tiles2d.c
@@ -591,6 +787,27 @@ target_sources(khdays-native PRIVATE
     ui/parts.c
     ui/bg.c
     ui/hud.c
+    ui/kh2_hp_hud.cpp
+    ui/kh2_enemy_hud.cpp
+    ui/heart_points.cpp
+    ui/hud_options.cpp
+    tools/heart_model_export.cpp
+    tools/kh2_object_export.cpp    # --kh2-object: a KH2 object made into a glTF model (the KH2 prizes mod)
+    ../assets/src/kh2_map.cpp      # ... its model and textures
+    ../assets/src/kh2_room.cpp     # ... as a scene
+    ../assets/src/animation.cpp
+    ui/kh2_reticles.cpp
+    ui/prize_effects.cpp
+    ui/prize_effects_model.cpp
+    ui/kh2_information.cpp
+    ui/kh2_obtained.cpp
+    ui/kh2_mission_panel.cpp
+    ui/minimap.cpp
+    ui/minimap_config.cpp
+    ui/kh2_party_hud.cpp
+    ui/kh2_hud_labels.cpp
+    ui/kh2_portrait_hud.cpp
+    ui/character_portraits.cpp     # the mods' characters' own portraits on the HUD
     ui/badges.c                    # the badges' icons on the mission panel
     ui/crowns.c                    # the crowns on the story's day list
     ui/mission_list.c              # the camp's mission list from the game's files
@@ -611,6 +828,8 @@ target_sources(khdays-native PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/stop_magic_text.c"
     host/render/gpu_hd.c
     "${KHDAYS_GEN}/ds_functions.c"  # the native function at each DS address
+    "${KHDAYS_GEN}/ds_names.c"      # the game's routines and data by name (runtime/plugins/engine.c)
+    "${CMAKE_CURRENT_BINARY_DIR}/static_plugins.c" # mods' plugins built in (KHDAYS_STATIC_PLUGINS, below)
     ../assets/src/mesh.cpp         # DS models decoded, for the graphics dump's glTF
     ../assets/src/audio.cpp        # the sound archive's streams and waves, for the menu's samples
     ../assets/src/gltf_export.cpp
@@ -620,11 +839,64 @@ target_sources(khdays-native PRIVATE
     ../assets/src/graphics2d.cpp   # the game's 2D sheets, for the rooms' signal
     ../assets/src/cell.cpp         # their cells
     ../assets/src/filesystem.cpp)  # the port's VFS: files and mods
-target_include_directories(khdays-native PRIVATE ../assets/include)
+target_include_directories(khdays-native PRIVATE ../assets/include ../sdk/include)
+# Mods' native plugins built into the port, for platforms that load no library (and any build that wants them in):
+#   -DKHDAYS_STATIC_PLUGINS="<mod id>=<source>[,<source>...];..."
+# each plugin's sources compiled in with its kh_plugin_query renamed, listed for the plugin manager by its mod's id
+# (runtime/plugins/plugins.c finds the mod as ever and starts it without a library). Its other names must be its own
+# (static, or in an unnamed namespace), as a library's hidden ones are.
+set(KHDAYS_STATIC_PLUGINS "" CACHE STRING "mods' native plugins built in: <mod id>=<source>[,<source>...];...")
+set(KHDAYS_STATIC_DECLARATIONS "")
+set(KHDAYS_STATIC_ENTRIES "")
+set(KHDAYS_STATIC_COUNT 0)
+foreach(KHDAYS_STATIC_PLUGIN IN LISTS KHDAYS_STATIC_PLUGINS)
+    if(NOT KHDAYS_STATIC_PLUGIN MATCHES "^([^=]+)=(.+)$")
+        message(FATAL_ERROR "KHDAYS_STATIC_PLUGINS: ${KHDAYS_STATIC_PLUGIN} is not <mod id>=<sources>")
+    endif()
+    set(KHDAYS_STATIC_ID "${CMAKE_MATCH_1}")
+    string(REPLACE "," ";" KHDAYS_STATIC_SOURCES "${CMAKE_MATCH_2}")
+    target_sources(khdays-native PRIVATE ${KHDAYS_STATIC_SOURCES})
+    set_source_files_properties(${KHDAYS_STATIC_SOURCES} PROPERTIES
+        COMPILE_DEFINITIONS "kh_plugin_query=khdays_static_query_${KHDAYS_STATIC_COUNT}" COMPILE_OPTIONS "${KHDAYS_UTF8}")
+    string(APPEND KHDAYS_STATIC_DECLARATIONS
+           "const KhPluginDescriptor *khdays_static_query_${KHDAYS_STATIC_COUNT}(void);\n")
+    string(APPEND KHDAYS_STATIC_ENTRIES "    {\"${KHDAYS_STATIC_ID}\", khdays_static_query_${KHDAYS_STATIC_COUNT}},\n")
+    math(EXPR KHDAYS_STATIC_COUNT "${KHDAYS_STATIC_COUNT} + 1")
+endforeach()
+if(KHDAYS_STATIC_COUNT EQUAL 0)
+    set(KHDAYS_STATIC_ENTRIES "    {0, 0}, /* none: a table cannot be empty */\n")
+endif()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/static_plugins.c" CONTENT
+"/* Generated by port/CMakeLists.txt (KHDAYS_STATIC_PLUGINS): the mods' native plugins built into the port. */
+#include <kh/kh_mod.h>
+
+typedef struct KhdaysStaticPlugin {
+    const char *mod_id;
+    KhPluginQuery query;
+} KhdaysStaticPlugin;
+
+@KHDAYS_STATIC_DECLARATIONS@
+const KhdaysStaticPlugin khdays_static_plugins[] = {
+@KHDAYS_STATIC_ENTRIES@};
+const int khdays_static_plugin_count = @KHDAYS_STATIC_COUNT@;
+" @ONLY)
 # the frame decoder's state (runtime/movies/video.c)
 set_source_files_properties(runtime/movies/video.c PROPERTIES INCLUDE_DIRECTORIES "${MOBICLIP_PORTABLE}")
-# the port's wording holds the game's own texts in UTF-16 literals, written in UTF-8
-set_source_files_properties(runtime/core/text_patches.cpp PROPERTIES COMPILE_OPTIONS "${KHDAYS_UTF8}")
+# Game text and translated UI labels use Unicode literals in UTF-8 source files.
+set_source_files_properties(runtime/core/text_patches.cpp host/screens/ui_text.c PROPERTIES COMPILE_OPTIONS "${KHDAYS_UTF8}")
+if(MSVC)
+    set(KHDAYS_BUILDER_FLAGS "/utf-8;/permissive-")
+else()
+    set(KHDAYS_BUILDER_FLAGS "")
+endif()
+# khdays-studio's mission builder, compiled in as the studio builds it: its headers by their own paths
+set(KHDAYS_MISSION_BUILDER runtime/missions/build.cpp ../studio/core/missions/mission_build.cpp
+    ../studio/core/missions/missions.cpp ../studio/core/missions/mission_db.cpp
+    ../studio/core/missions/command_names.cpp ../studio/core/files/containers.cpp ../studio/core/files/lz.cpp
+    ../studio/core/files/paths.cpp)
+set_source_files_properties(${KHDAYS_MISSION_BUILDER} PROPERTIES
+    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../studio;${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+    COMPILE_OPTIONS "${KHDAYS_BUILDER_FLAGS}")
 # the window's areas (runtime/core/memory.c), the function references' table
 # (runtime/core/window.c), the DS addresses the port reads (khdays_ds_symbols.h)
 target_include_directories(khdays-native PRIVATE "${KHDAYS_GEN}")
@@ -638,7 +910,7 @@ target_compile_options(khdays-native PRIVATE
 # ufbx, as it is: third-party, not held to the port's warnings.
 add_library(khdays-ufbx STATIC "${ufbx_SOURCE_DIR}/ufbx.c")
 target_link_libraries(khdays-native PRIVATE khdays-ufbx)
-target_link_libraries(khdays-native PRIVATE khdays-lua)
+target_link_libraries(khdays-native PRIVATE khdays-lua khdays-kh2-gauge khdays-kh2-portrait)
 target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3)
 if(WIN32)
 target_link_libraries(khdays-native PRIVATE dbghelp winmm delayimp
@@ -701,6 +973,14 @@ add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_h
 target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
+# the Walk mod's clip from its folder (KHDAYS_WALK_CLIP: a Roxas walk, animations/walk/ro.khw); skipped without one
+add_executable(khdays-walk-test tests/walk_test.c runtime/input/walk.c)
+target_compile_options(khdays-walk-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-walk COMMAND khdays-walk-test "$ENV{KHDAYS_WALK_CLIP}")
+set_tests_properties(khdays-walk PROPERTIES SKIP_RETURN_CODE 77)
+add_executable(khdays-camp-memory-test tests/camp_memory_test.c runtime/menus/camp.c)
+target_compile_options(khdays-camp-memory-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-camp-memory COMMAND khdays-camp-memory-test)
 add_executable(khdays-scenes-test tests/scenes_test.c runtime/movies/scene_map.c)
 target_compile_options(khdays-scenes-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-scenes COMMAND khdays-scenes-test)
@@ -709,6 +989,26 @@ add_executable(khdays-stop-magic-test tests/stop_magic_test.c runtime/battle/sto
                "${CMAKE_CURRENT_BINARY_DIR}/stop_magic_text.c")
 target_compile_options(khdays-stop-magic-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-stop-magic COMMAND khdays-stop-magic-test)
+# The mods' new missions (runtime/missions/): descriptions, numbers, progress, the save part, the tables' rows.
+add_executable(khdays-missions-test tests/missions_test.c runtime/missions/registry.c runtime/missions/field_store.c
+               runtime/missions/save_part.c runtime/missions/tables.c runtime/missions/worlds.c)
+target_compile_options(khdays-missions-test PRIVATE /W4 /std:c17)
+# ... with the game's own list and table when the player's data is extracted (decompressed/ of data/).
+file(GLOB KHDAYS_DECOMPRESSED "${CMAKE_CURRENT_SOURCE_DIR}/../data/extracted/*/decompressed")
+if(KHDAYS_DECOMPRESSED)
+    list(GET KHDAYS_DECOMPRESSED 0 KHDAYS_DECOMPRESSED_FIRST)
+endif()
+add_test(NAME khdays-missions COMMAND khdays-missions-test "${KHDAYS_DECOMPRESSED_FIRST}")
+# The mods' characters (runtime/characters/): descriptions, refusals, numbers, movesets.
+add_executable(khdays-characters-test tests/characters_test.c runtime/characters/registry.c
+    runtime/characters/rules.c runtime/characters/moveset.c)
+target_compile_options(khdays-characters-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-characters COMMAND khdays-characters-test)
+# ... their forms: rules, forms read and chosen, level tables.
+add_executable(khdays-character-forms-test tests/character_forms_test.c runtime/characters/registry.c
+    runtime/characters/rules.c runtime/characters/stats.c)
+target_compile_options(khdays-character-forms-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-forms COMMAND khdays-character-forms-test)
 # A replaced room's own animation (runtime/mods/room_animation.cpp): keys, loops, scrolls, frames.
 add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/mods/room_animation.cpp)
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
@@ -767,7 +1067,7 @@ add_test(NAME khdays-mod-polygon COMMAND khdays-mod-polygon-test)
 # The one-screen picture: the compositions' places and the port's own file, the pass's steps and the 2D
 # apart from the 3D, on the CPU.
 add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/situation.c ui/situation_decide.c
-                                     host/render/png_io.c)
+                                     host/render/png_io.c host/render/onescreen_images.c)
 target_include_directories(khdays-onescreen-test PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(khdays-onescreen-test PRIVATE khdays-gfx SDL3::SDL3)
 target_compile_definitions(khdays-onescreen-test PRIVATE "KHDAYS_PORT_COMPOSITIONS_FILE=\"${KHDAYS_PORT_COMPOSITIONS}\""
@@ -795,6 +1095,14 @@ foreach(hd_test ${KHDAYS_HD_TESTS})
     string(REPLACE "_" "-" hd_test_name "${hd_test_name}")
     add_test(NAME khdays-hd-${hd_test_name} COMMAND "${Python3_EXECUTABLE}" "${hd_test}")
 endforeach()
+# The port's own mods' tools (tools/mods/): the same.
+file(GLOB KHDAYS_MOD_TOOL_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/mods/tests/*_test.py")
+foreach(mod_test ${KHDAYS_MOD_TOOL_TESTS})
+    get_filename_component(mod_test_name "${mod_test}" NAME_WE)
+    string(REGEX REPLACE "_test$" "" mod_test_name "${mod_test_name}")
+    string(REPLACE "_" "-" mod_test_name "${mod_test_name}")
+    add_test(NAME khdays-mods-${mod_test_name} COMMAND "${Python3_EXECUTABLE}" "${mod_test}")
+endforeach()
 
 # The execution contexts the game's threads run on (host/app/context.h): more of
 # them than the old fixed table held, each resumed in turn.
@@ -819,6 +1127,14 @@ add_executable(khdays-lower-layout-test tests/lower_layout_test.c host/screens/l
 target_compile_options(khdays-lower-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-lower-layout COMMAND khdays-lower-layout-test)
 
+add_executable(khdays-select-pages-test tests/select_pages_test.c runtime/menus/select_pages.c)
+target_compile_options(khdays-select-pages-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-select-pages COMMAND khdays-select-pages-test)
+
+add_executable(khdays-present-layout-test tests/present_layout_test.c host/render/two_screens.c)
+target_compile_options(khdays-present-layout-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-present-layout COMMAND khdays-present-layout-test)
+
 add_executable(khdays-updates-test tests/updates_test.c host/app/release_version.c)
 target_compile_options(khdays-updates-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-updates COMMAND khdays-updates-test)
@@ -827,6 +1143,17 @@ add_executable(khdays-saveslots-test tests/saveslots_test.c runtime/menus/savesl
 target_link_libraries(khdays-saveslots-test PRIVATE SDL3::SDL3)
 target_compile_options(khdays-saveslots-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-saveslots COMMAND khdays-saveslots-test)
+
+# KH DS Project Editor's .days mods (runtime/mods/days.c): one made by the test, copied out, listed, checked.
+add_executable(khdays-days-test tests/days_test.c runtime/mods/days.c runtime/mods/zip_read.c runtime/mods/list.c
+               runtime/scripts/order.c runtime/scripts/manifest.c runtime/scripts/folders.cpp runtime/core/sha256.c
+               host/render/png_io.c)
+target_include_directories(khdays-days-test PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-days-test PRIVATE SDL3::SDL3)
+target_compile_options(khdays-days-test PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-days COMMAND khdays-days-test)
 
 # Gameplay mods' scripts (runtime/scripts): manifests, the load order, the sandbox, the events and the
 # state names, against a game of the test's own.
@@ -844,6 +1171,61 @@ target_compile_options(khdays-script-test PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-script COMMAND khdays-script-test)
 
+# The mods' native plugins (runtime/plugins/): the SDK's Hello World and the test plugins built as real
+# libraries, put in made-up mods, loaded, started, stopped from another thread's request, released; native
+# code off and safe mode load none.
+add_library(khdays-test-hello MODULE ../sdk/examples/HelloWorld/hello_world.cpp)
+target_include_directories(khdays-test-hello PRIVATE ../sdk/include)
+target_compile_options(khdays-test-hello PRIVATE /W4 /std:c++20 /EHsc)
+foreach(kind IN ITEMS 1 2 3 4 5 6)
+    if(kind LESS 4)
+        add_library(khdays-test-plugin${kind} MODULE tests/plugins/test_plugins.c)
+    elseif(kind LESS 6)
+        add_library(khdays-test-plugin${kind} MODULE tests/plugins/core_plugins.c)
+    else()
+        add_library(khdays-test-plugin${kind} MODULE tests/plugins/character_plugins.c)
+    endif()
+    target_include_directories(khdays-test-plugin${kind} PRIVATE ../sdk/include)
+    target_compile_definitions(khdays-test-plugin${kind} PRIVATE KHDAYS_TEST_PLUGIN=${kind})
+    target_compile_options(khdays-test-plugin${kind} PRIVATE /W4 /std:c17)
+endforeach()
+add_executable(khdays-plugins-test tests/plugins_test.c runtime/plugins/plugins.c runtime/plugins/interfaces.c
+               runtime/plugins/engine.c runtime/plugins/actors.c runtime/plugins/characters.c
+               runtime/plugins/combat.c runtime/plugins/input.c runtime/plugins/parameters.c
+               runtime/plugins/shown.c tests/plugins/static_plugin.c
+               runtime/scripts/manifest.c runtime/scripts/folders.cpp runtime/core/sha256.c)
+target_include_directories(khdays-plugins-test PRIVATE ../sdk/include)
+target_link_libraries(khdays-plugins-test PRIVATE SDL3::SDL3)
+target_compile_definitions(khdays-plugins-test PRIVATE
+    KHDAYS_TEST_HELLO="$<TARGET_FILE:khdays-test-hello>"
+    KHDAYS_TEST_OTHER_SDK="$<TARGET_FILE:khdays-test-plugin1>"
+    KHDAYS_TEST_FAILING="$<TARGET_FILE:khdays-test-plugin2>"
+    KHDAYS_TEST_COUNTING="$<TARGET_FILE:khdays-test-plugin3>"
+    KHDAYS_TEST_PROVIDER="$<TARGET_FILE:khdays-test-plugin4>"
+    KHDAYS_TEST_USER="$<TARGET_FILE:khdays-test-plugin5>"
+    KHDAYS_TEST_FIGHTER="$<TARGET_FILE:khdays-test-plugin6>"
+    KHDAYS_TEST_HOOK_POINTS="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/hook_points.h"
+    KHDAYS_VERSION="test")
+target_compile_options(khdays-plugins-test PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_dependencies(khdays-plugins-test khdays-test-hello khdays-test-plugin1 khdays-test-plugin2
+                 khdays-test-plugin3 khdays-test-plugin4 khdays-test-plugin5 khdays-test-plugin6)
+# The SDK's boundary from a host of its own (sdk/tests/load_plugin.py, Python's ctypes): the plugin with no C library
+# the SDK checks Linux with, loaded, started and stopped.
+add_library(khdays-test-abi MODULE ../sdk/tests/abi_check.c)
+target_include_directories(khdays-test-abi PRIVATE ../sdk/include)
+target_compile_options(khdays-test-abi PRIVATE /W4 /std:c17)
+add_test(NAME khdays-plugins-abi
+         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/../sdk/tests/load_plugin.py"
+                 "$<TARGET_FILE:khdays-test-abi>")
+foreach(mode IN ITEMS off safe on)
+    # each in its folder: its made-up mods and the file the counting plugin leaves
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins-${mode}")
+    add_test(NAME khdays-plugins-${mode} COMMAND khdays-plugins-test ${mode}
+             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins-${mode}")
+endforeach()
+
 # The sound's tests: the channels and mixers against fixed programs, the
 # bridge's queues, and (to come) the drivers, the stream reader and the
 # replacements; no game data needed.
@@ -860,7 +1242,7 @@ add_test(NAME khdays-sound COMMAND khdays-sound-test "${KHDAYS_ARM7_BIN_FIRST}")
 # Recorded frame packages (KHDAYS_RECORD_FRAMES, in saves/frames: the
 # player's game data, never in the repository) checked against the pictures
 # the game showed; skipped without recordings.
-add_executable(khdays-render-test tests/render_test.c host/render/gfx_render.c host/render/gpu_raster3d.c host/render/gpu_hd.c runtime/display/frame_package.c)
+add_executable(khdays-render-test tests/render_test.c host/render/gfx_render.c host/render/gpu_raster3d.c host/render/gpu_hd.c host/render/kh2_sequence_gpu.c runtime/display/frame_package.c)
 target_link_libraries(khdays-render-test PRIVATE khdays-gpu khdays-gfx SDL3::SDL3)
 target_compile_options(khdays-render-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-render COMMAND khdays-render-test "${CMAKE_CURRENT_SOURCE_DIR}/../saves/frames")
@@ -935,7 +1317,8 @@ khdays_fuzz_target(mods fuzz/fuzz_mods.c runtime/scripts/manifest.c runtime/scri
 # The static analysis (port/tools/analyze.py, in the Release tree's tests): the port's own sources of
 # each target compiled again with /analyze and their own flags, not linked, built only when asked;
 # not the decompilation's rewritten files, not the third parties'.
-set(KHDAYS_ANALYZED khdays-native khdays-gpu khdays-sound khdays-gfx khdays-host-input khdays-server)
+set(KHDAYS_ANALYZED khdays-native khdays-gpu khdays-sound khdays-gfx khdays-host-input khdays-server
+                   khdays-hud-settings khdays-kh2-sequence khdays-kh2-gauge khdays-kh2-portrait)
 set(KHDAYS_ANALYZE_TARGETS "")
 foreach(target IN LISTS KHDAYS_ANALYZED)
     get_target_property(sources ${target} SOURCES)

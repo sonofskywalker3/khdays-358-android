@@ -3,6 +3,7 @@
 
 #include "../core/session_log.h"
 #include "../scripts/folders.h"
+#include "../scripts/manifest.h"
 #include "../scripts/order.h"
 
 #include <stdio.h>
@@ -20,7 +21,10 @@ static Mod *mods;
 static int count, capacity;
 static KhdaysOrder order;
 static char *user_folder;
-static void (*on_change)(void);
+/* The active mods as the game started (khdays_mods_start), in load order: what it reads until it starts again.
+ * Written once, before the game's other threads run, and never changed: any thread may read it. */
+static char **started_folders, **started_paths;
+static int started_count, started;
 
 static char *copy(const char *s)
 {
@@ -46,16 +50,13 @@ static char *joined(const char *a, const char *b)
 
 static void clear(void)
 {
+#pragma warning(push)
+#pragma warning(disable : 6001) /* each of the first `count` mods was written whole by add() */
     for (int i = 0; i < count; ++i) {
-#ifdef _MSC_VER
-#pragma warning(suppress : 6001) /* every mod below the count was written before the count moved: none uninitialised */
-#endif
         free(mods[i].folder);
-#ifdef _MSC_VER
-#pragma warning(suppress : 6001)
-#endif
         free(mods[i].path);
     }
+#pragma warning(pop)
     free(mods);
     mods = NULL;
     count = capacity = 0;
@@ -70,6 +71,9 @@ typedef struct Found {
 static void found_folder(const char *name, void *context)
 {
     Found *f = context;
+    if (strcmp(name, KHDAYS_DAYS_CACHE) == 0) {
+        return; /* the .days mods' copies: each listed by its .days */
+    }
     if (f->count == f->capacity) {
         const int grown = f->capacity == 0 ? 8 : f->capacity * 2;
         char **n = realloc(f->names, (size_t)grown * sizeof(*n));
@@ -85,6 +89,13 @@ static void found_folder(const char *name, void *context)
     }
 }
 
+static void found_days(const char *name, void *context)
+{
+    if (khdays_mods_is_days(name)) {
+        found_folder(name, context);
+    }
+}
+
 static void save(void)
 {
     char *path = user_folder != NULL ? joined(user_folder, "mods/order.ini") : NULL;
@@ -96,11 +107,43 @@ static void save(void)
     free(text);
 }
 
-static void changed(void)
+static void no_name(const char *name, void *context)
 {
-    if (on_change != NULL) {
-        on_change();
+    (void)name;
+    (void)context;
+}
+
+/* Whether a mod's folder is a native plugin's alone: no scripts/ folder, and its mod.ini names the plugin's SDK
+ * (`sdk`: runtime/plugins/plugins.h). */
+static int native_only(const char *folder, const char *ini)
+{
+    char *scripts = joined(folder, "scripts"), *text, *sdk;
+    size_t size = 0;
+    const int has_scripts = scripts != NULL && khdays_folders_list(scripts, no_name, NULL);
+    free(scripts);
+    if (has_scripts || (text = khdays_folders_read(ini, &size)) == NULL) {
+        return 0;
     }
+    sdk = khdays_manifest_value(text, size, "sdk");
+    free(text);
+    if (sdk == NULL) {
+        return 0;
+    }
+    free(sdk);
+    return 1;
+}
+
+/* Where a .days mod's files are read: the port's copy of them (days.h), mods/.days/<its name without .days>. */
+static char *days_copy(const char *mods_path, const char *name)
+{
+    char *cache = joined(mods_path, KHDAYS_DAYS_CACHE), *stem = copy(name), *out = NULL;
+    if (cache != NULL && stem != NULL) {
+        stem[strlen(stem) - strlen(KHDAYS_DAYS_EXTENSION)] = '\0';
+        out = joined(cache, stem);
+    }
+    free(cache);
+    free(stem);
+    return out;
 }
 
 static int add(const char *mods_path, const KhdaysOrderEntry *o)
@@ -119,7 +162,7 @@ static int add(const char *mods_path, const KhdaysOrderEntry *o)
     m = &mods[count];
     memset(m, 0, sizeof(*m));
     m->folder = copy(o->folder);
-    m->path = joined(mods_path, o->folder);
+    m->path = khdays_mods_is_days(o->folder) ? days_copy(mods_path, o->folder) : joined(mods_path, o->folder);
     ini = m->path != NULL ? joined(m->path, "mod.ini") : NULL;
     ignore = m->path != NULL ? joined(m->path, IGNORE_FILE) : NULL;
     if (m->folder == NULL || m->path == NULL || ini == NULL || ignore == NULL) {
@@ -131,7 +174,7 @@ static int add(const char *mods_path, const KhdaysOrderEntry *o)
     }
     m->entry.folder = m->folder;
     m->entry.path = m->path;
-    m->entry.scripted = khdays_folders_is_file(ini);
+    m->entry.scripted = khdays_folders_is_file(ini) && !native_only(m->path, ini);
     m->entry.on = o->on;
     m->entry.ignored = m->folder[0] == '.' || khdays_folders_is_file(ignore);
     free(ini);
@@ -148,6 +191,7 @@ void khdays_mods_scan(const char *mods_path, const char *user)
     free(user_folder);
     user_folder = user != NULL ? copy(user) : NULL;
     khdays_folders_list(mods_path, found_folder, &found);
+    khdays_folders_list_files(mods_path, found_days, &found);
     order_path = user_folder != NULL ? joined(user_folder, "mods/order.ini") : NULL;
     order_text = order_path != NULL ? khdays_folders_read(order_path, NULL) : NULL;
     khdays_order_parse(&order, order_text);
@@ -176,7 +220,6 @@ void khdays_mods_scan(const char *mods_path, const char *user)
         khdays_log("mods: %d. %s: %s%s", i + 1, e->folder, how, e->scripted ? "; scripted" : "");
         fprintf(stderr, "mods: %d. %s: %s%s\n", i + 1, e->folder, how, e->scripted ? "; scripted" : "");
     }
-    changed();
 }
 
 int khdays_mods_count(void)
@@ -233,7 +276,6 @@ void khdays_mods_set_on(const char *folder, int on)
     order.entries[at].on = on != 0;
     mods[i].entry.on = on != 0;
     save();
-    changed();
 }
 
 void khdays_mods_move(const char *folder, int by)
@@ -248,24 +290,56 @@ void khdays_mods_move(const char *folder, int by)
     mods[i] = mods[i + by];
     mods[i + by] = t;
     save();
-    changed();
 }
 
-void khdays_mods_on_change(void (*fn)(void))
+void khdays_mods_start(void)
 {
-    on_change = fn;
-}
-
-int khdays_mods_active_paths(const char **paths, int room)
-{
-    int n = 0;
+    if (started) {
+        return;
+    }
+    started = 1;
     for (int i = 0; i < count; ++i) {
+        started_count += khdays_mods_active(&mods[i].entry);
+    }
+    started_folders = started_count > 0 ? calloc((size_t)started_count, sizeof(*started_folders)) : NULL;
+    started_paths = started_count > 0 ? calloc((size_t)started_count, sizeof(*started_paths)) : NULL;
+    if (started_folders == NULL || started_paths == NULL) {
+        free(started_folders);
+        free(started_paths);
+        started_folders = started_paths = NULL;
+        started_count = 0;
+        return;
+    }
+    for (int i = 0, n = 0; i < count && n < started_count; ++i) {
         if (khdays_mods_active(&mods[i].entry)) {
-            if (n < room) {
-                paths[n] = mods[i].path;
-            }
+            started_folders[n] = copy(mods[i].folder);
+            started_paths[n] = copy(mods[i].path);
             ++n;
         }
     }
-    return n;
+}
+
+int khdays_mods_started_count(void)
+{
+    return started_count;
+}
+
+const char *khdays_mods_started_folder(int index)
+{
+    return index >= 0 && index < started_count ? started_folders[index] : NULL;
+}
+
+const char *khdays_mods_started_path(int index)
+{
+    return index >= 0 && index < started_count ? started_paths[index] : NULL;
+}
+
+int khdays_mods_started_has(const char *folder)
+{
+    for (int i = 0; folder != NULL && i < started_count; ++i) {
+        if (started_folders[i] != NULL && strcmp(started_folders[i], folder) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }

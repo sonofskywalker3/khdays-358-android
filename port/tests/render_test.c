@@ -8,6 +8,11 @@
 #include "../gfx/g3d_interp.h"
 #include "../runtime/display/frame_package.h"
 #include "../runtime/mods/textures.h"
+/* the window's KH2 pause: none in a recording (gfx_render.c asks) */
+int khdays_game_pause_kh2_showing(void)
+{
+    return 0;
+}
 
 #include <SDL3/SDL.h>
 #include <stdio.h>

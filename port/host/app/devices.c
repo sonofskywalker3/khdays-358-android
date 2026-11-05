@@ -105,6 +105,7 @@ static void send(void)
 void khdays_devices_init(const KhdaysProfile *p, KhdaysPublish to)
 {
     profile = *p;
+    khdays_hud_settings_publish(p->enh.hud);
     publish = to;
     khdays_bindings_reset(&state);
     send();
@@ -113,6 +114,7 @@ void khdays_devices_init(const KhdaysProfile *p, KhdaysPublish to)
 void khdays_devices_set_profile(const KhdaysProfile *p)
 {
     profile = *p;
+    khdays_hud_settings_publish(p->enh.hud);
     send();
 }
 
@@ -161,6 +163,11 @@ const char *khdays_devices_gamepad_name(void)
 static int marked_pad(SDL_Gamepad *gamepad)
 {
     return SDL_GetGamepadVendor(gamepad) == AYN_VENDOR;
+}
+
+int khdays_devices_pad_marked(SDL_Gamepad *gamepad)
+{
+    return marked_pad(gamepad);
 }
 
 /* The face button in a position, for a pad that names them by their Nintendo

@@ -42,6 +42,12 @@ removed -- says how it went over the window: a green notice that goes after a
 few seconds, or a red one with the reason that stays until you close it. The
 last one stays in the line at the bottom too.
 
+What the studio knows is shown by its name beside its code: the mission worlds
+(`wd_tt` - Twilight Town, in the tool's language), the game's characters'
+folders (`ba/ch/ro` - Roxas), and each mission file with the name the game's
+own list gives it, read from the player's copy (nothing of it is kept but in
+memory).
+
 "Themes" (top right) chooses the studio's colour palette, in the colours of
 KH1's, KH2's, KH3's, Days' or Melody of Memory's menus (MoM's unless another
 is chosen). It changes at once and is kept in the settings.
@@ -307,14 +313,19 @@ is chosen). It changes at once and is kept in the settings.
    (`studio/tools/enemy_names.py`).
 
 9. **A text file.** The "Texts" kind lists the game's string tables
-   (`*.s.z`, the menus' and screens' words) and its message databases
-   (`db/db_<language>.p2`, in lists). Each text shows the game's beside
+   (`*.s.z`, the menus' and screens' words), its message databases
+   (`db/db_<language>.p2`, in lists) and the story's scenes (`ev/EV_S.p2`, the
+   shared ones, and each world's `ev/EV_<world>.p2`: a list per scene, a row
+   per line the characters say, every language in the one file -- choose the
+   one you write in beside the scene). Each text shows the game's beside
    yours; write in the right column (Enter starts a new line, as in the
    game; codes like `\x01` are the game's control codes, to keep). A text
    changed turns green, and a character the game's font cannot draw is
    said under it. "Save into the mod" writes the whole file to
-   `files/<path>`; what you typed in other files stays while you look
-   elsewhere. "Give it back to the game" removes the mod's copy.
+   `files/<path>` (a scene archive with every language you changed, the
+   others as the game has them); what you typed in other files and languages
+   stays while you look elsewhere. "Give it back to the game" removes the
+   mod's copy.
 
 10. **A movie.** The "Movies" kind lists the game's movies (`mv/<id>.mods`).
     The view says what plays now -- a mod's video, your own HD video
@@ -329,7 +340,114 @@ is chosen). It changes at once and is kept in the settings.
     game's movies set to HD. A mod holds one of the two per movie (an
     `.mpg` would win over an `.mp4`).
 
+11. **A plugin's parameters.** "Plugin" (top right) opens the chosen mod's
+    native plugin's parameters, as the mod describes them in its
+    `parameters.ini` (docs/MODDING_NATIVE.md, "Its parameters"): a slider for
+    a number within its bounds, a box for a flag, a list for its choices, a
+    field for a text, each with its label and help in the tool's language and
+    its default. "Save the values" writes them beside the description
+    (`parameters.values.ini`), which the game reads as it starts. The plugin
+    itself is never loaded: what shows is the description's.
+
+    To try one, `mods-examples/CustomLimit` is a mod with parameters (its
+    Limit's spins, damage, reach and status).
+
+12. **Characters.** "Characters" (top right) lists the chosen mod's playable
+    characters (docs/CHARACTERS.md) and makes new ones: a folder name, a name
+    and the game's character it plays as. Its tabs:
+    - *Character*: its name and its weapon's, for every language or one; the
+      character it plays as; when it is offered; its picture in the character
+      select (any picture: one not in PNG is made one); its own gauges.
+    - *Model*: its model (FBX, glTF or glb, chosen or dropped on the window:
+      copied into `model/` with the files it needs); its own skeleton or its
+      bones paired with its base's; its size, with **As tall as its base**;
+      the bone holding its weapon and how the weapon turns on it; its
+      weapons: each of its base's weapon models (read from the graphics
+      dump) drawn as a model of its own, or the base's.
+    - *Animations*: its clips (**Add clips...**, or dropped: copied into
+      `clips/`) and, for each animation the game plays for its base (read from
+      the game, named where they are known: standing, running, jump, combo,
+      Limit...), the clip shown instead; a row clicked plays the game's
+      animation on the base and the character's clip on the character side by
+      side; below the table, the chosen row's blend, its own step and the
+      game's beat.
+    - *Voice, moves and Limit*: its sounds (a file each, or none), its combos
+      and its Limit's damage.
+    - *Stats*: its values at each level, its base's table (read from the
+      game) with those given here marked; a value changed at a level is given
+      there, levels between two given ones in between; **Its base's, times
+      this** writes every level from the base's.
+
+    *Form* (above the tabs) chooses the page shown: *Default*, the character
+    itself, or one of its forms (docs/CHARACTERS.md, "Forms"); **Add form**
+    makes one. On a form's page the first tab is *Form*: its id (renamed,
+    duplicated, removed, put earlier or later), the game's character it plays
+    as (its default's, or any, the dual-wield Roxas too), its priority, its
+    rule -- conditions joined by *All of these* or *Any of these*, each
+    negated or not: the gear equipped, links on the gear, a panel in the deck
+    (each chosen by its name in the game, read from the player's copy), the
+    game's dual wield, the level, the HP in the field, a plugin's condition --
+    with the rule as written below it (for parentheses). Its other tabs show
+    what it takes from its default and give it its own.
+
+    **Save the character** writes `character.ini` when the port's own reader
+    (port/runtime/characters/registry.c) takes it and every file it names is
+    in its folder; what the game would refuse is listed above the tabs as it
+    is changed. What the window does not change -- comments, parts it does not
+    show -- stays as written. Another character chosen, or the studio closed,
+    with changes not saved asks first.
+
+13. **Missions.** "Missions" (top right) holds the chosen mod's own missions
+    (docs/STUDIO.md, "New missions"): **New mission** makes one from a folder
+    name, a world and a room. Each mission's **Places on the map** shows its
+    room from above with its floor: choose what to add -- the players' start,
+    enemies, a chest, an emblem -- and click the floor; drag a place to move
+    it; click it to change it on the right (its wave and enemies by name, how
+    many, its facing, a chest's contents, an emblem's badge) or remove it.
+    **Save the places** writes them all at once when the mission builds as the
+    game will build it. **Words and settings** holds its name, objective and
+    description in each language; the world it is played in and its room; the
+    world tab of Mission Mode's list it is listed under (`category`); its
+    enemies' level and the time limit the list shows; and when it opens
+    (`unlock`): from the start, after one of the game's missions (chosen by
+    its number and name), or after another of the mod's.
+
+14. **Prizes.** "Prizes" (top right) shows the chosen mod's prizes and chests
+    (docs/KH2_SEQUENCES.md, "Field prizes"), each beside Days's own: a prize's
+    effect playing as the port draws it, beside the game's picture; a prize's
+    model turning at its pace, beside the picture; a chest beside the game's
+    chest (from the graphics dump). A prize model's **Size** and **Turn** and a
+    chest's **Scale** are changed there and written by **Save** (the rest of
+    their files kept). **Make from my 1.5+2.5 copy** makes the KH2 prizes mod
+    -- KH2's HP orb, munny and Coliseum coin, its chests and its prize boxes,
+    and Re:CoM's crystal coloured as Days's two -- into the
+    chosen mod as the installer makes it into the HD PACK: the entries it
+    needs taken out of the copy (the settings' 1.5+2.5 folder) into
+    `saves/collection`, then `tools/mods/kh2_prizes.py` run with the port's
+    executable. What is made holds Square Enix's work: it stays the player's.
+
 Sound loops and old-format mods come next.
+
+## Native plugins' examples
+
+The installer brings them with the studio (its "KH Studio" choice; without it,
+none is installed), beside the game:
+
+- `mods-examples/`: five mods with a native plugin, each ready to copy into
+  `mods/`, its Windows plugin built -- `HelloWorld` (a plugin's start, its
+  lines in the mods' log, its stop), `CustomCharacter` (a character of its own,
+  Block, whose attacks heal and hit twice as hard), `CustomLimit` (Spinner, a
+  character whose Limit is the plugin's: its own clips, its spins' hits; its
+  parameters in the Plugin window), `CustomEnemy` (the Shadows blink away and
+  split in two) and `AdvancedNativeMod` (hooks at the game's routines, a
+  routine and a datum by name).
+- `sdk/`: the KH Mod SDK they are built with -- its headers, CMake, docs
+  (`sdk/docs/README.md`) and the examples' sources -- to build plugins of your
+  own.
+
+A plugin runs only once the player turns native code on (the game's settings
+menu, Mods page, **Native code**: read at the next start). What a plugin may
+do, and its risks: docs/MODDING_NATIVE.md.
 
 ## Command line
 
@@ -486,6 +604,14 @@ rebuilds every mission world with nothing changed, writes every room's
 collision back from what was read, checks the game's trees and rebuilds them
 from their faces, and computes the faces' planes as the game does (under a
 second).
+
+```powershell
+.\build\studio\release\khdays-studio.exe --plugin-parameters <Mod>
+.\build\studio\release\khdays-studio.exe --set-plugin-parameter <Mod> <name> <value>
+```
+
+print a mod's native plugin's parameters with the values chosen (and what is
+wrong in its files), or choose one and save it, as the Plugin window does.
 
 Exit code 0, 1 on a problem, 2 on bad arguments.
 

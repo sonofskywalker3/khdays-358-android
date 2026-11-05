@@ -51,11 +51,12 @@ _env = _cl = _flags = None
 _cache: Path | None = None
 _tools = ""
 _flags_key = ""
+_routes = True
 _stats: dict[str, list[int] | None] = {}
 
 
-def _init(cache: str, tools: str, arch: str):
-    global _env, _cl, _flags, _cache, _tools, _flags_key
+def _init(cache: str, tools: str, arch: str, routes: bool = True):
+    global _env, _cl, _flags, _cache, _tools, _flags_key, _routes
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -65,7 +66,8 @@ def _init(cache: str, tools: str, arch: str):
     _env = native_build.msvc_env(arch)  # preprocessed as that compiler sees it
     _cl = compiler(_env)
     _flags = Flags.game_side()
-    _flags_key = hashlib.sha1("\n".join(_flags.arguments()).encode()).hexdigest()
+    _routes = routes
+    _flags_key = hashlib.sha1("\n".join(_flags.arguments() + [f"routes={routes}"]).encode()).hexdigest()
     _cache = Path(cache)
     _tools = tools
 
@@ -261,7 +263,10 @@ def _emit(job):
     try:
         _, text = _source_text(source, meta)
         ast, tp = _parse_text(source, text)
-        out_text, e = emit(ast, tp, index, file_key(source))
+        # the game's own routines (rewritten/src/: not the SDK's libraries, libs/, nor the port's HAL, native_hal/)
+        # routed for the plugins
+        tree = output.replace("\\", "/").rsplit("/rewritten/", 1)
+        out_text, e = emit(ast, tp, index, file_key(source), routes=_routes and len(tree) == 2 and tree[1].startswith("src/"))
     except Exception as ex:  # noqa: BLE001
         r.error = f"{type(ex).__name__}: {ex}\n{traceback.format_exc()[-1500:]}"
         return r
@@ -348,7 +353,12 @@ def _index_key(index) -> str:
 
 
 def rewrite_all(
-    jobs: list[tuple[str, str]], program: Program, gen: Path, processes: int | None = None, arch: str = "x64"
+    jobs: list[tuple[str, str]],
+    program: Program,
+    gen: Path,
+    processes: int | None = None,
+    arch: str = "x64",
+    routes: bool = True,
 ):
     """Each (source, output) rewritten; the numbers into gen/khdays_data_area.h.
     Returns the outputs in the order given and the data area's size; stops
@@ -358,7 +368,7 @@ def rewrite_all(
     processes = processes or max(1, (os.cpu_count() or 2) - 1)
     cache = gen / "references"
     cache.mkdir(parents=True, exist_ok=True)
-    with ProcessPoolExecutor(processes, initializer=_init, initargs=(str(cache), tools_key(), arch)) as pool:
+    with ProcessPoolExecutor(processes, initializer=_init, initargs=(str(cache), tools_key(), arch, routes)) as pool:
         found = list(pool.map(_definitions, [s for s, _ in jobs], chunksize=32))
         failures = [f"{s}: {err}" for s, _, _, _, err in found if err]
         if failures:

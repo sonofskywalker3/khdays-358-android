@@ -212,6 +212,8 @@ void khdays_profile_default(KhdaysProfile *p)
     khdays_network_default(&p->network);
     khdays_save_default(&p->save);
     p->gameplay.stop_magic = 1;
+    khdays_hud_settings_default(p->enh.hud);
+    p->mods.native_code = 0;
 }
 
 void khdays_sound_default(KhdaysSound *s)
@@ -278,6 +280,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
     v->one_screen_second = 0; /* each screen on its own display */
+    v->two_screens = KHDAYS_TWO_STACKED;
     v->hud_size = 4;
     v->menu_size = 3;
     v->subtitles = 1; /* as the DS showed them */
@@ -410,6 +413,9 @@ int khdays_profile_repair(KhdaysProfile *p)
     changed += clamp(&p->enh.mouse_speed, 10, 300);
     changed += clamp(&p->enh.run_threshold, 50, 95);
     changed += clamp(&p->enh.walk_speed, 20, 90);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        changed +=
+            clamp(&p->enh.hud[i], i >= KHDAYS_OPT_MISSION_ANCHOR ? 1 : 0, i >= KHDAYS_OPT_MISSION_ANCHOR ? 9 : 1);
     if (p->preset != KHDAYS_PRESET_DS && p->preset != KHDAYS_PRESET_KH2) {
         p->preset = KHDAYS_PRESET_DS;
         ++changed;
@@ -423,6 +429,7 @@ int khdays_profile_repair(KhdaysProfile *p)
         }
         changed += clamp(&p->video.one_screen, 0, 1);
         changed += clamp(&p->video.one_screen_second, 0, 1);
+        changed += clamp(&p->video.two_screens, 0, KHDAYS_TWO_SCREENS_COUNT - 1);
         if (p->video.aspect < 0 || p->video.aspect >= KHDAYS_ASPECT_COUNT) {
             p->video.aspect = default_aspect(p->video.one_screen);
             ++changed;
@@ -698,6 +705,7 @@ enum Section {
     SEC_NETWORK,
     SEC_SAVE,
     SEC_GAMEPLAY,
+    SEC_MODS,
     SEC_UNKNOWN
 };
 
@@ -749,6 +757,8 @@ static void enter_section(Reader *r, const char *name)
         r->section = SEC_SAVE;
     } else if (SDL_strcasecmp(name, "gameplay") == 0) {
         r->section = SEC_GAMEPLAY;
+    } else if (SDL_strcasecmp(name, "mods") == 0) {
+        r->section = SEC_MODS;
     } else {
         r->section = SEC_UNKNOWN;
         say_kept(r->notice, "settings: section [%s] is not understood by this version; kept as it is", name);
@@ -891,6 +901,15 @@ static void read_stick_setting(Reader *r, const char *key, const char *value, co
 static void read_enhancement(Reader *r, const char *key, const char *value, const char *line)
 {
     KhdaysEnhancements *e = &r->profile->enh;
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        if (SDL_strcasecmp(key, khdays_hud_setting_keys[i]) == 0) {
+            if (i < KHDAYS_OPT_MISSION_VISIBILITY)
+                read_switch(r, key, value, &e->hud[i]);
+            else
+                read_number(r, key, value, i >= KHDAYS_OPT_MISSION_ANCHOR ? 1 : 0,
+                            i >= KHDAYS_OPT_MISSION_ANCHOR ? 9 : 1, &e->hud[i]);
+            return;
+        }
     static const struct {
         const char *name;
         size_t offset;
@@ -907,6 +926,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
         {"run_threshold", offsetof(KhdaysEnhancements, run_threshold), 50, 95},
         {"walk_speed", offsetof(KhdaysEnhancements, walk_speed), 20, 90},
+        {"chase_free", offsetof(KhdaysEnhancements, chase_free), 0, 0},
     };
     for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); ++i) {
         if (SDL_strcasecmp(key, settings[i].name) == 0) {
@@ -995,6 +1015,15 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } else {
             say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "two");
             v->one_screen_second = defaults.one_screen_second;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "two_screens") == 0) {
+        if (SDL_strcasecmp(value, "stacked") == 0 || SDL_strcasecmp(value, "side-by-side") == 0) {
+            v->two_screens = SDL_strcasecmp(value, "side-by-side") == 0 ? KHDAYS_TWO_SIDE_BY_SIDE : KHDAYS_TWO_STACKED;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "stacked");
+            v->two_screens = defaults.two_screens;
         }
         return;
     }
@@ -1121,6 +1150,14 @@ static void read_video(Reader *r, const char *key, const char *value, const char
     }
     if (SDL_strcasecmp(key, "lower_fill") == 0) {
         return; /* 0.1.4 beta 7's, the edges drawn on: second_screen_aspect has taken its place */
+    }
+    if (SDL_strcasecmp(key, "hd_fonts") == 0) {
+        /* an older name of [enhancements] hd_font (the Menu Overhaul's own build wrote it here): taken over, not
+         * written again */
+        if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
+            r->profile->enh.hud[KHDAYS_OPT_FONT] = SDL_strcasecmp(value, "on") == 0;
+        }
+        return;
     }
     {
         static const struct {
@@ -1271,6 +1308,23 @@ static void read_save(Reader *r, const char *key, const char *value, const char 
     }
 }
 
+/* [mods]: native_code. */
+static void read_mods(Reader *r, const char *key, const char *value, const char *line)
+{
+    KhdaysModsSettings *m = &r->profile->mods;
+    if (SDL_strcasecmp(key, "native_code") == 0) {
+        if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
+            m->native_code = SDL_strcasecmp(value, "on") == 0;
+        } else {
+            say(r->notice, "settings: [mods] native_code = \"%s\" is neither on nor off; off is used", value);
+            m->native_code = 0;
+        }
+    } else {
+        say(r->notice, "settings: [mods] has no setting \"%s\"; kept as it is", key);
+        keep_unknown("mods", line);
+    }
+}
+
 /* [gameplay]: stop_magic. */
 static void read_gameplay(Reader *r, const char *key, const char *value, const char *line)
 {
@@ -1375,6 +1429,7 @@ static int read_text(Reader *r, char *text, size_t size)
         case SEC_NETWORK: read_network(r, key, value, original); break;
         case SEC_SAVE: read_save(r, key, value, original); break;
         case SEC_GAMEPLAY: read_gameplay(r, key, value, original); break;
+        case SEC_MODS: read_mods(r, key, value, original); break;
         case SEC_UNKNOWN: keep_unknown(r->section_name, original); break;
         }
         SDL_free(original);
@@ -1560,6 +1615,13 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
         e->run_threshold, e->walk_speed);
+    add(&t, "chase_free = %s\n", e->chase_free ? "on" : "off");
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i) {
+        if (i < KHDAYS_OPT_MISSION_VISIBILITY)
+            add(&t, "%s = %s\n", khdays_hud_setting_keys[i], e->hud[i] ? "on" : "off");
+        else
+            add(&t, "%s = %d\n", khdays_hud_setting_keys[i], e->hud[i]);
+    }
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;
@@ -1584,11 +1646,14 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# antialiasing: off, 2x, 3x or 4x -- the picture made that many times larger and shrunk,\n"
             "# the 3D's edges smooth (2x is four times the work, 4x sixteen)\n"
             "antialiasing = %s\n"
-            "# screens: two (the DS's, one above the other) or one (one picture)\n"
+            "# screens: two (the DS's) or one (one picture)\n"
             "screens = %s\n"
             "# screens_second_display: with a second display (the AYN Thor's lower one) -- two (each screen\n"
             "#                         on its own display) or one (one picture on the upper display)\n"
             "screens_second_display = %s\n"
+            "# two_screens: with two screens, stacked (the upper above the lower, as the DS has them)\n"
+            "#              or side-by-side (the upper on the left, each screen as wide as the DS's)\n"
+            "two_screens = %s\n"
             "# hud_size: 1 to 8, the HUD's size on one screen (4 the default)\n"
             "hud_size = %d\n"
             "# menu_size: 1 to 4, the settings menu's text size (3 the default)\n"
@@ -1618,7 +1683,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
-            v->one_screen ? "one" : "two", v->one_screen_second ? "one" : "two", v->hud_size, v->menu_size,
+            v->one_screen ? "one" : "two", v->one_screen_second ? "one" : "two",
+            v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked", v->hud_size, v->menu_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp",
             v->second_screen_aspect == KHDAYS_SECOND_SCREEN_FULLSCREEN ? "fullscreen" : "original",
@@ -1685,12 +1751,20 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         "stop_magic = %s\n",
         p->gameplay.stop_magic ? "on" : "off");
     add_unknown(&t, "gameplay");
+    add(&t,
+        "\n[mods]\n"
+        "# native_code: on, the mods' native plugins (code built for this computer that a mod carries) run"
+        "\n# inside the game: only for mods you trust -- a plugin can do anything a program can, crash the"
+        "\n# game or damage its saves. off (the default): no plugin runs. Read as the game starts\n"
+        "native_code = %s\n",
+        p->mods.native_code ? "on" : "off");
+    add_unknown(&t, "mods");
     for (int i = 0; i < unknown_count; ++i) {
         /* whole sections this version does not know, written back as they were */
         const char *s = unknown[i].section;
         if (*s == '\0' || SDL_strcasecmp(s, "sticks") == 0 || SDL_strcasecmp(s, "enhancements") == 0 ||
             SDL_strcasecmp(s, "video") == 0 || SDL_strcasecmp(s, "sound") == 0 || SDL_strcasecmp(s, "network") == 0 ||
-            SDL_strcasecmp(s, "save") == 0 || SDL_strcasecmp(s, "gameplay") == 0 ||
+            SDL_strcasecmp(s, "save") == 0 || SDL_strcasecmp(s, "gameplay") == 0 || SDL_strcasecmp(s, "mods") == 0 ||
             SDL_strncasecmp(s, "keyboard", 8) == 0 || SDL_strncasecmp(s, "gamepad", 7) == 0) {
             continue;
         }

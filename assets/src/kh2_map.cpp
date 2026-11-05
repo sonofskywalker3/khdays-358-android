@@ -259,6 +259,8 @@ void read_object_model(const Bytes& b, const std::size_t h, Model& model) {
         const std::size_t entry = h + 0x20 + s * 0x20U;
         Group group;
         group.texture = static_cast<int>(b.u32(entry + 4));
+        // its flags: 0x400000 its light added over the model (a glow)
+        group.light = (b.u32(entry) & 0x400000U) != 0;
         std::size_t p = h + b.u32(entry + 0x10);
         // A packet's VIF stream gathered from its tags: ref tags (ID 3) bring
         // data from ADDR (from the header) or, with QWC 4, a bone's matrix (ADDR
@@ -412,35 +414,6 @@ float evaluate_keys(const std::vector<MotionKey>& keys, const float time) {
 }
 
 }  // namespace
-
-bool is_bar(const std::uint8_t* data, const std::size_t size, const std::size_t at) {
-    return at + 16 <= size && data[at] == 'B' && data[at + 1] == 'A' && data[at + 2] == 'R' && data[at + 3] == 1;
-}
-
-std::vector<BarEntry> bar_entries(const std::uint8_t* data, const std::size_t size, const std::size_t at) {
-    if (!is_bar(data, size, at)) {
-        throw std::runtime_error("KH2 map: not a BAR archive");
-    }
-    const Bytes b(data, size);
-    const std::uint32_t count = b.u32(at + 4);
-    std::vector<BarEntry> entries;
-    for (std::uint32_t i = 0; i < count; ++i) {
-        const std::size_t e = at + 0x10 + i * 16U;
-        BarEntry entry;
-        entry.type = b.u32(e);
-        const auto* name = b.at(e + 4, 4);
-        for (int c = 0; c < 4 && name[c] != 0; ++c) {
-            entry.name += static_cast<char>(name[c]);
-        }
-        entry.offset = at + b.u32(e + 8);
-        entry.size = b.u32(e + 12);
-        if (entry.size != 0) {
-            (void)b.at(entry.offset, entry.size);
-        }
-        entries.push_back(std::move(entry));
-    }
-    return entries;
-}
 
 std::array<float, 2> region_uv(const GsTexture& t, float u, float v) {
     if ((t.wrap_u == 2 || t.wrap_u == 3) && t.region_width > 0) {

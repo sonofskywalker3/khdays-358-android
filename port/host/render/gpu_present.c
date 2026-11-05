@@ -11,9 +11,13 @@
 #include "../../runtime/menus/newgame.h"
 #include "onescreen.h"
 #include "png_io.h"
+#include "two_screens.h"
+#include "../screens/ds_select_pages.h"
 #include "../../ui/composition.h"
+#include "../../ui/text.h"
 #include "../screens/movie_pause.h"
 #include "../screens/ui_text.h"
+#include "../screens/shop_screen.h"
 #include "../../runtime/core/clock.h"
 #include "../../runtime/core/events.h"
 #include "../../runtime/display/frame_package.h"
@@ -400,13 +404,24 @@ int khdays_present_gpu(void)
     return device != NULL;
 }
 
+/* Two screens side by side ([video] two_screens): each the DS's width, whatever the aspect. */
+static int side_by_side(void)
+{
+#if defined(__ANDROID__)
+    if (two_displays) {
+        return 0; /* each screen on its own display */
+    }
+#endif
+    return !video.one_screen && video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE;
+}
+
 /* The width of engine A's screen for the aspect setting, in DS pixels: 256 at 4:3; 342 at 16:9 and 308
  * at 16:10 (rounded up to even, so the DS's 256 columns sit whole in the middle); for "window", as wide
  * as the window at the screens' height, up to three times the DS's. */
 static int columns_now(void)
 {
     int pw = 0, ph = 0, n;
-    if (device == NULL || !raster_ready) {
+    if (device == NULL || !raster_ready || side_by_side()) {
         return W;
     }
     switch (video.aspect) {
@@ -437,10 +452,11 @@ static int antialiasing_now(void)
 static float shown_scale(void)
 {
     int pw = 0, ph = 0;
-    const int rows = video.one_screen ? H : 2 * H;
+    const KhdaysTwoScreensLayout two = khdays_two_screens_layout(side_by_side(), columns_now(), W, W);
+    const int across = video.one_screen ? columns_now() : two.width, rows = video.one_screen ? H : two.height;
     float sx, sy;
     SDL_GetWindowSizeInPixels(window, &pw, &ph);
-    sx = (float)pw / (float)columns_now();
+    sx = (float)pw / (float)across;
     sy = (float)ph / (float)rows;
     return sx < sy ? sx : sy;
 }
@@ -506,16 +522,17 @@ int khdays_present_scale(void)
     return port2d_ready && device != NULL ? scale_now() : 1;
 }
 
-/* Lays out the picture for its width now: the two screens one above the
- * other, the DS's 256 columns of each in the middle, fitted to the window. */
+/* Lays out the picture for its width now: the two screens one above the other or side by side
+ * (two_screens.h), the DS's 256 columns of each, fitted to the window. */
 static void present_size(int w, int h);
 
 static void layout(void)
 {
+    const KhdaysTwoScreensLayout two = khdays_two_screens_layout(side_by_side(), khdays_present_columns(), W, W);
     columns = khdays_present_columns();
     /* one screen: each frame sets what it shows (khdays_present_draw); until then, leave it */
     presented_w = presented_h = 0;
-    present_size(columns, video.one_screen ? H : 2 * H);
+    present_size(video.one_screen ? columns : two.width, video.one_screen ? H : two.height);
 }
 
 void khdays_present_resized(void)
@@ -735,6 +752,98 @@ static float button_picture_w, button_picture_h, button_ax, button_ay;
 static int button_fit;
 static float one_at_x, one_at_w;
 static uint64_t last_refresh; /* the game's time of the last picture */
+
+/* The field's room change (Ov002_UpdateSceneFrame): a quad of the world's shape growing or shrinking about the
+ * view's middle, and black rectangles round it over the DS's 256 columns only (a scaled W: widescreen neither
+ * stretches nor covers them). While the wipe runs (the package's `field_wipe`), the picture made from a list
+ * holding that quad -- its texture (A5I3 64 x 32, or its HD replacement), in screen space, its middle the
+ * view's, 4:3 -- is black outside it over the window's width (`wipe`, in DS dots of the view). */
+static struct {
+    int on;
+    float x0, y0, x1, y1;
+} wipe, wipe_next;
+
+static int wipe_polygon(const KhdaysG3dPolygon *p, const KhdaysG3dVertex *v)
+{
+    const char *name;
+    float x0, x1, y0, y1, w, h;
+    if (p->count < 3 || (p->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_MOD)) || ((p->tex >> 26) & 7u) != 6u ||
+        ((p->tex >> 20) & 7u) != 3u || ((p->tex >> 23) & 7u) != 2u) {
+        return 0; /* the shape: A5I3, 64 x 32 */
+    }
+    if (p->replacement >= 0) {
+        name = khdays_textures_name(p->replacement);
+        if (name == NULL || SDL_strstr(name, "ba/tr/") == NULL || SDL_strstr(name, "_wipe") == NULL) {
+            return 0;
+        }
+    }
+    x0 = x1 = v[0].x;
+    y0 = y1 = v[0].y;
+    for (int k = 0; k < p->count; ++k) {
+        if (SDL_fabsf(v[k].w - v[0].w) > 0.5f) {
+            return 0; /* not drawn in screen space */
+        }
+        x0 = SDL_min(x0, v[k].x);
+        x1 = SDL_max(x1, v[k].x);
+        y0 = SDL_min(y0, v[k].y);
+        y1 = SDL_max(y1, v[k].y);
+    }
+    w = x1 - x0;
+    h = y1 - y0;
+    if (w < 2.0f || h < 2.0f || SDL_fabsf((x0 + x1) / 2 - W / 2.0f) > 1.5f ||
+        SDL_fabsf((y0 + y1) / 2 - H / 2.0f) > 1.5f) {
+        return 0; /* the view's middle */
+    }
+    /* 4:3, unless cut at the top and bottom of the view (then wider than it, and centred) */
+    return SDL_fabsf(w / h - 4.0f / 3.0f) < 0.04f || (y0 <= 0.5f && y1 >= (float)H - 0.5f && w >= (float)W - 1.0f);
+}
+
+static void find_wipe(const KhdaysG3dList *list)
+{
+    SDL_zero(wipe_next);
+    if (list == NULL || list->polys == NULL || list->verts == NULL) {
+        return;
+    }
+    for (int i = 0; i < list->npolys; ++i) {
+        const KhdaysG3dPolygon *p = &list->polys[i];
+        const KhdaysG3dVertex *v = &list->verts[p->first];
+        if (p->first < 0 || p->first + p->count > list->nverts || !wipe_polygon(p, v)) {
+            continue;
+        }
+        for (int k = 0; k < p->count; ++k) {
+            if (!wipe_next.on) {
+                wipe_next.x0 = wipe_next.x1 = v[k].x;
+                wipe_next.y0 = wipe_next.y1 = v[k].y;
+                wipe_next.on = 1;
+            }
+            wipe_next.x0 = SDL_min(wipe_next.x0, v[k].x);
+            wipe_next.x1 = SDL_max(wipe_next.x1, v[k].x);
+            wipe_next.y0 = SDL_min(wipe_next.y0, v[k].y);
+            wipe_next.y1 = SDL_max(wipe_next.y1, v[k].y);
+        }
+        return; /* the game draws one */
+    }
+}
+
+/* Black outside the wipe's quad, the picture at `at` (logical units: DS dots), the DS's columns in its
+ * middle. Half a dot inside the quad's edge: its border texels are the cover's black anyway. */
+static void draw_wipe(const SDL_FRect *at)
+{
+    const float ds0 = at->x + (at->w - (float)W) / 2;
+    const float x0 = ds0 + wipe.x0 + 0.5f, x1 = ds0 + wipe.x1 - 0.5f, y0 = wipe.y0 + 0.5f, y1 = wipe.y1 - 0.5f;
+    const float left = 0.0f, right = (float)columns, top = 0.0f, bottom = (float)H;
+    const SDL_FRect bands[4] = {{left, top, right - left, SDL_max(y0 - top, 0.0f)},
+                                {left, y1, right - left, SDL_max(bottom - y1, 0.0f)},
+                                {left, y0, SDL_max(x0 - left, 0.0f), SDL_max(y1 - y0, 0.0f)},
+                                {x1, y0, SDL_max(right - x1, 0.0f), SDL_max(y1 - y0, 0.0f)}};
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    for (int i = 0; i < 4; ++i) {
+        if (bands[i].w > 0.0f && bands[i].h > 0.0f) {
+            SDL_RenderFillRect(renderer, &bands[i]);
+        }
+    }
+}
 
 static void fps_count(int picture); /* Video: Show FPS (below) */
 
@@ -964,6 +1073,69 @@ static void under_paused_video(KhdaysOneScreenDraw *one)
     one->hide3d_all = 1;
 }
 
+/* The Moogle Shop's timings, in the session log every 5 seconds while it shows: the game's pictures that
+ * reached the window and the VBlanks they cover, the pictures drawn (present: the one-screen picture's
+ * situation and composition, the card's 3D and 2D), the window's drawing over them and its presenting,
+ * and the shop's screens composed apart (onescreen.c). Each picture of the shop over 25 ms is noted too. */
+static struct {
+    Uint64 since;
+    unsigned packages, presents, redraws, slow;
+    uint32_t first_frame, last_frame;
+    Uint64 present_ns, present_most, drawing_ns, drawing_most, presenting_ns, presenting_most;
+} perf;
+static Uint64 package_ns; /* when the latest package came */
+
+static void perf_tick(void)
+{
+    const Uint64 now = SDL_GetTicksNS();
+    if (!khdays_shop_screen_shown()) {
+        if (perf.since != 0) {
+            unsigned jobs, alike;
+            double ms, most;
+            khdays_onescreen_shop_work(&jobs, &ms, &most, &alike); /* (forgotten) */
+        }
+        SDL_zero(perf);
+        return;
+    }
+    if (perf.since == 0) {
+        perf.since = now;
+        return;
+    }
+    if (now - perf.since >= 5000000000u) {
+        const double s = (double)(now - perf.since) / 1e9;
+        unsigned jobs, alike;
+        double ms, most;
+        khdays_onescreen_shop_work(&jobs, &ms, &most, &alike);
+        khdays_log("shop: timings over %.1f s: the game's pictures %.0f a second (its VBlanks %.0f), pictures drawn "
+                   "%.0f, window %.0f; a picture %.2f ms (most %.2f), the window's drawing %.2f ms (most %.2f), "
+                   "presenting %.2f ms (most %.2f); over 25 ms: %u; the DS's screens composed %u times, %.2f ms each "
+                   "(most %.2f), %u pictures alike",
+                   s, perf.packages / s, perf.packages ? (double)(perf.last_frame - perf.first_frame + 1u) / s : 0.0,
+                   perf.presents / s, perf.redraws / s, perf.presents ? perf.present_ns / 1e6 / perf.presents : 0.0,
+                   perf.present_most / 1e6, perf.redraws ? perf.drawing_ns / 1e6 / perf.redraws : 0.0,
+                   perf.drawing_most / 1e6, perf.redraws ? perf.presenting_ns / 1e6 / perf.redraws : 0.0,
+                   perf.presenting_most / 1e6, perf.slow, jobs, jobs ? ms / jobs : 0.0, most, alike);
+        SDL_zero(perf);
+        perf.since = now;
+    }
+}
+
+void khdays_present_redraw_took(uint64_t drawing_ns, uint64_t presenting_ns)
+{
+    if (perf.since == 0) {
+        return;
+    }
+    ++perf.redraws;
+    perf.drawing_ns += drawing_ns;
+    perf.presenting_ns += presenting_ns;
+    perf.drawing_most = drawing_ns > perf.drawing_most ? drawing_ns : perf.drawing_most;
+    perf.presenting_most = presenting_ns > perf.presenting_most ? presenting_ns : perf.presenting_most;
+    if (drawing_ns + presenting_ns > 25000000u) {
+        ++perf.slow;
+    }
+    perf_tick();
+}
+
 void khdays_present_package(const KhdaysFramePackage *p)
 {
     if (!khdays_movie_hd_scene_paused()) {
@@ -971,6 +1143,13 @@ void khdays_present_package(const KhdaysFramePackage *p)
     }
     note_logic_frame(p);
     latest = p;
+    package_ns = SDL_GetTicksNS();
+    if (perf.since != 0) {
+        if (perf.packages++ == 0) {
+            perf.first_frame = p->frame;
+        }
+        perf.last_frame = p->frame;
+    }
     present(p, 1);
 }
 
@@ -1013,7 +1192,10 @@ int khdays_present_backdrop_moving(void)
 
 int khdays_present_refresh_backdrop(void)
 {
-    if (!khdays_present_backdrop_moving()) {
+    /* while the game's pictures keep coming (one at each of its VBlanks: within a VBlank and a half), each
+     * draws the backdrop as it is then: drawing it again between them only drew the whole picture -- its
+     * 3D, its 2D -- two and three times as often (a display faster than the game's 60) */
+    if (!khdays_present_backdrop_moving() || SDL_GetTicksNS() - package_ns < 25000000u) {
         return 0;
     }
     present(latest, 0);
@@ -1065,10 +1247,24 @@ static int has_hd_tiles(const KhdaysFramePackage *p)
     }
     return 0;
 }
+static void present_now(const KhdaysFramePackage *p, int first);
 
 /* Draws package `p`. `first` is set the first time (so its shots and profile
- * are counted only once). */
+ * are counted only once). Timed while the Moogle Shop shows (perf). */
 static void present(const KhdaysFramePackage *p, int first)
+{
+    const Uint64 start = SDL_GetTicksNS();
+    present_now(p, first);
+    if (perf.since != 0) {
+        const Uint64 took = SDL_GetTicksNS() - start;
+        ++perf.presents;
+        perf.present_ns += took;
+        perf.present_most = took > perf.present_most ? took : perf.present_most;
+    }
+    perf_tick();
+}
+
+static void present_now(const KhdaysFramePackage *p, int first)
 {
     const uint32_t full = KHDAYS_WANT_3D | KHDAYS_WANT_COMPOSITION;
     int scale;
@@ -1117,6 +1313,7 @@ static void present(const KhdaysFramePackage *p, int first)
         SDL_zero(one);
         one_drawn = 0;
         backdrop_moving = 0;
+        khdays_shop_screen_wanted(video.one_screen); /* the shop's moogle turned to its menu on one screen */
         if (video.one_screen) {
             /* One screen: first the situation and its composition. A picture of the upper or lower screen is
              * made by the one-screen pass, as wide as the 3D list; "side by side" and "stacked" show the two
@@ -1192,6 +1389,20 @@ static void present(const KhdaysFramePackage *p, int first)
             drawn = khdays_gfx_render_draw_one(p, raster || one.backdrop != NULL || hd_tiles ? n : 1, raster, &one);
             one_drawn = drawn;
             one_made = one_made || drawn;
+            /* the room change's quad, in the list this picture was drawn from, when its 3D shows in it */
+            find_wipe(raster && p->field_wipe && one_kind == KHDAYS_SCREENS_UPPER && p->upper == 0
+                          ? (list != NULL ? list : &p->list3d)
+                          : NULL);
+            if (drawn) {
+                if (wipe_next.on && !wipe.on) {
+                    khdays_log("field wipe: the room change's quad found (%.0f-%.0f x %.0f-%.0f): the widescreen "
+                               "beside it made black",
+                               (double)wipe_next.x0, (double)wipe_next.x1, (double)wipe_next.y0, (double)wipe_next.y1);
+                } else if (!wipe_next.on && wipe.on) {
+                    khdays_log("field wipe: over");
+                }
+                wipe = wipe_next;
+            }
         } else {
             drawn = khdays_gfx_render_draw(p, raster || hd_tiles ? n : 1, raster);
         }
@@ -1560,6 +1771,7 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
         uint32_t off = 0;
         khdays_bottom_wanted_rows(&row0, &count, &off);
         khdays_gfx_render_set_lower_rows(row0, port2d_drawn ? count : 0, off);
+        khdays_ui_text_lower_rows(port2d_drawn ? count : 0);
     }
     bottom_show_finished();
     if (port_screen) {
@@ -1669,9 +1881,17 @@ static int draw_two_displays(void)
 }
 #endif
 
+/* A screen's place as an SDL rectangle. */
+static SDL_FRect at_place(KhdaysScreenPlace p)
+{
+    const SDL_FRect r = {p.x, p.y, p.w, p.h};
+    return r;
+}
+
 void khdays_present_draw(void)
 {
-    const float left = (float)(columns - W) / 2;
+    const int beside = side_by_side();
+    KhdaysScreenPlace lower_place = {0.0f, 0.0f, 0.0f, 0.0f}; /* the two screens' lower one, where drawn */
     if (device_lost) {
         return;
     }
@@ -1713,6 +1933,9 @@ void khdays_present_draw(void)
             one_at_w = at.w;
             SDL_SetTextureScaleMode(picture, mode_for(picture, at.w, at.h));
             SDL_RenderTexture(renderer, picture, NULL, &at);
+            if (wipe.on) {
+                draw_wipe(&at);
+            }
         }
     } else if (port2d_drawn && video.one_screen && one_kind == KHDAYS_SCREENS_SIDE_BY_SIDE) {
         /* Both screens whole, side by side, each as the DS's 256 columns, touching: the upper on the left,
@@ -1732,36 +1955,48 @@ void khdays_present_draw(void)
             SDL_RenderTexture(renderer, lower, &lower_from, &lower_at);
         }
     } else if (port2d_drawn) {
-        /* stacked: the two-screen picture. Set each frame, as every picture sets its own: an HD video
-         * left its size behind (seen: after hd818's 1280 x 720, the two screens letterboxed into it at
-         * 0.4 of their size) */
-        present_size(columns, 2 * H);
-        /* the port's own screens, the DS's 256 columns in the middle (engine A as wide as it was drawn) */
+        /* the two-screen picture, stacked or side by side (two_screens.h). Set each frame, as every picture
+         * sets its own: an HD video left its size behind (seen: after hd818's 1280 x 720, the two screens
+         * letterboxed into it at 0.4 of their size) */
         int cu = 0, cl = 0;
         SDL_Texture *upper = screen_texture(port2d_upper, &cu);
         SDL_Texture *lower = screen_texture(!port2d_upper, &cl);
-        const float wu = (float)cu, wl = (float)cl;
-        const SDL_FRect upper_at = {((float)columns - wu) / 2, 0, wu, H},
-                        lower_at = {((float)columns - wl) / 2, H, wl, H};
+        const KhdaysTwoScreensLayout two = khdays_two_screens_layout(beside, columns, (float)cu, (float)cl);
+        const SDL_FRect upper_at = at_place(two.upper), lower_at = at_place(two.lower);
+        present_size(two.width, two.height);
+        lower_place = two.lower;
         if (upper != NULL && lower != NULL) {
-            SDL_SetTextureScaleMode(upper, mode_for(upper, wu, H));
-            SDL_SetTextureScaleMode(lower, mode_for(lower, wl, H));
-            SDL_RenderTexture(renderer, upper, NULL, &upper_at);
-            SDL_RenderTexture(renderer, lower, NULL, &lower_at);
+            /* stacked: each as wide as it was drawn; side by side: its DS's 256 columns */
+            const SDL_FRect upper_from = ds_columns(upper, beside ? cu : W),
+                            lower_from = ds_columns(lower, beside ? cl : W);
+            SDL_SetTextureScaleMode(upper, mode_for(upper, upper_at.w, H));
+            SDL_SetTextureScaleMode(lower, mode_for(lower, lower_at.w, H));
+            SDL_RenderTexture(renderer, upper, &upper_from, &upper_at);
+            SDL_RenderTexture(renderer, lower, &lower_from, &lower_at);
         }
     } else if (screens != NULL) {
-        /* the 1x screens, the DS's 256 columns in the middle */
+        /* the 1x screens, the DS's 256 columns of each */
+        const KhdaysTwoScreensLayout two = khdays_two_screens_layout(beside, columns, W, W);
         const SDL_FRect upper = {0, 0, W, H}, lower = {0, H, W, H};
-        const SDL_FRect upper_at = {left, 0, W, H}, lower_at = {left, H, W, H};
-        present_size(columns, 2 * H);
+        const SDL_FRect upper_at = at_place(two.upper), lower_at = at_place(two.lower);
+        present_size(two.width, two.height);
+        lower_place = two.lower;
         SDL_RenderTexture(renderer, screens, &upper, &upper_at);
         SDL_RenderTexture(renderer, screens, &lower, &lower_at);
     }
     if (hd != NULL) {
-        /* engine A drawn again, as wide as its list was made */
-        const SDL_FRect place = {(float)(columns - hd_columns) / 2, hd_upper ? 0.0f : (float)H, (float)hd_columns,
-                                 (float)H};
-        SDL_RenderTexture(renderer, hd, NULL, &place);
+        /* engine A drawn again, as wide as its list was made, on its screen's place (side by side its DS's
+         * 256 columns) */
+        const KhdaysTwoScreensLayout two =
+            khdays_two_screens_layout(beside, columns, (float)hd_columns, (float)hd_columns);
+        const SDL_FRect place = at_place(hd_upper ? two.upper : two.lower);
+        const SDL_FRect from = ds_columns(hd, beside ? hd_columns : W);
+        SDL_RenderTexture(renderer, hd, &from, &place);
+    }
+    if (lower_place.w > 0.0f) {
+        /* the game's own character select on the mods' characters' pages, over its lower screen's DS columns */
+        khdays_ds_select_pages_draw(renderer, lower_place.x + (lower_place.w - (float)W) / 2.0f, lower_place.y, 1.0f,
+                                    1.0f);
     }
     /* around a scene's videos the game goes down to black and comes up from it */
     darken(1.0f - khdays_movie_hd_game_level());

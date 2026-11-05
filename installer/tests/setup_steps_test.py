@@ -278,6 +278,134 @@ class HdMenuTools(unittest.TestCase):
             self.assertEqual(s.menu_tools_to_make(old, inputs, made), everything)
 
 
+class PortModsInTheHdPack(unittest.TestCase):
+    def files(self, folder):
+        return {p.relative_to(folder).as_posix(): p.read_text() for p in folder.rglob("*") if p.is_file()}
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.install = Path(self.temp.name)
+        self.hd = self.install / "mods" / s.HD_MOD
+        for rel, text in (("layouts/camp/en/camp.txt", "hd camp"), ("layouts/save/en/save.txt", "hd save")):
+            (self.hd / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.hd / rel).write_text(text)
+        self.pristine = self.files(self.hd)
+        self.overhaul, self.walk = self.install / "work" / "overhaul", self.install / "work" / "walk"
+        for folder, rel, text in (
+            (self.overhaul, "layouts/camp/en/camp.txt", "overhaul camp"),
+            (self.overhaul, "layouts/campsave/campsave.txt", "overhaul save page"),
+            (self.walk, "animations/walk/ro.khw", "walk"),
+            (self.walk, "days-mods/walk.txt", ""),
+        ):
+            (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+            (folder / rel).write_text(text)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_over_the_hd_pieces_and_out_again(self):
+        s.merge_port_mods(self.install, [self.overhaul, self.walk], {"mods": ["menu-overhaul", "walk"]})
+        merged = self.files(self.hd)
+        self.assertEqual(merged["layouts/camp/en/camp.txt"], "overhaul camp")  # the mod's over the HD menus'
+        self.assertEqual(merged["layouts/save/en/save.txt"], "hd save")  # the HD menus' it has not
+        self.assertEqual(merged["animations/walk/ro.khw"], "walk")
+        record = s.load_state(self.install)["steps"]["port-mods"]
+        self.assertEqual(record["replaced"], ["layouts/camp/en/camp.txt"])
+        self.assertEqual(len(record["added"]), 3)
+        s.unmerge_port_mods(self.install)
+        self.assertEqual(self.files(self.hd), self.pristine)
+        self.assertFalse((self.hd / "animations").exists())  # the folders the mods' files left empty
+        self.assertFalse((self.install / "setup" / s.HD_ORIGINALS).exists())
+        self.assertNotIn("port-mods", s.load_state(self.install).get("steps", {}))
+        s.unmerge_port_mods(self.install)  # nothing in: nothing done
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_a_merge_stopped_half_way(self):
+        # recorded, then stopped before any HD piece was moved aside: the HD PACK's own are kept
+        state = {"steps": {"port-mods": {"replaced": ["layouts/camp/en/camp.txt"], "added": ["days-mods/walk.txt"]}}}
+        s.save_state(self.install, state)
+        (self.hd / "days-mods").mkdir()
+        (self.hd / "days-mods" / "walk.txt").write_text("")
+        s.unmerge_port_mods(self.install)
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_the_hd_menus_made_again_from_their_own_pieces(self):
+        s.merge_port_mods(self.install, [self.overhaul], {"mods": ["menu-overhaul"]})
+        recorded = {"by": "the same tool", "files": ["layouts/camp/en/camp.txt", "layouts/save/en/save.txt"]}
+        state = s.load_state(self.install)
+        state["steps"]["hd-menus"] = {"complete": True, "inputs": {}, "tools": {"camp.py": recorded}}
+        s.save_state(self.install, state)
+        with (
+            mock.patch.object(s, "menu_tools_to_make", return_value=["heart_points.py"]),
+            mock.patch.object(s, "check_folder", return_value=[]),
+            mock.patch.object(s, "data_folder", side_effect=s.Refusal("data-missing")),
+        ):
+            with self.assertRaises(s.Refusal):
+                s.build_hd(
+                    s.argparse.Namespace(
+                        install=self.install, menus=True, videos=False, c1525=Path("a"), c28=Path("b"), language="en"
+                    )
+                )
+        self.assertEqual(self.files(self.hd), self.pristine)  # taken out before the kept pieces are copied
+
+    def build_mods(self, **chosen):
+        args = {"walk": False, "menu_overhaul": False, "kh2_prizes": False, "c1525": Path("c1525"), **chosen}
+        return s.build_mods(s.argparse.Namespace(install=self.install, language="en", **args))
+
+    def test_kh2_prizes_need_the_collection(self):
+        with self.assertRaises(s.Refusal) as refused:
+            self.build_mods(kh2_prizes=True, c1525=None)
+        self.assertEqual(refused.exception.key, "mod-needs-1525")
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_kh2_prizes_made_from_the_collection_into_the_hd_pack(self):
+        import subprocess
+
+        import collection_archive
+
+        tools = self.install / "tools"
+        for folder in ("mods", "hd"):
+            (tools / folder).mkdir(parents=True)
+        (tools / "decompress_data.py").write_text("")
+        ran, extracted = [], []
+
+        def tool(line, cwd, **_):  # kh2_prizes.py, stubbed: its effect and its switch
+            ran.append(line)
+            mod = Path(cwd) / "mods" / line[line.index("--mod") + 1]
+            for rel in ("graphics/mo/prize.pak.z/fx/prize_01.txt", "days-mods/kh2-prizes.txt"):
+                (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+                (mod / rel).write_text("kh2")
+            return subprocess.CompletedProcess(line, 0, "", "")
+
+        with (
+            mock.patch.object(
+                s, "tool_folders", return_value={"rom": tools, "hd": tools / "hd", "mods": tools / "mods"}
+            ),
+            mock.patch.object(s, "data_folder", return_value=self.install / "data"),
+            mock.patch.object(collection_archive, "load_table"),
+            mock.patch.object(collection_archive, "Cipher"),
+            mock.patch.object(collection_archive, "Archive"),
+            mock.patch.object(
+                collection_archive, "materialise", side_effect=lambda a, paths, out: extracted.append(out)
+            ),
+            mock.patch("subprocess.run", side_effect=tool),
+        ):
+            result = self.build_mods(kh2_prizes=True)
+        self.assertEqual(result["mods"], ["kh2-prizes"])
+        self.assertEqual(len(ran), 1)
+        self.assertEqual(Path(ran[0][1]).name, "kh2_prizes.py")
+        self.assertEqual(Path(ran[0][ran[0].index("--kh2") + 1]).name, "kh2.hed_out")
+        self.assertEqual(Path(ran[0][ran[0].index("--recom") + 1]).name, "Recom.hed_out")  # the crystals
+        self.assertIn("kh2.hed_out", {Path(out).name for out in extracted})  # the collection's entries extracted
+        merged = self.files(self.hd)
+        self.assertEqual(merged["graphics/mo/prize.pak.z/fx/prize_01.txt"], "kh2")
+        self.assertEqual(merged["days-mods/kh2-prizes.txt"], "kh2")
+        self.assertEqual(merged["layouts/camp/en/camp.txt"], "hd camp")  # the HD menus' own kept
+        self.assertFalse((self.install / "setup" / "mod-work").exists())
+        s.unmerge_port_mods(self.install)
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+
 class Results(unittest.TestCase):
     def run_command(self, *argv):
         with tempfile.TemporaryDirectory() as d:
