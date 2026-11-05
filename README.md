@@ -238,7 +238,8 @@ of the game:
   go, so switching quickly on the DS drops the lock: here the next target
   waits for that window instead, and a quick series of switches keeps the
   lock. On the DS a single R press also resets the camera and a long one
-  switches the chase cam; the DS's R stays available for those. Out of the
+  switches the chase cam; the DS's R stays available for those, but R pressed
+  twice quickly no longer locks on or lets go. Out of the
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.

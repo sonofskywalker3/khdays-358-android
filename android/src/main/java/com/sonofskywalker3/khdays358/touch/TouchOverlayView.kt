@@ -317,12 +317,12 @@ class TouchOverlayView(context: Context) : View(context) {
                     if (edit == EDIT_SIZE) {
                         val diff = if (abs(dx) > abs(dy)) dx else dy
                         if (diff != 0) {
-                            input.resizeBy(diff, width, height, minSize)
+                            input.resizeBy(diff, width, height, minSize, otherBoxes(input))
                             lastX = event.getX(p)
                             lastY = event.getY(p)
                         }
                     } else if (dx != 0 || dy != 0) {
-                        input.moveBy(dx, dy, width, height)
+                        input.moveBy(dx, dy, width, height, otherBoxes(input))
                         lastX += dx
                         lastY += dy
                     }
@@ -346,6 +346,9 @@ class TouchOverlayView(context: Context) : View(context) {
             }
         }
     }
+
+    /** Where the other controls are: one is not moved over another, where a thumb would press both. */
+    private fun otherBoxes(input: Input) = inputs.filter { it.second !== input }.map { it.second.boundingRectangle() }
 
     /** The control let go: the game keeps its new box, in its own pixels. */
     private fun place() {

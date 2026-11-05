@@ -39,7 +39,8 @@ int khdays_editor_item_at(const KhdaysLayoutEditor *e, float x, float y);
 /* A press: takes the item there; returns it, or -1. */
 int khdays_editor_press(KhdaysLayoutEditor *e, float x, float y);
 
-/* A motion with an item held: moves it under the point, inside the area. Returns 1 when it moved. */
+/* A motion with an item held: moves it under the point, inside the area, stopping at the others of its kind.
+ * Returns 1 when it moved. */
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y);
 
 /* The release: the item held settles on the snap's lines. Returns 1 when that moved it. */

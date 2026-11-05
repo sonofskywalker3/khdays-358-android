@@ -70,6 +70,65 @@ static void item_inside(const KhdaysLayoutEditor *e, const KhdaysEditorItem *it,
     *y0 = kept_inside(*y0 - r->y0, h + r->y0 + r->y1, a.y0, a.y1) + r->y0;
 }
 
+/* All an item takes at a place: itself and what it sometimes draws past its sides. */
+static KhdaysHudBox item_whole(const KhdaysEditorItem *it, float x0, float y0, float w, float h)
+{
+    KhdaysHudBox b;
+    b.x0 = x0 - it->room.x0;
+    b.y0 = y0 - it->room.y0;
+    b.x1 = x0 + w + it->room.x1;
+    b.y1 = y0 + h + it->room.y1;
+    return b;
+}
+
+static int boxes_meet(const KhdaysHudBox *a, const KhdaysHudBox *b)
+{
+    return a->x0 < b->x1 && a->x1 > b->x0 && a->y0 < b->y1 && a->y1 > b->y0;
+}
+
+/* The held item's move from where it is, stopped at the others of its kind: across, then down, so that it slides
+ * along what it meets. One already over another (from an older layout) can leave it, and is not held by it. */
+static void item_clear(const KhdaysLayoutEditor *e, int held, float w, float h, float *x0, float *y0)
+{
+    const KhdaysEditorItem *me = &e->item[held];
+    const KhdaysHudBox from = item_whole(me, me->box.x0, me->box.y0, w, h);
+    for (int i = 0; i < e->count; ++i) {
+        KhdaysHudBox other;
+        if (i == held || e->item[i].kind != me->kind) {
+            continue;
+        }
+        other = item_whole(&e->item[i], e->item[i].box.x0, e->item[i].box.y0, e->item[i].box.x1 - e->item[i].box.x0,
+                           e->item[i].box.y1 - e->item[i].box.y0);
+        if (boxes_meet(&from, &other) || from.y0 >= other.y1 || from.y1 <= other.y0) {
+            continue;
+        }
+        if (from.x1 <= other.x0 && *x0 + w + me->room.x1 > other.x0) {
+            *x0 = other.x0 - w - me->room.x1;
+        } else if (from.x0 >= other.x1 && *x0 - me->room.x0 < other.x1) {
+            *x0 = other.x1 + me->room.x0;
+        }
+    }
+    {
+        const KhdaysHudBox across = item_whole(me, *x0, me->box.y0, w, h);
+        for (int i = 0; i < e->count; ++i) {
+            KhdaysHudBox other;
+            if (i == held || e->item[i].kind != me->kind) {
+                continue;
+            }
+            other = item_whole(&e->item[i], e->item[i].box.x0, e->item[i].box.y0, e->item[i].box.x1 - e->item[i].box.x0,
+                               e->item[i].box.y1 - e->item[i].box.y0);
+            if (boxes_meet(&across, &other) || across.x0 >= other.x1 || across.x1 <= other.x0) {
+                continue;
+            }
+            if (across.y1 <= other.y0 && *y0 + h + me->room.y1 > other.y0) {
+                *y0 = other.y0 - h - me->room.y1;
+            } else if (across.y0 >= other.y1 && *y0 - me->room.y0 < other.y1) {
+                *y0 = other.y1 + me->room.y0;
+            }
+        }
+    }
+}
+
 int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
 {
     KhdaysHudBox *b;
@@ -83,6 +142,7 @@ int khdays_editor_drag(KhdaysLayoutEditor *e, float x, float y)
     x0 = x - e->grab_x;
     y0 = y - e->grab_y;
     item_inside(e, &e->item[e->held], w, h, &x0, &y0);
+    item_clear(e, e->held, w, h, &x0, &y0);
     if (x0 == b->x0 && y0 == b->y0) {
         return 0;
     }
@@ -108,6 +168,7 @@ int khdays_editor_release(KhdaysLayoutEditor *e)
     x0 = roundf(b->x0 / e->grid) * e->grid;
     y0 = roundf(b->y0 / e->grid) * e->grid;
     item_inside(e, &e->item[held], w, h, &x0, &y0);
+    item_clear(e, held, w, h, &x0, &y0);
     if (x0 == b->x0 && y0 == b->y0) {
         return 0;
     }

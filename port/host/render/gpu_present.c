@@ -430,7 +430,11 @@ static int columns_now(void)
     case KHDAYS_ASPECT_WINDOW:
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
         /* the window's width at the picture's height: 384 lines for two screens in it, 192 for one or a display of its own */
+#if defined(__ANDROID__)
         n = ph > 0 ? (int)((double)pw * (video.one_screen || two_displays ? H : 2 * H) / ph) & ~1 : W;
+#else
+        n = ph > 0 ? (int)((double)pw * (video.one_screen ? H : 2 * H) / ph) & ~1 : W;
+#endif
         return n < W ? W : n > 3 * W ? 3 * W : n;
     default: return W;
     }

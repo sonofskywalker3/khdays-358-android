@@ -334,6 +334,22 @@ static u16 player_buttons(void)
     /* An R press counts as a single one for the game once its counter has
      * passed 0x9000 (9 frames) since the last R (Ov022_ReadSelectionInput). */
     const int r_free = game->r_repeat >= 0x9000 && !game->r_pressed;
+    /* Lock-on has its own button: a second R inside those 9 frames is dropped until let go, so that R's double press
+     * neither locks on nor lets go. A single R and a held one go on as the DS's. */
+    {
+        static int r_was_down, r_dropped;
+        const int r_down = (buttons & KHDAYS_KEY_R) != 0;
+        if (r_down && !r_was_down && lock_field && !r_free) {
+            r_dropped = 1;
+        }
+        if (!r_down) {
+            r_dropped = 0;
+        }
+        r_was_down = r_down;
+        if (r_dropped) {
+            buttons &= (u16)~KHDAYS_KEY_R;
+        }
+    }
     const u16 lock_buttons =
         khdays_lock_sequencer_frame(&lock, lock_on ? lock_actions : 0, lock_field, game->lock_active,
                                     game->lockon_scheme, (u16)(buttons | script_keys), r_free);
