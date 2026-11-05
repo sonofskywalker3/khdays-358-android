@@ -342,6 +342,7 @@ static void test_editor(void)
     e.item[0].id = 0;
     e.item[0].box = (KhdaysHudBox){100.0f, 100.0f, 300.0f, 300.0f};
     e.item[1].id = 1;
+    e.item[1].kind = 1; /* another kind: no stop for the first */
     e.item[1].box = (KhdaysHudBox){150.0f, 150.0f, 200.0f, 200.0f}; /* inside the first: still reachable */
     CHECK(khdays_editor_item_at(&e, 160.0f, 160.0f) == 1);
     CHECK(khdays_editor_item_at(&e, 110.0f, 110.0f) == 0);
