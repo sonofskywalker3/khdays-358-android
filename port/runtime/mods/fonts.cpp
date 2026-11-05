@@ -252,13 +252,20 @@ private:
                     fail("invalid JSON exponent");
             }
             if (fractional) {
-                // strtod, not std::from_chars: Android's libc++ has no floating-point from_chars
+#if defined(__ANDROID__)
+                // strtod: Android's libc++ has no floating-point from_chars, and its C library's numbers are
+                // read with a point
                 const std::string digits(text_.data() + begin, text_.data() + pos_);
                 char *end = nullptr;
                 errno = 0;
                 value.real = std::strtod(digits.c_str(), &end);
                 if (errno == ERANGE || end != digits.c_str() + digits.size())
                     fail("JSON number out of range");
+#else
+                const auto real = std::from_chars(text_.data() + begin, text_.data() + pos_, value.real);
+                if (real.ec != std::errc{} || real.ptr != text_.data() + pos_)
+                    fail("JSON number out of range");
+#endif
                 if (!std::isfinite(value.real))
                     fail("nonfinite JSON number");
                 value.type = Value::Real;

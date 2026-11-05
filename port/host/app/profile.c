@@ -643,6 +643,25 @@ static void say(KhdaysNotice notice, const char *format, ...)
     }
 }
 
+/* A line the file holds that this version does not know, written back unchanged: nothing the player can act on
+ * (a build's settings read by another, usually), so on a handheld only the log hears of it. */
+static void say_kept(KhdaysNotice notice, const char *format, ...)
+{
+    char text[256];
+    va_list args;
+    va_start(args, format);
+    SDL_vsnprintf(text, sizeof(text), format, args);
+    va_end(args);
+#if defined(__ANDROID__)
+    (void)notice;
+    SDL_Log("%s", text);
+#else
+    if (notice != NULL) {
+        notice(text);
+    }
+#endif
+}
+
 static char *trim(char *s)
 {
     char *end;
@@ -731,7 +750,7 @@ static void enter_section(Reader *r, const char *name)
         r->section = SEC_GAMEPLAY;
     } else {
         r->section = SEC_UNKNOWN;
-        say(r->notice, "settings: section [%s] is not understood by this version; kept as it is", name);
+        say_kept(r->notice, "settings: section [%s] is not understood by this version; kept as it is", name);
     }
 }
 
@@ -752,7 +771,7 @@ static void read_binding(Reader *r, const char *key, char *value, const char *li
     const int action = khdays_action_from_name(key);
     int slot = 0;
     if (action < 0 || (r->device == KHDAYS_DEVICE_KEYBOARD && action == KHDAYS_ACT_OPEN_SETTINGS)) {
-        say(r->notice, "settings: [%s] has no action \"%s\"; kept as it is", r->section_name, key);
+        say_kept(r->notice, "settings: [%s] has no action \"%s\"; kept as it is", r->section_name, key);
         keep_unknown(r->section_name, line);
         return;
     }
@@ -864,7 +883,7 @@ static void read_stick_setting(Reader *r, const char *key, const char *value, co
             return;
         }
     }
-    say(r->notice, "settings: [sticks] has no setting \"%s\"; kept as it is", key);
+    say_kept(r->notice, "settings: [sticks] has no setting \"%s\"; kept as it is", key);
     keep_unknown("sticks", line);
 }
 
@@ -899,7 +918,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
             return;
         }
     }
-    say(r->notice, "settings: [enhancements] has no setting \"%s\"; kept as it is", key);
+    say_kept(r->notice, "settings: [enhancements] has no setting \"%s\"; kept as it is", key);
     keep_unknown("enhancements", line);
 }
 
@@ -1125,7 +1144,7 @@ static void read_video(Reader *r, const char *key, const char *value, const char
             }
         }
     }
-    say_localized(r, TXT_VIDEO_UNKNOWN_KEY, key);
+    say_kept(r->notice, khdays_text_in(TXT_VIDEO_UNKNOWN_KEY, khdays_language_choose(r->profile->language)), key);
     keep_unknown("video", line);
 }
 
@@ -1218,7 +1237,7 @@ static void read_network(Reader *r, const char *key, const char *value, const ch
             n->check_updates = 1;
         }
     } else {
-        say(r->notice, "settings: [network] has no setting \"%s\"; kept as it is", key);
+        say_kept(r->notice, "settings: [network] has no setting \"%s\"; kept as it is", key);
         keep_unknown("network", line);
     }
 }
@@ -1246,7 +1265,7 @@ static void read_save(Reader *r, const char *key, const char *value, const char 
             s->autosave = KHDAYS_AUTOSAVE_FILE99;
         }
     } else {
-        say(r->notice, "settings: [save] has no setting \"%s\"; kept as it is", key);
+        say_kept(r->notice, "settings: [save] has no setting \"%s\"; kept as it is", key);
         keep_unknown("save", line);
     }
 }
@@ -1263,7 +1282,7 @@ static void read_gameplay(Reader *r, const char *key, const char *value, const c
             g->stop_magic = 1;
         }
     } else {
-        say(r->notice, "settings: [gameplay] has no setting \"%s\"; kept as it is", key);
+        say_kept(r->notice, "settings: [gameplay] has no setting \"%s\"; kept as it is", key);
         keep_unknown("gameplay", line);
     }
 }
@@ -1297,7 +1316,7 @@ static void read_top(Reader *r, const char *key, const char *value, const char *
             }
         }
     } else {
-        say(r->notice, "settings: \"%s\" is not understood by this version; kept as it is", key);
+        say_kept(r->notice, "settings: \"%s\" is not understood by this version; kept as it is", key);
         keep_unknown("", line);
     }
 }
