@@ -33,7 +33,8 @@ typedef struct KhdaysPluginView {
 /* Where the plugins' lines go: the mods' log and the session log in the game (runtime.c), a test's own in tests. */
 typedef void (*KhdaysPluginsLog)(const char *mod_id, const char *text);
 
-/* The platform as mod.ini's `native.<platform>` names it: "windows-x64", "linux-x64", "linux-arm64". */
+/* The platform as mod.ini's `native.<platform>` names it: "windows-x64", "linux-x64", "linux-arm64", "android-arm64"
+ * (which loads no library: plugins.c found). */
 const char *khdays_plugins_platform(void);
 
 /* Whether native code may run this time: the setting ([mods] native_code), before khdays_plugins_start. */

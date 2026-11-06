@@ -41,7 +41,7 @@ mods/<Mod>/
 | Key | |
 |---|---|
 | `sdk` | the SDK's ABI major the plugin was built for (`KH_ABI_MAJOR`, 1 today); the port loads only its own |
-| `native.<platform>` | the plugin's library for `windows-x64`, `linux-x64` or `linux-arm64`, a path inside the mod |
+| `native.<platform>` | the plugin's library for `windows-x64`, `linux-x64` or `linux-arm64`, a path inside the mod (Android loads none: only plugins built into the port run there, and the others are not listed) |
 | `requires` | mods (their ids, comma-separated) that must be in `mods/`; a required mod's plugin starts first |
 
 A mod with `sdk` and no `scripts/` folder is not a Lua mod (it needs no `kind` or `api`); one with both runs its

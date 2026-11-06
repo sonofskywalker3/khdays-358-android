@@ -77,6 +77,8 @@ const char *khdays_plugins_platform(void)
 {
 #if defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
     return "windows-x64";
+#elif defined(__ANDROID__) && defined(__aarch64__)
+    return "android-arm64"; /* (before Linux's: Android's compilers say __linux__ too) */
 #elif defined(__linux__) && defined(__x86_64__)
     return "linux-x64";
 #elif defined(__linux__) && defined(__aarch64__)
@@ -355,6 +357,18 @@ static void found(const char *folder_name, void *context)
         (sdk = khdays_manifest_value(text, size, "sdk")) == NULL) {
         goto done; /* no mod.ini, or no plugin */
     }
+#if defined(__ANDROID__)
+    {
+        /* Android loads no mod's library (a Linux one does not run on it): only plugins built into the port are
+         * started, and the rest are not listed */
+        char *id = khdays_manifest_value(text, size, "id");
+        const int built = built_in_query(id != NULL ? id : folder_name) != NULL;
+        free(id);
+        if (!built) {
+            goto done;
+        }
+    }
+#endif
     if (plugin_count == plugin_room) {
         const int room = plugin_room > 0 ? plugin_room * 2 : 8;
         Plugin **grown = realloc(plugins, (size_t)room * sizeof(*grown));
@@ -512,7 +526,7 @@ static int ready(const char *id)
 /* A mod folder's id: its mod.ini's, else its name; whether it is `want`. */
 typedef struct Seek {
     const char *mods, *want;
-    int found;
+    int found, native; /* the mod is there; it has a plugin (its mod.ini names an SDK) */
 } Seek;
 
 static void seek(const char *folder_name, void *context)
@@ -522,7 +536,12 @@ static void seek(const char *folder_name, void *context)
     size_t size = 0;
     if ((mod_on == NULL || mod_on(folder_name)) && ini != NULL && (text = khdays_folders_read(ini, &size)) != NULL) {
         char *id = khdays_manifest_value(text, size, "id");
-        s->found |= strcmp(id != NULL ? id : folder_name, s->want) == 0;
+        if (strcmp(id != NULL ? id : folder_name, s->want) == 0) {
+            char *sdk = khdays_manifest_value(text, size, "sdk");
+            s->found = 1;
+            s->native |= sdk != NULL;
+            free(sdk);
+        }
         free(id);
         free(text);
     }
@@ -563,12 +582,19 @@ static int requirements(const char *mods, const Plugin *p, char *why, size_t why
                 result = 0;
             }
         } else if (plugin < 0) {
-            Seek s = {mods, one, 0};
+            Seek s = {mods, one, 0, 0};
             khdays_folders_list(mods, seek, &s);
             if (!s.found) {
                 snprintf(why, why_size, "requires %.100s, which is not in mods/ or is off", one);
                 result = -1;
             }
+#if defined(__ANDROID__)
+            else if (s.native) {
+                /* its plugin was left out (found): it never starts here */
+                snprintf(why, why_size, "requires %.100s, whose plugin does not run on Android", one);
+                result = -1;
+            }
+#endif
         }
     }
     free(list);
