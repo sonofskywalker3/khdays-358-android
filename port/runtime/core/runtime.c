@@ -127,7 +127,7 @@ static void trace_player(u32 frame)
 }
 
 /* KHDAYS_TRACE_HEAP: the game's two heaps every 60 frames (where, size, use, free bytes, largest free
- * block) and how much the PC has given. Handles: main data_0204c044, sub data_0204c030, the current
+ * block) and how much the PC has given. Handles: main gMainHeapHandle, sub gSubHeapHandle, the current
  * one at gCurrentHeap (0x0204c028). A head's start and end at +0x18 and +0x1c, its free blocks from
  * +0x24 (size +4, next +0xc). */
 static void trace_heap(u32 frame)
@@ -271,6 +271,18 @@ static void trace_mission_fields(u32 frame)
         last[i] = v;
     }
     known = 1;
+    /* the mission gauge (Ov002_GetMissionProgress: the field state's +0x188 -- total, done, goal) */
+    static s32 gauge[3] = {-1, -1, -1};
+    const u32 state = *(const volatile u32 *)KHDAYS_W(0x0207f62c + 4);
+    if (in_game_ram(state)) {
+        const volatile s32 *now = (const volatile s32 *)KHDAYS_W(state + 0x188);
+        if (now[0] != gauge[0] || now[1] != gauge[1] || now[2] != gauge[2]) {
+            fprintf(stderr, "mission: frame %u, gauge %d of %d, goal %d\n", frame, now[1], now[0], now[2]);
+            gauge[0] = now[0];
+            gauge[1] = now[1];
+            gauge[2] = now[2];
+        }
+    }
 }
 
 /* KHDAYS_TRACE_MISSION: what a mission puts in the field, to compare with the studio's mission

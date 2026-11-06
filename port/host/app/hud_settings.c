@@ -13,6 +13,7 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
                                                                "notification_sequences",
                                                                "heart_points_sequence",
                                                                "kh2_prizes",
+                                                               "kh2_models",
                                                                "pause_target",
                                                                "information_hud",
                                                                "ui_padding",
@@ -20,9 +21,18 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
                                                                "mission_panel_anchor",
                                                                "mission_panel_pause_anchor"};
 /* Unpublished tools retain JSON presentation; the normal profile publishes explicit defaults. */
-static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1},  {1},  {1}, {1}, {1},
-                                               {1}, {1}, {1}, {1}, {-1}, {-1}, {0}, {0}};
+static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1},  {1}, {1},  {1}, {1},
+                                               {1}, {1}, {1}, {1}, {1}, {-1}, {-1}, {0}, {0}};
 static SDL_AtomicInt generation;
+static SDL_AtomicInt character_shadows;
+void khdays_character_shadows_publish(int enabled)
+{
+    SDL_SetAtomicInt(&character_shadows, enabled != 0);
+}
+int khdays_character_shadows_enabled(void)
+{
+    return SDL_GetAtomicInt(&character_shadows);
+}
 
 /* The HD fonts on, as before these settings; the KH2 replacements, and the play during INFORMATION, the player's to
  * turn on. */
@@ -31,7 +41,8 @@ void khdays_hud_settings_default(int values[KHDAYS_OPT_COUNT])
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
         values[i] = 0;
     values[KHDAYS_OPT_FONT] = 1;
-    values[KHDAYS_OPT_PRIZES] = 1; /* made only with the HD menus' HD PACK: shown once made */
+    values[KHDAYS_OPT_PRIZES] = 1;     /* made only with the HD menus' HD PACK: shown once made */
+    values[KHDAYS_OPT_KH2_MODELS] = 1; /* the same */
     values[KHDAYS_OPT_MISSION_ANCHOR] = 1;
     values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 8;
 }

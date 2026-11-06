@@ -1000,8 +1000,8 @@ static void record_package(const KhdaysFramePackage *p)
 {
     char path[MAX_PATH];
     FILE *f;
-    /* version 14: a vertex has an alpha (ten words) */
-    const u32 header[4] = {0x474b5046u /* "FPKG" */, 14, (u32)KHDAYS_FRAME_RECORDED, p->frame};
+    /* version 15: a polygon names its character shadow's mask (version 14: a vertex has an alpha, ten words) */
+    const u32 header[4] = {0x474b5046u /* "FPKG" */, 15, (u32)KHDAYS_FRAME_RECORDED, p->frame};
     snprintf(path, sizeof(path), "%s/frame_%05u.pkg", record_dir, p->frame);
     if (fopen_s(&f, path, "wb") != 0) {
         fprintf(stderr, "display: cannot write %s\n", path);
@@ -1567,7 +1567,7 @@ void khdays_display_vblank(u32 frame)
         /* the 3D on both screens: the game swaps engine A's screen (POWCNT1 bit 15) every VBlank,
          * skipping one now and then when its frame runs late */
         const int a_upper = (IO16(0x304) & 0x8000) != 0;
-        engine_swaps = khdays_situation_swaps(&swap_history, a_upper != engine_upper);
+        engine_swaps = khdays_situation_recent(&swap_history, a_upper != engine_upper);
         engine_upper = a_upper;
     }
     if (InterlockedExchange(&mark_requests, 0) != 0 && mark_frame == ~0u) {

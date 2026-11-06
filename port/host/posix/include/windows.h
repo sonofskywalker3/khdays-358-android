@@ -304,4 +304,29 @@ static inline DWORD GetFullPathNameA(const char *path, DWORD size, char *out, ch
 /* The C library's MSVC names */
 #include "msvc_crt.h"
 
+
+/* HRESULTs, and the memory free (the session log's stalls, runtime/core/events.c) */
+typedef int HRESULT;
+#define S_OK ((HRESULT)0)
+#define E_NOTIMPL ((HRESULT)0x80004001u)
+#define FAILED(hr) ((HRESULT)(hr) < 0)
+#ifndef ZeroMemory
+#define ZeroMemory(p, n) memset((p), 0, (n))
+#endif
+typedef struct MEMORYSTATUSEX {
+    DWORD dwLength;
+    ULONGLONG ullTotalPhys;
+    ULONGLONG ullAvailPhys;
+} MEMORYSTATUSEX;
+static inline BOOL GlobalMemoryStatusEx(MEMORYSTATUSEX *status)
+{
+    const long pages = sysconf(_SC_AVPHYS_PAGES), all = sysconf(_SC_PHYS_PAGES), size = sysconf(_SC_PAGESIZE);
+    if (pages < 0 || all < 0 || size < 0) {
+        return 0;
+    }
+    status->ullTotalPhys = (ULONGLONG)all * (ULONGLONG)size;
+    status->ullAvailPhys = (ULONGLONG)pages * (ULONGLONG)size;
+    return 1;
+}
+
 #endif

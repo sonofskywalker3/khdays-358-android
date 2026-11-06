@@ -193,7 +193,7 @@ int khdays_situation_widens(const KhdaysSituationInputs *in)
 int khdays_situation_dialog(const KhdaysSituationInputs *in)
 {
     const int event_text = in->event_status >= 0 && (in->event_status & 2) != 0 && (in->event_status & 8) == 0 &&
-                           ran(in, KHDAYS_UPD_Ov023_SceneRun);
+                           in->event_runs != 0u;
     return !mission_start_info(in) && (event_text || field_talk(in));
 }
 
