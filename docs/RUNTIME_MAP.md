@@ -5305,6 +5305,20 @@ The port adds a mod's missions to the game's own list and plays them as the game
   the port placed the mod's file in the ROM's image (or its template's file, for a mission without its own), the
   file table not naming it. Its progress is kept in `saves/missions/fileNN.txt` beside the save file (read when the
   title loads file NN, written after each save action of file NN), never in the DS's save.
+- **In a room** (2026-11-06): the numbers follow each copy's own mods, in their folders' order, so a copy with one
+  more mod of missions numbers the others' differently -- and the game hands the host's choice to the guests as
+  numbers: the host's `gMissionNumber` and field record (`data_0204c240`, its file at +2) go into the session
+  snapshot (`Ov008_TransferSessionSnapshotState`), which each copy takes as its own in
+  `Ov008_CommitSynchronizedSnapshotState`. Two copies with the same missions and one more on the host were let in
+  (a mod of missions alone has no scripts, so no part in the room's fingerprint) and the guest opened another
+  file than the host's. Now each copy tells the others its missions (`runtime/missions/room.h`: identity, a
+  SHA-256 of its block's lines -- comments, blank lines and line ends left out -- and of its own `mission.p2`, its
+  number and file) on the port's mods channel (`MODS_MISSIONS`: the host's to each member as it joins, a guest's
+  to the host as it is welcomed); the host's list takes a new mission's row only when every member has it, the
+  same (`missions: <identity> left out of the room's list`), and the join in the commit gives a guest the host's
+  choice under its own number and file (`missions: the host's mission N (file F) is <identity>: mission M here`).
+  Walk `multiplayer_room_missions`: the host with `extra_missions` (missions alone, before the boss waves' mod)
+  and the boss waves' mission as 3596, the guest with only the latter as 3595.
 - **Seen** (the walk `missions`, the test mod `port/tests/mods_v2/missions`: a mission on 1354's file, "survive for
   60 seconds", listed in Twilight Town's category; the maintainer's save, file 1): its row last of Twilight Town's
   (95, "El reloj perdido"); started, the game opened `mi/mi/20000`, the mod heard mission 3595; cleared when the
@@ -5482,6 +5496,11 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   at the game's point, stands only for a hold short of the end (or the pause), goes on through a hold at the end,
   and begins again when the game's frame goes back from elsewhere than its last few (`runtime/mods/models.cpp`
   `own_pose`).
+  A model exported from Blender lists its nodes children first (seen 2026-11-06 with a modder's Terra on Saïx,
+  Days's own skeleton names: `Bip01_L_Foot` first, the root `saix_h` last). The pose and the weapon bone's rest
+  placed a node under its parent only when the parent came before it, so every other bone lost its chain and the
+  body lay folded on the ground while the studio's preview showed it right; they now chain the nodes whatever
+  their order (`chain_worlds`, as the rooms' animations did).
 - **Its weapon**: the game puts the weapon on the base model's weapon node, read during the body's draw
   by the node's callback (`NNS_G3dGetCurrentMtx` at `NODEDESC`, timing 3: the camp's
   `Ov008_RefreshMatchingMatrices`; the field's actor finds the node by name in `Ov030_CreateActor`). The
