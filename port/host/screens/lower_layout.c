@@ -9,6 +9,7 @@
 #define COL_BITS 12 /* a map entry: the picture's row above these bits, its column in them */
 #define COL_MASK ((1 << COL_BITS) - 1)
 #define OPAQUE_BLACK 0xff000000u
+#define COPY_BIT (1 << 30) /* a map entry of a repeated row's copy: drawn from the copy table where it says */
 
 static const uint8_t *row_of(const KhdaysLowerPicture *p, int row)
 {
@@ -41,16 +42,56 @@ int khdays_lower_screen(const uint32_t *ds, int ds_rows)
     return khdays_lower_screens_tell(ds, ds_rows);
 }
 
+#define FIELD_ROWS_HELD 30 /* frames */
+
+/* This frame's copy table of a place (none for a screen that does not repeat rows so). */
+static void take_copies(KhdaysLowerLayout *layout, const KhdaysLowerPlace *place, int valid)
+{
+    layout->copies = 0;
+    if (!valid || place->map != khdays_lower_map_rows) {
+        return;
+    }
+    layout->copy_split = place->split;
+    layout->copy_split2 = place->split2;
+    memcpy(layout->copy_slot, place->copy_slot, sizeof(layout->copy_slot));
+    memcpy(layout->copy_from, place->copy_from, sizeof(layout->copy_from));
+    for (int b = 0; b < 3 && !layout->copies; ++b) {
+        for (int y = 0; y < KHDAYS_LOWER_COPY_H && !layout->copies; ++y) {
+            layout->copies = layout->copy_slot[b][y] != 0;
+        }
+    }
+}
+
+/* The DS rows tall the display is laid out (its height in DS dots at the layout's scale). */
+static float out_rows(int width, int height)
+{
+    const int wider = (long)width * KHDAYS_LOWER_DS_H > (long)height * KHDAYS_LOWER_DS_W;
+    const float scale = wider ? (float)height / KHDAYS_LOWER_DS_H : (float)width / KHDAYS_LOWER_DS_W;
+    return (float)height / scale;
+}
+
+void khdays_lower_copies_refresh(KhdaysLowerLayout *layout, const uint32_t *ds, int ds_rows)
+{
+    static KhdaysLowerPlace place; /* large: not on the stack */
+    int key;
+    take_copies(layout, &place,
+                layout->screen != KHDAYS_LOWER_NONE &&
+                    khdays_lower_screens_place(layout->screen, ds, ds_rows, out_rows(layout->width, layout->height),
+                                               &place, &key));
+}
+
 int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *picture, const uint32_t *ds, int ds_rows,
                         int screen, int width, int height)
 {
-    KhdaysLowerPlace place;
+    static KhdaysLowerPlace place; /* large: not on the stack */
     /* display pixels a DS dot: the DS's width across, or on a display wider than 4:3 its height */
     const int wider = (long)width * KHDAYS_LOWER_DS_H > (long)height * KHDAYS_LOWER_DS_W;
     const float scale = wider ? (float)height / KHDAYS_LOWER_DS_H : (float)width / KHDAYS_LOWER_DS_W;
     const float src_scale = (float)picture->width / KHDAYS_LOWER_DS_W;
     const int over_rows = picture->overscan != NULL ? picture->overscan_rows : 0;
     int key;
+    const int held_row0 = layout->want_row0, held_rows = layout->want_rows;
+    const uint32_t held_off = layout->want_off;
     layout->want_rows = 0;
     if (!khdays_lower_screens_place(screen, ds, ds_rows, (float)height / scale, &place, &key)) {
         screen = KHDAYS_LOWER_NONE;
@@ -62,10 +103,25 @@ int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *pic
         layout->want_off = place.layers_off;
         if (picture->overscan == NULL || picture->overscan_row0 != place.row0 ||
             picture->overscan_rows < (int)((float)place.row_count * src_scale) - 1) {
-            screen = KHDAYS_LOWER_NONE;
-            key = 0;
+            if (place.rows_optional) {
+                place.row_count = 0;    /* the field's map box: its edge rows until its map comes */
+                key ^= (int)(1u << 30); /* ... and made again when it does */
+            } else {
+                screen = KHDAYS_LOWER_NONE;
+                key = 0;
+            }
         }
+        layout->want_held = place.rows_optional ? FIELD_ROWS_HELD : 0;
     }
+    if (layout->want_rows == 0 && held_rows > 0 && layout->want_held > 0) {
+        /* a frame the field is not told on (a notice over it, a fade's step): its rows stay asked for, so its next
+         * frames have them rather than the box's edge rows while they come again */
+        --layout->want_held;
+        layout->want_row0 = held_row0;
+        layout->want_rows = held_rows;
+        layout->want_off = held_off;
+    }
+    take_copies(layout, &place, screen != KHDAYS_LOWER_NONE);
     if (layout->map != NULL && layout->screen == screen && layout->key == key && layout->width == width &&
         layout->height == height && layout->src_w == picture->width && layout->src_h == picture->height &&
         layout->rows_got == over_rows) {
@@ -118,6 +174,10 @@ int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *pic
                 continue;
             }
             out[x] = (int32_t)((uint32_t)py << COL_BITS | (uint32_t)px);
+            if (screen != KHDAYS_LOWER_NONE && place.map == khdays_lower_map_rows && sy < KHDAYS_LOWER_ROWS &&
+                khdays_lower_row_copy(&place, ox, oy)) {
+                out[x] |= COPY_BIT;
+            }
         }
     }
     return 1;
@@ -139,12 +199,31 @@ void khdays_lower_draw(const KhdaysLowerLayout *layout, const KhdaysLowerPicture
         const int32_t *map = layout->map + (size_t)y * (size_t)layout->width;
         uint32_t *dst = (uint32_t *)(out + (size_t)y * (size_t)pitch);
         for (int x = 0; x < layout->width; ++x) {
-            const int32_t v = map[x];
+            int32_t v = map[x];
             if (v < 0) {
                 dst[x] = OPAQUE_BLACK;
-            } else {
-                dst[x] = ((const uint32_t *)row_of(picture, v >> COL_BITS))[v & COL_MASK];
+                continue;
             }
+            if (v & COPY_BIT) {
+                v &= ~COPY_BIT;
+                if (layout->copies) {
+                    /* a copy whose column this frame takes from another like row (a mark on its own) */
+                    /* the DS dot the picture's pixel lies in, by its middle (as a touch is) */
+                    const int col = (2 * (v & COL_MASK) + 1) * KHDAYS_LOWER_DS_W / (2 * layout->src_w);
+                    const int row = (2 * (v >> COL_BITS) + 1) * KHDAYS_LOWER_DS_H / (2 * layout->src_h);
+                    const int band = col < layout->copy_split                                ? 0
+                                     : layout->copy_split2 > 0 && col >= layout->copy_split2 ? 2
+                                                                                             : 1;
+                    const int slot = row < KHDAYS_LOWER_COPY_H ? layout->copy_slot[band][row] : 0;
+                    const int from = slot > 0 ? layout->copy_from[band][slot - 1][col] : 0;
+                    if (from > 0) {
+                        v = (int32_t)((uint32_t)((2 * (from - 1) + 1) * layout->src_h / (2 * KHDAYS_LOWER_DS_H))
+                                          << COL_BITS |
+                                      (uint32_t)(v & COL_MASK));
+                    }
+                }
+            }
+            dst[x] = ((const uint32_t *)row_of(picture, v >> COL_BITS))[v & COL_MASK];
         }
     }
 }
@@ -156,6 +235,7 @@ int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x,
         return 0;
     }
     v = layout->map[(size_t)y * (size_t)layout->width + (size_t)x];
+    v = v < 0 ? v : v & ~COPY_BIT; /* where the row is, not what it is drawn from */
     if (v < 0 || (layout->want_rows <= 0 && (v >> COL_BITS) >= layout->src_h)) {
         return 0;
     }
@@ -179,7 +259,7 @@ int khdays_lower_touch(const KhdaysLowerLayout *layout, int x, int y, int *ds_x,
 void khdays_lower_standing_rows(int width, int height, int *row0, int *rows, uint32_t *layers_off)
 {
     static const uint32_t blank[KHDAYS_LOWER_DS_W * (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN)] = {0};
-    KhdaysLowerPlace place;
+    static KhdaysLowerPlace place; /* large: not on the stack (callers hold the lower screen's lock) */
     int key;
     *rows = 0;
     if (width > 0 && khdays_lower_screens_place(KHDAYS_LOWER_MISSIONS, blank, KHDAYS_LOWER_DS_H,

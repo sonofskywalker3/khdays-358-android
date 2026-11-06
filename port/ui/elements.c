@@ -211,6 +211,16 @@ void khdays_ui_emit(int part, const KhdaysUiElement *element)
     khdays_ui_emit_extended(part, element, element);
 }
 
+#define FOLLOWS_FIXED (-2) /* Entry.follows: khdays_ui_emit_fixed's, at its DS place */
+
+void khdays_ui_emit_fixed(int part, const KhdaysUiElement *element)
+{
+    const int at = entry_count;
+    khdays_ui_emit(part, element);
+    if (entry_count > at)
+        entries[at].follows = FOLLOWS_FIXED;
+}
+
 void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy)
 {
     const int mode = khdays_ui_mode(part);
@@ -494,7 +504,7 @@ static int find_groups(void)
     }
     for (int i = 0; i < entry_count; ++i) {
         const Entry *n = &entries[i];
-        const int alone = n->follows >= 0 || n->e.screen != 0 || n->e.w <= 0.0f || n->e.h <= 0.0f ||
+        const int alone = n->follows != -1 || n->e.screen != 0 || n->e.w <= 0.0f || n->e.h <= 0.0f ||
                           khdays_ui_mode(n->part) != KHDAYS_UI_ON || khdays_ui_layout_names(n->e.id);
         group_of[i] = alone ? -1 : i;
     }
@@ -571,6 +581,10 @@ void khdays_ui_collect(int wide_margin, int upper)
         n->dslot = n->e.slot;
         n->placed = 0;
         n->leader = n->follows;
+        if (n->follows == FOLLOWS_FIXED) {
+            n->leader = -1;
+            continue;
+        }
         if (n->leader >= 0)
             continue;
         if (khdays_ui_mode(n->part) == KHDAYS_UI_ON) {
@@ -603,7 +617,7 @@ void khdays_ui_collect(int wide_margin, int upper)
         Entry *n = &entries[i];
         const Entry *parent = NULL;
         float mx, my;
-        if (n->placed || khdays_ui_mode(n->part) != KHDAYS_UI_ON) {
+        if (n->placed || khdays_ui_mode(n->part) != KHDAYS_UI_ON || n->follows == FOLLOWS_FIXED) {
             continue;
         }
         if (n->leader >= 0) {
@@ -614,8 +628,8 @@ void khdays_ui_collect(int wide_margin, int upper)
         my = ((n->dy > 0.0f ? n->dy : 0.0f) + (n->dy + n->dh < 192.0f ? n->dy + n->dh : 192.0f)) / 2.0f;
         for (int k = 0; k < entry_count; ++k) {
             const Entry *q = &entries[k];
-            if (k == i || !q->placed || q->source != n->source || q->dw <= 0.0f || q->dh <= 0.0f || mx < q->dx ||
-                my < q->dy || mx >= q->dx + q->dw || my >= q->dy + q->dh) {
+            if (k == i || !q->placed || q->follows == FOLLOWS_FIXED || q->source != n->source || q->dw <= 0.0f ||
+                q->dh <= 0.0f || mx < q->dx || my < q->dy || mx >= q->dx + q->dw || my >= q->dy + q->dh) {
                 continue;
             }
             if (parent == NULL || q->dw * q->dh < parent->dw * parent->dh) {

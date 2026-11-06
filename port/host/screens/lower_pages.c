@@ -3,6 +3,7 @@
 #include "lower_pixels.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int count)
 {
@@ -33,11 +34,118 @@ void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int co
 
 int khdays_lower_map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy)
 {
-    const int y = (int)oy;
+    const int y = (int)oy < 0 ? 0 : (int)oy < KHDAYS_LOWER_ROWS_MAX ? (int)oy : KHDAYS_LOWER_ROWS_MAX - 1;
+    const int next = y + 1 < KHDAYS_LOWER_ROWS_MAX ? y + 1 : y;
     const int band = ox < (float)p->split ? 0 : p->split2 > 0 && ox >= (float)p->split2 ? 2 : 1;
+    const int row = p->rows[band][y];
+    /* a copy of a repeated row (the last of them is the row itself) takes its middle, as it was told plain by: the
+     * picture's finer rows of it may hold the next row's edge (a badge's rim), which repeated is a line of dashes */
+    const int copy = next != y && p->rows[band][next] == row && (int)oy == y;
     *sx = ox;
-    *sy = (float)p->rows[band][y < KHDAYS_LOWER_ROWS_MAX ? y : KHDAYS_LOWER_ROWS_MAX - 1] + (oy - (float)y);
+    *sy = (float)row + (copy ? 0.5f : oy - (float)y);
     return 1;
+}
+
+int khdays_lower_row_copy(const KhdaysLowerPlace *p, float ox, float oy)
+{
+    const int y = (int)oy < 0 ? 0 : (int)oy < KHDAYS_LOWER_ROWS_MAX ? (int)oy : KHDAYS_LOWER_ROWS_MAX - 1;
+    const int next = y + 1 < KHDAYS_LOWER_ROWS_MAX ? y + 1 : y;
+    const int band = ox < (float)p->split ? 0 : p->split2 > 0 && ox >= (float)p->split2 ? 2 : 1;
+    return next != y && p->rows[band][next] == p->rows[band][y];
+}
+
+static int cmp_u32(const void *a, const void *b)
+{
+    const uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* The colour most of a row's columns from x0 to x1 have. */
+static uint32_t row_mode(const uint32_t *ds, int y, int x0, int x1)
+{
+    uint32_t v[W];
+    uint32_t best = 0;
+    const int n = x1 - x0;
+    int run = 0, best_run = 0;
+    memcpy(v, ds + y * W + x0, sizeof(uint32_t) * (size_t)n);
+    qsort(v, (size_t)n, sizeof(v[0]), cmp_u32);
+    for (int i = 0; i < n; ++i) {
+        run = i > 0 && v[i] == v[i - 1] ? run + 1 : 1;
+        if (run > best_run) {
+            best_run = run;
+            best = v[i];
+        }
+    }
+    return best;
+}
+
+int khdays_lower_plain_copies(KhdaysLowerPlace *p, const uint32_t *ds, int rows)
+{
+    int taken = 0;
+    rows = rows < KHDAYS_LOWER_ROWS_MAX ? rows : KHDAYS_LOWER_ROWS_MAX;
+    for (int b = 0; b < 3; ++b) {
+        /* the bands as khdays_lower_map_rows takes them: left of split, to split2 (or the right edge), the rest */
+        const int split = p->split < 0 ? 0 : p->split > W ? W : p->split;
+        const int x0 = b == 0 ? 0 : b == 1 ? split : p->split2;
+        const int x1 = b == 0 ? split : b == 1 ? (p->split2 > 0 ? p->split2 : W) : W;
+        int gap[KHDAYS_LOWER_COPY_ROWS], n = 0;
+        uint32_t plain[KHDAYS_LOWER_COPY_ROWS];
+        if ((b == 2 && p->split2 <= 0) || x0 >= x1) {
+            continue;
+        }
+        /* the band's repeated rows: a row given to two output rows in a row (the end's padding left out) */
+        for (int y = 0; y + 1 < rows && n < KHDAYS_LOWER_COPY_ROWS; ++y) {
+            const int r = p->rows[b][y];
+            if (r == p->rows[b][y + 1] && r >= 2 && r < H - 1 && p->copy_slot[b][r] == 0) {
+                p->copy_slot[b][r] = (uint8_t)(n + 1);
+                gap[n++] = r;
+            }
+        }
+        if (n < 2) {
+            continue; /* one row (a scroll track's, chosen plain each frame) has no like rows to go by */
+        }
+        for (int i = 0; i < n; ++i) {
+            plain[i] = row_mode(ds, gap[i], x0, x1);
+        }
+        for (int x = x0; x < x1; ++x) {
+            uint32_t v[KHDAYS_LOWER_COPY_ROWS], usual = 0;
+            int best = 0;
+            for (int i = 0; i < n; ++i) {
+                v[i] = at(ds, x, gap[i]);
+            }
+            /* what the rows hold in this column as a rule: the most of them, of the colours that are either their
+             * rows' plain ground or a line coming down from above the row (a frame's side); a mark starts on its
+             * row, so its colour is neither, however many rows have it */
+            for (int i = 0; i < n; ++i) {
+                int count = 0, likely = 0;
+                for (int j = 0; j < n; ++j) {
+                    count += v[j] == v[i];
+                    likely += v[i] == plain[j] || v[i] == at(ds, x, gap[j] - 2);
+                }
+                if (likely * 2 > n && count > best) {
+                    best = count;
+                    usual = v[i];
+                }
+            }
+            if (best == 0) {
+                continue;
+            }
+            for (int i = 0; i < n; ++i) {
+                int from = -1;
+                if (v[i] == usual) {
+                    continue;
+                }
+                for (int j = 0; j < n; ++j) {
+                    if (v[j] == usual && (from < 0 || abs(gap[j] - gap[i]) < abs(from - gap[i]))) {
+                        from = gap[j];
+                    }
+                }
+                p->copy_from[b][i][x] = (int16_t)(from + 1);
+                ++taken;
+            }
+        }
+    }
+    return taken;
 }
 
 int khdays_lower_plain_row(const uint32_t *ds, int y0, int y1, int x0, int x1)
@@ -309,7 +417,7 @@ int khdays_lower_pages_tell(const uint32_t *ds)
     return KHDAYS_LOWER_NONE;
 }
 
-int khdays_lower_pages_place(int screen, const uint32_t *ds, int rows, KhdaysLowerPlace *place, int *key)
+static int place_page(int screen, const uint32_t *ds, int rows, KhdaysLowerPlace *place, int *key)
 {
     switch (screen) {
     case KHDAYS_LOWER_TUTORIALS:
@@ -372,4 +480,15 @@ int khdays_lower_pages_place(int screen, const uint32_t *ds, int rows, KhdaysLow
     case KHDAYS_LOWER_BACKDROP: place->map = map_backdrop; return 1;
     default: return 0;
     }
+}
+
+int khdays_lower_pages_place(int screen, const uint32_t *ds, int rows, KhdaysLowerPlace *place, int *key)
+{
+    if (!place_page(screen, ds, rows, place, key)) {
+        return 0;
+    }
+    if (place->map == khdays_lower_map_rows) {
+        khdays_lower_plain_copies(place, ds, rows); /* drawn, not laid out: the key stays */
+    }
+    return 1;
 }

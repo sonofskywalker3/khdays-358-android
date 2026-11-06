@@ -52,6 +52,7 @@ static int tab_icons(const uint32_t *ds)
 #define MAP_IN_X1 224
 #define MAP_IN0 56
 #define MAP_IN1 136
+#define FIELD_ROWS_MAX 128 /* the extra rows the renderer composes at most (gfx_render.h KHDAYS_ROWS_MAX) */
 #define FIELD_EDGE 30      /* the panel's top edge, lilac */
 #define FIELD_EDGE_MIN 8   /* its red, dimmed too (a mission fading in from black) */
 #define FIELD_EDGE_TINT 2  /* its red and blue alike */
@@ -107,6 +108,8 @@ static int map_field(const KhdaysLowerPlace *p, float ox, float oy, float *sx, f
             *sy = m;
         } else if (ox < MAP_IN_X0 || ox >= MAP_IN_X1) {
             *sy = FIELD_PLAIN;
+        } else if (p->row_count > 0 && m >= (float)p->row0 && m < (float)(p->row0 + p->row_count)) {
+            *sy = (float)KHDAYS_LOWER_ROWS + m; /* the map's layer alone above and below the box: the room's map */
         } else {
             *sy = m < MAP_IN0 ? (float)MAP_IN0 : (float)(MAP_IN1 - 1);
         }
@@ -364,8 +367,14 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
     } else if (oy < page_rows) {
         const float k = oy / p->zoom;
         const int row = (int)k;
+        int track, added;
         *sx = (float)SUM_LEFT + ox / p->zoom;
-        *sy = (float)p->rows[*sx >= SUM_TRACK ? 1 : 0][row] + (k - (float)row);
+        track = *sx >= SUM_TRACK;
+        /* the added rows (the line's, the track's), copies of one plain row, at its middle (khdays_lower_map_rows);
+         * the added line's rule is the rule's own */
+        added = track ? row >= SUM_TRACK_END && row < SUM_TRACK_END + (SUM_LINE1 - SUM_LINE0)
+                      : row >= SUM_LINE1 && row < SUM_LINE1 + (SUM_LINE1 - SUM_LINE0) && p->rows[0][row] != SUM_RULE;
+        *sy = (float)p->rows[track][row] + (added ? 0.5f : k - (float)row);
     } else {
         *sx = ox;
         *sy = (float)(SUM_FOOT + (int)oy % SUM_SCAN);
@@ -416,6 +425,8 @@ static int map_summary(const KhdaysLowerPlace *p, float ox, float oy, float *sx,
 #define LIST_EDGE_ROW1 140
 #define LAYER_BG1 (1u << 9) /* compose.h: KDF_BG_ON_SHIFT + 1 */
 #define LAYER_OBJ 0x10u     /* KDF_OBJ_ON */
+#define LAYER_BG0 (1u << 8) /* KDF_BG_ON_SHIFT + 0, + 2 */
+#define LAYER_BG2 (1u << 10)
 
 /* The list's frame and scroll track as both lists draw them (the tutorials' too, told apart by their
  * header: its frame shares its entries' layer, and every tutorial already shows). */
@@ -608,7 +619,7 @@ static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx
             *sx = (float)LIST_BORDER_COL + 0.5f;
         }
     } else if (*sx >= (float)LIST_TRACK0 && *sx < (float)LIST_TRACK1 && oy >= (float)p->cut) {
-        *sy = oy < (float)p->cut + e ? (float)p->foot : oy - e; /* the track's plain row */
+        *sy = oy < (float)p->cut + e ? (float)p->foot + 0.5f : oy - e; /* the track's plain row, at its middle */
     } else if (oy < (float)LIST_FRAME_BOTTOM) {
         *sy = oy;
     } else if (*sx >= (float)LIST_IN0 && *sx < (float)LIST_IN1) {
@@ -617,7 +628,7 @@ static int map_missions(const KhdaysLowerPlace *p, float ox, float oy, float *sx
         }
         *sy = (float)KHDAYS_LOWER_ROWS + oy; /* the next missions, as the game drew them under its frame */
     } else {
-        *sy = (float)p->top + (oy - (float)(int)oy); /* the frame's sides, a plain row of them */
+        *sy = (float)p->top + 0.5f; /* the frame's sides, a plain row of them at its middle (as it was told plain by) */
     }
     return 1;
 }
@@ -668,7 +679,19 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         return 0;
     }
     switch (screen) {
-    case KHDAYS_LOWER_FIELD: place->map = map_field; return 1;
+    case KHDAYS_LOWER_FIELD: {
+        /* the room's whole map is in BG3 (scrolled to the player; the box is a hole in BG2's panel), so the rows a
+         * taller box shows above and below the DS's are BG3 alone at those rows */
+        const int band = (int)ceilf(place->extra / 2.0f) + 1;
+        place->map = map_field;
+        if (MAP_IN1 - MAP_IN0 + 2 * band <= FIELD_ROWS_MAX && MAP_IN0 - band >= 0) {
+            place->row0 = MAP_IN0 - band;
+            place->row_count = MAP_IN1 - MAP_IN0 + 2 * band;
+            place->layers_off = LAYER_BG0 | LAYER_BG1 | LAYER_BG2 | LAYER_OBJ;
+            place->rows_optional = 1;
+        }
+        return 1;
+    }
     case KHDAYS_LOWER_LOAD: {
         /* the divider over the help line, its threshold faded as the screen is: a fade keeps c x a + w of a
          * channel c, w the black row under the header's line, a from that line's blue */
@@ -731,6 +754,7 @@ int khdays_lower_screens_place(int screen, const uint32_t *ds, int ds_rows, floa
         place->split = STATUS_SPLIT;
         khdays_lower_spread(place->rows[0], rows, status_left, (int)(sizeof(status_left) / sizeof(status_left[0])));
         khdays_lower_spread(place->rows[1], rows, status_right, (int)(sizeof(status_right) / sizeof(status_right[0])));
+        khdays_lower_plain_copies(place, ds, rows);
         return 1;
     case KHDAYS_LOWER_MISSIONS:
         place->map = map_missions;

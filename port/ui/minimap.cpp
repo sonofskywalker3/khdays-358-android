@@ -1,6 +1,7 @@
 // Sprite-only minimap layer, drawn by the existing GPU quad renderer at the native layer's position.
 #include "../host/app/hud_settings.h"
 #include "minimap.h"
+#include "minimap_beyond.h"
 #include "minimap_config.h"
 #include "kh2_portrait.h"
 #include "../gfx/kh2_sequence.h"
@@ -450,6 +451,7 @@ void radar(int resolution)
 } // namespace
 extern "C" void khdays_minimap_begin(void)
 {
+    khdays_minimap_beyond_begin();
     recording = ready();
     draws.clear();
     complete = overflow = false;
@@ -457,6 +459,10 @@ extern "C" void khdays_minimap_begin(void)
 }
 extern "C" void khdays_minimap_end(void)
 {
+    {
+        const unsigned scene = read(0x0207f638); /* the page's place, nX and nY, as the redraw left them */
+        khdays_minimap_beyond_end(int(read(scene + 8)), int(read(scene + 12)));
+    }
     complete = recording && !overflow;
     if (recording)
         khdays_ui_changed();
@@ -513,6 +519,7 @@ extern "C" void khdays_minimap_stamp(unsigned source, int x, int y)
 }
 extern "C" void khdays_minimap_reset(void)
 {
+    khdays_minimap_beyond_reset();
     draws.clear();
     recording = complete = owns = false;
     owner = 0;

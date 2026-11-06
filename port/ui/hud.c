@@ -11,6 +11,7 @@
 #include "character_portraits.h"
 #include "badges.h"
 #include "minimap.h"
+#include "minimap_beyond.h"
 #include "kh2_mission_panel.h"
 #include "crowns.h"
 #include "autosave_notice.h"
@@ -598,6 +599,7 @@ void khdays_ui_hud_set_dialog(int on)
 static void emit(void)
 {
     khdays_minimap_emit();
+    khdays_minimap_beyond_emit(); /* the port's: the map's icons past its box, on a taller lower screen */
     khdays_ui_kh2_enemy_emit();
     khdays_ui_kh2_hp_prepare();
     khdays_ui_kh2_party_prepare();

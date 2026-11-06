@@ -48,6 +48,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include "../../ui/minimap_beyond.h"
 
 _Static_assert(KSI_3D_PROGRAMS == KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS + KHDAYS_PRIZE_PROGRAMS,
                "3D sequence package capacity");
@@ -1553,7 +1554,41 @@ static void display_capture(const KhdaysGpuInput *in, const KhdaysGpu2dState *wi
     }
 }
 
+static void vblank(u32 frame);
+
+/* The field's map (INFORMATION panel): engine B's BG3 is the room's map, scrolled by the game's step task to where the
+ * icons' page was drawn (Ov002_StepPageScroll), and the page reaches VRAM through the game's command queue at its
+ * VBlank interrupt. A DS shows both from the same VBlank; here the step task runs on the game's thread after the
+ * interrupt, so a late frame can be captured with the new page and the old scroll, the map a step off its icons for
+ * one frame. The scroll that goes with the page shown is captured then, a step (MAP_STEP_MAX pixels) at most. */
+#define MAP_SCROLL_REG 0x101c
+#define MAP_PARKED 0x01c80198u /* the layer moved off the screen: not the map */
+#define MAP_STEP_MAX 16
+
+static int scroll_wraps(uint32_t a, uint32_t b, int shift)
+{
+    int d = (int)((a >> shift) & 0x1ffu) - (int)((b >> shift) & 0x1ffu);
+    d = d > 256 ? d - 512 : d < -256 ? d + 512 : d;
+    return d >= -MAP_STEP_MAX && d <= MAP_STEP_MAX;
+}
+
 void khdays_display_vblank(u32 frame)
+{
+    uint32_t want = 0;
+    int back = 0;
+    const uint32_t was = IO32(MAP_SCROLL_REG);
+    const int fixed = was != MAP_PARKED && khdays_minimap_beyond_scroll(&want, &back) && want != was &&
+                      scroll_wraps(want, was, 0) && scroll_wraps(want, was, 16);
+    if (fixed) {
+        IO32(MAP_SCROLL_REG) = want;
+    }
+    vblank(frame);
+    if (fixed && IO32(MAP_SCROLL_REG) == want) {
+        IO32(MAP_SCROLL_REG) = was; /* the game's own, which its step task sets again */
+    }
+}
+
+static void vblank(u32 frame)
 {
     KhdaysGpuInput in;
     int want;

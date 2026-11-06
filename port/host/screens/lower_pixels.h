@@ -63,6 +63,15 @@ void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int co
  * each row of the taller picture, place->rows. */
 int khdays_lower_map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy);
 
+/* For each band's repeated rows (`rows` rows of place->rows), the columns where a row holds what its like rows
+ * seldom do (a NEW mark, a panel held over the board): their copies are taken from the nearest like row there
+ * instead, so the mark stays its own size while lines and frames go on (lower_layout.c draws them). Returns how
+ * many columns of copies are taken so. */
+int khdays_lower_plain_copies(KhdaysLowerPlace *p, const uint32_t *ds, int rows);
+
+/* Whether (ox, oy) of a khdays_lower_map_rows screen is a copy of a repeated row (not the row itself). */
+int khdays_lower_row_copy(const KhdaysLowerPlace *p, float ox, float oy);
+
 /* The row from y0 to y1 whose columns x0 to x1 the most rows share: a stretch of a frame or a scroll
  * track plain, not where the pointing hand, the chosen entry or the track's thumb is. */
 int khdays_lower_plain_row(const uint32_t *ds, int y0, int y1, int x0, int x1);

@@ -203,8 +203,12 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
         int screen;
         khdays_lower_sample(&picture, ds, &ds_rows);
         screen = khdays_lower_screen(ds, ds_rows);
-        if ((was_laid_out && khdays_lower_hold(&layout, &picture, screen, buffer.width, buffer.height, touch_down)) ||
-            khdays_lower_layout(&layout, &picture, ds, ds_rows, screen, buffer.width, buffer.height)) {
+        const int held =
+            was_laid_out && khdays_lower_hold(&layout, &picture, screen, buffer.width, buffer.height, touch_down);
+        if (held) {
+            khdays_lower_copies_refresh(&layout, ds, ds_rows); /* a mark moving under the finger */
+        }
+        if (held || khdays_lower_layout(&layout, &picture, ds, ds_rows, screen, buffer.width, buffer.height)) {
             khdays_lower_draw(&layout, &picture, bits, buffer.stride * 4);
             laid_out = 1;
             ANativeWindow_unlockAndPost(window);

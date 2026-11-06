@@ -3,6 +3,7 @@
  * it does not know, the pieces where the designs put them (docs/LOWER_DISPLAY.md), the characters'
  * zoom measured from their grid, and a touch going back to the DS pixel it shows. */
 #include "../host/screens/lower_layout.h"
+#include "../host/screens/lower_pixels.h"
 #include "../host/screens/lower_screens.h"
 
 #include <math.h>
@@ -169,6 +170,57 @@ static void test_field(void)
     /* a grey line as bright as the white is no such edge */
     rect(24, 30, 232, 31, 0x868686u);
     CHECK(lay(&l) != KHDAYS_LOWER_FIELD);
+    khdays_lower_free(&l);
+}
+
+/* The map box's rows past the DS's: the room's map from the extra rows the layout asks for (the map's layer alone),
+ * at their own DS rows; until those come, the field still laid out, the box's edge rows there. */
+static uint8_t field_rows[128 * SCALE][DS_W * SCALE][4];
+
+static void test_field_map_rows(void)
+{
+    KhdaysLowerLayout l = {0};
+    KhdaysLowerPicture with = pic;
+    int x, y, rows, screen;
+    field();
+    CHECK(lay(&l) == KHDAYS_LOWER_FIELD); /* no rows yet: laid out all the same */
+    CHECK(l.want_rows > 0 && l.want_row0 < 56 && l.want_row0 + l.want_rows > 136 && l.want_rows <= 128);
+    CHECK(shows(&l, 160.5f, 60.5f, &x, &y) && y == 56);   /* above the box: its top row, for now */
+    CHECK(shows(&l, 160.5f, 160.5f, &x, &y) && y == 135); /* below it: its bottom row */
+    for (int r = 0; r < l.want_rows * SCALE; ++r) {
+        for (int c = 0; c < DS_W * SCALE; ++c) {
+            field_rows[r][c][0] = 0x12; /* the map's layer alone: one colour, to be told apart */
+            field_rows[r][c][1] = 0x34;
+            field_rows[r][c][2] = (uint8_t)(r / SCALE); /* ... and its row */
+            field_rows[r][c][3] = 255;
+        }
+    }
+    with.overscan = &field_rows[0][0][0];
+    with.overscan_rows = l.want_rows * SCALE;
+    with.overscan_pitch = DS_W * SCALE * 4;
+    with.overscan_row0 = l.want_row0;
+    khdays_lower_sample(&with, ds, &rows);
+    screen = khdays_lower_screen(ds, rows);
+    CHECK(screen == KHDAYS_LOWER_FIELD);
+    CHECK(khdays_lower_layout(&l, &with, ds, rows, screen, OUT_W, OUT_H));
+    khdays_lower_draw(&l, &with, &out[0][0][0], OUT_W * 4);
+    /* about 15.5 rows above the box: the map's own rows over it (DS row 45 there), then the box's rows as they were */
+    CHECK(out[60 * SCALE + 2][160 * SCALE + 2][0] == 0x12 && out[60 * SCALE + 2][160 * SCALE + 2][1] == 0x34 &&
+          out[60 * SCALE + 2][160 * SCALE + 2][2] == 45 - l.want_row0);
+    CHECK(shows(&l, 160.5f, 100.5f, &x, &y) && (y == 84 || y == 85));
+    CHECK(out[160 * SCALE + 2][160 * SCALE + 2][0] == 0x12 &&
+          out[160 * SCALE + 2][160 * SCALE + 2][2] == 145 - l.want_row0);
+    CHECK(shows(&l, 60.5f, 140.5f, &x, &y) && y >= 67 && y < 137); /* the target's box as before */
+    {
+        /* a frame the field is not told on (a notice over it): its rows still asked for a while, then not */
+        const int row0 = l.want_row0, want = l.want_rows;
+        numbered();
+        CHECK(lay(&l) == KHDAYS_LOWER_NONE && l.want_row0 == row0 && l.want_rows == want);
+        for (int i = 0; i < 40; ++i) {
+            lay(&l);
+        }
+        CHECK(l.want_rows == 0);
+    }
     khdays_lower_free(&l);
 }
 
@@ -537,7 +589,7 @@ static void test_missions_pages(void)
     }
     khdays_lower_sample(&grown, ds, &rows);
     CHECK(khdays_lower_layout(&l, &grown, ds, rows, KHDAYS_LOWER_MISSIONS, OUT_W, OUT_H));
-    CHECK(shows(&l, 174.5f, 22.5f, &x, &y) && x == 183);  /* the name's row: not widened there */
+    CHECK(shows(&l, 174.5f, 22.5f, &x, &y) && x == 183); /* the name's row: not widened there */
     CHECK(shows(&l, 200.5f, 30.5f, &x, &y) && x == 189);
     khdays_lower_free(&l);
     /* a crown's: stops short of those columns, widened before it */
@@ -884,10 +936,131 @@ static void test_short_display(void)
     khdays_lower_free(&l);
 }
 
+/* A repeated row's copies take its middle, the last of them (the row itself) its own finer rows: a row told plain at
+ * its middle repeated whole would repeat the next row's edge the picture draws in its lower part. */
+static void test_row_copies_middle(void)
+{
+    static const int gap[][2] = {{40, 1}};
+    static KhdaysLowerPlace p;
+    float sx, sy;
+    int first = -1, last = -1;
+    memset(&p, 0, sizeof(p));
+    p.split = W;
+    khdays_lower_spread(p.rows[0], H + 4, gap, 1);
+    for (int y = 0; y < H + 4; ++y) {
+        if (p.rows[0][y] == 40) {
+            first = first < 0 ? y : first;
+            last = y;
+        }
+    }
+    CHECK(first == 40 && last == 44);
+    for (int y = first; y < last; ++y) {
+        khdays_lower_map_rows(&p, 10.5f, (float)y + 0.9f, &sx, &sy);
+        CHECK(sy == 40.5f); /* a copy: the row's middle, wherever in the output row */
+    }
+    khdays_lower_map_rows(&p, 10.5f, (float)last + 0.9f, &sx, &sy);
+    CHECK(sy > 40.85f && sy < 40.95f); /* the row itself, all of it */
+    khdays_lower_map_rows(&p, 10.5f, 20.25f, &sx, &sy);
+    CHECK(sy == 20.25f); /* a row not repeated */
+}
+
+/* A repeated row's copies leave out what only some of its like rows hold (a NEW mark starting on it, a panel held over
+ * the board), taking that column from the nearest like row instead; a frame's line going down through it goes on. */
+static uint32_t marks[W * H];
+static void mark_rect(int x0, int y0, int x1, int y1, uint32_t rgb)
+{
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            marks[y * W + x] = rgb;
+        }
+    }
+}
+
+static void test_plain_copies(void)
+{
+    static KhdaysLowerPlace p;
+    int gaps[6][2], slot;
+    /* a list: plain ground, a frame's line down column 2, a rule over each entry, NEW on three of six entries (the
+     * second's over the frame's line) */
+    memset(&p, 0, sizeof(p));
+    mark_rect(0, 0, W, H, 0x212121u);
+    mark_rect(2, 0, 3, H, 0x6b6b6bu);
+    for (int i = 0; i < 6; ++i) {
+        gaps[i][0] = 56 + 16 * i;
+        gaps[i][1] = 1;
+        mark_rect(10, 55 + 16 * i, 190, 56 + 16 * i, 0x5a5a5au);
+    }
+    for (int i = 1; i <= 3; ++i) {
+        mark_rect(i == 1 ? 2 : 4, 56 + 16 * i, 17, 65 + 16 * i, 0xf0e040u);
+    }
+    p.split = 200;
+    khdays_lower_spread(p.rows[0], H + 31, (const int(*)[2])gaps, 6);
+    CHECK(khdays_lower_plain_copies(&p, marks, H + 31) > 0);
+    slot = p.copy_slot[0][72];
+    CHECK(slot > 0);
+    if (slot > 0) {
+        CHECK(p.copy_from[0][slot - 1][8] == 57);  /* the NEW mark's column: the nearest row without it */
+        CHECK(p.copy_from[0][slot - 1][2] == 57);  /* the frame's line under the mark: from a row where it goes on */
+        CHECK(p.copy_from[0][slot - 1][100] == 0); /* the plain ground: the row itself */
+    }
+    CHECK(p.copy_slot[0][56] > 0 && p.copy_from[0][p.copy_slot[0][56] - 1][8] == 0); /* a row without the mark */
+
+    /* a board: its rows above and below the grid repeated, a panel held over the upper one */
+    {
+        static const int board[][2] = {{22, 1}, {152, 1}};
+        memset(&p, 0, sizeof(p));
+        mark_rect(0, 0, W, H, 0x525259u);
+        mark_rect(40, 10, 56, 40, 0x40e0f0u);
+        p.split = W;
+        khdays_lower_spread(p.rows[0], H + 31, board, 2);
+        khdays_lower_plain_copies(&p, marks, H + 31);
+        slot = p.copy_slot[0][22];
+        CHECK(slot > 0 && p.copy_from[0][slot - 1][45] == 153); /* the held panel's columns: the other plain row */
+        CHECK(slot > 0 && p.copy_from[0][slot - 1][70] == 0);
+    }
+}
+
+/* Laid out, the Panels page's stock: a NEW mark drawn its own height, and a touch on a copy of its row still that
+ * row (the copies are drawn from another, not laid out from it). */
+static void test_plain_copies_drawn(void)
+{
+    KhdaysLowerLayout l = {0};
+    const int col = 100 * SCALE + SCALE / 2; /* the NEW marks' column */
+    int yellow = 0, on_row = 0, x, y;
+    numbered();
+    rect(0, 0, 95, 157, 0x525259u);    /* the board's frame */
+    rect(95, 24, 232, 157, 0x243148u); /* the stock */
+    for (int i = 0; i < 8; ++i) {
+        rect(104, 39 + 16 * i, 228, 40 + 16 * i, 0x6a7ab0u);
+    }
+    for (int i = 1; i < 8; i += 2) {
+        rect(97, 24 + 16 * i, 110, 32 + 16 * i, 0xf0e040u); /* NEW, on four of eight, from their entries' first row */
+    }
+    rect(8, 160, 248, 161, 0x212121u);
+    rect(8, 161, 248, 162, 0xffffffu); /* the help box */
+    rect(8, 190, 248, 191, 0xffffffu);
+    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
+    CHECK(l.copies);
+    for (int oy = 0; oy < OUT_H; ++oy) {
+        const uint8_t *px = out[oy][col];
+        yellow += px[0] == 0xf0 && px[1] == 0xe0 && px[2] == 0x40;
+        if (khdays_lower_touch(&l, col, oy, &x, &y) && y == 40) {
+            ++on_row;
+        }
+    }
+    CHECK(yellow == 4 * 8 * SCALE); /* four marks, eight DS rows each: none repeated */
+    CHECK(on_row > SCALE);          /* the second entry's first row: its copies still touch it */
+    khdays_lower_free(&l);
+}
+
 int main(void)
 {
+    test_row_copies_middle();
+    test_plain_copies();
+    test_plain_copies_drawn();
     test_unknown();
     test_field();
+    test_field_map_rows();
     test_load();
     test_load_short();
     test_characters();

@@ -214,6 +214,58 @@ void standalone()
     std::filesystem::remove(folder / "key.DDS");
     std::filesystem::remove(folder);
 }
+// The icons the game's page drops past the box, kept for a taller lower screen: drawn as BG3 above and below it,
+// in the page's palette; the page's own pixels left to the game.
+void beyond()
+{
+    khdays_minimap_beyond_reset();
+    khdays_minimap_beyond_lower_rows(39, 114, 1u << 10); // the Thor's: 17 rows over the box, 17 under it, BG2 out
+    khdays_minimap_beyond_begin();
+    khdays_minimap_beyond_pair(10, -2, 0x21); // over the page: 1 at x 10, 2 at x 11
+    khdays_minimap_beyond_pair(10, 5, 0x33);  // in it: the game's own
+    khdays_minimap_beyond_end(0, 0);
+    test_element = {};
+    khdays_minimap_beyond_emit();
+    check(test_element.screen == 1 && test_element.slot == 3, "the icons past the box not in the map's layer");
+    check(test_element.x == 104 && test_element.y == 56 - 17 && test_element.w == 120 && test_element.h == 17,
+          "the icons over the box not placed over it, as many rows as are shown");
+    {
+        const auto &img = images[size_t(test_element.image)];
+        check(img[15 * 120 + 10] == (KET_OPAQUE | (13 * 16 + 1)) && img[15 * 120 + 11] == (KET_OPAQUE | (13 * 16 + 2)),
+              "an icon's pixels over the box not kept in the page's palette");
+        int kept = 0;
+        for (unsigned v : img)
+            kept += v != 0;
+        check(kept == 2, "the page's own pixels kept past the box");
+    }
+    khdays_minimap_beyond_begin();
+    khdays_minimap_beyond_pair(119, 81, 0x44); // under the page, its second pixel past its right edge
+    khdays_minimap_beyond_end(0, 0);
+    test_element = {};
+    khdays_minimap_beyond_emit();
+    check(test_element.y == 136, "the icons under the box not placed under it");
+    {
+        const auto &img = images[size_t(test_element.image)];
+        int kept = 0;
+        for (unsigned v : img)
+            kept += v != 0;
+        check(img[1 * 120 + 119] == (KET_OPAQUE | (13 * 16 + 4)) && kept == 1, "the page's right edge not kept to");
+    }
+    khdays_minimap_beyond_lower_rows(176, 32, 0x210); // a list's rows under the screen: not the field's
+    test_element = {};
+    test_element.screen = -1;
+    khdays_minimap_beyond_emit();
+    check(test_element.screen == -1, "the icons drawn for a list's rows");
+    khdays_minimap_beyond_lower_rows(39, 114, 1u << 10);
+    for (int i = 0; i < 40; ++i) { // the host no longer says so (one screen, the display gone): they go
+        test_element = {};
+        test_element.screen = -1;
+        khdays_minimap_beyond_emit();
+    }
+    check(test_element.screen == -1, "the icons drawn after the host stopped asking for the field's rows");
+    khdays_minimap_beyond_reset();
+}
+
 void native_map()
 {
     config.kh2map = true;
@@ -362,6 +414,10 @@ void khdays_ui_emit(int, const KhdaysUiElement *e)
 {
     test_element = *e;
 }
+void khdays_ui_emit_fixed(int, const KhdaysUiElement *e)
+{
+    test_element = *e;
+}
 int khdays_bg_text_layer(int engine, int bg, KhdaysBgLayer *l)
 {
     *l = {};
@@ -413,6 +469,7 @@ int main(int argc, char **argv)
             tests();
             standalone();
             native_map();
+            beyond();
         }
         std::filesystem::remove(std::filesystem::temp_directory_path() / "khdays-minimap-test.json");
         delete[] khdays_window;

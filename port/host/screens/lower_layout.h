@@ -49,6 +49,12 @@ typedef struct KhdaysLowerPicture {
  * index into the picture's rows then the overscan's, -1 black). A display wider than 4:3 shows the
  * DS's shape at its height, black beside it. Made again only when the screen or
  * what was measured on it changes. */
+#ifndef KHDAYS_LOWER_COPY_ROWS
+#define KHDAYS_LOWER_COPY_ROWS 16 /* a band's repeated rows lower_pages.c's plain copies looks at, at most */
+#define KHDAYS_LOWER_COPY_W 256   /* the DS's columns (KHDAYS_LOWER_DS_W) */
+#define KHDAYS_LOWER_COPY_H 192   /* its rows (KHDAYS_LOWER_DS_H) */
+#endif
+
 typedef struct KhdaysLowerLayout {
     int screen;        /* KHDAYS_LOWER_* */
     int key;           /* the screen's measurements, folded: a change makes the map again */
@@ -61,7 +67,17 @@ typedef struct KhdaysLowerLayout {
      * from want_row0, want_rows of them (0 none), composed with want_off's layers left out */
     int want_row0, want_rows;
     uint32_t want_off;
+    int want_held; /* the field's rows still asked for while a screen that wants none is told, this many times more */
+    /* this frame's copies of repeated rows taken from another like row (lower_screens.h copy_slot, copy_from), by
+     * the bands split at copy_split and copy_split2; copies 0: none */
+    int copies, copy_split, copy_split2;
+    uint8_t copy_slot[3][KHDAYS_LOWER_COPY_H];
+    int16_t copy_from[3][KHDAYS_LOWER_COPY_ROWS][KHDAYS_LOWER_COPY_W];
 } KhdaysLowerLayout;
+
+/* While a touch holds the layout (khdays_lower_hold): this frame's copies of its screen's repeated rows taken
+ * again from the DS's pixels, so a mark moving under the finger is not repeated. */
+void khdays_lower_copies_refresh(KhdaysLowerLayout *layout, const uint32_t *ds, int ds_rows);
 
 /* The DS's pixels of the picture at their middles, 0x00RRGGBB, row by row: what the screens are told
  * by. `ds` holds KHDAYS_LOWER_DS_W x (KHDAYS_LOWER_DS_H + KHDAYS_LOWER_OVERSCAN); *ds_rows is 192 and the extra

@@ -27,6 +27,9 @@ void khdays_ui_emit(int part, const KhdaysUiElement *element);
 /* Move a supplementary image with a queued anchor, including when that anchor
  * follows a HUD piece rather than a layout line. */
 void khdays_ui_emit_following(int part, const KhdaysUiElement *element, const KhdaysUiElement *anchor);
+/* One that stays at its DS place whatever the layout does with the pieces around it, and that no other element
+ * follows (a picture matched to a layer the layout never moves: the map's icons past its box, minimap_beyond.c). */
+void khdays_ui_emit_fixed(int part, const KhdaysUiElement *element);
 /* An image extending beyond its layout box (the KH2 gauge around the portrait). */
 void khdays_ui_emit_extended(int part, const KhdaysUiElement *element, const KhdaysUiElement *box);
 /* An element's current texels resolved through its own engine's palette, or direct RGBA. */

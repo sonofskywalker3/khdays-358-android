@@ -7,6 +7,11 @@
 #include <stdint.h>
 
 #define KHDAYS_LOWER_ROWS_MAX 320 /* the taller picture's rows, in DS dots, at most */
+#ifndef KHDAYS_LOWER_COPY_ROWS
+#define KHDAYS_LOWER_COPY_ROWS 16 /* a band's repeated rows lower_pages.c's plain copies looks at, at most */
+#define KHDAYS_LOWER_COPY_W 256   /* the DS's columns (lower_layout.h KHDAYS_LOWER_DS_W) */
+#define KHDAYS_LOWER_COPY_H 192   /* its rows (KHDAYS_LOWER_DS_H) */
+#endif
 
 typedef struct KhdaysLowerPlace KhdaysLowerPlace;
 struct KhdaysLowerPlace {
@@ -20,7 +25,7 @@ struct KhdaysLowerPlace {
     int16_t rows[3][KHDAYS_LOWER_ROWS_MAX]; /* a row's source in each of up to three column bands, split at
                                                `split` and (when not 0) `split2` */
     int split, split2;
-    int seam; /* a column repeated to widen the picture */
+    int seam;  /* a column repeated to widen the picture */
     int cut;   /* a list's scroll track: the row its added rows go in at */
     int empty; /* a list's extra rows: nothing the game drew, black instead */
     /* a challenge's list: the column its entries' rows repeat, by the row in the sampled DS pixels (0: `seam`) */
@@ -29,7 +34,17 @@ struct KhdaysLowerPlace {
      * composed with layers_off's layers left out; row_count is how many (compose.h KD_LAYERS_OFF) */
     int row0, row_count;
     uint32_t layers_off;
+    int rows_optional; /* laid out without them (row_count 0) until they come, not in the DS's shape */
+    /* the copies of a band's repeated rows (khdays_lower_plain_copies): a repeated row's slot + 1 (0: none), and
+     * each slot's source row + 1 a column at a time (0: the row itself) where the row holds what it seldom does;
+     * drawn so (lower_layout.c), the map itself and the touches it takes back left as the rows are spread */
+    uint8_t copy_slot[3][KHDAYS_LOWER_COPY_H];
+    int16_t copy_from[3][KHDAYS_LOWER_COPY_ROWS][KHDAYS_LOWER_COPY_W];
 };
+
+/* The map of the screens whose rows are spread (lower_pages.c), and whether a point of it is a repeated row's copy. */
+int khdays_lower_map_rows(const KhdaysLowerPlace *p, float ox, float oy, float *sx, float *sy);
+int khdays_lower_row_copy(const KhdaysLowerPlace *p, float ox, float oy);
 
 /* KHDAYS_LOWER_* of the DS's pixels (lower_layout.h khdays_lower_sample). */
 /* A touch `at` (0 to 1) down a list on the display, on its scroll track from DS column ds_x: the row of the game's. */

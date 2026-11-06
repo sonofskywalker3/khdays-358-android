@@ -16,6 +16,7 @@
 #include "../screens/ds_select_pages.h"
 #include "../../ui/composition.h"
 #include "../../ui/text.h"
+#include "../../ui/minimap_beyond.h"
 #include "../screens/movie_pause.h"
 #include "../screens/ui_text.h"
 #include "../screens/shop_screen.h"
@@ -1828,8 +1829,14 @@ static int bottom_make(int w, int h)
     return 1;
 }
 
+/* Presents the port's 2D may miss (its picture then the game thread's) with the lower screen's extra rows still asked
+ * for: the next one it draws composes them, rather than none and the field's map box its edge rows again. */
+#define ROWS_KEPT_PRESENTS 2
+
 static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
 {
+    static int undrawn; /* presents since the port's 2D last drew */
+    int rows_on;
     SDL_GPUTexture *source = (SDL_GPUTexture *)SDL_GetPointerProperty(SDL_GetTextureProperties(lower),
                                                                       SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER, NULL);
     BottomSlot *slot = NULL;
@@ -1843,13 +1850,16 @@ static void send_bottom(SDL_Texture *lower, const SDL_FRect *from)
         return;
     }
     khdays_bottom_set_fullscreen(video.second_screen_aspect == KHDAYS_SECOND_SCREEN_FULLSCREEN);
+    undrawn = port2d_drawn ? 0 : undrawn <= ROWS_KEPT_PRESENTS ? undrawn + 1 : undrawn;
+    rows_on = undrawn <= ROWS_KEPT_PRESENTS;
     {
         /* the rows past the DS's the laid-out screen wants, composed from the next frame on */
         int row0 = 0, count = 0;
         uint32_t off = 0;
         khdays_bottom_wanted_rows(&row0, &count, &off);
-        khdays_gfx_render_set_lower_rows(row0, port2d_drawn ? count : 0, off);
-        khdays_ui_text_lower_rows(port2d_drawn ? count : 0);
+        khdays_gfx_render_set_lower_rows(row0, rows_on ? count : 0, off);
+        khdays_ui_text_lower_rows(rows_on ? count : 0);
+        khdays_minimap_beyond_lower_rows(row0, rows_on ? count : 0, off);
     }
     bottom_show_finished();
     if (port_screen) {

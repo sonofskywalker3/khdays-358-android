@@ -4245,6 +4245,13 @@ FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PlotPageEmblem.c"] = [
         "    extern void khdays_minimap_emblem(int player);\n    khdays_minimap_emblem(nSelf);\n    bMask = data_ov002_0207e400[nSelf];",
     ),
 ]
+# ... and every pixel pair they plot before the page's clipping: what falls past the box, a taller lower screen shows.
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PlotPagePair.c"] = [
+    (
+        "    ctx = data_ov002_0207f638;",
+        "    { extern void khdays_minimap_beyond_pair(int x, int y, int value);\n      khdays_minimap_beyond_pair(nX, nY, nValue); }\n    ctx = data_ov002_0207f638;",
+    ),
+]
 FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_StampCellBlock.c"] = [
     (
         "    for (i = 0; i < 8; i++) {",

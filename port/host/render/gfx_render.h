@@ -101,7 +101,7 @@ int khdays_gfx_render_columns(int engine);
 /* The lower screen's rows from DS row `row0` on, `rows` of them (at most KHDAYS_ROWS_MAX; 0 none),
  * composed for the next frames with `layers_off` left out (compose.h KD_LAYERS_OFF): the rows a taller
  * second display shows past the DS's 192, or under its frame (host/screens/lower_layout.h). */
-#define KHDAYS_ROWS_MAX 64
+#define KHDAYS_ROWS_MAX 128
 void khdays_gfx_render_set_lower_rows(int row0, int rows, uint32_t layers_off);
 
 /* Those rows as the frame drawn last composed them (KHDAYS_FRAME_W x rows at `scale`), or NULL. */
