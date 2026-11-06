@@ -847,6 +847,29 @@ static void mouse_follow(SDL_Window *window)
     }
 }
 
+/* A touch's mouse event while the on-screen controls are shown and the game, not Game Settings, would take it: a
+ * finger that misses a control presses nothing (the left button is a game button), until the game has real touch
+ * support. A touch let through at its press is let through to its release, so nothing stays held. */
+static int touch_misses_controls(const SDL_Event *event)
+{
+    static int let_through; /* the touch now down reached the game at its press */
+    const int down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN, up = event->type == SDL_EVENT_MOUSE_BUTTON_UP;
+    const SDL_MouseID which = event->type == SDL_EVENT_MOUSE_MOTION ? event->motion.which
+                              : down || up                         ? event->button.which
+                                                                   : 0;
+    int blocked;
+    if ((!down && !up && event->type != SDL_EVENT_MOUSE_MOTION) || which != SDL_TOUCH_MOUSEID) {
+        return 0;
+    }
+    blocked = !let_through && khdays_touch_shown() && !khdays_settings_is_open();
+    if (down) {
+        let_through = !blocked;
+    } else if (up) {
+        let_through = 0;
+    }
+    return blocked;
+}
+
 /* Whether this event opens the settings menu (which is closed now). */
 static int opens_settings(const SDL_Event *event, SDL_Renderer *renderer)
 {
@@ -1292,6 +1315,9 @@ static int host_thread(void *unused)
              * movie's pictures above draw it (a picture for each of a mouse's moves left the pause
              * behind the player). */
             continue;
+        }
+        if (touch_misses_controls(&event)) {
+            continue; /* a finger beside the controls presses nothing */
         }
         latency_pressed(&event);
         khdays_devices_handle(&event, renderer); /* keys, mouse, gamepads, focus */

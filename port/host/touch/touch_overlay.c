@@ -715,6 +715,11 @@ static void buzz(void)
 #endif
 }
 
+int khdays_touch_shown(void)
+{
+    return shown && !editing;
+}
+
 int khdays_touch_event(const SDL_Event *event, SDL_Renderer *renderer)
 {
     read_preview();
