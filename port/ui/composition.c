@@ -4,6 +4,7 @@
  * in the file's order and made into the pass's shapes for the picture's
  * width. */
 #include "composition.h"
+#include "hud_layout.h"
 #include "hud_options.h"
 #include "../host/app/files.h"
 #include "../host/render/png_io.h"
@@ -59,6 +60,7 @@ typedef struct Push {
  * HUD's scale and a part that is not (`fixed(N)`). */
 typedef struct ShapeDef {
     Push push;
+    int hud_group;        /* `group <name>`: one more than its KHDAYS_HUD_* (ui/hud_layout.h), 0 none */
     int lower;
     int whole; /* no rectangle: the whole screen */
     float x, y, w, h;
@@ -79,6 +81,7 @@ typedef struct ShapeDef {
 
 typedef struct Shape3dDef {
     Push push;
+    int hud_group;
     int group;
     int hide;
     float x, y, w, h;
@@ -568,6 +571,9 @@ static int read_shape(char **t, int n, ShapeDef *s, const char **why)
             i += 5;
         } else if (strcmp(w, "push") == 0 && read_push(t, n, i, &s->push)) {
             i += 5;
+        } else if (strcmp(w, "group") == 0 && i + 1 < n && khdays_hud_group_named(t[i + 1]) >= 0) {
+            s->hud_group = khdays_hud_group_named(t[i + 1]) + 1;
+            i += 2;
         } else {
             *why = "an effect this version does not know, or its values";
             return 0;
@@ -620,8 +626,11 @@ static int read_shape3d(char **t, int n, Shape3dDef *s, const char **why)
             i += 2;
         } else if (strcmp(t[i], "push") == 0 && read_push(t, n, i, &s->push)) {
             i += 5;
+        } else if (strcmp(t[i], "group") == 0 && i + 1 < n && khdays_hud_group_named(t[i + 1]) >= 0) {
+            s->hud_group = khdays_hud_group_named(t[i + 1]) + 1;
+            i += 2;
         } else {
-            *why = "margin, scale or push";
+            *why = "margin, scale, push or group";
             return 0;
         }
     }
@@ -1648,6 +1657,13 @@ static void build_shape(const ShapeDef *d, int columns, KhdaysShape *out, int ke
     }
     x1 += margin[0] - margin[2] + push_x * f;
     y1 += margin[1] - margin[3] + push_y * f;
+    if (d->hud_group != 0) {
+        float dx, dy;
+        khdays_hud_layout_note(d->hud_group - 1, x1, y1, x1 + width, y1 + height, sx);
+        khdays_hud_layout_offset(d->hud_group - 1, columns, &dx, &dy);
+        x1 += dx;
+        y1 += dy;
+    }
     memset(words, 0, sizeof(out->words));
     words[KO_FLAGS] = d->flags | (d->lower ? KOF_LOWER : 0u);
     put_float(words, KO_SRC_X, d->x);
@@ -1704,6 +1720,12 @@ static void build_shape3d(const Shape3dDef *d, int columns, KhdaysShape3d *out, 
     out->hide = d->hide;
     out->x = x1 + (d->margin[0] - d->margin[2] + push_x) / u;
     out->y = y1 + (d->margin[1] - d->margin[3] + push_y) / u;
+    if (d->hud_group != 0) {
+        float dx, dy;
+        khdays_hud_layout_offset(d->hud_group - 1, columns, &dx, &dy);
+        out->x += dx;
+        out->y += dy;
+    }
     out->scale = d->scale / u;
     out->src_x = d->x;
     out->src_y = d->y;
@@ -1786,6 +1808,7 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
         khdays_composition_load();
     }
     current_columns = columns;
+    khdays_hud_layout_begin();
     for (int s = 0; s < section_count && !stopped; ++s) {
         if (!holds(&sections[s], situation) || !backdrop_there(&sections[s], situation)) {
             continue;
@@ -1938,6 +1961,7 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
     out->shapes3d = shapes3d;
     out->shape3d_count = shape3d_count;
     last_animation = shown;
+    khdays_hud_layout_end();
 }
 
 void khdays_composition_set_hud_size(int size)

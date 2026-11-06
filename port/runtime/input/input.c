@@ -363,20 +363,51 @@ static u16 player_buttons(void)
     /* Lock-on on its own buttons: while the game's lock-on logic takes the buttons (it did last frame),
      * their presses become the DS's R presses for them; anywhere else they are the DS's R and L. */
     const int lock_on = (snapshot.enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) != 0;
+    const int auto_lock = (snapshot.enhancements & KHDAYS_ENH_AUTO_LOCK) != 0;
     /* (with the 3D on both screens it runs on every other frame: the frame before counts too) */
-    const int lock_field = lock_on && pad_samples > 0 && pad_samples - game->selection_frame <= 1u &&
+    const int lock_field = (lock_on || auto_lock) && pad_samples > 0 && pad_samples - game->selection_frame <= 1u &&
                            pad_samples - game->selection_live_frame <= 1u;
-    const uint32_t lock_actions = ((snapshot.actions & KHDAYS_ACTION_LOCK_ON) ? 1u << KHDAYS_LOCK_ON : 0) |
-                                  ((snapshot.actions & KHDAYS_ACTION_TARGET_NEXT) ? 1u << KHDAYS_LOCK_NEXT : 0) |
-                                  ((snapshot.actions & KHDAYS_ACTION_TARGET_PREV) ? 1u << KHDAYS_LOCK_PREV : 0);
+    uint32_t lock_actions = ((snapshot.actions & KHDAYS_ACTION_LOCK_ON) ? 1u << KHDAYS_LOCK_ON : 0) |
+                            ((snapshot.actions & KHDAYS_ACTION_TARGET_NEXT) ? 1u << KHDAYS_LOCK_NEXT : 0) |
+                            ((snapshot.actions & KHDAYS_ACTION_TARGET_PREV) ? 1u << KHDAYS_LOCK_PREV : 0);
     /* An R press counts as a single one for the game once its counter has
      * passed 0x9000 (9 frames) since the last R (Ov022_ReadSelectionInput). */
     const int r_free = game->r_repeat >= 0x9000 && !game->r_pressed;
+    int double_r = 0;
+    /* Lock-on has its own button: a second R inside those 9 frames is dropped until let go, so that R's double press
+     * neither locks on nor lets go. A single R and a held one go on as the DS's. */
+    {
+        static int r_was_down, r_dropped;
+        const int r_down = (buttons & KHDAYS_KEY_R) != 0;
+        if (r_down && !r_was_down && lock_field && !r_free) {
+            if (lock_on) {
+                r_dropped = 1;
+            } else {
+                double_r = 1;
+            }
+        }
+        if (!r_down) {
+            r_dropped = 0;
+        }
+        r_was_down = r_down;
+        if (r_dropped) {
+            buttons &= (u16)~KHDAYS_KEY_R;
+        }
+    }
+    {
+        static KhdaysLockAssist assist;
+        lock_actions |= khdays_lock_assist_frame(&assist, (snapshot.actions & KHDAYS_ACTION_LOCK_BUTTON) != 0, lock_actions,
+                                                 double_r, lock_field, game->lock_active, auto_lock, pad_samples);
+    }
     const u16 lock_buttons =
-        khdays_lock_sequencer_frame(&lock, lock_on ? lock_actions : 0, lock_field, game->lock_active,
+        khdays_lock_sequencer_frame(&lock, lock_on || auto_lock ? lock_actions : 0, lock_field, game->lock_active,
                                     game->lockon_scheme, (u16)(buttons | script_keys), r_free);
     if (lock.let_go) {
         khdays_controls_lock_let_go();
+    }
+    if (game->deck_press_a > 0) {
+        buttons |= KHDAYS_KEY_A;
+        khdays_controls_deck_press_taken();
     }
     return (u16)(buttons | lock_buttons);
 }

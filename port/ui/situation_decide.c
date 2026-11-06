@@ -209,6 +209,10 @@ static uint32_t states_of(const KhdaysSituationInputs *in, int scene)
         } else if (hud_mode != KHDAYS_HUD_NONE) {
             s |= ST(HUD);
         }
+        if (!mission_start_info(in) && in->event_status >= 0 && (in->event_status & 8) == 0 &&
+            ran(in, KHDAYS_UPD_Ov023_SceneRun)) {
+            s |= ST(SCENE);
+        }
         /* a challenge: the story's camp starts its missions with data_0204c240 3 for a challenge
          * (the challenge's thresholds copied, Ov025_MissionList_StartMission; run07 walk from
          * f5359), 1 otherwise; Mission Mode's byte is the session's (Ov008SessionInfo: 3 a

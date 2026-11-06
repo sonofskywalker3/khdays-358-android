@@ -66,6 +66,7 @@ int khdays_lock_action_exists(int action, int lockon_scheme)
 {
     switch (action) {
     case KHDAYS_LOCK_ON:
+    case KHDAYS_LOCK_AUTO:
     case KHDAYS_LOCK_NEXT: return 1;
     case KHDAYS_LOCK_PREV: return lockon_scheme != 0; /* Type A has no previous */
     default: return 0;
@@ -84,10 +85,51 @@ void khdays_lock_sequencer_reset(KhdaysLockSequencer *s)
 static const Sequence *lock_sequence(int action)
 {
     switch (action) {
-    case KHDAYS_LOCK_ON: return &r_twice;
+    case KHDAYS_LOCK_ON:
+    case KHDAYS_LOCK_AUTO: return &r_twice;
     case KHDAYS_LOCK_NEXT: return &r_once;
     default: return &l_once;
     }
+}
+
+uint32_t khdays_lock_assist_frame(KhdaysLockAssist *s, int button, uint32_t actions, int double_r, int field, int locked,
+                                  int auto_lock, uint32_t frame)
+{
+    const uint32_t on = 1u << KHDAYS_LOCK_ON;
+    uint32_t out = 0;
+    if (!field) {
+        s->held = button;
+        s->fired = s->was_locked = s->manual = 0;
+        s->last = 0;
+        return button ? on : 0;
+    }
+    if (button && !s->held) {
+        s->since = frame;
+        s->fired = 0;
+    }
+    if (button && !s->fired && locked && frame - s->since >= KHDAYS_LOCK_HOLD_FRAMES) {
+        out |= on;
+        s->fired = 1;
+    }
+    if (!button && s->held && !s->fired) {
+        out |= locked ? 1u << KHDAYS_LOCK_NEXT : on;
+    }
+    s->held = button;
+    {
+        const uint32_t all = out | actions;
+        if (locked && (((all & on) != 0 && (s->last & on) == 0) || double_r)) {
+            s->manual = 1;
+        }
+        s->last = all;
+    }
+    if (auto_lock && s->was_locked && !locked && !s->manual) {
+        out |= 1u << KHDAYS_LOCK_AUTO;
+    }
+    if (!locked) {
+        s->manual = 0;
+    }
+    s->was_locked = locked;
+    return out;
 }
 
 uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, int field, int locked, int lockon_scheme,
@@ -116,7 +158,7 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
         /* The next one, when the game would take it: switching target needs
          * a target locked (the game does nothing with it otherwise), and R
          * must not come within the game's double-press window. */
-        while (s->queued > 0 && s->queue[0] != KHDAYS_LOCK_ON && !locked) {
+        while (s->queued > 0 && s->queue[0] != KHDAYS_LOCK_ON && (s->queue[0] == KHDAYS_LOCK_AUTO ? locked : !locked)) {
             for (int i = 1; i < s->queued; ++i) {
                 s->queue[i - 1] = s->queue[i];
             }

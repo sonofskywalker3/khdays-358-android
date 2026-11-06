@@ -8,6 +8,7 @@
 #ifdef __ANDROID__
 #include "../android/media_folder.h"
 #endif
+#include "../../ui/layout_editor.h"
 #include "../../runtime/scripts/queue.h"
 #include "../../runtime/scripts/view.h"
 #include "../../runtime/plugins/plugins.h"
@@ -38,6 +39,8 @@ static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT
 static const int antialiasing_values[2] = {1, 2};
 static const char *autosaves[3], *save_files[2];
 static const char *hud_anchors[9], *mission_visibility[2];
+static const char *touch_modes[KHDAYS_TOUCH_MODES], *touch_layouts[3], *touch_styles[KHDAYS_TOUCH_STYLES];
+static char touch_style_names[KHDAYS_TOUCH_STYLES][24];
 static const int hud_anchor_values[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 /* the choices' order on screen: file 99 (the default) first */
 static const int autosave_values[3] = {KHDAYS_AUTOSAVE_FILE99, KHDAYS_AUTOSAVE_PLAYED, KHDAYS_AUTOSAVE_OFF};
@@ -115,6 +118,16 @@ void khdays_model_refresh(const KhdaysProfile *work)
     khdays_ui_set_language(khdays_language_choose(work->language));
     for (int i = 0; i < 9; ++i)
         hud_anchors[i] = khdays_text(TXT_HUD_ANCHOR_0 + i);
+    touch_modes[KHDAYS_TOUCH_OFF] = khdays_text(TXT_TOUCH_OFF);
+    touch_modes[KHDAYS_TOUCH_ON] = khdays_text(TXT_TOUCH_ON);
+    touch_modes[KHDAYS_TOUCH_WITHOUT_PAD] = khdays_text(TXT_TOUCH_WITHOUT_PAD);
+    touch_layouts[0] = khdays_text(TXT_TOUCH_LAYOUT_A);
+    touch_layouts[1] = khdays_text(TXT_TOUCH_LAYOUT_C);
+    touch_layouts[2] = khdays_text(TXT_TOUCH_LAYOUT_CUSTOM);
+    for (int i = 0; i < KHDAYS_TOUCH_STYLES; ++i) {
+        SDL_snprintf(touch_style_names[i], sizeof(touch_style_names[i]), "%s %d", khdays_text(TXT_TOUCH_STYLE_WORD), i + 1);
+        touch_styles[i] = touch_style_names[i];
+    }
     mission_visibility[0] = khdays_text(TXT_HUD_ALWAYS);
     mission_visibility[1] = khdays_text(TXT_HUD_PAUSE_ONLY);
     stick_roles[0] = khdays_text(TXT_NOTHING);
@@ -303,6 +316,33 @@ enum {
     ALL_CELLS = HANDHELD ? PAD_CELLS : (1u << KHDAYS_CELLS) - 1
 };
 
+/* The on-screen controls, on a touch screen. */
+static void build_touch(Builder *b, KhdaysProfile *w)
+{
+    KhdaysRow *r;
+    if (!HANDHELD) {
+        return;
+    }
+    r = add_choice(b, KHDAYS_SET_TOUCH, TXT_TOUCH, &w->touch.mode, touch_modes, KHDAYS_TOUCH_MODES);
+    r->note = khdays_text(TXT_TOUCH_NOTE);
+    r->apply = KHDAYS_APPLY_NOW;
+    r = add_choice(b, KHDAYS_SET_TOUCH_LAYOUT, TXT_TOUCH_LAYOUT, &w->touch.layout, touch_layouts, 3);
+    r->note = khdays_text(TXT_TOUCH_LAYOUT_NOTE);
+    r->apply = KHDAYS_APPLY_NOW;
+    add_number(b, KHDAYS_SET_TOUCH_OPACITY, TXT_TOUCH_OPACITY, &w->touch.opacity, 20, 100, 10)->apply = KHDAYS_APPLY_NOW;
+    add_number(b, KHDAYS_SET_TOUCH_SIZE, TXT_TOUCH_SIZE, &w->touch.size, 60, 160, 10)->apply = KHDAYS_APPLY_NOW;
+    r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_TOUCH_VIBRATION, khdays_text(TXT_TOUCH_VIBRATION));
+    r->value = &w->touch.vibration;
+    r->note = khdays_text(TXT_TOUCH_VIBRATION_NOTE);
+    r->apply = KHDAYS_APPLY_NOW;
+    r = add_choice(b, KHDAYS_SET_TOUCH_STYLE, TXT_TOUCH_STYLE, &w->touch.style, touch_styles, KHDAYS_TOUCH_STYLES);
+    r->note = khdays_text(TXT_TOUCH_STYLE_NOTE);
+    r->apply = KHDAYS_APPLY_NOW;
+    r = add_command(b, KHDAYS_SET_LAYOUT_EDIT, TXT_LAYOUT_EDIT, KHDAYS_CMD_LAYOUT_EDIT);
+    r->note = khdays_text(TXT_LAYOUT_EDIT_NOTE);
+    r->available = b->context->second_display ? w->video.one_screen_second : w->video.one_screen;
+}
+
 static void build_controls(Builder *b, KhdaysProfile *w)
 {
     static const int ds_order[] = {
@@ -310,6 +350,7 @@ static void build_controls(Builder *b, KhdaysProfile *w)
         KHDAYS_ACT_X,  KHDAYS_ACT_Y,    KHDAYS_ACT_L,    KHDAYS_ACT_R,     KHDAYS_ACT_START, KHDAYS_ACT_SELECT,
     };
     const char *pad = b->context->gamepad;
+    build_touch(b, w);
     add(b, KHDAYS_ROW_LINE, KHDAYS_SET_GAMEPAD_NAME, pad != NULL ? pad : khdays_text(TXT_NO_GAMEPAD));
     SDL_snprintf(preset_line, sizeof(preset_line), "%s: %s%s", khdays_text(TXT_GAMEPAD_PRESET),
                  w->preset == KHDAYS_PRESET_KH2 ? "Kingdom Hearts II" : "DS",
@@ -383,6 +424,7 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_AUTO_LOCK, TXT_ENH_AUTO_LOCK, &e->auto_lock, 1, khdays_text(TXT_ENH_AUTO_LOCK_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
                menu_note);
     add_switch(b, KHDAYS_SET_ENH_MOVEMENT, TXT_ENH_MOVEMENT, &e->analog_movement, built(KHDAYS_ENH_ANALOG_MOVEMENT),
@@ -547,6 +589,11 @@ static void build_video(Builder *b, KhdaysProfile *w)
     if (!HANDHELD) { /* Android has Vulkan only */
         add_choice(b, KHDAYS_SET_BACKEND, TXT_VIDEO_BACKEND, &v->backend, backends, KHDAYS_BACKEND_COUNT)->note =
             khdays_text(TXT_VIDEO_BACKEND_NOTE);
+    }
+    if (!HANDHELD) { /* (a handheld has it with its on-screen controls) */
+        r = add_command(b, KHDAYS_SET_LAYOUT_EDIT, TXT_LAYOUT_EDIT, KHDAYS_CMD_LAYOUT_EDIT);
+        r->note = khdays_text(TXT_LAYOUT_EDIT_NOTE);
+        r->available = b->context->graphics_card && (b->context->second_display ? v->one_screen_second : v->one_screen);
     }
     add_command(b, KHDAYS_SET_RESTORE_VIDEO, TXT_RESTORE_VIDEO, KHDAYS_CMD_RESTORE_VIDEO);
 }
@@ -1162,6 +1209,7 @@ void khdays_model_command(KhdaysProfile *work, int command)
     case KHDAYS_CMD_RESTORE_VIDEO: khdays_video_default(&work->video); break;
     case KHDAYS_CMD_RESTORE_SOUND: khdays_sound_default(&work->sound); break;
     case KHDAYS_CMD_RESTORE_BOTH: khdays_profile_default(work); break;
+    case KHDAYS_CMD_LAYOUT_EDIT: khdays_editor_request(); break;
 #ifdef __ANDROID__
     case KHDAYS_CMD_OPEN_SETUP: khdays_media_folder_open_setup(); break;
     case KHDAYS_CMD_FILES_ROM: khdays_media_folder_act("rom"); break;

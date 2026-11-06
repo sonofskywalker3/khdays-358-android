@@ -316,3 +316,23 @@ Every added dependency must be recorded here with:
 - whether it is linked, embedded, modified, or used only as a build tool.
 
 Do not copy code from a repository merely because it is publicly visible. Confirm license compatibility before importing or adapting it.
+
+## Cemu's Android input overlay (the on-screen controls)
+
+Project: Cemu (Android fork), a Wii U emulator (<https://github.com/SSimco/Cemu>)
+
+Source: `src/android/app/src/main/java/info/cemu/cemu/emulation/inputoverlay`, as of commit `8759323`
+
+License: **Mozilla Public License 2.0** (`android/src/main/java/com/sonofskywalker3/khdays358/touch/LICENSE-MPL-2.0.txt`),
+applying to the files in that folder that carry its notice: `Input.kt`, `ImageButton.kt`, `Joystick.kt`, `DPad.kt` and
+`TouchOverlayView.kt`. They are ported and changed, and their source is published here; each says what changed.
+
+## Kenney's Mobile Controls (the on-screen controls' art)
+
+Project: Mobile Controls 1.0, by Kenney (<https://kenney.nl/assets/mobile-controls>)
+
+License: **Creative Commons Zero (CC0 1.0)**, as the pack's `License.txt` states
+(`android/src/main/assets/touch/Kenney-License.txt`); crediting Kenney is not required, and is done here and on the
+Controls page's style setting.
+
+Usage: its eight styles' large sprites, its highlights and its icons, in `android/src/main/assets/touch`, as they are.

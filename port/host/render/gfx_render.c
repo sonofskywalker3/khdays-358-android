@@ -9,12 +9,12 @@
 #include "../../runtime/display/frame_package.h"
 #include "generated/capture_cs.h"
 #include "generated/compose2d_cs.h"
-#include "generated/layers2d_cs.h"
 #if defined(__ANDROID__)
 #include "generated/compose2d_plain_cs.h"
 #include "generated/compose2d_split_cs.h"
 #include "generated/compose2d_wide_cs.h"
 #endif
+#include "generated/layers2d_cs.h"
 #include "generated/onescreen_cs.h"
 #include "generated/shrink_cs.h"
 #include "../../gfx/onescreen.h"

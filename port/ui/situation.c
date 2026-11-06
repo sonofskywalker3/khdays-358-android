@@ -13,6 +13,7 @@ static const char *const state_names[KHDAYS_STATES] = {
     "hud",      "dialog",  "challenge",   "info-upper",        "info-lower",
     "lower-3d", "party-4", "info-new",    "mission-panel",     "title-lit",
     "event",    "holo",    "lower-shown", "mission-panel-mod", "information-mod",
+    "scene",
 };
 
 const char *khdays_situation_name(int scene)

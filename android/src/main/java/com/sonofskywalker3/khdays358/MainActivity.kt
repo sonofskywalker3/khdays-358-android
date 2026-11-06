@@ -8,8 +8,11 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
+import android.view.ViewGroup
 import android.view.WindowManager
 import com.sonofskywalker3.khdays358.setup.MediaFolder
+import com.sonofskywalker3.khdays358.touch.TouchOverlay
+import com.sonofskywalker3.khdays358.touch.TouchOverlayView
 import org.libsdl.app.SDLActivity
 import org.libsdl.app.SDLSurface
 import java.io.File
@@ -43,6 +46,11 @@ class MainActivity : SDLActivity() {
         }
         preferFastestDisplayMode()
         bottomScreen = BottomScreenHost(this)
+        // the on-screen controls over the game's surface: hidden until the game says what to show
+        TouchOverlayView(this).let {
+            TouchOverlay.view = it
+            mLayout.addView(it, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
     }
 
     // The lower screen goes with the game: Home (or another app over it) takes it away, coming back
@@ -65,6 +73,7 @@ class MainActivity : SDLActivity() {
 
     override fun onDestroy() {
         bottomScreen = null
+        TouchOverlay.view = null
         super.onDestroy()
     }
 

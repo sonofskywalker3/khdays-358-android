@@ -41,6 +41,10 @@ int khdays_settings_is_open(void);
  * since it opened, and khdays_settings_profile() gives it. */
 int khdays_settings_handle(const SDL_Event *event, SDL_Window *window);
 
+/* Closes the menu as going back out of it does (the layout editor takes over from it); 0 when it has something
+ * to ask first (an action left unbound) and stays open. */
+int khdays_settings_close(void);
+
 /* Lets time pass (for repeating a held direction, and for the time limit
  * when waiting for a key or button). */
 void khdays_settings_tick(void);
@@ -114,6 +118,12 @@ int khdays_settings_place(int what, int index, SDL_FRect *out);
  * last row. */
 void khdays_settings_focus(int *section, int *in_rows, int *row, int *cell);
 int khdays_settings_row_info(int row, int *id, int *action);
+
+/* An on-screen control's action (KHDAYS_ACT_*) pressed or let go, as the button on a gamepad that does it here. */
+void khdays_settings_view_button(int action, int down);
+
+/* The on-screen gear over the settings: a step back, as the system's Back. */
+void khdays_settings_view_back(void);
 
 /* For the tests: the gamepad family the Controls section shows (KhdaysPadFamily). */
 int khdays_settings_pad_family(void);

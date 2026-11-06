@@ -149,6 +149,9 @@ void khdays_profile_default(KhdaysProfile *p)
     };
     memset(p, 0, sizeof(*p));
     p->version = 1;
+#if defined(__ANDROID__)
+    p->enh.analog_movement = 1; /* a touch stick or a handheld's: 8 directions feel like a D-pad */
+#endif
     p->preset = KHDAYS_PRESET_DS;
     empty(p);
 
@@ -207,6 +210,7 @@ void khdays_profile_default(KhdaysProfile *p)
     p->enh.mouse_speed = 100;
     p->enh.run_threshold = 75;
     p->enh.walk_speed = 50;
+    khdays_touch_default(&p->touch);
     khdays_video_default(&p->video);
     khdays_sound_default(&p->sound);
     khdays_network_default(&p->network);
@@ -436,6 +440,12 @@ int khdays_profile_repair(KhdaysProfile *p)
             ++changed;
         }
         changed += clamp(&p->video.hud_size, 1, 8);
+        changed += clamp(&p->touch.mode, 0, KHDAYS_TOUCH_MODES - 1);
+        changed += clamp(&p->touch.layout, 0, 2);
+        changed += clamp(&p->touch.opacity, 20, 100);
+        changed += clamp(&p->touch.size, 60, 160);
+        changed += clamp(&p->touch.vibration, 0, 1);
+        changed += clamp(&p->touch.style, 0, KHDAYS_TOUCH_STYLES - 1);
         changed += clamp(&p->video.menu_size, 1, KHDAYS_MENU_SIZE_MAX);
         changed += clamp(&p->video.subtitle_size, 1, KHDAYS_SUBTITLE_SIZE_MAX);
         changed += clamp(&p->video.display, 0, KHDAYS_DISPLAY_COUNT - 1);
@@ -526,6 +536,9 @@ unsigned khdays_profile_apply_preset(KhdaysProfile *p, int preset, unsigned avai
         p->stick[1].role = defaults.stick[1].role;
         p->enh.analog_camera = p->enh.separate_lock_on = 0;
         p->enh.dpad_command_menu = p->enh.analog_movement = 0;
+#if defined(__ANDROID__)
+        p->enh.analog_movement = 1; /* the default there */
+#endif
         preset = KHDAYS_PRESET_DS;
     }
     p->preset = preset;
@@ -707,6 +720,8 @@ enum Section {
     SEC_SAVE,
     SEC_GAMEPLAY,
     SEC_MODS,
+    SEC_TOUCH,
+    SEC_HUD_LAYOUT,
     SEC_UNKNOWN
 };
 
@@ -760,6 +775,10 @@ static void enter_section(Reader *r, const char *name)
         r->section = SEC_GAMEPLAY;
     } else if (SDL_strcasecmp(name, "mods") == 0) {
         r->section = SEC_MODS;
+    } else if (SDL_strcasecmp(name, "touch") == 0) {
+        r->section = SEC_TOUCH;
+    } else if (SDL_strcasecmp(name, "hud_layout") == 0) {
+        r->section = SEC_HUD_LAYOUT;
     } else {
         r->section = SEC_UNKNOWN;
         say_kept(r->notice, "settings: section [%s] is not understood by this version; kept as it is", name);
@@ -926,6 +945,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"mouse_camera", offsetof(KhdaysEnhancements, mouse_camera), 0, 0},
         {"mouse_speed", offsetof(KhdaysEnhancements, mouse_speed), 10, 300},
         {"separate_lock_on", offsetof(KhdaysEnhancements, separate_lock_on), 0, 0},
+        {"auto_lock", offsetof(KhdaysEnhancements, auto_lock), 0, 0},
         {"dpad_command_menu", offsetof(KhdaysEnhancements, dpad_command_menu), 0, 0},
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
         {"run_threshold", offsetof(KhdaysEnhancements, run_threshold), 50, 95},
@@ -1342,6 +1362,98 @@ static void read_mods(Reader *r, const char *key, const char *value, const char 
     }
 }
 
+/* The controls' names in [touch], as host/touch/touch_layout.h has them in order. */
+static const char *const touch_control_names[KHDAYS_TOUCH_CONTROLS_KEPT] = {
+    "control_stick", "control_dpad", "control_l",     "control_r",   "control_face",
+    "control_lock",  "control_select", "control_start", "control_gear"};
+static const char *const place_sides_x[3] = {"left", "middle", "right"};
+static const char *const place_sides_y[3] = {"top", "middle", "bottom"};
+
+/* A place as the file writes it: `<left|middle|right> <top|bottom> <x> <y>`, a control's then its own `<w> <h>`. Left
+ * unset when it is not one. */
+static void read_place(const char *value, KhdaysHudPlace *p)
+{
+    char sx[16], sy[16];
+    float x, y, w = 0.0f, h = 0.0f;
+    if (SDL_sscanf(value, "%15s %15s %f %f %f %f", sx, sy, &x, &y, &w, &h) < 4) {
+        return;
+    }
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            if (SDL_strcasecmp(sx, place_sides_x[a]) == 0 && SDL_strcasecmp(sy, place_sides_y[b]) == 0) {
+                p->set = 1;
+                p->side_x = a;
+                p->side_y = b;
+                p->x = x;
+                p->y = y;
+                p->w = w;
+                p->h = h;
+            }
+        }
+    }
+}
+
+void khdays_touch_default(KhdaysTouch *t)
+{
+    t->mode = KHDAYS_TOUCH_WITHOUT_PAD;
+    t->layout = 1; /* C */
+    t->opacity = 60;
+    t->size = 100;
+    t->vibration = 1;
+    t->style = 0;
+}
+
+/* [touch]: the on-screen controls. A value not understood leaves the default. */
+static void read_touch(Reader *r, const char *key, const char *value, const char *line)
+{
+    static const char *const modes[KHDAYS_TOUCH_MODES] = {"off", "on", "without-controller"};
+    static const char *const layouts[] = {"a", "c", "custom"};
+    KhdaysTouch *t = &r->profile->touch;
+    char *end = NULL;
+    const long n = SDL_strtol(value, &end, 10);
+    if (SDL_strcasecmp(key, "mode") == 0) {
+        for (int i = 0; i < KHDAYS_TOUCH_MODES; ++i) {
+            t->mode = SDL_strcasecmp(value, modes[i]) == 0 ? i : t->mode;
+        }
+    } else if (SDL_strcasecmp(key, "layout") == 0) {
+        for (int i = 0; i < 3; ++i) {
+            t->layout = SDL_strcasecmp(value, layouts[i]) == 0 ? i : t->layout;
+        }
+    } else if (SDL_strcasecmp(key, "opacity") == 0) {
+        t->opacity = end != value && *end == '\0' ? (int)n : t->opacity;
+    } else if (SDL_strcasecmp(key, "size") == 0) {
+        t->size = end != value && *end == '\0' ? (int)n : t->size;
+    } else if (SDL_strcasecmp(key, "vibration") == 0) {
+        t->vibration = SDL_strcasecmp(value, "on") == 0;
+    } else if (SDL_strcasecmp(key, "style") == 0) {
+        t->style = end != value && *end == '\0' ? (int)n - 1 : t->style;
+    } else {
+        for (int i = 0; i < KHDAYS_TOUCH_CONTROLS_KEPT; ++i) {
+            if (SDL_strcasecmp(key, touch_control_names[i]) == 0) {
+                read_place(value, &t->control[i]);
+                return;
+            }
+        }
+        say(r->notice, "settings: [touch] has no setting \"%s\"; kept as it is", key);
+        keep_unknown("touch", line);
+    }
+}
+
+/* [hud_layout]: custom and each group's place. */
+static void read_hud_layout(Reader *r, const char *key, const char *value, const char *line)
+{
+    KhdaysHudLayoutSettings *h = &r->profile->hud_layout;
+    const int group = khdays_hud_group_named(key);
+    if (SDL_strcasecmp(key, "custom") == 0) {
+        h->custom = SDL_strcasecmp(value, "on") == 0;
+    } else if (group >= 0) {
+        read_place(value, &h->place[group]);
+    } else {
+        say(r->notice, "settings: [hud_layout] has no setting \"%s\"; kept as it is", key);
+        keep_unknown("hud_layout", line);
+    }
+}
+
 /* [gameplay]: stop_magic. */
 static void read_gameplay(Reader *r, const char *key, const char *value, const char *line)
 {
@@ -1447,6 +1559,8 @@ static int read_text(Reader *r, char *text, size_t size)
         case SEC_SAVE: read_save(r, key, value, original); break;
         case SEC_GAMEPLAY: read_gameplay(r, key, value, original); break;
         case SEC_MODS: read_mods(r, key, value, original); break;
+        case SEC_TOUCH: read_touch(r, key, value, original); break;
+        case SEC_HUD_LAYOUT: read_hud_layout(r, key, value, original); break;
         case SEC_UNKNOWN: keep_unknown(r->section_name, original); break;
         }
         SDL_free(original);
@@ -1631,6 +1745,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         e->camera_invert_y ? "on" : "off");
     add(&t, "mouse_camera = %s\nmouse_speed = %d\n", e->mouse_camera ? "on" : "off", e->mouse_speed);
     add(&t, "separate_lock_on = %s\n", e->separate_lock_on ? "on" : "off");
+    add(&t, "auto_lock = %s\n", e->auto_lock ? "on" : "off");
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
         e->run_threshold, e->walk_speed);
@@ -1783,11 +1898,53 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         "native_code = %s\n",
         p->mods.native_code ? "on" : "off");
     add_unknown(&t, "mods");
+    {
+        static const char *const modes[KHDAYS_TOUCH_MODES] = {"off", "on", "without-controller"};
+        static const char *const layouts[] = {"a", "c", "custom"};
+        add(&t,
+            "\n[touch]\n"
+            "# the on-screen controls, on a touch screen with one picture\n"
+            "# mode: off, on, or without-controller (hidden while a controller is played)\n"
+            "mode = %s\n"
+            "# layout: a (the HUD raised), c (the HUD along the bottom, moved inward) or custom\n"
+            "layout = %s\n"
+            "# opacity: percent, 20 to 100\n"
+            "opacity = %d\n"
+            "# size: percent of the default size, 60 to 160\n"
+            "size = %d\n"
+            "# vibration: a short buzz at a press\n"
+            "vibration = %s\n"
+            "# style: the buttons' look, 1 to 8\n"
+            "style = %d\n",
+            modes[p->touch.mode], layouts[p->touch.layout], p->touch.opacity, p->touch.size,
+            p->touch.vibration ? "on" : "off", p->touch.style + 1);
+        for (int i = 0; i < KHDAYS_TOUCH_CONTROLS_KEPT; ++i) {
+            const KhdaysHudPlace *c = &p->touch.control[i];
+            if (c->set) {
+                add(&t, "%s = %s %s %.2f %.2f %.2f %.2f\n", touch_control_names[i], place_sides_x[c->side_x],
+                    place_sides_y[c->side_y], (double)c->x, (double)c->y, (double)c->w, (double)c->h);
+            }
+        }
+    }
+    add_unknown(&t, "touch");
+    add(&t,
+        "\n[hud_layout]\n"
+        "# the HUD's groups on one screen where you put them (the layout editor)\n"
+        "custom = %s\n",
+        p->hud_layout.custom ? "on" : "off");
+    for (int g = 0; g < KHDAYS_HUD_GROUPS; ++g) {
+        const KhdaysHudPlace *h = &p->hud_layout.place[g];
+        if (h->set) {
+            add(&t, "%s = %s %s %.2f %.2f\n", khdays_hud_group_name(g), place_sides_x[h->side_x], place_sides_y[h->side_y],
+                (double)h->x, (double)h->y);
+        }
+    }
+    add_unknown(&t, "hud_layout");
     for (int i = 0; i < unknown_count; ++i) {
         /* whole sections this version does not know, written back as they were */
         const char *s = unknown[i].section;
         if (*s == '\0' || SDL_strcasecmp(s, "sticks") == 0 || SDL_strcasecmp(s, "enhancements") == 0 ||
-            SDL_strcasecmp(s, "video") == 0 || SDL_strcasecmp(s, "sound") == 0 || SDL_strcasecmp(s, "network") == 0 ||
+            SDL_strcasecmp(s, "touch") == 0 || SDL_strcasecmp(s, "hud_layout") == 0 || SDL_strcasecmp(s, "video") == 0 || SDL_strcasecmp(s, "sound") == 0 || SDL_strcasecmp(s, "network") == 0 ||
             SDL_strcasecmp(s, "save") == 0 || SDL_strcasecmp(s, "gameplay") == 0 || SDL_strcasecmp(s, "mods") == 0 ||
             SDL_strncasecmp(s, "keyboard", 8) == 0 || SDL_strncasecmp(s, "gamepad", 7) == 0) {
             continue;

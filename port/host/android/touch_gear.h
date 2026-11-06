@@ -18,6 +18,9 @@ void khdays_touch_gear_draw(SDL_Renderer *renderer);
  * window's pixel density). */
 int khdays_touch_gear_at(float x, float y);
 
+/* The gear's shape alone, for the on-screen controls (host/touch/touch_overlay.h). */
+void khdays_touch_gear_shape(SDL_Renderer *renderer, float cx, float cy, float r, SDL_FColor colour);
+
 #ifdef __cplusplus
 }
 #endif

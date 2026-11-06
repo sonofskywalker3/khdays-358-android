@@ -36,6 +36,7 @@ namespace {
 constexpr Uint64 kCaptureMs = 5000;         // how long a new binding waits for its key or button
 constexpr Uint64 kRepeatDelayMs = 400;      // a held gamepad direction starts repeating after this,
 constexpr Uint64 kRepeatEveryMs = 100;      // and then repeats this often
+constexpr SDL_JoystickID kViewPad = 0;      // the on-screen controls' presses: no gamepad has this id
 constexpr int kQuit = KHDAYS_SECTION_COUNT; // the column's last entry, Quit the game (B or Escape close the menu)
 #if defined(__ANDROID__)
 constexpr bool kWrap = true; // a handheld: up from the first entry or row goes to the last, and down back round
@@ -2107,7 +2108,7 @@ int intent_of(const SDL_Event *e)
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
         const SDL_GamepadButton button = (SDL_GamepadButton)e->gbutton.button;
         const int input = pad_input_of_button(button);
-        if (input >= 0 && is_open_settings_input(input)) {
+        if (e->gbutton.which != kViewPad && input >= 0 && is_open_settings_input(input)) {
             return INTENT_BACK;
         }
         switch (face_of(button)) {
@@ -2197,6 +2198,11 @@ int khdays_settings_take_update_answer(void)
     const int answer = m.update_answer;
     m.update_answer = -1;
     return answer;
+}
+
+int khdays_settings_close(void)
+{
+    return try_close(false) ? 1 : 0;
 }
 
 int khdays_settings_is_open(void)
@@ -2325,7 +2331,7 @@ int handle_event(const SDL_Event *e, SDL_Window *window)
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
         const SDL_GamepadButton button = (SDL_GamepadButton)e->gbutton.button;
         const int input = pad_input_of_button(button);
-        if (input >= 0 && is_open_settings_input(input)) {
+        if (e->gbutton.which != kViewPad && input >= 0 && is_open_settings_input(input)) {
             closed = try_close(false);
             break;
         }
@@ -2703,6 +2709,58 @@ void khdays_settings_focus(int *section, int *in_rows, int *row, int *cell)
     *in_rows = m.in_rows;
     *row = m.row;
     *cell = m.cell;
+}
+
+void khdays_settings_view_button(int action, int down)
+{
+    int button = SDL_GAMEPAD_BUTTON_INVALID;
+    int face = -1;
+    if (m.mode == MODE_CAPTURE) {
+        // waiting for a real key or button to bind: B cancels, and nothing else here is one
+        if (action == KHDAYS_ACT_B && down) {
+            m.mode = MODE_BROWSE;
+        }
+        m.held_dir = 0;
+        return;
+    }
+    switch (action) {
+    case KHDAYS_ACT_UP: button = SDL_GAMEPAD_BUTTON_DPAD_UP; break;
+    case KHDAYS_ACT_DOWN: button = SDL_GAMEPAD_BUTTON_DPAD_DOWN; break;
+    case KHDAYS_ACT_LEFT: button = SDL_GAMEPAD_BUTTON_DPAD_LEFT; break;
+    case KHDAYS_ACT_RIGHT: button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT; break;
+    case KHDAYS_ACT_L: button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER; break;
+    case KHDAYS_ACT_R: button = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER; break;
+    case KHDAYS_ACT_A: face = FACE_ACCEPT; break;
+    case KHDAYS_ACT_B: face = FACE_BACK; break;
+    case KHDAYS_ACT_Y: face = FACE_CLEAR; break;
+    default: return;
+    }
+    for (int b = 0; face >= 0 && b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        if (face_of((SDL_GamepadButton)b) == face) {
+            button = b;
+            break;
+        }
+    }
+    if (button != SDL_GAMEPAD_BUTTON_INVALID) {
+        SDL_Event event;
+        SDL_zero(event);
+        event.type = down ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : SDL_EVENT_GAMEPAD_BUTTON_UP;
+        event.gbutton.which = kViewPad;
+        event.gbutton.button = (Uint8)button;
+        event.gbutton.down = down != 0;
+        SDL_PushEvent(&event);
+    }
+}
+
+void khdays_settings_view_back(void)
+{
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = SDL_EVENT_KEY_DOWN;
+    event.key.scancode = SDL_SCANCODE_ESCAPE;
+    event.key.key = SDLK_ESCAPE;
+    event.key.down = true;
+    SDL_PushEvent(&event);
 }
 
 int khdays_settings_pad_family(void)

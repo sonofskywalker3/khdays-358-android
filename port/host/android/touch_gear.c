@@ -69,6 +69,11 @@ static void gear(SDL_Renderer *renderer, float cx, float cy, float r, SDL_FColor
     SDL_RenderGeometry(renderer, NULL, v, STEPS * 2, indices, STEPS * 6);
 }
 
+void khdays_touch_gear_shape(SDL_Renderer *renderer, float cx, float cy, float r, SDL_FColor colour)
+{
+    gear(renderer, cx, cy, r, colour);
+}
+
 void khdays_touch_gear_draw(SDL_Renderer *renderer)
 {
     SDL_RendererLogicalPresentation mode;

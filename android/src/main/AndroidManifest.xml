@@ -23,6 +23,8 @@
 
     <!-- The update check and download (Updates.kt), and the update handed to Android's installer -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The on-screen controls' short buzz at a press (Settings > Controls turns it off) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- The game's data, mods and saves live in the app's own folder on the shared storage

@@ -17,9 +17,13 @@ typedef struct KhdaysGameControls {
     int r_pressed;            /* R was newly pressed that frame */
     int command_scheme;       /* the game's Config option 6 (0x37c6) */
     u32 command_input_frame;  /* the last frame the player had field control, no HUD panel open */
+    int deck_press_a;         /* game frames A is to be held for a tap on the on-screen deck's selected row */
 } KhdaysGameControls;
 
 const KhdaysGameControls *khdays_controls_state(void);
+
+/* A game frame of the on-screen deck's A went by. */
+void khdays_controls_deck_press_taken(void);
 
 /* The lock-on's own button is letting go of the target: the game takes the coming R as its double press. */
 void khdays_controls_lock_let_go(void);

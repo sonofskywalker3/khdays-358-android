@@ -73,6 +73,7 @@ enum {
     KHDAYS_ACTION_MENU_DOWN = 1 << 4,
     KHDAYS_ACTION_MENU_LEFT = 1 << 5,
     KHDAYS_ACTION_MENU_RIGHT = 1 << 6,
+    KHDAYS_ACTION_LOCK_BUTTON = 1 << 16, /* no binding's: the on-screen button, tap and hold (sequencers.h) */
 };
 
 /* The optional enhancements that are switched on (KhdaysInputSnapshot.enhancements). */
@@ -85,6 +86,7 @@ enum {
     KHDAYS_ENH_CHASE_FREE = 1 << 5,       /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
     KHDAYS_ENH_KH2_CAMERA = 1 << 6,       /* the field camera moves as KH2's (runtime/camera/kh2_camera.c) */
     KHDAYS_ENH_KH2_FIRST_PERSON = 1 << 7, /* with it, Select is KH2's first person view */
+    KHDAYS_ENH_AUTO_LOCK = 1 << 8,        /* a lock lost by anything but letting it go locks on again */
 };
 
 /* Everything the game needs to know about the player's input at one moment.
@@ -114,6 +116,8 @@ typedef struct KhdaysInputSnapshot {
     int16_t sticks[2][2];      /* the pad's two sticks as they are, [left, right][x, y] in SDL's range (y grows
                                   downwards), whatever their roles: the Enemy Profiles' model viewer turns and
                                   zooms with them (runtime/menus/enemy_viewer.c); 0 without a pad */
+    uint8_t deck_tap_row;      /* the on-screen controls: the command deck's row tapped last */
+    uint8_t deck_tap_serial;   /* ... and how many taps, so the game takes each once */
 } KhdaysInputSnapshot;
 
 /* The latest snapshot, for the game's own read of the pad once a game frame: a button pressed and let

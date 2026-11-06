@@ -247,10 +247,13 @@ of the game:
   go, so switching quickly on the DS drops the lock: here the next target
   waits for that window instead, and a quick series of switches keeps the
   lock. On the DS a single R press also resets the camera and a long one
-  switches the chase cam; the DS's R stays available for those. Out of the
+  switches the chase cam; the DS's R stays available for those, but R pressed
+  twice quickly no longer locks on or lets go. Out of the
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Auto lock-on:** when your target is defeated, the next enemy is locked on
+  automatically. Off by default.
 - **Chase Camera: Free:** on the camp's Config page drawn on one screen,
   Chase Camera has a third value after the game's Auto and Manual. Free is
   the game's Manual, except that walking no longer pulls the camera's tilt
@@ -279,6 +282,12 @@ on L1, lock-on on R1, the next target on R2, the camera's reset on R3 (the
 DS's R), the command menu on the D-pad, the camera on the right stick and
 SELECT on View / the touch pad, and switches on the enhancements it uses.
 The keyboard is not changed.
+
+### On-screen controls (Android)
+
+On a touch screen with one picture, buttons show over the game. Settings -> Controls chooses Layout 1, Layout 2 or Custom, the buttons' style (eight), their opacity, size and vibration. **Move the HUD...** drags the HUD's pieces and the buttons, and **Resize buttons** makes a drag change a button's size instead.
+
+The buttons' art is Kenney's [Mobile Controls](https://kenney.nl/assets/mobile-controls) (CC0), and their code is based on [Cemu Android's](https://github.com/SSimco/Cemu) input overlay (MPL 2.0); see `THIRD_PARTY_NOTICES.md`.
 
 ## Picture
 

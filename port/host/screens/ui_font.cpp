@@ -132,6 +132,29 @@ extern "C" SDL_Texture *khdays_ui_font_text(SDL_Renderer *renderer, const char *
     return texture;
 }
 
+extern "C" Uint32 *khdays_ui_font_pixels(const char *utf8, int *width, int *height)
+{
+    if (!g_font || utf8 == nullptr) {
+        return nullptr;
+    }
+    const auto image = khdays::assets::render_text(*g_font, to_utf16(utf8));
+    if (image.width <= 0 || image.height <= 0) {
+        return nullptr;
+    }
+    const size_t count = static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+    auto *pixels = static_cast<Uint32 *>(SDL_malloc(count * sizeof(Uint32)));
+    if (pixels == nullptr) {
+        return nullptr;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        const unsigned char *p = &image.rgba[i * 4];
+        pixels[i] = (static_cast<Uint32>(p[3]) << 24) | (static_cast<Uint32>(p[0]) << 16) | (static_cast<Uint32>(p[1]) << 8) | p[2];
+    }
+    *width = image.width;
+    *height = image.height;
+    return pixels;
+}
+
 extern "C" void khdays_ui_font_forget(void)
 {
     for (auto &[text, cached] : g_cache) {

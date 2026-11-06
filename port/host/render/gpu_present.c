@@ -449,7 +449,7 @@ static int columns_now(void)
     case KHDAYS_ASPECT_16_10: return 308;
     case KHDAYS_ASPECT_WINDOW:
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
-        /* the window's width at the picture's height: 384 lines for two screens, 192 for one */
+        /* the window's width at the picture's height: 384 lines for two screens in it, 192 for one or a display of its own */
 #if defined(__ANDROID__)
         n = ph > 0 ? (int)((double)pw * (video.one_screen || two_displays ? H : 2 * H) / ph) & ~1 : W;
 #else
@@ -1224,6 +1224,13 @@ int khdays_present_settling(void)
     return latest != NULL && video.one_screen && khdays_onescreen_settling(latest);
 }
 
+void khdays_present_refresh_now(void)
+{
+    if (latest != NULL) {
+        present(latest, 0);
+    }
+}
+
 int khdays_present_refresh_settling(void)
 {
     static uint32_t refreshed_at;
@@ -1331,6 +1338,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         one_drawn = 0;
         backdrop_moving = 0;
         khdays_shop_screen_wanted(video.one_screen); /* the shop's moogle turned to its menu on one screen */
+        khdays_onescreen_note_pause(p); /* the touch controls answer a movie's pause in any layout */
         if (video.one_screen) {
             /* One screen: first the situation and its composition. A picture of the upper or lower screen is
              * made by the one-screen pass, as wide as the 3D list; "side by side" and "stacked" show the two
