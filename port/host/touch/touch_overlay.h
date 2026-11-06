@@ -29,9 +29,6 @@ int khdays_touch_view_event(const SDL_Event *event);
 void khdays_touch_edit_resizing(int resizing);
 int khdays_touch_edit_can_resize(void);
 
-/* Whether the controls are on the screen now: a touch then never reaches the game as the DS's stylus. */
-int khdays_touch_shown(void);
-
 /* 1 once after the controls' gear was tapped. */
 int khdays_touch_take_settings(void);
 

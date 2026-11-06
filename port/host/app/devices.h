@@ -59,6 +59,9 @@ SDL_Gamepad *khdays_devices_gamepad(void);
  * mouse last were (for the prompts the picture shows). */
 int khdays_devices_pad_in_use(void);
 
+/* The screen was touched (a touch the game is not given): the pad is no longer what is used. */
+void khdays_devices_screen_touched(void);
+
 /* The SDL button behind one of our positional inputs, or
  * SDL_GAMEPAD_BUTTON_INVALID (the triggers are axes). */
 SDL_GamepadButton khdays_devices_sdl_button(int input);

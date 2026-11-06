@@ -395,6 +395,11 @@ int khdays_devices_pad_in_use(void)
     return pad_in_use && khdays_devices_gamepad() != NULL;
 }
 
+void khdays_devices_screen_touched(void)
+{
+    pad_in_use = 0;
+}
+
 static void pad_button(SDL_JoystickID id, SDL_GamepadButton button, int down)
 {
     const int i = find_pad(id);

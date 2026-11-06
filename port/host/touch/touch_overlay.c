@@ -47,7 +47,6 @@ static int layout_now = -1;
 static int hud_published;
 static int editing;           /* the layout editor has the places */
 static int shown;             /* the controls are on the screen */
-static int touched_last;      /* the screen touched since the gamepad was last used */
 static int mouse_is_ours;     /* the touch's mouse press went to the controls: so do its motion and release */
 static uint16_t last_buttons; /* for the vibration */
 static SDL_Haptic *haptic;
@@ -178,10 +177,8 @@ static int wanted(void)
     if (p->touch.mode == KHDAYS_TOUCH_OFF || !khdays_touch_needs_window(khdays_present_one_picture(), khdays_bottom_attached())) {
         return 0;
     }
-    if (p->touch.mode == KHDAYS_TOUCH_WITHOUT_PAD && khdays_devices_gamepad() != NULL &&
-        (khdays_devices_pad_in_use() || !touched_last)) {
-        touched_last = 0;
-        return 0;
+    if (p->touch.mode == KHDAYS_TOUCH_WITHOUT_PAD && khdays_devices_gamepad() != NULL) {
+        return 0; /* a controller is connected (a handheld's own among them): its buttons play */
     }
     return 1;
 #else
@@ -650,7 +647,6 @@ int khdays_touch_view_event(const SDL_Event *event)
         view_held.stick_held = e.stick_held;
         view_held.stick_x = e.stick_x;
         view_held.stick_y = e.stick_y;
-        touched_last = 1; /* the controls stay while the screen is what is played */
         khdays_devices_resend();
     } else if (e.kind == KHDAYS_TOUCH_BRIDGE_GEAR) {
         input.settings = 1;
@@ -715,11 +711,6 @@ static void buzz(void)
 #endif
 }
 
-int khdays_touch_shown(void)
-{
-    return shown && !editing;
-}
-
 int khdays_touch_event(const SDL_Event *event, SDL_Renderer *renderer)
 {
     read_preview();
@@ -728,8 +719,6 @@ int khdays_touch_event(const SDL_Event *event, SDL_Renderer *renderer)
     }
     switch (event->type) {
     case SDL_EVENT_FINGER_DOWN:
-        touched_last = 1; /* the controls come back at the first touch since the gamepad */
-        /* fall through */
     case SDL_EVENT_FINGER_MOTION:
     case SDL_EVENT_FINGER_UP:
     case SDL_EVENT_FINGER_CANCELED:

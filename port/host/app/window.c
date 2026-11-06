@@ -847,27 +847,24 @@ static void mouse_follow(SDL_Window *window)
     }
 }
 
-/* A touch's mouse event while the on-screen controls are shown and the game, not Game Settings, would take it: a
- * finger that misses a control presses nothing (the left button is a game button), until the game has real touch
- * support. A touch let through at its press is let through to its release, so nothing stays held. */
+/* A touch's press or motion the game, not Game Settings, would take (Android): the left button is a game button, so
+ * a finger anywhere on the picture would press it. The game takes no touches until it has real touch support; the
+ * controls, the gear and the pause's buttons take theirs before this. Releases always pass: they press nothing, and
+ * one whose press went to Game Settings or the layout editor must still let go. */
 static int touch_misses_controls(const SDL_Event *event)
 {
-    static int let_through; /* the touch now down reached the game at its press */
-    const int down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN, up = event->type == SDL_EVENT_MOUSE_BUTTON_UP;
-    const SDL_MouseID which = event->type == SDL_EVENT_MOUSE_MOTION ? event->motion.which
-                              : down || up                         ? event->button.which
-                                                                   : 0;
-    int blocked;
-    if ((!down && !up && event->type != SDL_EVENT_MOUSE_MOTION) || which != SDL_TOUCH_MOUSEID) {
-        return 0;
+#if defined(__ANDROID__)
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.which == SDL_TOUCH_MOUSEID &&
+        !khdays_settings_is_open()) {
+        khdays_devices_screen_touched(); /* the gear shows again, as for a touch the game took */
+        return 1;
     }
-    blocked = !let_through && khdays_touch_shown() && !khdays_settings_is_open();
-    if (down) {
-        let_through = !blocked;
-    } else if (up) {
-        let_through = 0;
-    }
-    return blocked;
+    return event->type == SDL_EVENT_MOUSE_MOTION && event->motion.which == SDL_TOUCH_MOUSEID &&
+           !khdays_settings_is_open();
+#else
+    (void)event;
+    return 0; /* a PC's touch screen is its mouse, as upstream has it */
+#endif
 }
 
 /* Whether this event opens the settings menu (which is closed now). */
@@ -931,6 +928,7 @@ static SDL_Window *open_window(const KhdaysProfile *profile)
     }
     return SDL_CreateWindow("Kingdom Hearts 358/2 Days (native)", w, h, SDL_WINDOW_RESIZABLE);
 }
+
 
 /* The window's thread: opens everything, then handles SDL's events until the
  * window closes. */
@@ -1317,7 +1315,7 @@ static int host_thread(void *unused)
             continue;
         }
         if (touch_misses_controls(&event)) {
-            continue; /* a finger beside the controls presses nothing */
+            continue; /* a finger on the picture presses nothing */
         }
         latency_pressed(&event);
         khdays_devices_handle(&event, renderer); /* keys, mouse, gamepads, focus */
