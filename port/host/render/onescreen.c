@@ -476,8 +476,10 @@ static void settings_prompt(void)
     if (pad_shown) {
         const KhdaysProfile *profile = khdays_devices_profile();
         const SDL_GamepadType type = SDL_GetGamepadType(pad);
+        /* a handheld's own pad marked the Nintendo way (devices.c marked_pad) shows the other pads' icons, as AYN's do */
         const char *family =
-            type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE ? "xbox"
+            khdays_devices_pad_marked(pad)                                         ? "pad"
+            : type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE ? "xbox"
             : type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5
                 ? "playstation"
                 : "pad";

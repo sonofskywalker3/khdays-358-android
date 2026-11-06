@@ -1,6 +1,9 @@
 /* The keyboard, the mouse and the gamepads (devices.h): what each device holds, turned into the DS's
  * buttons and the port's actions through the player's profile (bindings.c) and published for the game.
  * Only one gamepad plays: the first connected, or the last used when it goes away. */
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
 #include "devices.h"
 #include "instance.h"
 #include "../screens/ui_text.h"
@@ -183,10 +186,33 @@ const char *khdays_devices_gamepad_name(void)
     return active >= 0 ? SDL_GetGamepadName(pads[active].gamepad) : NULL;
 }
 
+/* The AYANEO Pocket AIR Mini's own pad: Android names it an Xbox 360 pad, but it sends its face buttons by their
+ * Nintendo marks (A on the right sends A), as AYN's do. Known by the system's name and the pad's IDs. */
+#define AIR_MINI_DEVICE "Pocket AIR Mini"
+#define AIR_MINI_VENDOR 0x045e
+#define AIR_MINI_PRODUCT 0x028e
+
+static int air_mini_pad(SDL_Gamepad *gamepad)
+{
+#if defined(__ANDROID__)
+    static int device = -1; /* the system's name looked at once: 1 this handheld */
+    if (device < 0) {
+        char name[PROP_VALUE_MAX] = "";
+        __system_property_get("ro.fota.device", name);
+        device = strcmp(name, AIR_MINI_DEVICE) == 0;
+    }
+    return device && SDL_GetGamepadVendor(gamepad) == AIR_MINI_VENDOR &&
+           SDL_GetGamepadProduct(gamepad) == AIR_MINI_PRODUCT;
+#else
+    (void)gamepad;
+    return 0;
+#endif
+}
+
 /* Whether a gamepad names its face buttons by mark rather than by position. */
 static int marked_pad(SDL_Gamepad *gamepad)
 {
-    return SDL_GetGamepadVendor(gamepad) == AYN_VENDOR;
+    return SDL_GetGamepadVendor(gamepad) == AYN_VENDOR || air_mini_pad(gamepad);
 }
 
 int khdays_devices_pad_marked(SDL_Gamepad *gamepad)

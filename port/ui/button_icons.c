@@ -137,6 +137,9 @@ static const Icon *kenney_icon(const char *name)
 /* The gamepad's family as the icons name it. */
 static const char *family(SDL_Gamepad *pad)
 {
+    if (khdays_devices_pad_marked(pad)) {
+        return "switch"; /* a handheld's own pad marked the Nintendo way (devices.c marked_pad) */
+    }
     switch (SDL_GetGamepadType(pad)) {
     case SDL_GAMEPAD_TYPE_XBOX360:
     case SDL_GAMEPAD_TYPE_XBOXONE: return "xbox";

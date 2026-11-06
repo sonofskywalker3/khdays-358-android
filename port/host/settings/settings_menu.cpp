@@ -1426,7 +1426,9 @@ const char *icon_name(int input)
         case SDL_GAMEPAD_BUTTON_LABEL_B:
         case SDL_GAMEPAD_BUTTON_LABEL_X:
         case SDL_GAMEPAD_BUTTON_LABEL_Y:
-            return letters[label - SDL_GAMEPAD_BUTTON_LABEL_A][family == KHDAYS_PAD_NINTENDO];
+            // a handheld's own pad marked the Nintendo way (devices.c marked_pad) shows its letters so too
+            return letters[label - SDL_GAMEPAD_BUTTON_LABEL_A]
+                          [family == KHDAYS_PAD_NINTENDO || (pad != nullptr && khdays_devices_pad_marked(pad))];
         default: return xbox[input];
         }
     }
