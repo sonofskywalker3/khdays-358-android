@@ -2359,8 +2359,8 @@ HOOKS["ov022@0208a830"] = [
 
 
 def _magic_track_reads(signature: str, field: str, as_type: str = "") -> list[tuple[str, str]]:
-    """A handler of the magics reading the pool's level animation entry (its `pCtx->nTrack`, `->pOwner` or
-    `->pTrack`, of type `as_type`): the port's."""
+    """A handler of the magics reading the pool's level animation entry (its `pCtx->pLevelAnim`, of type
+    `as_type`): the port's."""
     read = "khdays_magic_track((unsigned)pCtx)"
     return [
         (signature, "extern int khdays_magic_track(unsigned int pool);\n" + signature),
@@ -2369,17 +2369,17 @@ def _magic_track_reads(signature: str, field: str, as_type: str = "") -> list[tu
 
 
 for _key, _signature, _field, _type in (
-    ("ov022@0208e404", "void Ov022_ArmSlotAtActor(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208f888", "void Ov022_EnterBlockReaction(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208de14", "void Ov022_EnterReactionAtActor(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208c9b4", "void Ov022_EnterReactionAtOffset(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208fe40", "int Ov022_StepReaction(struct ReactionCtx *pCtx, int nDelta)\n", "nTrack", ""),
-    ("ov022@0208eee8", "void Ov022_EnterChainReaction(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208f2d4", "void Ov022_EnterGroundReaction(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208b848", "void Ov022_LaunchSlotPart(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208be38", "void Ov022_LaunchSlotPartArc(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208d764", "void Ov022_LaunchSlotPartFlat(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208cfbc", "void Ov022_LaunchSlotPartTracked(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208e404", "void Ov022_ArmSlotAtActor(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208f888", "void Ov022_EnterBlockReaction(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208de14", "void Ov022_EnterReactionAtActor(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208c9b4", "void Ov022_EnterReactionAtOffset(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208fe40", "int Ov022_StepReaction(struct ReactionCtx *pCtx, int nDelta)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208eee8", "void Ov022_EnterChainReaction(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208f2d4", "void Ov022_EnterGroundReaction(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208b848", "void Ov022_LaunchSlotPart(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208be38", "void Ov022_LaunchSlotPartArc(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208d764", "void Ov022_LaunchSlotPartFlat(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208cfbc", "void Ov022_LaunchSlotPartTracked(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
 ):
     HOOKS[_key] = _magic_track_reads(_signature, _field, _type)
 # The panels' pictures loaded (the camp's two menus, the results): the clock Stop's panels show, in the magics' purple.
@@ -2407,7 +2407,7 @@ HOOKS["ov005@02052a7c"] = [  # Ov005_AllocateResultTextures
 ]
 # The cast's message (kind 0xc, its slot in five bits) carries the cell, Stop's level with it: a copy that receives
 # it takes Stop's place and that level, as the caster's does (Ov022_SetRecordValue).
-HOOKS["ov022@0208a2b4"] = _magic_track_reads("void Ov022_OnEndMessage(struct EndMessage *pMsg)\n", "pTrack", "u8 *") + [
+HOOKS["ov022@0208a2b4"] = _magic_track_reads("void Ov022_OnEndMessage(struct EndMessage *pMsg)\n", "pLevelAnim", "u8 *") + [
     (  # Ov022_OnEndMessage, a cast begun on another copy: its slot
         "        pCtx->nSlot = pMsg->nSlot;\n",
         "        { extern int khdays_stop_record(unsigned int pool, int value);\n"
@@ -2555,7 +2555,7 @@ HOOKS["ov022@0209045c"] = [
         "extern int khdays_magic_track(unsigned int pool);\n"
         "void Ov022_StepReactionState(struct ReactionCtx *pCtx, int nDelta)\n",
     ),
-    ("pCtx->pOwner", "((void *)khdays_magic_track((unsigned)pCtx))"),
+    ("pCtx->pLevelAnim", "((u8 *)khdays_magic_track((unsigned)pCtx))"),
     (  # the cast slot's step, Stop's Cure's
         "data_ov022_020b2a5c[pCtx->nSlot]",
         "data_ov022_020b2a5c[pCtx->nSlot == 15 ? 12 : pCtx->nSlot]",
@@ -3462,12 +3462,25 @@ HOOKS["ov008@0205bea0"] = [
 # limit or none), only stands, waiting for his mission's script to end the fight -- the "all defeated" of a mission
 # built by the port never came. In the mods' missions he is finished as a defeated enemy is (flags 0x1ae bits 0-1, as
 # Riku's Ov260_AiStep_SetFlags3AndEnd and the Shadow's Ov114_Action6Callback set them).
+# The fight's limit is 70 % of his health (Ov283_Construct; his mission's spawner may give another,
+# Ov283_Slot38_StoreValue): there the story's script takes over. The mods' missions have no such script, so there
+# the limit is none and he falls with no health left, not with a third of it gone; and only then, since state 3 is
+# also where a spawner sending him away puts him (ov107's event 1).
+HOOKS["ov283@020cc690"] = [
+    (  # Ov283_OnDamage
+        "    limit = *(short *)(self + 0x218) * *(int *)(*state + 0x3e8) / 100;\n",
+        "    limit = *(short *)(self + 0x218) * *(int *)(*state + 0x3e8) / 100;\n"
+        "    { extern int khdays_missions_playing(void);\n"
+        "      if (khdays_missions_playing()) limit = 0; }\n",
+    )
+]
 HOOKS["ov283@020ced2c"] = [
     (  # Ov283_AiEnterPatrol
         "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n",
         "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n"
         "    { extern int khdays_missions_playing(void);\n"
-        "      if (khdays_missions_playing()) *(unsigned short *)(*(int *)owner + 0x1ae) |= 3; }\n",
+        "      if (khdays_missions_playing() && *(short *)(*(int *)owner + 0x21a) <= 0)\n"
+        "          *(unsigned short *)(*(int *)owner + 0x1ae) |= 3; }\n",
     )
 ]
 
@@ -4802,7 +4815,7 @@ PORT_DS_SYMBOLS = (
     # count, the current mission, the sound manager (its track playing)
     "gGameState",
     "gObjSystem",
-    "data_0204c23c",
+    "gMissionNumber",
     "gSoundMgr",
     # the room's rules, friendly fire first (runtime/battle/stop_magic.c)
     "data_0204c248",
@@ -5168,6 +5181,41 @@ def definitions(text: str) -> list[re.Match]:
     return out
 
 
+# A file-scope object whose definition spells out its struct or union (`struct { ... } name[2] = ...;`):
+# the type gets a name of its own (typedef), so the object reads as a definition DEFINITION_RE finds and
+# goes to its DS address like any other. Unnamed, it went to the port's data area: the game, reading it
+# by its DS address (a neighbour's index running into it), found the card's bytes there -- a US card's
+# function addresses in ov016's kickables' rows.
+OBJECT_TYPE_RE = re.compile(r"^((?:(?:const|volatile)[ \t]+)*)((?:struct|union)\b[^;{}()=\n]*)\{", re.MULTILINE)
+OBJECT_AFTER_TYPE_RE = re.compile(r"[ \t]*([A-Za-z_]\w*)((?:[ \t]*\[[^\]\n]*\])*)[ \t]*(?==|;)")
+
+
+def name_object_types(text: str) -> str:
+    """`text` with each file-scope `struct {...} name = ...;` as `typedef struct {...} khdays_type_name;`
+    and `khdays_type_name name = ...;`."""
+    changes = brace_depths(text)
+    starts = [i for i, _ in changes]
+    pieces = []
+    done = 0
+    for m in OBJECT_TYPE_RE.finditer(text):
+        if m.start() < done or changes[bisect.bisect_right(starts, m.start()) - 1][1] != 0:
+            continue
+        opened = bisect.bisect_left(starts, m.end())  # the change the type's `{` makes
+        closed = next((i for i, depth in changes[opened + 1 :] if depth == 0), None)
+        if closed is None:
+            break
+        after = OBJECT_AFTER_TYPE_RE.match(text, closed)
+        if after is None:
+            continue
+        name = after[1]
+        type_name = f"khdays_type_{name}"
+        pieces.append(text[done : m.start()])
+        pieces.append(f"typedef {m[2]}{text[m.end() - 1 : closed]} {type_name};\n{m[1]}{type_name} {name}{after[2]} ")
+        done = after.end()
+    pieces.append(text[done:])
+    return "".join(pieces)
+
+
 def statement_end(text: str, start: int) -> int:
     """Index just past the `;` that ends the declaration starting at `start`,
     skipping braces, strings and comments inside an initializer."""
@@ -5518,7 +5566,7 @@ def main() -> int:
             if rel.endswith(".cpp"):
                 new = cpp_to_c(new, rel)  # rewritten as C (T005a)
                 as_c.add(rel)
-            texts[rel] = new
+            texts[rel] = name_object_types(new)
             module_of[rel] = m.name
             compiled.append((src, rel))
 
@@ -5537,7 +5585,7 @@ def main() -> int:
         rel = path.relative_to(DECOMP).as_posix()
         if rel in listed:
             continue
-        text = transform(path.read_text(encoding="utf-8", errors="replace"))
+        text = name_object_types(transform(path.read_text(encoding="utf-8", errors="replace")))
         names = [
             n
             for n in re.findall(r"(?:^|\})[ \t\w\*]*?\b(data_\w+)\s*(?:\[[^\]\n]*\])*\s*=", text, re.MULTILINE)
