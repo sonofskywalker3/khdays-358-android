@@ -21,6 +21,8 @@ ByteAddressBuffer hd : register(t7, space0);         // the replacements (host/r
 [[vk::image_format("r32ui")]] RWTexture2D<uint> hud_color3d : register(u3, space1);
 [[vk::image_format("r32ui")]] RWTexture2D<uint> hud_attr3d : register(u4, space1);
 [[vk::image_format("r32ui")]] RWTexture2D<uint> layers1x : register(u5, space1); // layers2d.hlsl's, read only
+// the DS-sized pass's verdicts (pre_mode): per DS pixel, at column 2x what it is (PRE_*), at 2x + 1 its colour
+[[vk::image_format("r32ui")]] RWTexture2D<uint> pre : register(u6, space1);
 
 cbuffer Params : register(b0, space2) {
     uint scale;         // N
@@ -48,15 +50,28 @@ cbuffer Params : register(b0, space2) {
     uint row0;          // the DS row of the target's first (rows past the DS's 192 for a taller display)
     uint layers_off;    // layers left out (KDF_BG_ON_SHIFT's bits, KDF_OBJ_ON): compose.h KD_LAYERS_OFF
     uint layers1x_rows; // layers1x: each layer's rows from row0 (0: none; the layers looked up here)
-    uint pad;
+    uint pre_mode;      // 0: each pixel composed here; 1: this is the DS-sized pass writing `pre`; 2: `pre` read
 };
 
 #define FINISH3D_SCALED
 #include "finish3d.hlsli"
 
 static uint g_fx, g_fy; // the output pixel's place inside its DS pixel
+static bool g_place_used; // KD_PLACE_USED said: a replacement's or an element's texel decides the colour
+static bool g_3d_used;    // the 3D was read
+static bool g_only3d;       // PRE_3D_ONLY: kd_pixel looks up the 3D's layer alone (KD_STACK_FLAGS)
+static bool g_stack_3d_only; // KD_STACK_SEEN: only the 3D lay at the DS pixel
 
-uint layer3d_at(uint x, int row)
+#define PRE_EACH 0u   // composed at each output pixel
+#define PRE_SAME 1u   // the same at every place in the DS pixel: its colour composed once
+#define PRE_3D_ONLY 2u // only the 3D there (no layer over it, no sprite, no element): the 3D composed alone
+
+static uint g_3d_x, g_3d_value; // the 3D read once before the composition (read3d_once): its column, its value
+static int g_3d_row;
+
+// The 3D at (x, row) as its source holds it. Called once in the shader (read3d_once): it is inlined wherever it
+// is called, several finished texels each time, and compose.h asks for the 3D in five places.
+uint layer3d_read(uint x, int row)
 {
     if (source3d == 1u) {
         return layer3d_mem.Load(((uint)row * 256u + x) * 4u);
@@ -77,6 +92,13 @@ uint layer3d_at(uint x, int row)
                       world);
     }
     return 0u;
+}
+
+// compose.h's KD_3D: the value read3d_once read, the only place the composition asks for (the DS pixel's 3D)
+uint layer3d_at(uint x, int row)
+{
+    g_3d_used = true;
+    return x == g_3d_x && row == g_3d_row ? g_3d_value : 0u;
 }
 
 #define KD_LAYERS_OFF layers_off
@@ -141,6 +163,14 @@ uint layer_at(int b, int x, int row)
 #define KD_SPLIT_ON(flags) true
 #endif
 
+#define KD_PLACE_USED() (g_place_used = true)
+// PRE_3D_ONLY read: the 3D's layer alone looked up
+#define KD_STACK_FLAGS(flags) \
+    (g_only3d ? (flags) & ~(KDF_OBJ_ON | (14u << KDF_BG_ON_SHIFT)) : (flags))
+// the pass at the DS's size: whether only the 3D lay there, with no replacement or element read for it
+#define KD_STACK_SEEN(s) \
+    (g_stack_3d_only = !g_place_used && (s).color[1] == 0u && (s).color[2] == 0u && (s).color[3] == 0u && \
+                       (s).spr.color == 0u && (s).spr.window == 0u)
 #include "../gfx/compose.h"
 
 float channel8(uint c6)
@@ -148,23 +178,95 @@ float channel8(uint c6)
     return (float)((c6 << 2) | (c6 >> 4)) / 255.0f; // as to_rgb888
 }
 
+// The DS pixel composed whole, as this shader's part does it.
+uint pixel_whole(int x, int row)
+{
+#if defined(COMPOSE2D_PART_WIDE)
+    return kd_pixel_wide(x, row);
+#elif defined(COMPOSE2D_PART_PLAIN) || defined(COMPOSE2D_PART_SPLIT)
+    return kd_pixel(x, row);
+#else
+    return KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide(x, row) : kd_pixel(x, row);
+#endif
+}
+
+// The 3D the composition of (x, row) asks for, read before it: the column kd_layer, kd_alpha3d, kd_fine3d and
+// kd_moved3d ask for, or kd_pixel_wide's in its wider target. Read only where it can be asked for.
+void read3d_once(int x, int row)
+{
+#if defined(COMPOSE2D_PART_WIDE)
+    const bool wide = true;
+#elif defined(COMPOSE2D_PART_PLAIN) || defined(COMPOSE2D_PART_SPLIT)
+    const bool wide = false;
+#else
+    const bool wide = KD_DESC(KD_WIDE) != 0u;
+#endif
+    uint column;
+    bool inside;
+    if (wide) {
+        const uint hofs = KD_DESC(KD_HOFS3D);
+        const int target = x + (hofs < 256u ? (int)hofs : (int)hofs - 512);
+        column = (uint)target;
+        inside = target >= 0 && target < 256 + 2 * (int)KD_DESC(KD_WIDE);
+    } else {
+        column = ((uint)x + KD_DESC(KD_HOFS3D)) & 511u;
+        inside = column < 256u;
+    }
+    g_3d_x = column;
+    g_3d_row = row;
+    g_3d_value = inside && source3d != 0u ? layer3d_read(column, row) : 0u;
+}
+
+// The composition is called once, below, whatever pre_mode is: each call of it is the whole of compose.h inlined,
+// and Mali's compiler runs out of memory on a shader with more than one.
 [numthreads(8, 8, 1)]
 void cs_main(uint3 id : SV_DispatchThreadID)
 {
-    uint c6;
-    if (id.x >= width || id.y >= height) {
+    uint c6, verdict = PRE_EACH;
+    int x, row;
+    if (pre_mode == 1u) {
+        // the pass at the DS's size: one thread a DS pixel, its colour at the first place in it
+        if (id.x >= width / scale || id.y >= height / scale) {
+            return;
+        }
+        g_fx = 0u;
+        g_fy = 0u;
+        x = (int)id.x;
+        row = (int)id.y + (int)row0;
+    } else {
+        if (id.x >= width || id.y >= height) {
+            return;
+        }
+        g_fx = id.x % scale;
+        g_fy = id.y % scale;
+        x = (int)(id.x / scale);
+        row = (int)(id.y / scale) + (int)row0;
+        if (pre_mode == 2u) {
+            verdict = pre[uint2((uint)x * 2u, id.y / scale)];
+        }
+    }
+    g_place_used = false;
+    g_3d_used = false;
+    g_stack_3d_only = false;
+    g_only3d = verdict == PRE_3D_ONLY;
+    if (verdict == PRE_SAME) {
+        c6 = pre[uint2((uint)x * 2u + 1u, id.y / scale)];
+    } else {
+        read3d_once(x, row);
+        c6 = pixel_whole(x, row);
+    }
+    if (pre_mode == 1u) {
+        // which of the DS pixel's output pixels can skip the composition: all of them when no place inside it
+        // decided the colour (PRE_SAME), or have only the 3D looked up when it lay there alone (PRE_3D_ONLY)
+        const uint flags = KD_DESC(KD_FLAGS) & ~(uint)(KD_LAYERS_OFF);
+        const bool alone3d = g_stack_3d_only && KD_DESC(KD_WIDE) == 0u && (flags & KDF_DISPLAY_MASK) == 1u &&
+                             (flags & KDF_FORCED_BLANK) == 0u && !KD_SPLIT_ON(flags) &&
+                             (flags & KDF_BG0_IS_3D) != 0u && (flags & (1u << KDF_BG_ON_SHIFT)) != 0u;
+        verdict = !g_place_used && !g_3d_used ? PRE_SAME : alone3d ? PRE_3D_ONLY : PRE_EACH;
+        pre[uint2(id.x * 2u, id.y)] = verdict;
+        pre[uint2(id.x * 2u + 1u, id.y)] = c6;
         return;
     }
-    g_fx = id.x % scale;
-    g_fy = id.y % scale;
-#if defined(COMPOSE2D_PART_WIDE)
-    c6 = kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
-#elif defined(COMPOSE2D_PART_PLAIN) || defined(COMPOSE2D_PART_SPLIT)
-    c6 = kd_pixel((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
-#else
-    c6 = KD_DESC(KD_WIDE) != 0u ? kd_pixel_wide((int)(id.x / scale), (int)(id.y / scale) + (int)row0)
-                                 : kd_pixel((int)(id.x / scale), (int)(id.y / scale) + (int)row0);
-#endif
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u) {
         // the one-screen picture's source: K in 8 bits, its alpha 0 (not shown over
         // the 3D) or 1 + the 3D's factor x 254 (kd_split)

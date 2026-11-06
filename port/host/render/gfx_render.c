@@ -34,7 +34,8 @@ typedef struct Compose2dParams {
     uint32_t scale3d, width3d, height3d, smooth3d;  /* the 3D's own scale (the 2D finer than it) */
     uint32_t hud3d, hud_width, hud_height, unused5; /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
     uint32_t row0, layers_off;   /* rows past the DS's (lower_layout.h), layers left out */
-    uint32_t layers1x_rows, pad; /* layers2d.hlsl's rows from row0, or 0 */
+    uint32_t layers1x_rows; /* layers2d.hlsl's rows from row0, or 0 */
+    uint32_t pre_mode; /* compose2d.hlsl: 0 each pixel composed, 1 the DS-sized pass, 2 its verdicts read (pre2d) */
 } Compose2dParams;
 
 /* layers2d.hlsl's constant buffer, register for register. */
@@ -182,6 +183,11 @@ static SDL_GPUTexture *screen[2];
 /* layers2d.hlsl: each engine's layers at each DS pixel, looked up once, before compose2d.hlsl's pass */
 static SDL_GPUComputePipeline *layers_pipeline;
 static SDL_GPUTexture *layers1x[2];
+/* compose2d.hlsl's DS-sized pass: per DS pixel (PRE_COLUMNS of them a row) whether its output pixels can skip the
+ * composition, and its colour when they all have it */
+static SDL_GPUTexture *pre2d[2];
+#define PRE_COLUMNS (4 * KHDAYS_FRAME_W)
+#define PRE_SCALE_MIN 3 /* below it the DS-sized pass costs more than it spares (2x on the TCL: 30 fps with, 33 without) */
 /* The lower screen's rows past the DS's 192 (or under its frame) for a taller second display, composed
  * with some layers left out (host/screens/lower_layout.h): asked for, then drawn into `rows_texture`. */
 static int rows_row0, rows_count, rows_scale, rows_drawn;
@@ -429,18 +435,18 @@ static int compose_too_big_here(void)
 static void make_compose_parts(void)
 {
     compose_wide = make_pipeline_of(NULL, 0, compose2d_wide_cs_spirv, compose2d_wide_cs_spirv_size, NULL, 1,
-                                    COMPOSE2D_WIDE_CS_ENTRY, 8, 6);
+                                    COMPOSE2D_WIDE_CS_ENTRY, 8, 7);
     compose_plain = make_pipeline_of(NULL, 0, compose2d_plain_cs_spirv, compose2d_plain_cs_spirv_size, NULL, 1,
-                                     COMPOSE2D_PLAIN_CS_ENTRY, 8, 6);
+                                     COMPOSE2D_PLAIN_CS_ENTRY, 8, 7);
     compose_split = make_pipeline_of(NULL, 0, compose2d_split_cs_spirv, compose2d_split_cs_spirv_size, NULL, 1,
-                                     COMPOSE2D_SPLIT_CS_ENTRY, 8, 6);
+                                     COMPOSE2D_SPLIT_CS_ENTRY, 8, 7);
 }
 #endif
 
 static SDL_GPUComputePipeline *make_pipeline(void)
 {
     return make_pipeline_of(compose2d_cs_dxil, compose2d_cs_dxil_size, compose2d_cs_spirv, compose2d_cs_spirv_size,
-                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 6);
+                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 7);
 }
 
 static void drop_shrunk(Shrunk *s)
@@ -742,6 +748,13 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         memory[a] = make_buffer(area_bytes(a));
         ok = ok && memory[a] != NULL;
     }
+    /* the DS-sized pass's verdicts are read back through a read-write binding: SDL asks for simultaneous read and
+     * write for that, where the card has it */
+    const SDL_GPUTextureUsageFlags pre_usage =
+        SDL_GPUTextureSupportsFormat(device, SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTURETYPE_2D,
+                                     SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE)
+            ? SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE
+            : SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
     for (int e = 0; e < 2; ++e) {
         desc[e] = make_buffer(DESC_BYTES + SPRITE_ROW_BYTES);
         desc_bytes[e] = DESC_BYTES + SPRITE_ROW_BYTES;
@@ -750,7 +763,9 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         layers1x[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
                                    KHDAYS_FRAME_W, 4 * KHDAYS_FRAME_H);
         dummy_hud[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
-        ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL && layers1x[e] != NULL;
+        pre2d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, pre_usage, 2 * PRE_COLUMNS, 4 * KHDAYS_FRAME_H);
+        ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL && layers1x[e] != NULL &&
+             pre2d[e] != NULL;
     }
     layers_pipeline = make_layers_pipeline();
     ok = ok && layers_pipeline != NULL;
@@ -905,6 +920,9 @@ void khdays_gfx_render_close(void)
             SDL_ReleaseGPUTexture(device, dummy3d[e]);
         if (layers1x[e] != NULL)
             SDL_ReleaseGPUTexture(device, layers1x[e]);
+        if (pre2d[e] != NULL)
+            SDL_ReleaseGPUTexture(device, pre2d[e]);
+        pre2d[e] = NULL;
         if (dummy_hud[e] != NULL)
             SDL_ReleaseGPUTexture(device, dummy_hud[e]);
         desc[e] = NULL;
@@ -1643,7 +1661,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
      * alone) they are not composed */
     for (int e = 0; e < (one != NULL && one->shape_count == 0 ? 0 : 2); ++e) {
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[6];
+        SDL_GPUStorageTextureReadWriteBinding io[7];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         const int b = e == 1;
@@ -1714,7 +1732,24 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         io[3].texture = e == 0 && hud ? hud_color : dummy_hud[0]; /* read only */
         io[4].texture = e == 0 && hud ? hud_attr : dummy_hud[1];
         io[5].texture = layers1x[e]; /* read only */
-        pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
+        io[6].texture = pre2d[e];
+        if (scale >= PRE_SCALE_MIN && cp.source3d == 0u && screen_columns[e] <= PRE_COLUMNS && !gpu_skip("pre")) {
+            /* each DS pixel once: whether its N x N output pixels are all alike. Not for an engine that reads the
+             * 3D: its pixels are seldom alike, and the pass cost the TCL's Mali 2.5 ms for nothing (2026-11-05) */
+            io[6].cycle = true;
+            cp.pre_mode = 1u;
+            pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
+            SDL_BindGPUComputePipeline(pass, compose_engine[e]);
+            SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
+            SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+            SDL_DispatchGPUCompute(pass, (uint32_t)(screen_columns[e] + 7) / 8, KHDAYS_FRAME_H / 8, 1);
+            SDL_EndGPUComputePass(pass);
+            gpu_split(device, &cmd, e == 0 ? "pre A" : "pre B");
+            io[2].cycle = false; /* the screen the pass above bound: not made anew for the composition */
+            io[6].cycle = false;
+            cp.pre_mode = 2u;
+        }
+        pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1728,7 +1763,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     if (rows_count > 0 && p->upper == 0 && one == NULL) {
         /* the lower screen's (engine B's) rows asked for, apart from the DS's own */
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[6];
+        SDL_GPUStorageTextureReadWriteBinding io[7];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         if (rows_texture == NULL || rows_scale != scale) {
@@ -1763,7 +1798,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             io[3].texture = dummy_hud[0];
             io[4].texture = dummy_hud[1];
             io[5].texture = layers1x[1]; /* (bound for the pipeline; no rows of it are read: layers1x_rows 0) */
-            pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
+            io[6].texture = pre2d[1];   /* (bound for the pipeline; not read: pre_mode 0) */
+            pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
             SDL_BindGPUComputePipeline(pass, compose_engine[1]);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
             SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1785,7 +1821,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
     for (int i = 0; i < shop_count; ++i) {
         const int s = shop_s[i], v = shop_v[i], b = engine_on(p, s) == 1;
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[6];
+        SDL_GPUStorageTextureReadWriteBinding io[7];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         SDL_zero(cp);
@@ -1813,7 +1849,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         io[3].texture = dummy_hud[0];
         io[4].texture = dummy_hud[1];
         io[5].texture = layers1x[b]; /* (bound for the pipeline; no rows of it are read: layers1x_rows 0) */
-        pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
+        io[6].texture = pre2d[b];   /* (bound for the pipeline; not read: pre_mode 0) */
+        pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_for(0, 0)); /* a shop's description: not split, not wide */
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));

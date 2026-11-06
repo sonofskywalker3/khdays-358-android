@@ -11,6 +11,22 @@
 #define KD_SPLIT_ON(flags) (((flags) & KDF_SPLIT) != 0u)
 #endif
 
+/* Said each time the output pixel's place inside its DS pixel decides the colour (a replacement's or an
+ * element's texel): compose2d.hlsl's pass at the DS's size tells by it which pixels are the same at every
+ * place, and composes those once. Nothing elsewhere. */
+#ifndef KD_PLACE_USED
+#define KD_PLACE_USED()
+#endif
+
+/* kd_pixel's layers looked up (kd_stack's flags) and what it found (a KdStack), for compose2d.hlsl's pass at the
+ * DS's size: by default every layer that is on, and nothing told. */
+#ifndef KD_STACK_FLAGS
+#define KD_STACK_FLAGS(flags) (flags)
+#endif
+#ifndef KD_STACK_SEEN
+#define KD_STACK_SEEN(s)
+#endif
+
 KD_FN int kd_s16(uint v)
 {
     return (int)((v & 0xffffu) ^ 0x8000u) - 0x8000;
@@ -193,6 +209,7 @@ KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv
  * for an output pixel `ru` x `rv` DS pixels wide. Bitmaps are read by kd_hd_bitmap. */
 KD_FN uint kd_hd(uint entry, float u, float v, float ru, float rv)
 {
+    KD_PLACE_USED();
     const uint id = (entry >> 20) - 1u;
 #ifdef KD_HD_SEEN
     KD_HD_SEEN = 1u; /* the colour depends on the place inside the DS pixel */
@@ -210,6 +227,7 @@ KD_FN uint kd_hd(uint entry, float u, float v, float ru, float rv)
  * Its info holds the 32-byte units per row in bits 8-15 and the rows in bits 16-31. */
 KD_FN uint kd_hd_bitmap(uint entry, uint at, float fu, float fv)
 {
+    KD_PLACE_USED();
     const uint id = (entry >> 20) - 1u;
 #ifdef KD_HD_SEEN
     KD_HD_SEEN = 1u;
@@ -953,12 +971,20 @@ KD_FN uint kd_element_texel(uint e, int x, int row)
     const uint base = e * KE_WORDS;
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u && (KD_ELEMENT(base + KE_SLOT) & KES_PICTURE) != 0u)
         return 0u;
-    const float fx = (float)x + KD_SUB_X, fy = (float)row + KD_SUB_Y;
     const float ex = KD_ASFLOAT(KD_ELEMENT(base + KE_X)), ey = KD_ASFLOAT(KD_ELEMENT(base + KE_Y));
     const float ew = KD_ASFLOAT(KD_ELEMENT(base + KE_W)), eh = KD_ASFLOAT(KD_ELEMENT(base + KE_H));
     const uint iw = KD_ELEMENT(base + KE_IW), ih = KD_ELEMENT(base + KE_IH);
     uint u, v, t;
-    if (fx < ex || fy < ey || fx >= ex + ew || fy >= ey + eh || iw == 0u || ih == 0u) {
+    float fx, fy;
+    /* the whole DS pixel outside the element: so is every place in it */
+    if ((float)x + 1.0f <= ex || (float)row + 1.0f <= ey || (float)x >= ex + ew || (float)row >= ey + eh || iw == 0u ||
+        ih == 0u) {
+        return 0u;
+    }
+    KD_PLACE_USED();
+    fx = (float)x + KD_SUB_X;
+    fy = (float)row + KD_SUB_Y;
+    if (fx < ex || fy < ey || fx >= ex + ew || fy >= ey + eh) {
         return 0u;
     }
     u = (uint)((fx - ex) * (float)iw / ew);
@@ -1178,6 +1204,79 @@ KD_FN uint kd_mix_split(uint a, uint b, float t)
 
 /* The pixel at (x, row) as the screen shows it, in 6-bit channels as
  * kd_bright gives them (8-bit ones with KDF_FINE). */
+/* What lies at (x, row) before the composition: each layer's colour (the elements' over them) and the
+ * topmost sprite. */
+typedef struct KdStack {
+    uint color[4];
+    KdSprite spr;
+} KdStack;
+
+KD_FN KdStack kd_stack(uint flags, int x, int row)
+{
+    KdStack s;
+    int b;
+    s.spr = kd_no_sprite();
+    for (b = 0; b < 4; ++b) {
+        s.color[b] = (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) ? KD_LAYER_AT(b, x, row) : 0u;
+    }
+    if (flags & KDF_OBJ_ON) {
+        s.spr = kd_sprites(x, row);
+    }
+    if (KD_DESC(KD_ELEMENTS) != 0u) {
+        for (b = 0; b < 4; ++b) {
+            if (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) {
+                s.color[b] = kd_element_layer(b, x, row, s.color[b]);
+            }
+        }
+        if (flags & KDF_OBJ_ON) {
+            s.spr = kd_element_sprites(x, row, s.spr);
+        }
+    }
+    return s;
+}
+
+/* The pixel composed from what lies there (kd_stack), the master brightness last. */
+KD_FN uint kd_finish(uint flags, KdStack s, int x, int row)
+{
+    const uint fine = flags & KDF_FINE;
+    uint result;
+    int b;
+    const uint mask = kd_mask(x, row, s.spr.window);
+    const int through = kd_through(s.color, s.spr, mask);
+    const uint alpha3d = (flags & KDF_BG0_IS_3D) != 0u ? kd_alpha3d(x, row) : 31u;
+    const uint fine3d = (fine != 0u && (flags & KDF_BG0_IS_3D) != 0u) ? kd_fine3d(x, row) : 0u;
+    uint under[4];
+    KdSprite spr_under = s.spr;
+    float t = 1.0f;
+    for (b = 0; b < 4; ++b) {
+        under[b] = s.color[b];
+    }
+    if (through >= 0) {
+        /* what lets it show through: the pixel with it and without it */
+        if (through == (int)KD_LAYER_SPRITE) {
+            t = kd_through_alpha(s.spr.color);
+            spr_under.color = 0u;
+        } else {
+            t = kd_through_alpha(s.color[through]);
+            under[through] = 0u;
+        }
+    }
+    if (KD_SPLIT_ON(flags)) {
+        uint with[4];
+        for (b = 0; b < 4; ++b) {
+            with[b] = s.color[b];
+        }
+        result = kd_split(with, s.spr, mask, x, row);
+        return through >= 0 ? kd_mix_split(result, kd_split(under, spr_under, mask, x, row), t) : result;
+    }
+    result = kd_compose(s.color, s.spr, mask, alpha3d, fine3d);
+    if (through >= 0) {
+        const uint below = kd_compose(under, spr_under, mask, alpha3d, fine3d);
+        result = fine != 0u ? kd_mix8(result, below, t) : kd_mix5(result, below, t);
+    }
+    return fine != 0u ? kd_bright8(result, KD_DESC(KD_MASTER)) : kd_bright(result, KD_DESC(KD_MASTER));
+}
+
 KD_FN uint kd_pixel(int x, int row)
 {
     const uint flags = KD_DESC(KD_FLAGS) & ~(uint)(KD_LAYERS_OFF);
@@ -1203,60 +1302,9 @@ KD_FN uint kd_pixel(int x, int row)
         }
         result = 0u; /* the main memory display mode: not modelled, black */
     } else {
-        uint color[4];
-        KdSprite spr = kd_no_sprite();
-        int b;
-        for (b = 0; b < 4; ++b) {
-            color[b] = (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) ? KD_LAYER_AT(b, x, row) : 0u;
-        }
-        if (flags & KDF_OBJ_ON) {
-            spr = kd_sprites(x, row);
-        }
-        if (KD_DESC(KD_ELEMENTS) != 0u) {
-            for (b = 0; b < 4; ++b) {
-                if (flags & (1u << (KDF_BG_ON_SHIFT + (uint)b))) {
-                    color[b] = kd_element_layer(b, x, row, color[b]);
-                }
-            }
-            if (flags & KDF_OBJ_ON) {
-                spr = kd_element_sprites(x, row, spr);
-            }
-        }
-        {
-            const uint mask = kd_mask(x, row, spr.window);
-            const int through = kd_through(color, spr, mask);
-            const uint alpha3d = (flags & KDF_BG0_IS_3D) != 0u ? kd_alpha3d(x, row) : 31u;
-            const uint fine3d = (fine != 0u && (flags & KDF_BG0_IS_3D) != 0u) ? kd_fine3d(x, row) : 0u;
-            uint under[4];
-            KdSprite spr_under = spr;
-            float t = 1.0f;
-            for (b = 0; b < 4; ++b) {
-                under[b] = color[b];
-            }
-            if (through >= 0) {
-                /* what lets it show through: the pixel with it and without it */
-                if (through == (int)KD_LAYER_SPRITE) {
-                    t = kd_through_alpha(spr.color);
-                    spr_under.color = 0u;
-                } else {
-                    t = kd_through_alpha(color[through]);
-                    under[through] = 0u;
-                }
-            }
-            if (KD_SPLIT_ON(flags)) {
-                uint with[4];
-                for (b = 0; b < 4; ++b) {
-                    with[b] = color[b];
-                }
-                result = kd_split(with, spr, mask, x, row);
-                return through >= 0 ? kd_mix_split(result, kd_split(under, spr_under, mask, x, row), t) : result;
-            }
-            result = kd_compose(color, spr, mask, alpha3d, fine3d);
-            if (through >= 0) {
-                const uint below = kd_compose(under, spr_under, mask, alpha3d, fine3d);
-                result = fine != 0u ? kd_mix8(result, below, t) : kd_mix5(result, below, t);
-            }
-        }
+        const KdStack s = kd_stack(KD_STACK_FLAGS(flags), x, row);
+        KD_STACK_SEEN(s);
+        return kd_finish(flags, s, x, row);
     }
     return fine != 0u ? kd_bright8(result, KD_DESC(KD_MASTER)) : kd_bright(result, KD_DESC(KD_MASTER));
 }

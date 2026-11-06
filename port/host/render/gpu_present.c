@@ -69,6 +69,11 @@ static int refused_scale;                  /* a scale the device could not make 
 static int window_scale_cap;               /* the most "window" makes on this device (0: no limit) */
 #define OLDER_ADRENO_BELOW 700             /* window_cap_for: Adreno models below this are capped */
 #define OLDER_ADRENO_WINDOW_CAP 2
+#define ANDROID_2D_CAP 4 /* scale2d_now: the 2D's scale on one Android display at most (never below the 3D's) */
+#define ANDROID_WEAK_2D_CAP 1 /* the same on a Mali or an older Adreno: the 3D's, as before 0.1.5 */
+#if defined(__ANDROID__)
+static int android_2d_cap = ANDROID_2D_CAP;  /* scale2d_now's cap on Android (window_cap_for) */
+#endif
 #define NEW_SURFACE_TRIES 120         /* khdays_present_new_surface: turns of the loop (about 2 s) */
 
 /* The graphics card stopped answering (a driver reset: D3D12's device removed, hung or reset, Vulkan's
@@ -203,6 +208,9 @@ static int window_cap_for(SDL_GPUDevice *gpu)
         model = SDL_atoi(adreno);
     }
     fprintf(stderr, "host: the graphics card is %s\n", name[0] != '\0' ? name : "unnamed");
+    /* the 2D composed finer than the 3D: a Mali-G57 got 11 fps at 4x and 30 at the 3D's 2x (the TCL, 2026-11-05) */
+    android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
+                                                                                                   : ANDROID_2D_CAP;
     if (model > 0 && model < OLDER_ADRENO_BELOW) {
         fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
         return OLDER_ADRENO_WINDOW_CAP;
@@ -502,6 +510,22 @@ static int scale2d_now(int n3d)
 {
     const float s = shown_scale();
     int n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
+#if defined(__ANDROID__)
+    {
+        /* a tablet's screen is 9 to 12 times the DS's: the 2D composed at that costs the card 100 ms and more a
+         * picture, so on one display it stops at android_2d_cap and is stretched the rest of the way. Two
+         * displays (the Thor's) keep the window's: 59.8 fps there at 2x. KHDAYS_2D_CAP sets another, for
+         * measuring */
+        static int asked = -1;
+        int cap;
+        if (asked < 0) {
+            const char *e = SDL_getenv("KHDAYS_2D_CAP");
+            asked = e != NULL && SDL_atoi(e) > 0 ? SDL_atoi(e) : 0;
+        }
+        cap = asked > 0 ? asked : two_displays ? 0 : android_2d_cap;
+        n = cap > 0 && n > cap ? cap : n;
+    }
+#endif
     if (port2d_mode == 2 || n < n3d) {
         n = n3d;
     }
