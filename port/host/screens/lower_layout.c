@@ -123,6 +123,16 @@ int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *pic
     return 1;
 }
 
+int khdays_lower_hold(const KhdaysLowerLayout *layout, const KhdaysLowerPicture *picture, int screen, int width,
+                      int height, int touching)
+{
+    const int over_rows = picture->overscan != NULL ? picture->overscan_rows : 0;
+    return touching && layout->map != NULL && layout->screen == KHDAYS_LOWER_PANELS &&
+           (screen == KHDAYS_LOWER_PANELS || screen == KHDAYS_LOWER_NONE) && layout->width == width &&
+           layout->height == height && layout->src_w == picture->width && layout->src_h == picture->height &&
+           layout->rows_got == over_rows;
+}
+
 void khdays_lower_draw(const KhdaysLowerLayout *layout, const KhdaysLowerPicture *picture, uint8_t *out, int pitch)
 {
     for (int y = 0; y < layout->height; ++y) {

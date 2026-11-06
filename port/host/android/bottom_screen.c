@@ -191,6 +191,7 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
     surface_h = buffer.height;
     fit(buffer.width, buffer.height, &x, &y, &w, &h);
     bits = (uint8_t *)buffer.bits;
+    const int was_laid_out = laid_out;
     laid_out = 0;
     if (fullscreen && width == w && height == h && (w < buffer.width || h < buffer.height)) {
         /* a display taller than 4:3: the screen laid out again as tall as it (lower_layout.h); wider: the
@@ -199,9 +200,11 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
         const uint8_t *rows = rows_h > 0 ? rgba + (size_t)height * (size_t)pitch : NULL;
         const KhdaysLowerPicture picture = {rgba, width, height, pitch, rows, rows_h, pitch, rows_row0};
         int ds_rows;
+        int screen;
         khdays_lower_sample(&picture, ds, &ds_rows);
-        if (khdays_lower_layout(&layout, &picture, ds, ds_rows, khdays_lower_screen(ds, ds_rows), buffer.width,
-                                buffer.height)) {
+        screen = khdays_lower_screen(ds, ds_rows);
+        if ((was_laid_out && khdays_lower_hold(&layout, &picture, screen, buffer.width, buffer.height, touch_down)) ||
+            khdays_lower_layout(&layout, &picture, ds, ds_rows, screen, buffer.width, buffer.height)) {
             khdays_lower_draw(&layout, &picture, bits, buffer.stride * 4);
             laid_out = 1;
             ANativeWindow_unlockAndPost(window);

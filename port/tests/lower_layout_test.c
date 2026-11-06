@@ -696,9 +696,31 @@ static void test_panels(void)
     /* and a panel dragged by touch over the frame above the grid: still Panels */
     rect(0, 12, 16, 28, 0xd04040u);
     CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
+    /* a panel dragged by touch over the stock's spot and the help box: the page is no longer told ... */
+    {
+        int x0, y0, x1, y1, rows;
+        CHECK(shows(&l, 60.5f, 100.5f, &x0, &y0));
+        rect(142, 146, 158, 166, 0xd04040u);
+        khdays_lower_sample(&pic, ds, &rows);
+        CHECK(khdays_lower_screen(ds, rows) == KHDAYS_LOWER_NONE);
+        /* ... but a finger down holds its layout, and the touch's place with it */
+        CHECK(khdays_lower_hold(&l, &pic, KHDAYS_LOWER_NONE, OUT_W, OUT_H, 1));
+        CHECK(shows(&l, 60.5f, 100.5f, &x1, &y1) && x1 == x0 && y1 == y0);
+        /* not once the finger is up, nor when another screen is told, nor on another display */
+        CHECK(!khdays_lower_hold(&l, &pic, KHDAYS_LOWER_NONE, OUT_W, OUT_H, 0));
+        CHECK(!khdays_lower_hold(&l, &pic, KHDAYS_LOWER_FIELD, OUT_W, OUT_H, 1));
+        CHECK(!khdays_lower_hold(&l, &pic, KHDAYS_LOWER_NONE, OUT_W - 2, OUT_H, 1));
+    }
+    rect(142, 146, 158, 166, 0x243148u); /* the stock again */
+    rect(142, 157, 158, 160, 0x000000u);
+    rect(8, 160, 248, 161, 0x212121u);
+    rect(8, 161, 248, 162, 0xffffffu);
+    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
     /* ... but not with the frame's colour gone from two spots */
     rect(80, 146, 96, 160, 0xd04040u);
     CHECK(lay(&l) != KHDAYS_LOWER_PANELS);
+    /* another screen laid out: nothing held */
+    CHECK(!khdays_lower_hold(&l, &pic, KHDAYS_LOWER_NONE, OUT_W, OUT_H, 1));
     khdays_lower_free(&l);
 }
 

@@ -76,6 +76,13 @@ int khdays_lower_screen(const uint32_t *ds, int ds_rows);
 int khdays_lower_layout(KhdaysLowerLayout *layout, const KhdaysLowerPicture *picture, const uint32_t *ds, int ds_rows,
                         int screen, int width, int height);
 
+/* Whether the layout shown last stays as it is for this picture on a display width x height, the
+ * screen now told `screen`: on the Panels page while a finger is down (`touching`) and no other screen
+ * is told, since the panel it drags covers the pixels the page is told by -- laid out again each frame,
+ * the page flickered between its layout and the DS's shape, and the touch's place jumped with it. */
+int khdays_lower_hold(const KhdaysLowerLayout *layout, const KhdaysLowerPicture *picture, int screen, int width,
+                      int height, int touching);
+
 /* Writes the display's pixels (RGBA, `pitch` bytes a row) from the picture through the layout. */
 void khdays_lower_draw(const KhdaysLowerLayout *layout, const KhdaysLowerPicture *picture, uint8_t *out, int pitch);
 
