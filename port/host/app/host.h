@@ -43,6 +43,12 @@ float khdays_host_frame_widen(void);
  * HD text, the KH2 HUD's pictures). It only changes between frames. */
 int khdays_host_frame_scale(void);
 
+/* Whether the settings key would do something now: open the settings menu, or with the Menu Overhaul the
+ * pause it opens over an HD video or a monologue. 0 in the middle of play on one screen with the Overhaul
+ * (the field, the DS's movies, the day's card, the end), where that mod keeps the menu for the game's own
+ * pauses and menus; a touch screen's gear is not drawn then, so as not to offer a key that does nothing. */
+int khdays_host_settings_key_works(void);
+
 /* The video settings the game thread reads (KHDAYS_HOST_*): HD graphics from
  * mods, dumping what is shown, and how movies play. 0 when headless. */
 #define KHDAYS_HOST_HD_GRAPHICS 0x1

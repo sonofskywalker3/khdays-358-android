@@ -1,7 +1,8 @@
 /* The settings key a touch screen taps (Android): a gear in the picture's upper right corner, shown
- * while the game is played by touch -- no gamepad, or the screen touched since one was last used. A
- * phone has no Esc and no pad's settings button; the title's own key (a mod's `button open_settings`)
- * is only there with the HD menus. */
+ * while the game is played by touch -- no gamepad, or the screen touched since one was last used -- and
+ * where the settings key does something (host.h khdays_host_settings_key_works: not in the middle of play
+ * with the Menu Overhaul). A phone has no Esc and no pad's settings button; the title's own key (a mod's
+ * `button open_settings`) is only there with the HD menus. */
 #ifndef KHDAYS_HOST_ANDROID_TOUCH_GEAR_H
 #define KHDAYS_HOST_ANDROID_TOUCH_GEAR_H
 

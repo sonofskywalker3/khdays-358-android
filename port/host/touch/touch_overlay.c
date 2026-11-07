@@ -9,6 +9,7 @@
 #include "../android/touch_bridge.h"
 #endif
 #include "../android/touch_gear.h"
+#include "../app/host.h"
 #include "../app/devices.h"
 #include "../render/gpu_present.h"
 #include "../render/onescreen.h"
@@ -614,10 +615,12 @@ int khdays_touch_draw(SDL_Renderer *renderer)
             pill_control(renderer, &ink, KHDAYS_TOUCH_SELECT, held, "SELECT");
             pill_control(renderer, &ink, KHDAYS_TOUCH_START, held, "START");
             draw_face(renderer, &ink);
-            disc(renderer, (g->x0 + g->x1) / 2.0f, (g->y0 + g->y1) / 2.0f, (g->x1 - g->x0) / 2.0f,
-                 (held >> KHDAYS_TOUCH_GEAR) & 1u ? ink.pressed : ink.fill);
-            khdays_touch_gear_shape(renderer, (g->x0 + g->x1) / 2.0f, (g->y0 + g->y1) / 2.0f,
-                                    (g->x1 - g->x0) * 0.36f, ink.edge);
+            if (khdays_host_settings_key_works()) { /* no gear in the middle of play with the Menu Overhaul */
+                disc(renderer, (g->x0 + g->x1) / 2.0f, (g->y0 + g->y1) / 2.0f, (g->x1 - g->x0) / 2.0f,
+                     (held >> KHDAYS_TOUCH_GEAR) & 1u ? ink.pressed : ink.fill);
+                khdays_touch_gear_shape(renderer, (g->x0 + g->x1) / 2.0f, (g->y0 + g->y1) / 2.0f,
+                                        (g->x1 - g->x0) * 0.36f, ink.edge);
+            }
         }
         SDL_SetRenderDrawBlendMode(renderer, blend);
     }
@@ -653,7 +656,7 @@ int khdays_touch_view_event(const SDL_Event *event)
         view_held.stick_y = e.stick_y;
         khdays_devices_resend();
     } else if (e.kind == KHDAYS_TOUCH_BRIDGE_GEAR) {
-        input.settings = 1;
+        input.settings = khdays_host_settings_key_works(); /* the gear not drawn: its place takes nothing */
     } else if (e.kind == KHDAYS_TOUCH_BRIDGE_BOX) {
         khdays_layout_editor_control_box(e.control, e.x0, e.y0, e.x1, e.y1);
     }

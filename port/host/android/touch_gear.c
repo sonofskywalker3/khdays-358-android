@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include "../app/devices.h"
+#include "../app/host.h"
 #include "../render/gpu_present.h"
 #include "../settings/settings_ui.h"
 
@@ -82,7 +83,8 @@ void khdays_touch_gear_draw(SDL_Renderer *renderer)
     float size, r;
     shown_r = 0.0f;
     if (renderer == NULL || khdays_settings_is_open() || khdays_devices_pad_in_use() ||
-        khdays_present_settings_button()) { /* the title's HD menu has a settings key of its own */
+        khdays_present_settings_button() || /* the title's HD menu has a settings key of its own */
+        !khdays_host_settings_key_works()) { /* in the middle of play with the Menu Overhaul: no key to offer */
         return;
     }
     /* in the window's own pixels, over the letterboxed picture (as the settings menu draws) */

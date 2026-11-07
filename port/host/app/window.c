@@ -743,10 +743,8 @@ static void settings_closed(SDL_Window *window, SDL_Renderer *renderer)
 /* With the Menu Overhaul, whether the settings menu may open now: in the game's menus and pauses (a situation
  * the port does not know taken as one), not in the middle of play -- the field, Sora's memories, the DS's
  * movies, the day's card, the end -- as the one-screen picture decided last. With two screens: always. */
-static int settings_allowed(void)
+static int settings_allowed_now(void)
 {
-    static int refused_said;
-    int allowed = 1;
     if (khdays_devices_profile()->video.one_screen) {
         switch (khdays_onescreen_scene()) {
         case KHDAYS_SIT_FIELD:
@@ -754,10 +752,17 @@ static int settings_allowed(void)
         case KHDAYS_SIT_MOVIE:
         case KHDAYS_SIT_DAY_COUNTER:
         case KHDAYS_SIT_THOUGHTS:
-        case KHDAYS_SIT_THE_END: allowed = 0; break;
+        case KHDAYS_SIT_THE_END: return 0;
         default: break;
         }
     }
+    return 1;
+}
+
+static int settings_allowed(void)
+{
+    static int refused_said;
+    const int allowed = settings_allowed_now();
     if (!allowed && !refused_said) {
         refused_said = 1;
         khdays_log("settings: not opened in the middle of play (%s); the game's menus and pauses open it",
@@ -891,6 +896,14 @@ static int opens_settings(const SDL_Event *event, SDL_Renderer *renderer)
         return 1; /* the picture's own settings key (the title's), or the one a pause shows */
     }
     return khdays_devices_take_settings_request();
+}
+
+int khdays_host_settings_key_works(void)
+{
+    int row, skip;
+    /* as settings_key below decides, without its side effects or its log */
+    return !khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) || khdays_movie_pause_menu(&row, &skip) ||
+           khdays_movie_hd_showing() || khdays_monologue_running() || settings_allowed_now();
 }
 
 /* The settings key pressed: the settings menu. With the Menu Overhaul, over an HD video or a monologue it opens
