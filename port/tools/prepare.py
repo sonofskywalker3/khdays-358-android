@@ -5535,7 +5535,8 @@ def check_port_calls(out: Path) -> None:
 # What this script reads, so that a run whose inputs and outputs are all as the last run left them can
 # stop at once: these trees whole, and every header and Python file of the port (the port's own C it
 # reads only for check_port_calls, which runs every time). The C compiler that references/ preprocesses
-# with is not among them (nor is it in references/build.py's cache): after changing Visual Studio, --force.
+# with is not among them (nor is it in references/build.py's cache): after changing Visual Studio, delete
+# --out.
 INPUT_TREES = ("external/khdays-decomp", "port/tools", "port/abi", "port/compat", "port/hal")
 PORT_INPUT_SUFFIXES = frozenset({".h", ".py"})  # compared in lower case, as Windows matches `*.h`
 SKIPPED_DIRS = frozenset({"__pycache__", ".git"})
