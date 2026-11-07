@@ -672,6 +672,18 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_TOUCH_VIBRATION] = {"Controls vibration", "Vibration des commandes", "Vibration der Tasten", "Vibrazione dei comandi", "Vibración de los controles"},
     [TXT_TOUCH_VIBRATION_NOTE] = {"A short buzz as you press.", "Une courte vibration à chaque appui.", "Ein kurzes Vibrieren beim Drücken.",
                                   "Una breve vibrazione alla pressione.", "Una breve vibración al pulsar."},
+    [TXT_TOUCH_STYLUS] = {"Touch as the DS stylus", "Toucher comme stylet DS", "Berühren als DS-Stift",
+                          "Tocco come stilo DS", "Toque como lápiz DS"},
+    [TXT_TOUCH_STYLUS_NOTE] = {"A finger on the lower screen's part of the picture touches the DS's screen there. Early: the"
+                               " game's own touch spots, not the port's redrawn menus.",
+                               "Un doigt sur la partie écran inférieur de l'image touche l'écran de la DS à cet endroit. Précoce :"
+                               " les zones tactiles du jeu, pas les menus redessinés du portage.",
+                               "Ein Finger auf dem Teil des Bildes mit dem unteren Bildschirm berührt dort den DS-Bildschirm. Früh:"
+                               " die Berührungsstellen des Spiels, nicht die neu gezeichneten Menüs der Portierung.",
+                               "Un dito sulla parte dell'immagine con lo schermo inferiore tocca lì lo schermo del DS. Prematuro:"
+                               " i punti di tocco del gioco, non i menu ridisegnati del port.",
+                               "Un dedo en la parte de la imagen con la pantalla inferior toca ahí la pantalla de la DS. Temprano:"
+                               " los puntos táctiles del juego, no los menús redibujados del port."},
     [TXT_TOUCH_STYLE] = {"Controls style", "Style des commandes", "Stil der Tasten", "Stile dei comandi", "Estilo de los controles"},
     [TXT_TOUCH_STYLE_NOTE] = {"The buttons' look. Art by Kenney (kenney.nl), controls based on Cemu's.",
                               "L'apparence des boutons. Dessins de Kenney (kenney.nl), commandes d'après Cemu.",

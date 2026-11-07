@@ -71,7 +71,9 @@ over the old one (steps 1 to 3 again).
 
 The device's own controls play the game as on the DS, by position: the right face button is A, the
 bottom one B, the left one Y and the top one X; the shoulders are L and R. On the Thor, touch the
-lower display where the DS's touch screen is used.
+lower display where the DS's touch screen is used. On one screen, the Controls page's **Touch as the
+DS stylus** switch (off unless turned on) makes a finger on the lower screen's part of the picture the
+DS's stylus; it reaches the game's own touch spots, not yet the port's redrawn menus.
 
 **Settings**: press **L3** (click the left stick in). The menu works with the controls alone: L and R
 move between its sections. It has the PC port's options, such as the controls, an analog camera on the

@@ -335,6 +335,10 @@ static void build_touch(Builder *b, KhdaysProfile *w)
     r->value = &w->touch.vibration;
     r->note = khdays_text(TXT_TOUCH_VIBRATION_NOTE);
     r->apply = KHDAYS_APPLY_NOW;
+    r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_TOUCH_STYLUS, khdays_text(TXT_TOUCH_STYLUS));
+    r->value = &w->touch.stylus;
+    r->note = khdays_text(TXT_TOUCH_STYLUS_NOTE);
+    r->apply = KHDAYS_APPLY_NOW;
     r = add_choice(b, KHDAYS_SET_TOUCH_STYLE, TXT_TOUCH_STYLE, &w->touch.style, touch_styles, KHDAYS_TOUCH_STYLES);
     r->note = khdays_text(TXT_TOUCH_STYLE_NOTE);
     r->apply = KHDAYS_APPLY_NOW;

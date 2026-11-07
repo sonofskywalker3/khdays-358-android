@@ -445,6 +445,7 @@ int khdays_profile_repair(KhdaysProfile *p)
         changed += clamp(&p->touch.opacity, 20, 100);
         changed += clamp(&p->touch.size, 60, 160);
         changed += clamp(&p->touch.vibration, 0, 1);
+        changed += clamp(&p->touch.stylus, 0, 1);
         changed += clamp(&p->touch.style, 0, KHDAYS_TOUCH_STYLES - 1);
         changed += clamp(&p->video.menu_size, 1, KHDAYS_MENU_SIZE_MAX);
         changed += clamp(&p->video.subtitle_size, 1, KHDAYS_SUBTITLE_SIZE_MAX);
@@ -1400,6 +1401,7 @@ void khdays_touch_default(KhdaysTouch *t)
     t->opacity = 60;
     t->size = 100;
     t->vibration = 1;
+    t->stylus = 0;
     t->style = 0;
 }
 
@@ -1425,6 +1427,8 @@ static void read_touch(Reader *r, const char *key, const char *value, const char
         t->size = end != value && *end == '\0' ? (int)n : t->size;
     } else if (SDL_strcasecmp(key, "vibration") == 0) {
         t->vibration = SDL_strcasecmp(value, "on") == 0;
+    } else if (SDL_strcasecmp(key, "stylus") == 0) {
+        t->stylus = SDL_strcasecmp(value, "on") == 0;
     } else if (SDL_strcasecmp(key, "style") == 0) {
         t->style = end != value && *end == '\0' ? (int)n - 1 : t->style;
     } else {
@@ -1914,10 +1918,12 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "size = %d\n"
             "# vibration: a short buzz at a press\n"
             "vibration = %s\n"
+            "# stylus: a finger on the lower screen's part of the picture is the DS's stylus\n"
+            "stylus = %s\n"
             "# style: the buttons' look, 1 to 8\n"
             "style = %d\n",
             modes[p->touch.mode], layouts[p->touch.layout], p->touch.opacity, p->touch.size,
-            p->touch.vibration ? "on" : "off", p->touch.style + 1);
+            p->touch.vibration ? "on" : "off", p->touch.stylus ? "on" : "off", p->touch.style + 1);
         for (int i = 0; i < KHDAYS_TOUCH_CONTROLS_KEPT; ++i) {
             const KhdaysHudPlace *c = &p->touch.control[i];
             if (c->set) {

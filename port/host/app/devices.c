@@ -146,8 +146,9 @@ static void finger(const SDL_Event *event)
     const SDL_FingerID id = event->tfinger.fingerID;
     int x = 0, y = 0;
     if (event->type == SDL_EVENT_FINGER_DOWN) {
-        if (stylus_down || !game_input || stylus_map == NULL || !stylus_map(event->tfinger.x, event->tfinger.y, &x, &y)) {
-            return; /* a second finger, or one off the lower screen: not the stylus */
+        if (stylus_down || !game_input || stylus_map == NULL || !profile.touch.stylus ||
+            !stylus_map(event->tfinger.x, event->tfinger.y, &x, &y)) {
+            return; /* a second finger, one off the lower screen, or the setting off: not the stylus */
         }
         stylus_finger = id;
         stylus_down = 1;
@@ -185,6 +186,9 @@ void khdays_devices_set_profile(const KhdaysProfile *p)
         touch_relayout();
     }
     profile = *p;
+    if (!p->touch.stylus) {
+        stylus_down = 0; /* the setting turned off with a finger down: lifted */
+    }
     khdays_hud_settings_publish(p->enh.hud);
     khdays_character_shadows_publish(p->enh.character_shadows);
     send();

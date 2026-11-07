@@ -243,6 +243,12 @@ static void test_stylus(void)
     khdays_profile_default(&p);
     khdays_devices_init(&p, capture);
     khdays_devices_set_stylus_map(half_map);
+    CHECK(p.touch.stylus == 0);
+    finger_event(SDL_EVENT_FINGER_DOWN, 1, 0.75f, 0.5f); /* the setting off (the default): nothing */
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_UP, 1, 0.75f, 0.5f);
+    p.touch.stylus = 1;
+    khdays_devices_set_profile(&p);
     finger_event(SDL_EVENT_FINGER_DOWN, 1, 0.25f, 0.5f); /* the upper half: nothing */
     CHECK(last.touching == 0);
     finger_event(SDL_EVENT_FINGER_UP, 1, 0.25f, 0.5f);
@@ -264,6 +270,14 @@ static void test_stylus(void)
     CHECK(last.touching == 1);
     finger_event(SDL_EVENT_FINGER_CANCELED, 4, 0.75f, 0.5f);
     CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_DOWN, 5, 0.75f, 0.5f);
+    CHECK(last.touching == 1);
+    p.touch.stylus = 0;
+    khdays_devices_set_profile(&p); /* turned off with the finger down: lifted */
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_UP, 5, 0.75f, 0.5f);
+    p.touch.stylus = 1;
+    khdays_devices_set_profile(&p);
     finger_event(SDL_EVENT_FINGER_DOWN, 5, 0.75f, 0.5f);
     CHECK(last.touching == 1);
     khdays_devices_set_game_input(0); /* the settings menu: the finger held is let go of, a new one not taken */

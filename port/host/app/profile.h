@@ -308,6 +308,8 @@ typedef struct KhdaysTouch {
     int opacity;   /* percent, 20..100 */
     int size;      /* percent of the default size, 60..160 */
     int vibration; /* a short buzz at a press */
+    int stylus;    /* a finger on the lower screen's part of the one picture is the DS's stylus (off: the touch
+                    * screen is only the on-screen controls') */
     int style;     /* the art, from 0 (assets/touch/styleN) */
     KhdaysHudPlace control[KHDAYS_TOUCH_CONTROLS_KEPT]; /* the player's own layout's: in points (host/touch/touch_layout.h) */
 } KhdaysTouch;
