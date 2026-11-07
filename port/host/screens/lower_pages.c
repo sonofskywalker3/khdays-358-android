@@ -5,11 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int touch_side = -1; /* khdays_lower_pages_touch_side */
+static int touch_row = -1; /* khdays_lower_pages_touch_row */
 
-void khdays_lower_pages_touch_side(int side)
+void khdays_lower_pages_touch_row(int ds_y)
 {
-    touch_side = side;
+    touch_row = ds_y;
 }
 
 void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int count)
@@ -443,9 +443,9 @@ static int place_page(int screen, const uint32_t *ds, int rows, KhdaysLowerPlace
     }
     case KHDAYS_LOWER_PANELS: {
         /* the board's extra rows above its grid and below; with a finger on the page, all of them on the side
-         * farther from it (khdays_lower_pages_touch_side) */
+         * farther from it (khdays_lower_pages_touch_row) */
         static const int board[][2] = {{PANELS_BOARD_ABOVE, 1}, {PANELS_BOARD_BELOW, 1}};
-        const int far = touch_side;
+        const int far = touch_row < 0 ? -1 : touch_row < (PANELS_BOARD_ABOVE + PANELS_BOARD_BELOW) / 2 ? 1 : 0;
         int entries[PANELS_ENTRIES][2], track[1][2] = {{0, 1}};
         place->map = khdays_lower_map_rows;
         place->split = PANELS_LIST;
