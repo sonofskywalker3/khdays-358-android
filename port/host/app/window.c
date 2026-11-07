@@ -741,16 +741,16 @@ static void settings_closed(SDL_Window *window, SDL_Renderer *renderer)
 }
 
 /* With the Menu Overhaul, whether the settings menu may open now: in the game's menus and pauses (a situation
- * the port does not know taken as one) and in the field, not over the DS's movies, the day's card or the end
- * -- as the one-screen picture decided last. With two screens: always. The field is let through so that the
- * corner gear and the Back key, the only way to the menu on a handheld without a controller, open it at once
- * in play, as they did before the Overhaul; the Overhaul's own pause stays START's. */
+ * the port does not know taken as one), not in the middle of play -- the field, Sora's memories, the DS's
+ * movies, the day's card, the end -- as the one-screen picture decided last. With two screens: always. */
 static int settings_allowed(void)
 {
     static int refused_said;
     int allowed = 1;
     if (khdays_devices_profile()->video.one_screen) {
         switch (khdays_onescreen_scene()) {
+        case KHDAYS_SIT_FIELD:
+        case KHDAYS_SIT_FIELD_3D_BOTH:
         case KHDAYS_SIT_MOVIE:
         case KHDAYS_SIT_DAY_COUNTER:
         case KHDAYS_SIT_THOUGHTS:
