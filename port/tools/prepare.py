@@ -5579,7 +5579,7 @@ def file_stamps(top: Path, suffixes: frozenset[str] | None = None, skip_top: fro
     return stamps
 
 
-def prepare_inputs(out: Path, no_routes: bool) -> dict | None:
+def prepare_inputs(out: Path, options: dict) -> dict | None:
     """Everything a run's output depends on: its options and paths (sources.cmake names its files
     absolutely), the tools' versions and environment, and the stamps of the files it reads; None when
     those cannot be told (a link among them)."""
@@ -5596,7 +5596,7 @@ def prepare_inputs(out: Path, no_routes: bool) -> dict | None:
     return {
         "root": str(ROOT),
         "out": str(out),
-        "no_routes": no_routes,
+        "options": options,
         "python": sys.version,
         "pycparser": pycparser.__version__,
         "environment": {name: os.environ.get(name) for name in COMPILER_ENVIRONMENT},
@@ -5630,7 +5630,7 @@ def unchanged_since_last_run(out: Path, inputs: dict | None) -> bool:
 def record_run(out: Path, inputs: dict | None) -> None:
     """INPUTS_FILE for the next run, unless an input may have changed while this one read it (stamped
     near or after STARTED, or since this run's first stamps): the next run then prepares everything."""
-    if inputs is None or prepare_inputs(out, inputs["no_routes"]) != inputs:
+    if inputs is None or prepare_inputs(out, inputs["options"]) != inputs:
         return
     if any(stamp and stamp[1] >= STARTED - TIMESTAMP_RESOLUTION_NS for stamp in inputs["files"].values()):
         return
@@ -5650,7 +5650,7 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="prepare everything even when nothing it reads changed")
     args = ap.parse_args()
     out = Path(args.out).resolve()  # sources.cmake names its files absolutely
-    inputs = prepare_inputs(out, args.no_routes)
+    inputs = prepare_inputs(out, {name: value for name, value in vars(args).items() if name != "force"})
     if not args.force and unchanged_since_last_run(out, inputs):
         check_port_calls(out)
         print(f"nothing prepare.py reads changed since it last wrote {out} (--force prepares anyway)")
@@ -6279,7 +6279,7 @@ def main() -> int:
     dispatched_calls.update({n: absolute[n] for n in rom_run if n in absolute})
     rewritten, area = rewrite_game(out, c_sources, placed, functions, dispatched_calls, not args.no_routes)
     check_port_calls(out)
-    missing =[n for n in PORT_DS_SYMBOLS if n not in ds_data]
+    missing = [n for n in PORT_DS_SYMBOLS if n not in ds_data]
     if missing:
         raise SystemExit(f"references: the port reads {', '.join(missing)}, which the decomp places nowhere")
     symbols_h = (
