@@ -48,8 +48,11 @@ object TouchOverlay {
 
     /** What the game wants shown: called by native code. `edit`: 0 play, 1 moving, 2 resizing. */
     @JvmStatic
-    fun show(mode: Int, edit: Int, style: Int, opacity: Int, vibration: Boolean, width: Float, height: Float, boxes: FloatArray) {
-        main.post { view?.show(mode, edit, style, opacity, vibration, width, height, boxes) }
+    fun show(
+        mode: Int, edit: Int, style: Int, opacity: Int, vibration: Boolean, gear: Boolean, width: Float, height: Float,
+        boxes: FloatArray,
+    ) {
+        main.post { view?.show(mode, edit, style, opacity, vibration, gear, width, height, boxes) }
     }
 
     /** The words Select and Start in the game's font: white pixels, for the view to colour. */

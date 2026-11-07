@@ -142,7 +142,7 @@ void khdays_touch_bridge_show(const KhdaysTouchShown *shown)
 {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jclass overlay = env != NULL ? overlay_class(env) : NULL;
-    jmethodID method = overlay != NULL ? (*env)->GetStaticMethodID(env, overlay, "show", "(IIIIZFF[F)V") : NULL;
+    jmethodID method = overlay != NULL ? (*env)->GetStaticMethodID(env, overlay, "show", "(IIIIZZFF[F)V") : NULL;
     jfloatArray boxes;
     if (method == NULL) {
         if (env != NULL) {
@@ -157,7 +157,8 @@ void khdays_touch_bridge_show(const KhdaysTouchShown *shown)
     }
     (*env)->SetFloatArrayRegion(env, boxes, 0, KHDAYS_TOUCH_SHOWN_FLOATS, shown->boxes);
     (*env)->CallStaticVoidMethod(env, overlay, method, shown->mode, shown->edit, shown->style, shown->opacity,
-                                 (jboolean)(shown->vibration != 0), shown->w, shown->h, boxes);
+                                 (jboolean)(shown->vibration != 0), (jboolean)(shown->gear != 0), shown->w,
+                                 shown->h, boxes);
     clear_exception(env);
     (*env)->DeleteLocalRef(env, boxes);
 }

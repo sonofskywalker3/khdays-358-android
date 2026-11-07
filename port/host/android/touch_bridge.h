@@ -18,6 +18,7 @@ typedef struct KhdaysTouchShown {
     int style;     /* the art's, from 0 */
     int opacity;   /* percent */
     int vibration;
+    int gear;      /* the gear among the controls: 0 where the settings key does nothing (host.h) */
     float w, h;    /* the window's pixels */
     float boxes[KHDAYS_TOUCH_SHOWN_FLOATS];
 } KhdaysTouchShown;

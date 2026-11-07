@@ -81,6 +81,7 @@ static void tell_view(int mode)
     s.style = p->touch.style;
     s.opacity = p->touch.opacity;
     s.vibration = p->touch.vibration;
+    s.gear = editing || khdays_host_settings_key_works(); /* no gear in the middle of play with the Menu Overhaul */
     s.w = view_w;
     s.h = view_h;
     for (int i = 0; i < KHDAYS_TOUCH_CONTROLS; ++i) {

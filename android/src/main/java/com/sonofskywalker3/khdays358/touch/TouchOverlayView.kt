@@ -56,6 +56,7 @@ class TouchOverlayView(context: Context) : View(context) {
     private var stickX = 0f
     private var stickY = 0f
     private var gear = false
+    private var showGear = true // the gear among the controls: not where the settings key does nothing
 
     private var saidBits = 0
     private var saidLock = false
@@ -87,11 +88,12 @@ class TouchOverlayView(context: Context) : View(context) {
     }
 
     fun show(
-        mode: Int, edit: Int, style: Int, opacity: Int, vibration: Boolean, width: Float, height: Float, boxes: FloatArray,
+        mode: Int, edit: Int, style: Int, opacity: Int, vibration: Boolean, gear: Boolean, width: Float, height: Float,
+        boxes: FloatArray,
     ) {
         this.vibration = vibration
         if (mode == this.mode && edit == this.edit && style == this.style && opacity == this.opacity &&
-            width == gameWidth && height == gameHeight && boxes.contentEquals(this.boxes)
+            gear == showGear && width == gameWidth && height == gameHeight && boxes.contentEquals(this.boxes)
         ) {
             return
         }
@@ -103,6 +105,7 @@ class TouchOverlayView(context: Context) : View(context) {
         this.edit = edit
         this.style = style
         this.opacity = opacity
+        showGear = gear
         gameWidth = width
         gameHeight = height
         boxes.copyInto(this.boxes)
@@ -184,11 +187,13 @@ class TouchOverlayView(context: Context) : View(context) {
         inputs += button(TouchOverlay.R, art, ControlArt.Shape.WIDE, art.icon("button_r"), holds(DsButton.R))
         inputs += button(TouchOverlay.SELECT, art, ControlArt.Shape.WIDE, selectLabel, holds(DsButton.SELECT))
         inputs += start
-        inputs += button(TouchOverlay.GEAR, art, ControlArt.Shape.ROUND, art.icon("cog")) { on ->
-            if (gear && !on) {
-                TouchOverlay.nativeGear()
+        if (showGear) {
+            inputs += button(TouchOverlay.GEAR, art, ControlArt.Shape.ROUND, art.icon("cog")) { on ->
+                if (gear && !on) {
+                    TouchOverlay.nativeGear()
+                }
+                gear = on
             }
-            gear = on
         }
         if (mode == TouchOverlay.MODE_MENU || mode == TouchOverlay.MODE_EVENT) {
             inputs += TouchOverlay.DPAD to DPad(art, { bits -> dpadBits = bits }, box(TouchOverlay.DPAD))
