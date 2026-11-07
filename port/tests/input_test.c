@@ -2275,6 +2275,25 @@ static void test_hud_settings(void)
             CHECK(*rows[i].value != old);
         }
     CHECK(found == KHDAYS_OPT_COUNT);
+    {
+        /* an HD PACK from before 0.1.5 (no KH2 HUD): the KH2 switches' notes say so, the switches still the
+         * player's; the HD fonts' and the mission panel's placement's notes their own */
+        KhdaysModelContext old_pack = {0};
+        KhdaysRow old_rows[KHDAYS_MODEL_ROWS_MAX];
+        int told = 0, kept = 0;
+        old_pack.hd_pack_old = 1;
+        const int old_count = khdays_model_rows(KHDAYS_SECTION_ENHANCEMENTS, &q, &old_pack, old_rows);
+        for (int i = 0; i < old_count; ++i) {
+            if (old_rows[i].id >= KHDAYS_SET_HUD_MINIMAP && old_rows[i].id <= KHDAYS_SET_HUD_UI_PADDING) {
+                ++told;
+                CHECK(old_rows[i].available && old_rows[i].note == khdays_text(TXT_HD_PACK_OLD_NOTE));
+            } else if (old_rows[i].id == KHDAYS_SET_HUD_FONT || old_rows[i].id == KHDAYS_SET_HUD_MISSION_ANCHOR) {
+                ++kept;
+                CHECK(old_rows[i].available && old_rows[i].note != khdays_text(TXT_HD_PACK_OLD_NOTE));
+            }
+        }
+        CHECK(told == KHDAYS_OPT_UI_PADDING - KHDAYS_OPT_MINIMAP + 1 && kept == 2);
+    }
     int shadow_found = 0;
     for (int i = 0; i < count; ++i)
         if (rows[i].id == KHDAYS_SET_CHARACTER_SHADOWS) {

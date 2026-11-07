@@ -62,6 +62,11 @@ They are made on a Windows PC from your own copies of the HD collections, then c
    copied folder** and pick it. The app copies the HD files in and shows what was added; they are on
    the next time you play. It then offers to delete the copy you made, to get the space back.
 
+An HD PACK made by an older installer (0.1.3, 0.1.4) still works, but lacks 0.1.5's new pieces: KH2's
+Roxas and keyblades, the KH2 HUD, prizes and chests and the Menu Overhaul. Their switches in Settings ->
+Enhancements do nothing (their notes say so) until a pack made by the 0.1.5 installer or newer is copied
+over the old one (steps 1 to 3 again).
+
 ## Playing
 
 The device's own controls play the game as on the DS, by position: the right face button is A, the

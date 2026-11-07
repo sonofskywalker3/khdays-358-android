@@ -92,6 +92,20 @@ static const char *const texts[TXT_COUNT][5] = {
          "Disattivato mostra quelli di Days. Si applica subito.",
          "Roxas y sus llaves espada con los modelos, movimientos y ropa de KH2, hechos por el HD PACK desde tu 1.5+2.5. "
          "Desactivado muestra los de Days. Se aplica al momento."},
+    [TXT_HD_PACK_OLD_NOTE] =
+        {"Does nothing now: no enabled mod has KH2's pieces (an HD PACK from before 0.1.5, off, or missing). Run the "
+         "0.1.5 PC installer again with your 1.5+2.5 and copy its new mods/HD PACK over the old one.",
+         "Sans effet pour l’instant : aucun mod activé n’a les éléments de KH2 (HD PACK d’avant 0.1.5, désactivé ou "
+         "absent). Relancez l’installateur PC 0.1.5 avec votre 1.5+2.5 et copiez son nouveau mods/HD PACK à la place "
+         "de l’ancien.",
+         "Wirkt noch nicht: kein aktiver Mod hat die KH2-Teile (HD PACK von vor 0.1.5, aus oder fehlend). Führe den "
+         "PC-Installer 0.1.5 mit deiner 1.5+2.5 erneut aus und kopiere sein neues mods/HD PACK über das alte.",
+         "Per ora senza effetto: nessun mod attivo ha gli elementi di KH2 (HD PACK precedente alla 0.1.5, disattivato "
+         "o mancante). Esegui di nuovo l’installer PC 0.1.5 con la tua 1.5+2.5 e copia il suo nuovo mods/HD PACK al "
+         "posto del vecchio.",
+         "Sin efecto por ahora: ningún mod activo tiene las piezas de KH2 (HD PACK anterior a 0.1.5, desactivado o "
+         "ausente). Ejecuta de nuevo el instalador de PC 0.1.5 con tu 1.5+2.5 y copia su nuevo mods/HD PACK sobre el "
+         "antiguo."},
     [TXT_HUD_PAUSE_TARGET] = {"Target in pause menu", "Cible dans le menu Pause", "Ziel im Pausenmenü",
                               "Bersaglio nel menu pausa", "Objetivo en el menú de pausa"},
     [TXT_HUD_INFORMATION_HUD] = {"HUD and control during INFORMATION", "ATH et commandes pendant INFORMATION",

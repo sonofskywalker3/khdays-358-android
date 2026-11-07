@@ -235,6 +235,8 @@ typedef struct KhdaysModelContext {
     int pad_family;      /* KhdaysPadFamily */
     int guest;           /* a guest in a multiplayer session: the host's gameplay mods' options count */
     int second_display;  /* the lower screen is on a display of its own (the screens setting has no say) */
+    int hd_pack_old;     /* no mod has KH2's HUD (layouts/gauge): the HD PACK predates 0.1.5, is off or missing,
+                          * so the KH2 switches do nothing; their notes say so */
 } KhdaysModelContext;
 
 /* The most rows a section can have: one binding per action, plus the

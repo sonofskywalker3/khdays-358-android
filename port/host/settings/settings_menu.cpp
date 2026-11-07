@@ -15,6 +15,7 @@ extern "C" { // the host's C headers that say nothing of C++
 #include "menu_font.h"
 #include "pad_icons.h"
 #include "settings_skin.h"
+#include "../../runtime/core/rom.h"
 #if defined(__ANDROID__)
 #include "../android/bottom_screen.h"
 #endif
@@ -99,6 +100,8 @@ struct Menu {
     int count = 0;
     // The situation (khdays_settings_set_situation) and the graphics card.
     int in_session = 0, hd_videos = 0, graphics_card = 1, guest = 0;
+    // No mod has KH2's HUD (hd_pack_has_kh2), looked up when the menu opens.
+    int hd_pack_old = 0;
     // Where the last drawing put things, in the renderer's pixels.
     std::vector<Place> places;
     float density = 1.0f;
@@ -171,6 +174,18 @@ int pad_family()
     }
 }
 
+// Whether a mod has KH2's HUD (the HD PACK's layouts/gauge, made by the 0.1.5 installer and later): the KH2
+// switches of the Enhancements section do nothing without it. In the profile's language, else English, as the
+// HUD looks it up (ui/hud_options.cpp). A disk lookup over the mods: once when the menu opens, not every frame.
+bool hd_pack_has_kh2()
+{
+    char relative[128], found[2048];
+    const char *language = khdays_language_code(khdays_language_choose(m.work.language));
+    std::snprintf(relative, sizeof(relative), "layouts/gauge/%s/gauge.json", language && *language ? language : "en");
+    return khdays_mods_find(relative, found, sizeof(found)) != 0 ||
+           khdays_mods_find("layouts/gauge/en/gauge.json", found, sizeof(found)) != 0;
+}
+
 // Rebuilds the rows of the section shown from the working profile, and keeps
 // the focus on a row and a cell that exist.
 void settle()
@@ -185,6 +200,7 @@ void settle()
 #if defined(__ANDROID__)
     context.second_display = khdays_bottom_attached();
 #endif
+    context.hd_pack_old = m.hd_pack_old;
     khdays_model_refresh(&m.work);
     m.count = khdays_model_rows_into(m.section, &m.work, &context, m.rows.data(), (int)m.rows.size());
     if (m.count > (int)m.rows.size()) {
@@ -2171,6 +2187,7 @@ void khdays_settings_open(const KhdaysProfile *current)
     m.held_dir = 0;
     m.test_action = -2;
     m.scroll_to_top = true;
+    m.hd_pack_old = !hd_pack_has_kh2();
     settle();
     cue(KHDAYS_SETTINGS_CUE_OPEN);
 }

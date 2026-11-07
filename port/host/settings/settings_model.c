@@ -411,6 +411,14 @@ static int built(unsigned enhancement)
     return (KHDAYS_AVAILABLE_ENHANCEMENTS & enhancement) != 0;
 }
 
+/* A switch of a KH2 piece the HD PACK makes (KHDAYS_OPT_*). When no mod has KH2's HUD (the pack predates 0.1.5,
+ * is off, or there is none) its note says so instead: still the player's to set, since a pack of their own may
+ * have some pieces and not others, and KH2's models and prizes are on by default. */
+static KhdaysRow *add_kh2_switch(Builder *b, int id, int text, int *value, const char *note)
+{
+    return add_switch(b, id, text, value, 1, b->context->hd_pack_old ? khdays_text(TXT_HD_PACK_OLD_NOTE) : note);
+}
+
 static void build_enhancements(Builder *b, KhdaysProfile *w)
 {
     KhdaysEnhancements *e = &w->enh;
@@ -443,33 +451,33 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_REPLACEMENTS));
     add_switch(b, KHDAYS_SET_HUD_FONT, TXT_HUD_FONT, &e->hud[KHDAYS_OPT_FONT], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_MINIMAP, TXT_HUD_MINIMAP, &e->hud[KHDAYS_OPT_MINIMAP], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_MINIMAP, TXT_HUD_MINIMAP, &e->hud[KHDAYS_OPT_MINIMAP],
                khdays_text(TXT_HUD_MINIMAP_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_PARTY_HP, TXT_HUD_PARTY_HP, &e->hud[KHDAYS_OPT_PARTY_HP], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_PARTY_HP, TXT_HUD_PARTY_HP, &e->hud[KHDAYS_OPT_PARTY_HP],
                khdays_text(TXT_HUD_PARTY_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_ENEMY_HP, TXT_HUD_ENEMY_HP, &e->hud[KHDAYS_OPT_ENEMY_HP], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_ENEMY_HP, TXT_HUD_ENEMY_HP, &e->hud[KHDAYS_OPT_ENEMY_HP],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_MISSION, TXT_HUD_MISSION, &e->hud[KHDAYS_OPT_MISSION], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_MISSION, TXT_HUD_MISSION, &e->hud[KHDAYS_OPT_MISSION],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_INFORMATION, TXT_HUD_INFORMATION, &e->hud[KHDAYS_OPT_INFORMATION], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_INFORMATION, TXT_HUD_INFORMATION, &e->hud[KHDAYS_OPT_INFORMATION],
                khdays_text(TXT_HUD_INFORMATION_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_RETICLES, TXT_HUD_RETICLES, &e->hud[KHDAYS_OPT_RETICLES], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_RETICLES, TXT_HUD_RETICLES, &e->hud[KHDAYS_OPT_RETICLES],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_LOCKED_ON, TXT_HUD_LOCKED_ON, &e->hud[KHDAYS_OPT_LOCKED_ON], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_LOCKED_ON, TXT_HUD_LOCKED_ON, &e->hud[KHDAYS_OPT_LOCKED_ON],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_NOTIFICATIONS, TXT_HUD_NOTIFICATIONS, &e->hud[KHDAYS_OPT_NOTIFICATIONS], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_NOTIFICATIONS, TXT_HUD_NOTIFICATIONS, &e->hud[KHDAYS_OPT_NOTIFICATIONS],
                khdays_text(TXT_HUD_NOTIFICATIONS_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_HEART_POINTS, TXT_HUD_HEART_POINTS, &e->hud[KHDAYS_OPT_HEART_POINTS], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_HEART_POINTS, TXT_HUD_HEART_POINTS, &e->hud[KHDAYS_OPT_HEART_POINTS],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_PRIZES, TXT_HUD_PRIZES, &e->hud[KHDAYS_OPT_PRIZES], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_PRIZES, TXT_HUD_PRIZES, &e->hud[KHDAYS_OPT_PRIZES],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_KH2_MODELS, TXT_HUD_KH2_MODELS, &e->hud[KHDAYS_OPT_KH2_MODELS], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_KH2_MODELS, TXT_HUD_KH2_MODELS, &e->hud[KHDAYS_OPT_KH2_MODELS],
                khdays_text(TXT_HUD_KH2_MODELS_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET],
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD],
                khdays_text(TXT_HUD_INFORMATION_HUD_NOTE));
-    add_switch(b, KHDAYS_SET_HUD_UI_PADDING, TXT_HUD_UI_PADDING, &e->hud[KHDAYS_OPT_UI_PADDING], 1,
+    add_kh2_switch(b, KHDAYS_SET_HUD_UI_PADDING, TXT_HUD_UI_PADDING, &e->hud[KHDAYS_OPT_UI_PADDING],
                khdays_text(TXT_HUD_UI_PADDING_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_MISSION_LAYOUT));
     add_choice(b, KHDAYS_SET_HUD_MISSION_VISIBILITY, TXT_HUD_MISSION_VISIBILITY, &e->hud[KHDAYS_OPT_MISSION_VISIBILITY],
