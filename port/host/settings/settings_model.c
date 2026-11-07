@@ -1268,7 +1268,8 @@ unsigned khdays_model_changes(const KhdaysProfile *a, const KhdaysProfile *b)
 {
     unsigned changes = 0;
     if (memcmp(a->input, b->input, sizeof(a->input)) != 0 || a->preset != b->preset ||
-        memcmp(a->stick, b->stick, sizeof(a->stick)) != 0 || memcmp(&a->enh, &b->enh, sizeof(a->enh)) != 0) {
+        memcmp(a->stick, b->stick, sizeof(a->stick)) != 0 || memcmp(&a->enh, &b->enh, sizeof(a->enh)) != 0 ||
+        memcmp(&a->touch, &b->touch, sizeof(a->touch)) != 0) {
         changes |= KHDAYS_CHANGE_CONTROLS;
     }
     if (memcmp(&a->video, &b->video, sizeof(a->video)) != 0) {

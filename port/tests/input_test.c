@@ -2397,6 +2397,11 @@ static void test_hud_settings(void)
         }
     CHECK(shadow_found == 1);
     CHECK(khdays_model_changes(&p, &q) & KHDAYS_CHANGE_CONTROLS);
+    {
+        KhdaysProfile t = p; /* the touch rows apply while the menu is open: a change of theirs is the controls' */
+        t.touch.stylus = !t.touch.stylus;
+        CHECK(khdays_model_changes(&p, &t) & KHDAYS_CHANGE_CONTROLS);
+    }
     khdays_devices_set_profile(&q);
     CHECK(khdays_character_shadows_enabled() == q.enh.character_shadows);
     CHECK(khdays_hud_settings_generation() != generation);
