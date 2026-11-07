@@ -1042,12 +1042,10 @@ static int host_thread(void *unused)
         khdays_devices_frame(); /* a wheel's notch let go */
         if (settings_after_pause_until != 0) {
             const int scene = khdays_onescreen_scene();
-            /* START opens the pause in a mission's room, the camp menu in the castle's Grey Area */
-            const int opened = scene == KHDAYS_SIT_PAUSE || scene == KHDAYS_SIT_CAMP_MENU;
             if (khdays_settings_is_open() || SDL_GetTicks() >= settings_after_pause_until ||
-                (scene != KHDAYS_SIT_FIELD && scene != KHDAYS_SIT_FIELD_3D_BOTH && !opened)) {
+                (scene != KHDAYS_SIT_FIELD && scene != KHDAYS_SIT_FIELD_3D_BOTH && scene != KHDAYS_SIT_PAUSE)) {
                 settings_after_pause_until = 0; /* opened another way, the game did not pause, or went elsewhere */
-            } else if (opened) {
+            } else if (scene == KHDAYS_SIT_PAUSE) {
                 settings_after_pause_until = 0;
                 settings_key();
                 redraw(window, renderer);
