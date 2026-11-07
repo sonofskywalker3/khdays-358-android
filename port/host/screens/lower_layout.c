@@ -1,15 +1,13 @@
 /* lower_layout.h: the map from each display pixel to the picture's (lower_screens.c says where, screen by
  * screen, in DS dots), made once for a screen and its measurements, then a copy per frame. */
 #include "lower_layout.h"
+#include "lower_map.h"
 #include "lower_screens.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#define COL_BITS 12 /* a map entry: the picture's row above these bits, its column in them */
-#define COL_MASK ((1 << COL_BITS) - 1)
 #define OPAQUE_BLACK 0xff000000u
-#define COPY_BIT (1 << 30) /* a map entry of a repeated row's copy: drawn from the copy table where it says */
 
 static const uint8_t *row_of(const KhdaysLowerPicture *p, int row)
 {

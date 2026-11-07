@@ -1,5 +1,6 @@
 /* lower_pixels.h: the lists the game draws a page at a time (the tutorials', Roxas's Diary's, the Panels
  * page's stock) and a picture of one colour, and the rows the screens are laid out by (docs/LOWER_DISPLAY.md). */
+#include "lower_held.h"
 #include "lower_pixels.h"
 
 #include <stdlib.h>
@@ -201,6 +202,7 @@ int khdays_lower_plain_row(const uint32_t *ds, int y0, int y1, int x0, int x1)
 #define PANELS_ENTRIES 8
 #define PANELS_BOARD_ABOVE 22 /* the board's frame, plain above its grid and below */
 #define PANELS_BOARD_BELOW 152
+#define PANELS_TABS 19 /* the board's tabs above this row */
 #define PANELS_TRACK1 151
 #define PANELS_FRAME 160    /* the dark line over the help, ... */
 #define PANELS_HELP 161     /* ... the help box's white top and ... */
@@ -216,6 +218,20 @@ static const int panels_frame[][2] = {{4, 20}, {48, 20}, {88, 20}, {4, 154}, {48
 #define ENTRY_ROWS 16
 #define TUT_HEADER_RED 40   /* the header's red, dimmed too */
 #define PANELS_HELP_SUM 120 /* the help box's white, dimmed too */
+
+int khdays_lower_seams(int screen, KhdaysLowerSeam *seams)
+{
+    /* the board's frame above its grid down to the grid, and below it down to the dark line over the help */
+    static const KhdaysLowerSeam panels[] = {
+        {PANELS_BOARD_ABOVE + 1, 0, PANELS_BOARD_ABOVE + 1, PANELS_LIST, PANELS_TABS},
+        {PANELS_BOARD_BELOW, PANELS_BOARD_BELOW, PANELS_FRAME, PANELS_LIST, PANELS_TABS},
+    };
+    if (screen != KHDAYS_LOWER_PANELS) {
+        return 0;
+    }
+    memcpy(seams, panels, sizeof(panels));
+    return (int)(sizeof(panels) / sizeof(panels[0]));
+}
 
 static int tell_tutorials(const uint32_t *ds)
 {

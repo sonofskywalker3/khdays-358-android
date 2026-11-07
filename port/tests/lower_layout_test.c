@@ -2,6 +2,7 @@
  * (host/screens/lower_layout.h), on synthetic screens: each told by its pixels, the DS's shape for one
  * it does not know, the pieces where the designs put them (docs/LOWER_DISPLAY.md), the characters'
  * zoom measured from their grid, and a touch going back to the DS pixel it shows. */
+#include "../host/screens/lower_held.h"
 #include "../host/screens/lower_layout.h"
 #include "../host/screens/lower_pixels.h"
 #include "../host/screens/lower_screens.h"
@@ -696,6 +697,115 @@ static int shown(const KhdaysLowerLayout *l, float x, int row)
     return n;
 }
 
+#define BOARD_FRAME 0x525259u
+#define HELD_LABEL 0xe0e040u
+#define HELD_PANEL 0x40c0e0u
+static uint8_t before[OUT_H][OUT_W][4];
+
+/* The display rows of DS column x showing `rgb`: how many, the first and the last. */
+static int column_rows(int x, uint32_t rgb, int *first, int *last)
+{
+    int n = 0;
+    *first = *last = -1;
+    for (int oy = 0; oy < OUT_H; ++oy) {
+        const uint8_t *p = out[oy][x * SCALE + 1];
+        if (((uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2]) == rgb) {
+            *first = *first < 0 ? oy : *first;
+            *last = oy;
+            ++n;
+        }
+    }
+    return n;
+}
+
+/* Whether DS column x shows as it did in `before`. */
+static int column_kept(int x)
+{
+    for (int oy = 0; oy < OUT_H; ++oy) {
+        if (memcmp(out[oy][x * SCALE + 1], before[oy][x * SCALE + 1], 4) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The first display row showing DS row `row` in DS column x. */
+static int display_row(const KhdaysLowerLayout *l, int x, int row)
+{
+    int sx, sy;
+    for (int oy = 0; oy < OUT_H; ++oy) {
+        if (khdays_lower_touch(l, x * SCALE + 1, oy, &sx, &sy) && sy == row) {
+            return oy;
+        }
+    }
+    return -1;
+}
+
+static void panels_page(void)
+{
+    numbered();
+    rect(0, 0, 95, 157, BOARD_FRAME); /* the board's frame */
+    rect(95, 24, 232, 157, 0x243148u); /* the stock */
+    rect(8, 160, 248, 161, 0x212121u);
+    rect(8, 161, 248, 162, 0xffffffu); /* the help box */
+    rect(8, 190, 248, 191, 0xffffffu);
+}
+
+/* A panel dragged by touch across the board's repeated rows: drawn whole, its label right above it, and
+ * nothing else on the page moved. */
+static void test_panels_held(void)
+{
+    KhdaysLowerLayout l = {0};
+    KhdaysLowerHeld h = {0};
+    int lf, ll, pf, pl;
+    uint8_t(*plain)[OUT_W][4] = (uint8_t(*)[OUT_W][4])malloc(sizeof(out));
+    panels_page();
+    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
+    khdays_lower_held_note(&h, &l, &pic); /* no finger down */
+    memcpy(before, out, sizeof(out));
+    /* over the board's top row: the label above the repeated row 22, most of the panel below it */
+    rect(30, 8, 50, 16, HELD_LABEL);
+    rect(32, 16, 48, 32, HELD_PANEL);
+    khdays_lower_draw(&l, &pic, &out[0][0][0], OUT_W * 4);
+    CHECK(column_rows(40, HELD_PANEL, &pf, &pl) > 16 * SCALE); /* as laid out: row 22 repeated, the panel's */
+    khdays_lower_held_draw(&h, &l, &pic, 40, 24, &out[0][0][0], OUT_W * 4);
+    CHECK(column_rows(40, HELD_LABEL, &lf, &ll) == 8 * SCALE);
+    CHECK(column_rows(40, HELD_PANEL, &pf, &pl) == 16 * SCALE);
+    CHECK(pf == ll + 1);
+    CHECK(pl == display_row(&l, 40, 32) - 1); /* its rows in the grid where they were */
+    CHECK(column_kept(10) && column_kept(80) && column_kept(150));
+    /* the finger on the board's tabs, or the band changed away from it too (dimmed): drawn as laid out */
+    khdays_lower_draw(&l, &pic, &out[0][0][0], OUT_W * 4);
+    memcpy(plain, out, sizeof(out));
+    khdays_lower_held_draw(&h, &l, &pic, 40, 10, &out[0][0][0], OUT_W * 4);
+    CHECK(memcmp(plain, out, sizeof(out)) == 0);
+    rect(85, 2, 92, 6, 0x00ff00u);
+    khdays_lower_draw(&l, &pic, &out[0][0][0], OUT_W * 4);
+    memcpy(plain, out, sizeof(out));
+    khdays_lower_held_draw(&h, &l, &pic, 40, 24, &out[0][0][0], OUT_W * 4);
+    CHECK(memcmp(plain, out, sizeof(out)) == 0);
+    rect(85, 2, 92, 6, BOARD_FRAME);
+    rect(30, 8, 50, 32, BOARD_FRAME);
+    /* below the grid: the label above it, the panel across the repeated row 152 */
+    rect(30, 138, 50, 146, HELD_LABEL);
+    rect(32, 146, 48, 158, HELD_PANEL);
+    khdays_lower_draw(&l, &pic, &out[0][0][0], OUT_W * 4);
+    khdays_lower_held_draw(&h, &l, &pic, 40, 150, &out[0][0][0], OUT_W * 4);
+    CHECK(column_rows(40, HELD_LABEL, &lf, &ll) == 8 * SCALE);
+    CHECK(column_rows(40, HELD_PANEL, &pf, &pl) == 12 * SCALE);
+    CHECK(pf == ll + 1 && lf == display_row(&l, 40, 138));
+    CHECK(column_kept(10) && column_kept(150));
+    /* nothing kept for another screen */
+    khdays_lower_held_forget(&h);
+    khdays_lower_draw(&l, &pic, &out[0][0][0], OUT_W * 4);
+    memcpy(plain, out, sizeof(out));
+    khdays_lower_held_draw(&h, &l, &pic, 40, 150, &out[0][0][0], OUT_W * 4);
+    CHECK(memcmp(plain, out, sizeof(out)) == 0);
+    free(plain);
+    khdays_lower_held_free(&h);
+    khdays_lower_free(&l);
+}
+
 static void test_tutorials(void)
 {
     KhdaysLowerLayout l = {0};
@@ -1073,6 +1183,7 @@ int main(void)
     test_tutorials();
     test_diary();
     test_panels();
+    test_panels_held();
     test_plain();
     test_title();
     test_day();

@@ -574,6 +574,7 @@ add_library(khdays-host-input STATIC
     host/screens/lower_layout.c      # the lower screen as tall as a second display,
     host/screens/lower_screens.c     # screen by screen
     host/screens/lower_pages.c       # the lists drawn a page at a time, a fade
+    host/screens/lower_held.c        # a panel held on the Panels page, drawn whole
     runtime/scripts/queue.c          # the Mods page: what it asks of the mods,
     runtime/scripts/view.c           # and what it shows of them,
     runtime/plugins/shown.c          # and of the native plugins
@@ -1243,7 +1244,7 @@ add_test(NAME khdays-save COMMAND khdays-save-test)
 # The update check's versions and GitHub's answer (host/app/release_version.h).
 # The lower screen laid out as tall as a second display taller than 4:3 (host/screens/lower_layout.h).
 add_executable(khdays-lower-layout-test tests/lower_layout_test.c host/screens/lower_layout.c host/screens/lower_screens.c
-                                        host/screens/lower_pages.c)
+                                        host/screens/lower_pages.c host/screens/lower_held.c)
 target_compile_options(khdays-lower-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-lower-layout COMMAND khdays-lower-layout-test)
 

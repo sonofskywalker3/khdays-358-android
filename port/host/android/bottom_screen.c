@@ -14,6 +14,7 @@
 
 #include "../../runtime/core/rom.h"
 #include "../render/png_io.h"
+#include "../screens/lower_held.h"
 #include "../screens/lower_layout.h"
 
 #define DS_W 256
@@ -31,6 +32,9 @@ static int columns_src, columns_dst;
 static int mark_shown; /* the display shows the title's logo, or the crown mark (khdays_bottom_present_mark) */
 static int fullscreen;           /* khdays_bottom_set_fullscreen */
 static KhdaysLowerLayout layout; /* the screen laid out as tall as the display, the frame shown last */
+static KhdaysLowerHeld held_clean; /* the Panels board's frame with no finger down (lower_held.h) */
+static int up_frames; /* pictures shown since the finger came up */
+#define UP_SETTLE 4   /* ... before one is surely drawn without it (the picture comes a frame or two late) */
 static int laid_out;             /* 1: the frame shown last went through `layout` */
 
 /* The title's logo (the heart, the crown, KINGDOM HEARTS 358/2 Days): the opening movie's last picture,
@@ -86,6 +90,8 @@ JNIEXPORT void JNICALL Java_com_sonofskywalker3_khdays358_BottomScreenBridge_nat
     geometry_set = 0;
     lock_failed_logged = 0;
     touch_down = 0;
+    khdays_lower_held_forget(&held_clean);
+    up_frames = 0;
     mark_shown = 0;
     surface_w = next != NULL ? ANativeWindow_getWidth(next) : 0;
     surface_h = next != NULL ? ANativeWindow_getHeight(next) : 0;
@@ -105,6 +111,7 @@ JNIEXPORT void JNICALL Java_com_sonofskywalker3_khdays358_BottomScreenBridge_nat
     (void)type;
     pthread_mutex_lock(&lock);
     touch_down = action != 2; /* 0 down, 1 move, 2 up (BottomScreenBridge.kt) */
+    up_frames = touch_down ? 0 : up_frames;
     touch_nx = x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x;
     touch_ny = y < 0.0f ? 0.0f : y > 1.0f ? 1.0f : y;
     pthread_mutex_unlock(&lock);
@@ -210,6 +217,21 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
         }
         if (held || khdays_lower_layout(&layout, &picture, ds, ds_rows, screen, buffer.width, buffer.height)) {
             khdays_lower_draw(&layout, &picture, bits, buffer.stride * 4);
+            if (!touch_down) {
+                if (up_frames < UP_SETTLE) {
+                    ++up_frames; /* a picture still drawn with the panel held: not kept as the frame */
+                } else {
+                    khdays_lower_held_note(&held_clean, &layout, &picture);
+                }
+            } else if (held) {
+                /* a panel dragged on the Panels page: drawn whole where it crosses the board's extra rows */
+                const int px = (int)(touch_nx * (float)surface_w), py = (int)(touch_ny * (float)surface_h);
+                int tx, ty;
+                if (khdays_lower_touch(&layout, px < surface_w ? px : surface_w - 1, py < surface_h ? py : surface_h - 1,
+                                       &tx, &ty)) {
+                    khdays_lower_held_draw(&held_clean, &layout, &picture, tx, ty, bits, buffer.stride * 4);
+                }
+            }
             laid_out = 1;
             ANativeWindow_unlockAndPost(window);
             pthread_mutex_unlock(&lock);
