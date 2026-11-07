@@ -55,12 +55,6 @@ static inline int uniform_span(const uint32_t *ds, int y, int x0, int x1)
     return 1;
 }
 
-/* The DS row the finger is on while a panel is dragged on the Panels page (-1: no finger): the board's extra
- * rows then go all above the grid or all below, whichever is farther from the finger, so that the panel
- * dragged and its label over it, drawn by the game about the finger, are not parted by them. Set before the
- * page is laid out; a finger coming down lays the page out again (host/android/bottom_screen.c). */
-void khdays_lower_pages_touch_row(int ds_y);
-
 /* Rows for a picture of `rows` rows: the DS's, each of inserts[i][0] repeated, the extra rows shared by
  * inserts[i][1]'s weight. */
 void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int count);

@@ -742,16 +742,6 @@ static void test_panels(void)
     CHECK(shown(&l, 50.5f, 22) >= 15 && shown(&l, 50.5f, 152) >= 15);
     CHECK(shown(&l, 150.5f, 24) >= 4 && shown(&l, 150.5f, 136) >= 4);
     CHECK(shown(&l, 150.5f, 191) == 1);
-    /* a finger on the page: the board's extra rows all on the side farther from it */
-    khdays_lower_pages_touch_row(40);
-    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
-    CHECK(shown(&l, 50.5f, 22) == 1 && shown(&l, 50.5f, 152) >= 30);
-    khdays_lower_pages_touch_row(150);
-    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
-    CHECK(shown(&l, 50.5f, 22) >= 30 && shown(&l, 50.5f, 152) == 1);
-    khdays_lower_pages_touch_row(-1);
-    CHECK(lay(&l) == KHDAYS_LOWER_PANELS);
-    CHECK(shown(&l, 50.5f, 22) >= 15 && shown(&l, 50.5f, 152) >= 15);
     /* the hand pointing at the board's top left cell, over its frame: still Panels */
     rect(0, 54, 13, 64, 0xffffffu);
     CHECK(lay(&l) == KHDAYS_LOWER_PANELS);

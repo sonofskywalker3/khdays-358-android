@@ -15,7 +15,6 @@
 #include "../../runtime/core/rom.h"
 #include "../render/png_io.h"
 #include "../screens/lower_layout.h"
-#include "../screens/lower_pixels.h"
 
 #define DS_W 256
 #define DS_H 192
@@ -26,7 +25,6 @@ static ANativeWindow *window;
 static int surface_w, surface_h;
 static int geometry_set, lock_failed_logged;
 static int touch_down;
-static int touch_was_down; /* the frame before: a finger coming down lays the page out again */
 static float touch_nx, touch_ny;
 static int *columns; /* for each destination column, the source column (nearest) */
 static int columns_src, columns_dst;
@@ -88,7 +86,6 @@ JNIEXPORT void JNICALL Java_com_sonofskywalker3_khdays358_BottomScreenBridge_nat
     geometry_set = 0;
     lock_failed_logged = 0;
     touch_down = 0;
-    touch_was_down = 0;
     mark_shown = 0;
     surface_w = next != NULL ? ANativeWindow_getWidth(next) : 0;
     surface_h = next != NULL ? ANativeWindow_getHeight(next) : 0;
@@ -204,31 +201,10 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
         const KhdaysLowerPicture picture = {rgba, width, height, pitch, rows, rows_h, pitch, rows_row0};
         int ds_rows;
         int screen;
-        int held;
         khdays_lower_sample(&picture, ds, &ds_rows);
         screen = khdays_lower_screen(ds, ds_rows);
-        /* a finger coming down: the page laid out once more about it (the Panels board's extra rows away from
-         * the panel it will drag), then held while it stays down */
-        {
-            const int began = touch_down && !touch_was_down;
-            int tx = 0, ty = -1;
-            touch_was_down = touch_down;
-            if (touch_down && was_laid_out) {
-                const int px = (int)(touch_nx * (float)surface_w), py = (int)(touch_ny * (float)surface_h);
-                if (!khdays_lower_touch(&layout, px < surface_w ? px : surface_w - 1, py < surface_h ? py : surface_h - 1,
-                                        &tx, &ty)) {
-                    ty = -1;
-                }
-            }
-            khdays_lower_pages_touch_row(touch_down ? ty : -1);
-            held = was_laid_out && khdays_lower_hold(&layout, &picture, screen, buffer.width, buffer.height, touch_down);
-            if (held && began) {
-                /* laid out once more about the finger, as the page held (the finger's own panel may cover the
-                 * spots the page is told by) */
-                screen = screen == KHDAYS_LOWER_NONE ? layout.screen : screen;
-                held = 0;
-            }
-        }
+        const int held =
+            was_laid_out && khdays_lower_hold(&layout, &picture, screen, buffer.width, buffer.height, touch_down);
         if (held) {
             khdays_lower_copies_refresh(&layout, ds, ds_rows); /* a mark moving under the finger */
         }

@@ -5,13 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int touch_row = -1; /* khdays_lower_pages_touch_row */
-
-void khdays_lower_pages_touch_row(int ds_y)
-{
-    touch_row = ds_y;
-}
-
 void khdays_lower_spread(int16_t *out, int rows, const int (*inserts)[2], int count)
 {
     int weights = 0, weighed = 0, given = 0, n = 0;
@@ -442,20 +435,17 @@ static int place_page(int screen, const uint32_t *ds, int rows, KhdaysLowerPlace
         return 1;
     }
     case KHDAYS_LOWER_PANELS: {
-        /* the board's extra rows above its grid and below; with a finger on the page, all of them on the side
-         * farther from it (khdays_lower_pages_touch_row) */
         static const int board[][2] = {{PANELS_BOARD_ABOVE, 1}, {PANELS_BOARD_BELOW, 1}};
-        const int far = touch_row < 0 ? -1 : touch_row < (PANELS_BOARD_ABOVE + PANELS_BOARD_BELOW) / 2 ? 1 : 0;
         int entries[PANELS_ENTRIES][2], track[1][2] = {{0, 1}};
         place->map = khdays_lower_map_rows;
         place->split = PANELS_LIST;
         place->split2 = PANELS_TRACK;
         track[0][0] = khdays_lower_plain_row(ds, PANELS_ENTRY0, PANELS_TRACK1, PANELS_TRACK, W);
-        khdays_lower_spread(place->rows[0], rows, far < 0 ? board : &board[far], far < 0 ? 2 : 1);
+        khdays_lower_spread(place->rows[0], rows, board, 2);
         khdays_lower_spread(place->rows[1], rows, (const int(*)[2])entries,
                             every_entry(entries, PANELS_ENTRY0, PANELS_ENTRIES));
         khdays_lower_spread(place->rows[2], rows, (const int(*)[2])track, 1);
-        *key = track[0][0] * 3 + far + 1; /* the side chosen tells the layouts apart too */
+        *key = track[0][0];
         return 1;
     }
     case KHDAYS_LOWER_DAY: {
