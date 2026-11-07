@@ -119,4 +119,12 @@ void khdays_composition_set_prompt(const char *action, const char *const *inputs
 /* The composition for a situation in a picture C DS dots wide. */
 void khdays_composition_for(const KhdaysSituation *situation, int columns, KhdaysComposition *out);
 
+/* The DS screen (KOS_UPPER or KOS_LOWER) and its dot under a point of the one picture (DS dots of the
+ * picture): the first shape there says, as the pass takes the first shape that covers a texel
+ * (gfx/onescreen.h), its scale, mirroring and rounded corners undone; a shape repeated, of the 3D or an
+ * image is passed over. By geometry alone: a transparent texel of the shape (a key, a clear dot) is still
+ * the shape's. 0 when no shape is there (the stacked and side-by-side pictures are not placed by shapes:
+ * 0 too). For a touch screen: where a finger is the DS's stylus (host/app/devices.c). */
+int khdays_composition_touch(const KhdaysComposition *c, float px, float py, int *screen, float *sx, float *sy);
+
 #endif

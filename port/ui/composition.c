@@ -1607,6 +1607,51 @@ static void put_float(uint32_t *words, int at, float v)
     memcpy(&words[at], &v, sizeof(v));
 }
 
+static float get_float(const uint32_t *words, int at)
+{
+    float v;
+    memcpy(&v, &words[at], sizeof(v));
+    return v;
+}
+
+int khdays_composition_touch(const KhdaysComposition *c, float px, float py, int *screen, float *sx, float *sy)
+{
+    for (int i = 0; i < c->shape_count; ++i) {
+        const uint32_t *w = c->shapes[i].words;
+        const uint32_t flags = w[KO_FLAGS];
+        const float x1 = get_float(w, KO_DST_X1), y1 = get_float(w, KO_DST_Y1);
+        const float x2 = get_float(w, KO_DST_X2), y2 = get_float(w, KO_DST_Y2);
+        const float kx = get_float(w, KO_SCALE_X), ky = get_float(w, KO_SCALE_Y);
+        const float sw = get_float(w, KO_SRC_W), sh = get_float(w, KO_SRC_H);
+        float fx, fy;
+        if ((flags & (KOF_REPEAT_X | KOF_REPEAT_Y | KOF_3D | KOF_IMAGE)) != 0 || !(kx > 0.0f) || !(ky > 0.0f) ||
+            px < x1 || px >= x2 || py < y1 || py >= y2) {
+            continue;
+        }
+        fx = (px - x1) / kx;
+        fy = (py - y1) / ky;
+        if ((flags & KOF_ROUND) != 0) {
+            /* its corners: outside the quarter circle, what is under the shape (as the pass has it) */
+            const float r = get_float(w, KO_ROUND);
+            const float dx = r - (fx < sw - fx ? fx : sw - fx), dy = r - (fy < sh - fy ? fy : sh - fy);
+            if (dx > 0.0f && dy > 0.0f && dx * dx + dy * dy > r * r) {
+                continue;
+            }
+        }
+        if ((flags & KOF_MIRROR_X) != 0) {
+            fx = sw - fx;
+        }
+        if ((flags & KOF_MIRROR_Y) != 0) {
+            fy = sh - fy;
+        }
+        *screen = (flags & KOF_LOWER) ? (int)KOS_LOWER : (int)KOS_UPPER;
+        *sx = get_float(w, KO_SRC_X) + fx;
+        *sy = get_float(w, KO_SRC_Y) + fy;
+        return 1;
+    }
+    return 0;
+}
+
 /* Builds a shape for this frame in the C x 192 picture: its source's rectangle scaled (a DS dot
  * becomes `scale` picture dots), placed at its corner and moved by its margins. */
 static void build_shape(const ShapeDef *d, int columns, KhdaysShape *out, int key_first, float push_x, float push_y)

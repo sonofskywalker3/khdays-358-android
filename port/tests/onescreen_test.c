@@ -1907,6 +1907,81 @@ static void test_minimap_image(void)
     free(p);
 }
 
+/* khdays_composition_touch: the first shape under a point of the picture gives the DS dot (the pass takes the
+ * first shape covering a texel), scaled and mirrored back, its rounded corners left out; repeated shapes are
+ * passed over; no shape, no dot. */
+static void touch_shape(KhdaysShape *s, unsigned flags, float src_x, float src_y, float src_w, float src_h, float x1,
+                        float y1, float scale)
+{
+    memset(s, 0, sizeof(*s));
+    s->words[KO_FLAGS] = flags;
+    memcpy(&s->words[KO_SRC_X], &src_x, 4);
+    memcpy(&s->words[KO_SRC_Y], &src_y, 4);
+    memcpy(&s->words[KO_SRC_W], &src_w, 4);
+    memcpy(&s->words[KO_SRC_H], &src_h, 4);
+    memcpy(&s->words[KO_DST_X1], &x1, 4);
+    memcpy(&s->words[KO_DST_Y1], &y1, 4);
+    const float x2 = x1 + src_w * scale, y2 = y1 + src_h * scale;
+    memcpy(&s->words[KO_DST_X2], &x2, 4);
+    memcpy(&s->words[KO_DST_Y2], &y2, 4);
+    memcpy(&s->words[KO_SCALE_X], &scale, 4);
+    memcpy(&s->words[KO_SCALE_Y], &scale, 4);
+}
+
+static void test_touch(void)
+{
+    KhdaysShape shapes[2];
+    KhdaysComposition c;
+    int screen = -1;
+    float sx = -1.0f, sy = -1.0f;
+    memset(&c, 0, sizeof(c));
+    c.screens = KHDAYS_SCREENS_UPPER;
+    c.shapes = shapes;
+    /* the whole lower screen placed at x 43 of a 342-wide picture, dot for dot */
+    touch_shape(&shapes[0], KOF_LOWER, 0.0f, 0.0f, 256.0f, 192.0f, 43.0f, 0.0f, 1.0f);
+    c.shape_count = 1;
+    CHECK(khdays_composition_touch(&c, 50.0f, 10.0f, &screen, &sx, &sy) == 1);
+    CHECK(screen == (int)KOS_LOWER && fabsf(sx - 7.0f) < 0.001f && fabsf(sy - 10.0f) < 0.001f);
+    CHECK(khdays_composition_touch(&c, 10.0f, 10.0f, &screen, &sx, &sy) == 0);
+    CHECK(khdays_composition_touch(&c, 299.0f, 10.0f, &screen, &sx, &sy) == 0);
+    /* a piece of the upper screen at twice its size */
+    touch_shape(&shapes[0], 0u, 64.0f, 32.0f, 128.0f, 96.0f, 0.0f, 0.0f, 2.0f);
+    CHECK(khdays_composition_touch(&c, 100.0f, 50.0f, &screen, &sx, &sy) == 1);
+    CHECK(screen == (int)KOS_UPPER && fabsf(sx - 114.0f) < 0.001f && fabsf(sy - 57.0f) < 0.001f);
+    /* the first shape wins where two overlap, as the pass stops at the first that covers a texel */
+    touch_shape(&shapes[1], KOF_LOWER, 0.0f, 0.0f, 256.0f, 192.0f, 0.0f, 0.0f, 1.0f);
+    c.shape_count = 2;
+    CHECK(khdays_composition_touch(&c, 100.0f, 50.0f, &screen, &sx, &sy) == 1 && screen == (int)KOS_UPPER);
+    CHECK(fabsf(sx - 114.0f) < 0.001f && fabsf(sy - 57.0f) < 0.001f);
+    /* mirrored: the dot counted from the other edge (the texel's middle at 0.5 samples dot 255) */
+    touch_shape(&shapes[0], KOF_LOWER | KOF_MIRROR_X, 0.0f, 0.0f, 256.0f, 192.0f, 0.0f, 0.0f, 1.0f);
+    c.shape_count = 1;
+    CHECK(khdays_composition_touch(&c, 0.5f, 50.0f, &screen, &sx, &sy) == 1 && fabsf(sx - 255.5f) < 0.001f);
+    /* repeated along its rows: passed over even inside its own rectangle (the shape under it answers) */
+    touch_shape(&shapes[0], KOF_LOWER | KOF_REPEAT_X, 0.0f, 0.0f, 8.0f, 192.0f, 0.0f, 0.0f, 1.0f);
+    touch_shape(&shapes[1], 0u, 64.0f, 32.0f, 128.0f, 96.0f, 0.0f, 0.0f, 2.0f);
+    c.shape_count = 2;
+    CHECK(khdays_composition_touch(&c, 4.0f, 50.0f, &screen, &sx, &sy) == 1 && screen == (int)KOS_UPPER);
+    CHECK(fabsf(sx - 66.0f) < 0.001f && fabsf(sy - 57.0f) < 0.001f);
+    /* rounded corners: outside the quarter circle, the shape under it (none here) */
+    touch_shape(&shapes[0], KOF_LOWER | KOF_ROUND, 0.0f, 0.0f, 32.0f, 32.0f, 0.0f, 0.0f, 1.0f);
+    {
+        const float r = 6.0f;
+        memcpy(&shapes[0].words[KO_ROUND], &r, 4);
+    }
+    c.shape_count = 1;
+    CHECK(khdays_composition_touch(&c, 0.5f, 0.5f, &screen, &sx, &sy) == 0);
+    CHECK(khdays_composition_touch(&c, 16.0f, 0.5f, &screen, &sx, &sy) == 1 && fabsf(sx - 16.0f) < 0.001f);
+    /* no shape there: no dot, the lower screen composed whole or not */
+    c.shape_count = 0;
+    CHECK(khdays_composition_touch(&c, 100.0f, 50.0f, &screen, &sx, &sy) == 0);
+    c.screens = KHDAYS_SCREENS_LOWER;
+    c.lower_whole = 1;
+    CHECK(khdays_composition_touch(&c, 100.0f, 50.0f, &screen, &sx, &sy) == 0);
+    c.screens = KHDAYS_SCREENS_STACKED;
+    CHECK(khdays_composition_touch(&c, 100.0f, 50.0f, &screen, &sx, &sy) == 0);
+}
+
 int main(void)
 {
     test_places();
@@ -1936,6 +2011,7 @@ int main(void)
     test_split_under_3d();
     test_swap_skips();
     test_event_run_skips();
+    test_touch();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;
