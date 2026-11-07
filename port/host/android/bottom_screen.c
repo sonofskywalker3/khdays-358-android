@@ -27,6 +27,7 @@ static int surface_w, surface_h;
 static int geometry_set, lock_failed_logged;
 static int touch_down;
 static int touch_was_down; /* the frame before: a finger coming down lays the page out again */
+static int touch_side = -1; /* the side the Panels board's extra rows took for the finger (lower_pixels.h) */
 static float touch_nx, touch_ny;
 static int *columns; /* for each destination column, the source column (nearest) */
 static int columns_src, columns_dst;
@@ -207,22 +208,16 @@ void khdays_bottom_present(const uint8_t *rgba, int width, int height, int pitch
         int held;
         khdays_lower_sample(&picture, ds, &ds_rows);
         screen = khdays_lower_screen(ds, ds_rows);
-        /* a finger coming down: the page laid out once more about it (the Panels board's extra rows away from
-         * the panel it will drag), then held while it stays down */
+        /* a finger coming down, or crossing the middle of the display: the page laid out once more about it (the
+         * Panels board's extra rows away from the panel it drags), else held while it stays down */
         {
-            const int began = touch_down && !touch_was_down;
-            int tx = 0, ty = -1;
+            const int side = touch_down ? (touch_ny < 0.5f ? 1 : 0) : -1;
+            const int began = touch_down && (!touch_was_down || side != touch_side);
             touch_was_down = touch_down;
-            if (touch_down && was_laid_out) {
-                const int px = (int)(touch_nx * (float)surface_w), py = (int)(touch_ny * (float)surface_h);
-                if (!khdays_lower_touch(&layout, px < surface_w ? px : surface_w - 1, py < surface_h ? py : surface_h - 1,
-                                        &tx, &ty)) {
-                    ty = -1;
-                }
-            }
-            khdays_lower_pages_touch_row(touch_down ? ty : -1);
+            touch_side = side;
+            khdays_lower_pages_touch_side(side);
             held = was_laid_out && khdays_lower_hold(&layout, &picture, screen, buffer.width, buffer.height, touch_down);
-            if (held && began) {
+        if (held && began) {
                 /* laid out once more about the finger, as the page held (the finger's own panel may cover the
                  * spots the page is told by) */
                 screen = screen == KHDAYS_LOWER_NONE ? layout.screen : screen;
