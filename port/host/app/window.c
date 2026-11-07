@@ -591,6 +591,11 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
  * it does not, since the other players' games go on. */
 static int settings_stopped;
 
+/* Until when the settings menu is to open as soon as settings_allowed lets it (settings_key in the field with
+ * the Menu Overhaul: the game's pause asked for first), in SDL ticks; 0 when not. */
+static Uint64 settings_after_pause_until;
+#define SETTINGS_AFTER_PAUSE_MS 1500
+
 /* Keeps the subtitles the new game's question chose (runtime/menus/newgame.h): in the profile, the
  * picture's settings and the settings file. */
 static void keep_subtitles(void)
@@ -909,6 +914,16 @@ static void settings_key(void)
         khdays_monologue_pause_toggle(); /* a day's monologue: its pause first, as a movie's */
     } else if (settings_allowed()) {
         open_settings();
+    } else if ((khdays_onescreen_scene() == KHDAYS_SIT_FIELD ||
+                khdays_onescreen_scene() == KHDAYS_SIT_FIELD_3D_BOTH) &&
+               !khdays_net_in_session()) {
+        /* the field on one screen, where the Overhaul keeps the menu for the game's own pause: that pause asked
+         * for (START, as the player would), and the menu opened over it once it is up (the loop watches). The
+         * corner gear and the Back key did nothing here, though the gear showed. Not in a multiplayer session,
+         * where START can also skip an event for everyone; the game may also refuse the pause (a fade, a
+         * cooldown), and then nothing opens, as before. */
+        khdays_devices_press_once((uint16_t)(1u << KHDAYS_ACT_START));
+        settings_after_pause_until = SDL_GetTicks() + SETTINGS_AFTER_PAUSE_MS;
     }
 }
 
@@ -1021,6 +1036,17 @@ static int host_thread(void *unused)
             !khdays_net_in_session() && !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) &&
             (SDL_getenv("KHDAYS_SCREEN_LOCK") == NULL || SDL_strcmp(SDL_getenv("KHDAYS_SCREEN_LOCK"), "off") != 0));
         khdays_devices_frame(); /* a wheel's notch let go */
+        if (settings_after_pause_until != 0) {
+            const int scene = khdays_onescreen_scene();
+            if (khdays_settings_is_open() || SDL_GetTicks() >= settings_after_pause_until ||
+                (scene != KHDAYS_SIT_FIELD && scene != KHDAYS_SIT_FIELD_3D_BOTH && scene != KHDAYS_SIT_PAUSE)) {
+                settings_after_pause_until = 0; /* opened another way, the game did not pause, or went elsewhere */
+            } else if (scene == KHDAYS_SIT_PAUSE) {
+                settings_after_pause_until = 0;
+                settings_key();
+                redraw(window, renderer);
+            }
+        }
         mouse_follow(window);
         /* The 3D at the monitor's refresh rate: draw a picture
          * whenever VSync lets one through, between events. */
@@ -1088,7 +1114,8 @@ static int host_thread(void *unused)
             SDL_zero(event);
             event.type = SDL_EVENT_RENDER_DEVICE_LOST;
         } else if (!(smooth || movie || backdrop || kh2_pause ? SDL_WaitEventTimeout(&event, 1)
-                     : settling  ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
+                     : settling || settings_after_pause_until != 0
+                                 ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
                      : animating ? SDL_WaitEventTimeout(&event, 50)
                                  : SDL_WaitEvent(&event))) {
             if (animating) {

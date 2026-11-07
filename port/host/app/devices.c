@@ -93,6 +93,9 @@ int khdays_devices_take_notice(char *text, int size)
 }
 
 /* Works out the snapshot from what is held, and publishes it for the game. */
+/* The DS buttons the next snapshot alone holds (khdays_devices_press_once). */
+static uint16_t pressed_once;
+
 static void send(void)
 {
     snapshot.ui_open = 0;
@@ -100,6 +103,8 @@ static void send(void)
     if (touch_apply != NULL) {
         touch_apply(&profile, &snapshot);
     }
+    snapshot.ds_buttons |= pressed_once;
+    snapshot.ds_buttons_field |= pressed_once;
     if (!game_input) {
         /* The settings menu has the input: the game sees nothing held. */
         memset(&snapshot, 0, sizeof(snapshot));
@@ -119,6 +124,16 @@ void khdays_devices_set_touch(void (*apply)(const KhdaysProfile *profile, Khdays
 
 void khdays_devices_resend(void)
 {
+    send();
+}
+
+void khdays_devices_press_once(uint16_t ds_buttons)
+{
+    /* held in one snapshot, let go in the next: a button let go since the game's last read still counts as
+     * held that once (host.h), as the controls' tap on a movie does */
+    pressed_once = ds_buttons;
+    send();
+    pressed_once = 0;
     send();
 }
 
