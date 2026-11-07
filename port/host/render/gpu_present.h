@@ -70,6 +70,12 @@ void khdays_present_refresh_now(void);
 int khdays_present_settings_button(void);
 int khdays_present_settings_button_at(float x, float y);
 
+/* Whether a window point (0..1 of the window's width and height) shows the lower screen in the latest one-screen
+ * picture, and which of its dots (ui/composition.h khdays_composition_touch on the picture's shapes as they
+ * were drawn): where a finger is the DS's stylus (host/app/devices.c). The side-by-side and stacked pictures
+ * are not placed by shapes: 0 there, for now. */
+int khdays_present_stylus_at(float nx, float ny, int *ds_x, int *ds_y);
+
 /* Video: Show FPS. Whether it is on, and the pictures shown a second, measured over the last half
  * second (the game's own frames are not shown: players took them for the frame rate). */
 int khdays_present_fps(int *pictures);

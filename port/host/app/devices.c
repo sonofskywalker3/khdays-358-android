@@ -28,6 +28,12 @@ static void (*touch_apply)(const KhdaysProfile *profile, KhdaysInputSnapshot *sn
 static void (*touch_relayout)(void);
 static KhdaysDeviceState state;
 static KhdaysInputSnapshot snapshot;
+
+/* The stylus from a finger (khdays_devices_set_stylus_map): the map, the finger that is the stylus while
+ * `stylus_down`, and its DS dot. */
+static int (*stylus_map)(float nx, float ny, int *ds_x, int *ds_y);
+static SDL_FingerID stylus_finger;
+static int stylus_down, stylus_x, stylus_y;
 static int game_input = 1;    /* 0 while the settings menu has the input */
 static int settings_request;  /* the settings button was pressed */
 static int hud_mode_requests; /* presses of the HUD mode button not taken yet */
@@ -105,6 +111,9 @@ static void send(void)
     }
     snapshot.ds_buttons |= pressed_once;
     snapshot.ds_buttons_field |= pressed_once;
+    snapshot.touching = (uint8_t)stylus_down;
+    snapshot.touch_x = (uint16_t)(stylus_down ? stylus_x : 0);
+    snapshot.touch_y = (uint16_t)(stylus_down ? stylus_y : 0);
     if (!game_input) {
         /* The settings menu has the input: the game sees nothing held. */
         memset(&snapshot, 0, sizeof(snapshot));
@@ -124,6 +133,42 @@ void khdays_devices_set_touch(void (*apply)(const KhdaysProfile *profile, Khdays
 
 void khdays_devices_resend(void)
 {
+    send();
+}
+
+void khdays_devices_set_stylus_map(int (*map)(float nx, float ny, int *ds_x, int *ds_y))
+{
+    stylus_map = map;
+    if (stylus_down) {
+        stylus_down = 0;
+        send();
+    }
+}
+
+/* A finger's event: the stylus pressed, moved or lifted. */
+static void finger(const SDL_Event *event)
+{
+    const SDL_FingerID id = event->tfinger.fingerID;
+    int x = 0, y = 0;
+    if (event->type == SDL_EVENT_FINGER_DOWN) {
+        if (stylus_down || !game_input || stylus_map == NULL || !stylus_map(event->tfinger.x, event->tfinger.y, &x, &y)) {
+            return; /* a second finger, or one off the lower screen: not the stylus */
+        }
+        stylus_finger = id;
+        stylus_down = 1;
+    } else if (!stylus_down || id != stylus_finger) {
+        return;
+    } else if (event->type == SDL_EVENT_FINGER_MOTION) {
+        if (!stylus_map(event->tfinger.x, event->tfinger.y, &x, &y)) {
+            stylus_down = 0; /* off the lower screen: lifted, as a stylus leaving the screen is */
+        }
+    } else {
+        stylus_down = 0; /* up, or cancelled */
+    }
+    if (stylus_down) {
+        stylus_x = x;
+        stylus_y = y;
+    }
     send();
 }
 
@@ -174,6 +219,9 @@ void khdays_devices_set_game_input(int on)
 {
     if (on && !game_input) {
         khdays_bindings_mask_held(&state);
+    }
+    if (!on) {
+        stylus_down = 0; /* a finger held across the menu is not the stylus when the game resumes */
     }
     game_input = on;
     send();
@@ -524,6 +572,12 @@ void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer)
 {
     (void)renderer;
     switch (event->type) {
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_CANCELED:
+        finger(event);
+        break;
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
         pad_in_use = event->type == SDL_EVENT_KEY_DOWN ? 0 : pad_in_use;
@@ -586,6 +640,7 @@ void khdays_devices_handle(const SDL_Event *event, SDL_Renderer *renderer)
         }
         /* SDL sends no gamepad events to an unfocused window, so a button
          * released meanwhile would stay held: release everything now. */
+        stylus_down = 0;
         memset(state.key, 0, sizeof(state.key));
         memset(state.mouse, 0, sizeof(state.mouse));
         wheel_until[0] = wheel_until[1] = 0;

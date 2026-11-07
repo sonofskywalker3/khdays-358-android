@@ -802,6 +802,11 @@ static int settings_button_count, settings_button_room;
 static float button_picture_w, button_picture_h, button_ax, button_ay;
 static int button_fit;
 static float one_at_x, one_at_w;
+/* the latest one picture's shapes, for khdays_present_stylus_at (the composition's arrays are the module's,
+ * valid until the next frame; these stay) */
+#define TOUCH_SHAPES_MAX 96
+static KhdaysShape touch_shapes[TOUCH_SHAPES_MAX];
+static KhdaysComposition touch_composition;
 static uint64_t last_refresh; /* the game's time of the last picture */
 
 /* The field's room change (Ov002_UpdateSceneFrame): a quad of the world's shape growing or shrinking about the
@@ -1227,6 +1232,25 @@ int khdays_present_settings_button_at(float x, float y)
     return 0;
 }
 
+int khdays_present_stylus_at(float nx, float ny, int *ds_x, int *ds_y)
+{
+    SDL_Window *own;
+    int w = 0, h = 0, screen = -1;
+    float lx = 0.0f, ly = 0.0f, sx = 0.0f, sy = 0.0f;
+    if (!khdays_present_one_picture() || renderer == NULL || one_at_w <= 0.0f ||
+        (own = SDL_GetRenderWindow(renderer)) == NULL || !SDL_GetWindowSize(own, &w, &h) || w <= 0 || h <= 0 ||
+        !SDL_RenderCoordinatesFromWindow(renderer, nx * (float)w, ny * (float)h, &lx, &ly)) {
+        return 0;
+    }
+    /* the picture is drawn at one_at_x, a logical unit a DS dot of it (present) */
+    if (!khdays_composition_touch(&touch_composition, lx - one_at_x, ly, &screen, &sx, &sy) || screen != (int)KOS_LOWER) {
+        return 0;
+    }
+    *ds_x = SDL_clamp((int)SDL_floorf(sx), 0, KHDAYS_FRAME_W - 1);
+    *ds_y = SDL_clamp((int)SDL_floorf(sy), 0, KHDAYS_FRAME_H - 1);
+    return 1;
+}
+
 int khdays_present_backdrop_moving(void)
 {
     return latest != NULL && backdrop_moving;
@@ -1371,6 +1395,12 @@ static void present_now(const KhdaysFramePackage *p, int first)
             const int wide = (int)SDL_lroundf(p->list3d.widen * W);
             khdays_onescreen_prepare(p, wide > W ? wide : W, &composition, &one);
             one_kind = composition.screens;
+            SDL_zero(touch_composition);
+            touch_composition.screens = composition.screens;
+            touch_composition.shape_count =
+                composition.shape_count < TOUCH_SHAPES_MAX ? composition.shape_count : TOUCH_SHAPES_MAX;
+            SDL_memcpy(touch_shapes, composition.shapes, sizeof(KhdaysShape) * (size_t)touch_composition.shape_count);
+            touch_composition.shapes = touch_shapes;
             picture = one_kind == KHDAYS_SCREENS_UPPER || one_kind == KHDAYS_SCREENS_LOWER;
             backdrop_moving = picture && composition.animated;
             settings_button_count = 0;

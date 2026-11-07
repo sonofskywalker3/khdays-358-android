@@ -48,6 +48,10 @@ static int hud_published;
 static int editing;           /* the layout editor has the places */
 static int shown;             /* the controls are on the screen */
 static int mouse_is_ours;     /* the touch's mouse press went to the controls: so do its motion and release */
+/* fingers down on no control (khdays_touch_input_wants), passed on to the devices (the stylus) with their
+ * motion and release; KHDAYS_TOUCH_FINGERS of them at most, the rest the controls' as before */
+static uint64_t passed[KHDAYS_TOUCH_FINGERS];
+static int passed_count;
 static uint16_t last_buttons; /* for the vibration */
 static SDL_Haptic *haptic;
 static int haptic_tried;
@@ -728,6 +732,24 @@ int khdays_touch_event(const SDL_Event *event, SDL_Renderer *renderer)
         {
             const float x = event->tfinger.x * screen_now.w, y = event->tfinger.y * screen_now.h;
             const uint64_t id = (uint64_t)event->tfinger.fingerID;
+            int p = 0;
+            while (p < passed_count && passed[p] != id) {
+                ++p;
+            }
+            if (event->type == SDL_EVENT_FINGER_DOWN) {
+                if (p < passed_count) {
+                    passed[p] = passed[--passed_count]; /* its release went elsewhere: the id is a new finger's */
+                }
+                if (!khdays_touch_input_wants(&input, x, y) && passed_count < KHDAYS_TOUCH_FINGERS) {
+                    passed[passed_count++] = id;
+                    return 0;
+                }
+            } else if (p < passed_count) {
+                if (event->type != SDL_EVENT_FINGER_MOTION) {
+                    passed[p] = passed[--passed_count];
+                }
+                return 0;
+            }
             if (event->type == SDL_EVENT_FINGER_DOWN) {
                 khdays_touch_input_down(&input, id, x, y);
             } else if (event->type == SDL_EVENT_FINGER_MOTION) {
@@ -802,6 +824,7 @@ int khdays_touch_take_settings(void)
 void khdays_touch_release(void)
 {
     khdays_touch_input_release(&input);
+    passed_count = 0; /* the fingers passed on are let go of too (the devices hear of it from the window) */
 #if defined(__ANDROID__)
     memset(&view_held, 0, sizeof(view_held));
 #endif

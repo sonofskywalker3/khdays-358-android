@@ -992,6 +992,10 @@ static int host_thread(void *unused)
         return 1;
     }
     khdays_devices_set_touch(khdays_touch_apply, khdays_touch_relayout);
+#if defined(__ANDROID__)
+    khdays_devices_set_stylus_map(khdays_present_stylus_at); /* a finger on the lower screen's picture is the DS's
+                                                              * stylus; a PC's touch screen stays its mouse */
+#endif
     khdays_devices_init(&profile, publish);
     khdays_layout_demo_start(window);
     khdays_settings_set_graphics_card(khdays_present_gpu());

@@ -213,6 +213,85 @@ static void capture(const KhdaysInputSnapshot *snapshot)
     ++publishes;
 }
 
+/* A stylus map for the tests: the right half of the window is the lower screen, dot for dot of 256 x 192. */
+static int half_map(float nx, float ny, int *ds_x, int *ds_y)
+{
+    if (nx < 0.5f) {
+        return 0;
+    }
+    *ds_x = (int)((nx - 0.5f) * 2.0f * 256.0f);
+    *ds_y = (int)(ny * 192.0f);
+    return 1;
+}
+
+static void finger_event(Uint32 type, SDL_FingerID id, float nx, float ny)
+{
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = type;
+    e.tfinger.fingerID = id;
+    e.tfinger.x = nx;
+    e.tfinger.y = ny;
+    khdays_devices_handle(&e, NULL);
+}
+
+/* The stylus from a finger: the first finger down on the lower screen, until it lifts or leaves it; a second
+ * finger is not the stylus; a cancel lifts it. */
+static void test_stylus(void)
+{
+    KhdaysProfile p;
+    khdays_profile_default(&p);
+    khdays_devices_init(&p, capture);
+    khdays_devices_set_stylus_map(half_map);
+    finger_event(SDL_EVENT_FINGER_DOWN, 1, 0.25f, 0.5f); /* the upper half: nothing */
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_UP, 1, 0.25f, 0.5f);
+    finger_event(SDL_EVENT_FINGER_DOWN, 2, 0.75f, 0.5f);
+    CHECK(last.touching == 1 && last.touch_x == 128 && last.touch_y == 96);
+    finger_event(SDL_EVENT_FINGER_DOWN, 3, 0.9f, 0.9f); /* a second finger: ignored */
+    CHECK(last.touching == 1 && last.touch_x == 128 && last.touch_y == 96);
+    finger_event(SDL_EVENT_FINGER_MOTION, 3, 0.6f, 0.6f);
+    CHECK(last.touch_x == 128 && last.touch_y == 96);
+    finger_event(SDL_EVENT_FINGER_MOTION, 2, 0.625f, 0.25f);
+    CHECK(last.touching == 1 && last.touch_x == 64 && last.touch_y == 48);
+    finger_event(SDL_EVENT_FINGER_MOTION, 2, 0.25f, 0.25f); /* off the lower screen: lifted */
+    CHECK(last.touching == 0 && last.touch_x == 0 && last.touch_y == 0);
+    finger_event(SDL_EVENT_FINGER_MOTION, 2, 0.75f, 0.25f); /* back over it: still lifted until down again */
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_UP, 2, 0.75f, 0.25f);
+    finger_event(SDL_EVENT_FINGER_UP, 3, 0.6f, 0.6f);
+    finger_event(SDL_EVENT_FINGER_DOWN, 4, 0.75f, 0.5f);
+    CHECK(last.touching == 1);
+    finger_event(SDL_EVENT_FINGER_CANCELED, 4, 0.75f, 0.5f);
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_DOWN, 5, 0.75f, 0.5f);
+    CHECK(last.touching == 1);
+    khdays_devices_set_game_input(0); /* the settings menu: the finger held is let go of, a new one not taken */
+    CHECK(last.touching == 0 && last.ui_open == 1);
+    finger_event(SDL_EVENT_FINGER_DOWN, 7, 0.75f, 0.5f);
+    khdays_devices_set_game_input(1);
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_MOTION, 7, 0.8f, 0.5f);
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_UP, 7, 0.8f, 0.5f);
+    finger_event(SDL_EVENT_FINGER_DOWN, 8, 0.75f, 0.5f);
+    CHECK(last.touching == 1);
+    {
+        SDL_Event lost;
+        SDL_zero(lost);
+        lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        khdays_devices_handle(&lost, NULL); /* the window unfocused: let go of, as the buttons are */
+    }
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_UP, 8, 0.75f, 0.5f);
+    finger_event(SDL_EVENT_FINGER_DOWN, 5, 0.75f, 0.5f);
+    CHECK(last.touching == 1);
+    khdays_devices_set_stylus_map(NULL); /* no map: lifted at once, and no finger is the stylus */
+    CHECK(last.touching == 0);
+    finger_event(SDL_EVENT_FINGER_DOWN, 6, 0.75f, 0.5f);
+    CHECK(last.touching == 0);
+}
+
 static SDL_JoystickID attach_pad(const char *name)
 {
     SDL_VirtualJoystickDesc desc;
@@ -2338,6 +2417,7 @@ int main(void)
     test_settings_layout();
     test_settings_screen();
     test_hud_settings();
+    test_stylus();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
