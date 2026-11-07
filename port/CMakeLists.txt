@@ -1389,6 +1389,9 @@ function(khdays_fuzz_target name)
     # /DEBUG: a program database beside it, for the reports' lines
     target_compile_options(khdays-fuzz-${name} PRIVATE /W4 /std:c17 /fsanitize=address /fsanitize=fuzzer)
     target_link_options(khdays-fuzz-${name} PRIVATE /DEBUG /INCREMENTAL:NO)
+    # link.exe even when the rest links with lld-link (port/build.py KHDAYS_LINKER): only it adds the
+    # AddressSanitizer's runtime (/InferAsanLibs)
+    set_property(TARGET khdays-fuzz-${name} PROPERTY LINKER_TYPE MSVC)
     # libFuzzer writes what it finds to the first directory: the tree's, so
     # the kept inputs (the second) change only through port/tools/fuzz.py
     set(corpus "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/${name}")

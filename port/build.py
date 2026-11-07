@@ -92,6 +92,25 @@ def check_header_tracking(obj: Path, env: dict[str, str]) -> None:
         )
 
 
+def linker_type(env: dict[str, str], asan: bool) -> str:
+    """CMake's linker type: LLD when KHDAYS_LINKER names an lld-link.exe (its folder put first on env's
+    PATH, where CMake finds it), which writes the game's program database in seconds where link.exe takes
+    most of a minute; else link.exe. Not with --asan: LLVM's lld-link does not add MSVC's AddressSanitizer
+    runtime (/InferAsanLibs), which every program of that tree needs (the fuzzers ask for link.exe
+    themselves, port/CMakeLists.txt). CMake keeps the name it found at the tree's first configure, the bare
+    "lld-link" when it was not on PATH then: a build of that tree run otherwise than through this script
+    needs lld-link's folder on PATH too."""
+    chosen = os.environ.get("KHDAYS_LINKER")
+    if not chosen or asan:
+        return "MSVC"
+    path = Path(chosen)
+    if path.name.lower() != "lld-link.exe" or not path.is_file():
+        raise SystemExit(f"KHDAYS_LINKER is not an lld-link.exe: {chosen}")
+    key = "Path" if "Path" in env else "PATH"
+    env[key] = f"{path.resolve().parent}{os.pathsep}{env.get(key, '')}"
+    return "LLD"
+
+
 def run(cmd: list[str], env: dict[str, str]) -> None:
     exe = shutil.which(cmd[0], path=env.get("Path") or env.get("PATH"))
     if exe is None:
@@ -150,6 +169,7 @@ def build_tree(args: argparse.Namespace, gen: Path, obj: Path) -> int:
         # pins the release); drop a source directory an older cache kept.
         "-UFETCHCONTENT_SOURCE_DIR_SDL3",
         f"-DKHDAYS_ASAN={'ON' if args.asan else 'OFF'}",
+        f"-DCMAKE_LINKER_TYPE={linker_type(env, args.asan)}",
     ]
     run(configure, env)
     build = ["cmake", "--build", str(obj)]
