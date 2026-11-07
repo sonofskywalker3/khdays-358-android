@@ -44,10 +44,6 @@ void khdays_devices_set_game_input(int on);
  * other fingers are not. NULL: no finger is the stylus (the default). */
 void khdays_devices_set_stylus_map(int (*map)(float nx, float ny, int *ds_x, int *ds_y));
 
-/* The DS's buttons (a bit per KHDAYS_ACT_*, as the snapshots hold them) pressed for one snapshot: the next
- * snapshot holds them and the one after lets go, which the game counts as one press, as it does a tap's. */
-void khdays_devices_press_once(uint16_t ds_buttons);
-
 /* 1 once after a gamepad input bound to `open_settings` was pressed. */
 int khdays_devices_take_settings_request(void);
 
