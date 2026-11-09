@@ -67,7 +67,13 @@ else()
     # Ov008_MoveGridCursor's nDx / nDy with no panel lifted) starts at 0: read unset, clang takes the
     # path for undefined and drops the rest of it, the function's return too, and the code ran on
     # into the next function (Mission Mode's panels crashed in Ov008_DropLiftedNode).
-    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -std=gnu17 -fgnu89-inline
+    # Bitfields laid out as MSVC lays them out for the Windows build: a run of bitfields reserves
+    # whole units of its declared type (adjacent fields of the same size share them), and the member
+    # after it starts past those. GNU's layout starts the next member at the first byte the bits
+    # leave free, so `unsigned bDirty : 1; u8 pad[0xa0]; u16 wIdLow;` put
+    # wIdLow at +0xea instead of +0xec (Ov002_RestartRequestQueue stored the target's HP over its
+    # maximum: the enemy gauge shrank to the remaining HP when a hit enemy was targeted again).
+    set(KHDAYS_GAME_FLAGS ${KHDAYS_COMMON} -w -fpack-struct=4 -mms-bitfields -std=gnu17 -fgnu89-inline
         -ftrivial-auto-var-init=zero
         -Wno-error=implicit-function-declaration -Wno-error=return-type -Wno-error=int-conversion
         -Wno-error=incompatible-pointer-types)
