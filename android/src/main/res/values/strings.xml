@@ -57,8 +57,8 @@
     <string name="setup_mods_ignored">%1$s (off: .ignore)</string>
 
     <string name="setup_saves_folder_done">The saves are kept in %1$s from the next time the game starts: they are copied there then, and the app\'s folder keeps its copy. If the game is running now, close it from the recent apps and start it again. A folder that already holds saves (synced from another device) is used as it is.</string>
-    <string name="logs_copied">The newest logs are in %1$s: send them with your report.</string>
-    <string name="logs_not_copied">The logs could not be copied to Download.</string>
+    <string name="logs_copied">Logs saved to %1$s.</string>
+    <string name="logs_not_copied">The logs could not be saved to Download.</string>
     <string name="setup_saves_folder_reset_done">The saves come back to the app\'s folder the next time the game starts (copied from the folder they were in, which keeps its copy).</string>
 
     <string name="setup_media_app">Kept in the app\'s folder: %1$s</string>
