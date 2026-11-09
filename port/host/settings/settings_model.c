@@ -832,6 +832,9 @@ static void build_files(Builder *b)
         r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_APP_FOLDER, KHDAYS_CMD_FILES_SAVES_APP);
         r->note = khdays_text(TXT_FILES_FOLDER_NOTE);
     }
+    /* the session logs where a file manager finds them, to send with a report (setup/SessionLogs.kt) */
+    r = add_command(b, KHDAYS_SET_FILES_ACT, TXT_FILES_COPY_LOGS, KHDAYS_CMD_FILES_COPY_LOGS);
+    r->note = khdays_text(TXT_FILES_COPY_LOGS_NOTE);
     add_command(b, KHDAYS_SET_OPEN_SETUP, TXT_OPEN_SETUP, KHDAYS_CMD_OPEN_SETUP)->note = khdays_text(TXT_OPEN_SETUP_NOTE);
 }
 #endif
@@ -1234,6 +1237,7 @@ void khdays_model_command(KhdaysProfile *work, int command)
     case KHDAYS_CMD_FILES_MODS_APP: khdays_media_folder_act("mods_app"); break;
     case KHDAYS_CMD_FILES_SAVES_FOLDER: khdays_media_folder_act("saves_folder"); break;
     case KHDAYS_CMD_FILES_SAVES_APP: khdays_media_folder_act("saves_app"); break;
+    case KHDAYS_CMD_FILES_COPY_LOGS: khdays_media_folder_copy_logs(); break;
 #endif
     case KHDAYS_CMD_PRESET_DS:
         khdays_profile_apply_preset(work, KHDAYS_PRESET_DS, KHDAYS_AVAILABLE_ENHANCEMENTS);

@@ -166,6 +166,15 @@ object MediaFolder {
     @JvmStatic
     fun act(action: String): Boolean = open(action)
 
+    /** The settings menu's "Copy the logs to Download" (media_folder.c): the newest session logs where a file
+     * manager finds them ([SessionLogs]); a toast says where. */
+    @JvmStatic
+    fun copyLogs(): Boolean {
+        val context = SDL.getContext() ?: return false
+        SessionLogs.copyNewestInBackground(context)
+        return true
+    }
+
     private fun open(action: String?): Boolean {
         val context = SDL.getContext() ?: return false
         return try {

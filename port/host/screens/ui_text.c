@@ -414,6 +414,24 @@ static const char *const texts[TXT_COUNT][5] = {
                              "Der Einrichtungsbildschirm: dasselbe, mit seinen Hilfetexten und dem Fortschritt einer Kopie.",
                              "La schermata di configurazione: lo stesso, con le sue spiegazioni e l'avanzamento di una copia.",
                              "La pantalla de configuración: lo mismo, con sus explicaciones y el progreso de una copia."},
+    [TXT_FILES_COPY_LOGS] = {"Copy the logs to Download", "Copier les journaux dans Download",
+                             "Protokolle nach Download kopieren", "Copia i registri in Download",
+                             "Copiar los registros a Download"},
+    [TXT_FILES_COPY_LOGS_NOTE] = {"The last sessions' logs in Download/358-2 Days logs, to send with a report when "
+                                  "something went wrong. After a crash the app copies that session's log there "
+                                  "itself.",
+                                  "Les journaux des dernières sessions dans Download/358-2 Days logs, à envoyer avec "
+                                  "un signalement quand quelque chose s'est mal passé. Après un plantage, l'appli y "
+                                  "copie elle-même le journal de cette session.",
+                                  "Die Protokolle der letzten Sitzungen in Download/358-2 Days logs, um sie mit einer "
+                                  "Meldung zu schicken, wenn etwas schiefging. Nach einem Absturz kopiert die App das "
+                                  "Protokoll dieser Sitzung selbst dorthin.",
+                                  "I registri delle ultime sessioni in Download/358-2 Days logs, da inviare con una "
+                                  "segnalazione quando qualcosa è andato storto. Dopo un arresto anomalo l'app vi "
+                                  "copia da sola il registro di quella sessione.",
+                                  "Los registros de las últimas sesiones en Download/358-2 Days logs, para enviarlos "
+                                  "con un aviso cuando algo ha ido mal. Tras un cierre inesperado, la app copia allí "
+                                  "sola el registro de esa sesión."},
     [TXT_FILES_ROM] = {"Choose a different ROM file...", "Choisir un autre fichier ROM...",
                        "Eine andere ROM-Datei wählen...", "Scegli un altro file ROM...", "Elegir otro archivo ROM..."},
     [TXT_FILES_HD_IMPORT] = {"Add HD files from a copied folder...", "Ajouter les fichiers HD d'un dossier copié...",

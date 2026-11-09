@@ -96,6 +96,13 @@ int khdays_media_folder_act(const char *action)
     return opened;
 }
 
+int khdays_media_folder_copy_logs(void)
+{
+    const int asked = call_boolean("copyLogs", "()Z", NULL);
+    fprintf(stderr, "settings: the logs' copy to Download %s\n", asked ? "asked" : "could not be asked");
+    return asked;
+}
+
 int khdays_media_folder_status(char *text, int size)
 {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();

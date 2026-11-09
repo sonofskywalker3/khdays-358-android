@@ -21,6 +21,10 @@ int khdays_media_folder_open_setup(void);
  * own folder), "hd_app" (the app's again), "mods_folder", "mods_app", "saves_folder", "saves_app" (saves_folder.h). 0 when it could not be. */
 int khdays_media_folder_act(const char *action);
 
+/* The newest session logs copied to Download/358-2 Days logs for the player to send (setup/SessionLogs.kt), a
+ * toast saying where; in the background. 0 when it could not be asked. */
+int khdays_media_folder_copy_logs(void);
+
 /* What the setup screen would say of the game's files, a line each: "game=<ready or not>",
  * "hd=<the HD files>", "hd_folder=<path or empty>", "mods_folder=<path or empty>", "mods=<the mods
  * found>". Returns 0 (and an empty text) when it cannot be asked. */
