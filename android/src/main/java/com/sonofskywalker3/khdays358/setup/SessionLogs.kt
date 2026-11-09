@@ -21,6 +21,7 @@ object SessionLogs {
     private const val TAG = "khdays"
     private const val PREFIX = "session-"
     private const val LOG_SUFFIX = ".log"
+    private const val TEXT_SUFFIX = ".txt"
     private const val KEPT_SESSIONS = 50
     private const val PUBLISHED = 3
     private val DOWNLOAD_FOLDER = Environment.DIRECTORY_DOWNLOADS + "/358-2 Days logs/"
@@ -66,19 +67,21 @@ object SessionLogs {
     }
 
     private fun copyToDownload(context: Context, log: File) {
+        // named as Android names a text file it is given (it adds .txt to a .log): found by that name next time
+        val name = log.name + TEXT_SUFFIX
         val resolver = context.contentResolver
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val existing: Uri? = resolver.query(
             collection,
             arrayOf(MediaStore.Downloads._ID),
             "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} = ?",
-            arrayOf(log.name, DOWNLOAD_FOLDER),
+            arrayOf(name, DOWNLOAD_FOLDER),
             null,
         )?.use { c -> if (c.moveToFirst()) Uri.withAppendedPath(collection, c.getLong(0).toString()) else null }
         val target = existing ?: resolver.insert(
             collection,
             ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, log.name)
+                put(MediaStore.Downloads.DISPLAY_NAME, name)
                 put(MediaStore.Downloads.MIME_TYPE, "text/plain")
                 put(MediaStore.Downloads.RELATIVE_PATH, DOWNLOAD_FOLDER)
             },
