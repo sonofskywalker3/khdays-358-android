@@ -915,7 +915,7 @@ extern "C" void khdays_walk_model_draw_end(void);
 // The character, not what it holds: a keyblade drawn from its hand is made smaller with the hand already.
 static bool holds_a_weapon(const Model &m)
 {
-    if (m.own && m.own->weapon_bone >= 0)
+    if (m.own && !m.own->held.empty())
         return true;
     return std::any_of(m.kh2_weapon.begin(), m.kh2_weapon.end(), [](int j) { return j >= 0; }) ||
            std::any_of(m.weapon_node.begin(), m.weapon_node.end(), [](auto held) { return held != 0; });
