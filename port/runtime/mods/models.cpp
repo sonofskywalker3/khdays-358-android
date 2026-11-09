@@ -5,8 +5,32 @@
 // animation (room_animation.cpp) by the game's frames, stopped while the game is paused.
 
 #include "model_parts.h"
+#include "../menus/camp.h" // khdays_camp_screen: the story's camp menu
+extern "C" {
+#include "../../host/app/host.h" // khdays_host_graphics_flags: one screen or two
+}
 
 namespace khdays::model_parts {
+
+// The story's camp menu as the game draws it (two screens): KH2 Roxas stands upright where Days' Roxas crouches, at
+// the same camera, so his hair went out over the window's frame. There the model is drawn this much smaller about
+// its place (its feet stay). On one screen the port's camp picture fits the model's window itself.
+constexpr float kStoryCampModelScale = 0.85F;
+static float camp_scale = 1.0F;   // this draw's: kStoryCampModelScale or 1
+static float camp_about[3] = {}; // the model's place in view space as the draw starts
+
+// a node's matrix as the game sent it, the model made smaller about its place (camp_scale)
+static void camp_fit(Mat &m)
+{
+    if (camp_scale == 1.0F)
+        return;
+    for (int c = 0; c < 3; ++c)
+        for (int r = 0; r < 3; ++r)
+            m[static_cast<std::size_t>(c * 4 + r)] *= camp_scale;
+    for (int r = 0; r < 3; ++r)
+        m[static_cast<std::size_t>(12 + r)] =
+            camp_scale * m[static_cast<std::size_t>(12 + r)] + (1.0F - camp_scale) * camp_about[r];
+}
 
 void trace_floor(const Model &m, const std::string &state)
 {
@@ -594,6 +618,7 @@ void draw(Model &m)
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 game[static_cast<std::size_t>(c * 4 + r)] = static_cast<float>(fx[c * 3 + r]) / 4096.0F;
+        camp_fit(game); // as the nodes are (khdays_models_node)
         const Mat at = khdays::models::attached_frame(hold(j, node), game, weapon_share);
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
@@ -853,6 +878,21 @@ using namespace khdays::model_parts;
 extern "C" void khdays_walk_model_draw(unsigned model_resource); /* runtime/input/walk.h */
 extern "C" void khdays_walk_model_draw_end(void);
 
+// The character, not what it holds: a keyblade drawn from its hand is made smaller with the hand already.
+static bool holds_a_weapon(const Model &m)
+{
+    if (m.own && m.own->weapon_bone >= 0)
+        return true;
+    return std::any_of(m.kh2_weapon.begin(), m.kh2_weapon.end(), [](int j) { return j >= 0; });
+}
+
+static bool story_camp_shown_by_game(const Model &m)
+{
+    int story = 0;
+    return holds_a_weapon(m) && khdays_camp_screen(&story) != KHDAYS_CAMP_NONE && story &&
+           (khdays_host_graphics_flags() & KHDAYS_HOST_ONE_SCREEN) == 0;
+}
+
 extern "C" void khdays_models_draw_begin(const void *resource, const void *render_obj)
 {
     if (render_obj != nullptr)
@@ -951,6 +991,8 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
             float start[16], vecm[16], proj[16];
             khdays_g3d_matrices(start, vecm, proj);
             std::copy(start, start + 16, drawn_start.begin());
+            camp_scale = story_camp_shown_by_game(*active) ? kStoryCampModelScale : 1.0F;
+            std::copy(start + 12, start + 15, camp_about);
             float base[16], camera[16];
             drawn_base_kind = khdays_g3d_base(base);
             std::copy(base, base + 16, drawn_base.begin());
@@ -983,6 +1025,7 @@ extern "C" void khdays_models_node(unsigned node, int sent)
     float pos[16], vecm[16], proj[16];
     khdays_g3d_matrices(pos, vecm, proj);
     std::copy(pos, pos + 16, node_matrix[node].begin());
+    camp_fit(node_matrix[node]);
     node_sent[node] = 1;
 }
 
