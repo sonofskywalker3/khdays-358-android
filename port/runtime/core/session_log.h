@@ -1,8 +1,9 @@
 /* The session log: what a session did, for the player to send when something seems wrong (scenes,
  * file reads, music starts and their delays, stretches without a frame, F12's marks).
  * saves/logs/session-YYYYMMDD-HHMMSS.log, one line per event: "<seconds> f<frame> <what>". On in
- * Debug unless KHDAYS_LOG=0, in Release with KHDAYS_LOG=1 or the settings' Session log. Flushed once
- * a second, on a mark, at exit and on a crash. Callable from any thread. */
+ * Debug unless KHDAYS_LOG=0, in Release with KHDAYS_LOG=1 or the settings' Session log; always on
+ * Android, a line at a time. Flushed once a second, on a mark, at exit and on a crash. Callable from any
+ * thread. */
 #ifndef KHDAYS_SESSION_LOG_H
 #define KHDAYS_SESSION_LOG_H
 
@@ -36,6 +37,9 @@ void khdays_log(const char *format, ...);
 
 /* F12: a line the player can find. */
 void khdays_log_mark(void);
+/* A line the port wrote to stderr, into the log as it is (host/posix/android_log.c: on Android stderr goes
+ * nowhere a player can reach, logcat aside). */
+void khdays_log_line(const char *line);
 
 /* How many marks F12 has made (0: none, or no log). */
 u32 khdays_log_marks(void);

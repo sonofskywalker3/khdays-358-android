@@ -621,8 +621,8 @@ static void on_crash(int signal_number, siginfo_t *info, void *context_pointer)
     const uintptr_t pc = 0, lr = 0;
     (void)context;
 #endif
-    khdays_log("crash: signal %d at %p (%s), address %p", signal_number, (void *)pc, symbol_name((const void *)pc),
-               info->si_addr);
+    khdays_log("crash: signal %d at %p (%s), address %p, called from %p (%s)", signal_number, (void *)pc,
+               symbol_name((const void *)pc), info->si_addr, (void *)lr, symbol_name((const void *)lr));
     khdays_log_close();
     fprintf(stderr, "khdays-native: signal %d at %p (%s), address %p, called from %p (%s)\n", signal_number,
             (void *)pc, symbol_name((const void *)pc), info->si_addr, (void *)lr, symbol_name((const void *)lr));

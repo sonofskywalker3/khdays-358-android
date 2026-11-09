@@ -327,6 +327,11 @@ int main(int argc, char **argv)
     /* this copy's player slot: a further copy on the PC is player N, with its own save, settings, logs
      * and gamepad (host/app/instance.h) */
     khdays_host_player_slot();
+#if defined(__ANDROID__)
+    /* the log before the runtime starts there, where it is always on (session_log.c), so a start that fails in it
+     * leaves its reason in the log (the call after it does nothing then) */
+    khdays_log_open();
+#endif
     /* the multiplayer's server as the player set it, read when a session starts */
     khdays_net_settings_source(khdays_settings_server);
     if (!khdays_runtime_init(argc, argv)) {

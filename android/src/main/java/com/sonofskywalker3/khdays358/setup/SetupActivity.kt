@@ -80,8 +80,13 @@ class SetupActivity : Activity() {
         supported = assets.open(SupportedRoms.ASSET_NAME).use { SupportedRoms.load(it) }
         val action = intent.getStringExtra(EXTRA_ACTION)
         if (game.extraction() != null && !intent.getBooleanExtra(EXTRA_SETUP, false)) {
-            play()
+            /* the last sessions' logs to Download first, for a player to send: a game that stops as it starts
+             * would end the copy with it */
+            SessionLogs.publishThen(this) { if (!isFinishing && !isDestroyed) play() }
             return
+        }
+        if (savedInstanceState == null) {
+            SessionLogs.publishThen(this) {}
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(build())

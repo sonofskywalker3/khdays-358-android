@@ -65,6 +65,11 @@ static void open_now(void)
         return;
     }
     snprintf(log_path, sizeof(log_path), "%s", path);
+#if defined(__ANDROID__)
+    /* each line written at once: a start that ends without a signal the crash handler sees (the system
+     * closing the app) keeps every line up to it */
+    setvbuf(file, NULL, _IOLBF, 0);
+#endif
     QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&started);
     snprintf(err_path, sizeof(err_path), "%s/logs/stderr-%04u%02u%02u-%02u%02u%02u.log", folder, now.wYear, now.wMonth,
@@ -96,6 +101,11 @@ void khdays_log_open(void)
     on = on || setting == NULL || strcmp(setting, "0") != 0;
 #else
     on = on || (setting != NULL && strcmp(setting, "1") == 0);
+#endif
+#if defined(__ANDROID__)
+    /* always on Android: a game that stops as it starts leaves a log the setup screen copies to Download
+     * (SessionLogs.kt), for the player to send; the settings have no switch for it there */
+    on = 1;
 #endif
     if (!registered) {
         registered = 1;
@@ -169,6 +179,18 @@ void khdays_log(const char *format, ...)
     ReleaseSRWLockExclusive(&lock);
 }
 
+void khdays_log_line(const char *line)
+{
+    if (file == NULL) {
+        return;
+    }
+    AcquireSRWLockExclusive(&lock);
+    if (file != NULL) {
+        fprintf(file, "stderr: %s\n", line);
+    }
+    ReleaseSRWLockExclusive(&lock);
+}
+
 void khdays_log_mark(void)
 {
     if (file == NULL) {
@@ -187,8 +209,15 @@ u32 khdays_log_marks(void)
     return marks;
 }
 
+#if defined(__ANDROID__)
+void khdays_android_log_drain(void); /* host/posix/android_log.c */
+#endif
+
 void khdays_log_close(void)
 {
+#if defined(__ANDROID__)
+    khdays_android_log_drain(); /* the stderr lines written just before (a stop's reason before exit()) in it */
+#endif
     /* a crash may come inside a line, the lock held: then only flushed */
     const BOOLEAN locked = TryAcquireSRWLockExclusive(&lock);
     if (file != NULL) {

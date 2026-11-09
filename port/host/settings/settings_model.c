@@ -714,9 +714,11 @@ static void build_general(Builder *b, KhdaysProfile *w)
                    khdays_text(TXT_STOP_MAGIC_NOTE));
     r->apply = KHDAYS_APPLY_NEXT;
     r->takes = TXT_TAKES_NEXT_START;
-    add_switch(b, KHDAYS_SET_SESSION_LOG, TXT_SESSION_LOG, &w->session_log, 1, khdays_text(TXT_SESSION_LOG_NOTE));
 #ifdef __ANDROID__
+    /* (always written there: runtime/core/session_log.c) */
     build_files(b);
+#else
+    add_switch(b, KHDAYS_SET_SESSION_LOG, TXT_SESSION_LOG, &w->session_log, 1, khdays_text(TXT_SESSION_LOG_NOTE));
 #endif
     add_command(b, KHDAYS_SET_RESTORE_BOTH, TXT_RESTORE_BOTH, KHDAYS_CMD_RESTORE_BOTH);
 }
