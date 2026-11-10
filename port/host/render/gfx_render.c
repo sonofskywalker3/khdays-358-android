@@ -721,11 +721,19 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
 #if defined(__ANDROID__)
     if (compose_too_big_here()) {
         make_compose_parts();
-    } else
-#endif
-    {
+    } else {
         compose = make_pipeline();
+        if (compose == NULL) {
+            /* another card's compiler out of memory for it as well (an Adreno 640 with little free: a Galaxy
+             * S10+): the parts, as on a Mali */
+            fprintf(stderr, "host: the 2D's shader cannot be made whole here (%s): in three parts\n",
+                    SDL_GetError());
+            make_compose_parts();
+        }
     }
+#else
+    compose = make_pipeline();
+#endif
     shrinker = make_pipeline_of(shrink_cs_dxil, shrink_cs_dxil_size, shrink_cs_spirv, shrink_cs_spirv_size,
                                 shrink_cs_msl, shrink_cs_msl_size, SHRINK_CS_ENTRY, 0, 2);
     onescreen = make_pipeline_of(onescreen_cs_dxil, onescreen_cs_dxil_size, onescreen_cs_spirv, onescreen_cs_spirv_size,
@@ -776,6 +784,12 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     if (!ok) {
         char why[256];
         SDL_strlcpy(why, SDL_GetError(), sizeof(why));
+        /* which of its passes the card refused, for a player's log */
+        fprintf(stderr, "host: the port's 2D: compose %s, onescreen %s, layers %s\n",
+                compose != NULL                                                        ? "made"
+                : compose_wide != NULL && compose_plain != NULL && compose_split != NULL ? "made in parts"
+                                                                                        : "refused",
+                onescreen != NULL ? "made" : "refused", layers_pipeline != NULL ? "made" : "refused");
         khdays_gfx_render_close();
         SDL_SetError("%s", why);
         return 0;

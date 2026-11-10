@@ -4,6 +4,7 @@
  * native3d.hlsl's six targets, of which a picture writes only those its finishing reads; consecutive
  * polygons drawn alike are one draw. native3d_pack.hlsl then makes raster3d's two targets from them. */
 #include "gpu_native3d.h"
+#include "gpu_present.h"
 #include "../../gfx/character_shadow.h"
 #include "../../gfx/g3d.h"
 #include "../../runtime/display/frame_package.h"
@@ -482,6 +483,15 @@ void khdays_native3d_close(void)
 
 int khdays_native3d_open(SDL_GPUDevice *d)
 {
+#if defined(__ANDROID__)
+    const int adreno = khdays_present_adreno_model(d);
+    if (adreno > 0 && adreno < KHDAYS_OLDER_ADRENO_BELOW) {
+        /* an Adreno 630's and 640's drivers fault inside the pack's dispatch (a null read in the vendor's
+         * Vulkan driver, the first frame with 3D: the AYN Odin, a Galaxy S10+): raster3d.hlsl draws it there */
+        SDL_SetError("an Adreno %d's driver faults on its pack pass", adreno);
+        return 0;
+    }
+#endif
     device = d;
     polygon_vs =
         make_shader(native3d_vs_dxil, native3d_vs_dxil_size, native3d_vs_spirv, native3d_vs_spirv_size, native3d_vs_msl,
