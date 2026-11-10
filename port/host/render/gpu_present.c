@@ -564,6 +564,9 @@ int khdays_present_wants(void)
     if (two_displays) {
         wants |= KHDAYS_WANT_SITUATION; /* whether the title shows (title_one) */
     }
+    if (!port2d_ready) {
+        wants |= KHDAYS_WANT_SITUATION; /* the touch controls' situation, in every layout (present_now) */
+    }
 #endif
     return wants;
 }
@@ -1628,6 +1631,14 @@ static void present_now(const KhdaysFramePackage *p, int first)
             return;
         }
     }
+#if defined(__ANDROID__)
+    if (!port2d_ready) {
+        /* the 2D engines' screens (the port's 2D could not start on this device): the touch controls still follow
+         * the situation, which the port's 2D decides when it draws */
+        khdays_onescreen_note_pause(p);
+        khdays_onescreen_decide(p);
+    }
+#endif
     memcpy(shown, p->screens[p->upper], sizeof(p->screens[0]));
     memcpy(shown + W * H, p->screens[!p->upper], sizeof(p->screens[0]));
     if (screens != NULL) {

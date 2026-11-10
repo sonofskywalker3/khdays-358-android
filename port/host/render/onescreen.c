@@ -1280,8 +1280,7 @@ static void shop_window(const KhdaysFramePackage *p, int columns, KhdaysComposit
     composition->button_count = 0;
 }
 
-void khdays_onescreen_prepare(const KhdaysFramePackage *p, int columns, KhdaysComposition *composition,
-                              KhdaysOneScreenDraw *draw)
+void khdays_onescreen_decide(const KhdaysFramePackage *p)
 {
     if ((p->wants & KHDAYS_WANT_SITUATION) && p->situation.taken && (p->wants & KHDAYS_WANT_2D)) {
         KhdaysSituationFrame f;
@@ -1333,6 +1332,12 @@ void khdays_onescreen_prepare(const KhdaysFramePackage *p, int columns, KhdaysCo
             situation.content = now.content;
         }
     }
+}
+
+void khdays_onescreen_prepare(const KhdaysFramePackage *p, int columns, KhdaysComposition *composition,
+                              KhdaysOneScreenDraw *draw)
+{
+    khdays_onescreen_decide(p);
     situation.frame =
         khdays_events_vblank_count(); /* an animated backdrop's clock: it moves when the frames are alike */
     settings_prompt();

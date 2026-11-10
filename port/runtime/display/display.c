@@ -653,13 +653,18 @@ static int host_checks(void)
     return on;
 }
 
+/* What the host itself asked of this frame (khdays_host_frame_wants), before
+ * the port's own elements added the screens' descriptions to it. */
+static int host_wants;
+
 /* Whether the 2D engines (port/gpu, the reference) draw this frame. When
  * the host draws the port's own 2D, they draw only for what compares with
  * them or takes their pictures: the checks, the recorded packages, the 1x
- * shots, KHDAYS_TRACE_2D. */
-static int reference_draws(u32 frame, int want)
+ * shots, KHDAYS_TRACE_2D. When it does not (its renderer could not start on
+ * the device), they draw the screens, whatever the elements asked for. */
+static int reference_draws(u32 frame)
 {
-    return !(want & KHDAYS_WANT_2D) || host_checks() || khdays_gfx_check_on() || check_composition ||
+    return !(host_wants & KHDAYS_WANT_2D) || host_checks() || khdays_gfx_check_on() || check_composition ||
            record_dir != NULL || trace_2d != NULL || shot_at(frame);
 }
 
@@ -1280,7 +1285,7 @@ static void draw_frame(u32 frame, int want, int capture, KhdaysGpuInput *in, LAR
     int reference;
     begin_package(p, frame, want, capture);
     QueryPerformanceCounter(t0);
-    reference = reference_draws(frame, want);
+    reference = reference_draws(frame);
     if (!reference) {
         /* the port's own 2D, which the host draws: only described here */
         khdays_gpu2d_skip_frame(in, &states[0], 0);
@@ -1655,11 +1660,13 @@ static void vblank(u32 frame)
         skip_2d = same_colours_again();
     }
     want = khdays_host_frame_wants();
+    host_wants = want;
     if (record_dir != NULL || check_composition) {
         want |= KHDAYS_WANT_3D | KHDAYS_WANT_COMPOSITION;
     }
-    if (khdays_ui_any()) {
-        want |= KHDAYS_WANT_2D; /* the screens' descriptions, which the elements are composed with */
+    if (khdays_ui_any() || (want & KHDAYS_WANT_SITUATION)) {
+        /* the screens' descriptions, which the elements are composed with and the situation reads */
+        want |= KHDAYS_WANT_2D;
     }
     gpu_input(&in);
     if (skip_2d) {

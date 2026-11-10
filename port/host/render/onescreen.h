@@ -9,6 +9,11 @@
 
 typedef struct KhdaysFramePackage KhdaysFramePackage; /* runtime/display/frame_package.h */
 
+/* Works out the situation of `package` alone (khdays_onescreen_prepare does it
+ * first): for a picture made without the port's own 2D, whose touch controls
+ * still follow the situation. Once per picture, as khdays_onescreen_prepare. */
+void khdays_onescreen_decide(const KhdaysFramePackage *package);
+
 /* Works out the situation and the composition of `package` for a picture
  * `columns` DS columns wide. `draw` points into `composition`, valid until the
  * next call. A package without the inputs for the situation keeps the last
