@@ -68,6 +68,7 @@ static int hd_columns;                     /* its width in DS pixels (256 is the
 static int columns;                        /* the picture's width now, in DS pixels (the logical presentation's) */
 static int refused_scale;                  /* a scale the device could not make (reported once) */
 static int window_scale_cap;               /* the most "window" makes on this device (0: no limit) */
+#define OLDER_ADRENO_BELOW 700             /* window_cap_for: Adreno models below this are capped */
 #define OLDER_ADRENO_WINDOW_CAP 2
 #define ANDROID_2D_CAP 4 /* scale2d_now: the 2D's scale on one Android display at most (never below the 3D's) */
 #define ANDROID_WEAK_2D_CAP 1 /* the same on a Mali or an older Adreno: the 3D's, as before 0.1.5 */
@@ -201,31 +202,23 @@ static int under_wine(void)
  * older than the 700s (the AYN Odin's 630, a Snapdragon 845) draws the port's own 2D and the 3D at 2x
  * at about 45 pictures a second, at 3x about 21 and at the window's 5x about 8 (measured 2026-10-26), so
  * "window" stops at 2x there; a number chosen in the settings is kept as it is. 0: no limit. */
-int khdays_present_adreno_model(SDL_GPUDevice *gpu)
-{
-#if defined(__ANDROID__)
-    const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(gpu), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
-    const char *adreno = SDL_strstr(name, "Adreno");
-    while (adreno != NULL && *adreno != '\0' && (*adreno < '0' || *adreno > '9')) {
-        ++adreno;
-    }
-    return adreno != NULL ? SDL_atoi(adreno) : 0;
-#else
-    (void)gpu;
-    return 0;
-#endif
-}
-
 static int window_cap_for(SDL_GPUDevice *gpu)
 {
 #if defined(__ANDROID__)
     const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(gpu), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
-    const int model = khdays_present_adreno_model(gpu);
+    const char *adreno = SDL_strstr(name, "Adreno");
+    int model = 0;
+    while (adreno != NULL && *adreno != '\0' && (*adreno < '0' || *adreno > '9')) {
+        ++adreno;
+    }
+    if (adreno != NULL) {
+        model = SDL_atoi(adreno);
+    }
     fprintf(stderr, "host: the graphics card is %s\n", name[0] != '\0' ? name : "unnamed");
     /* the 2D composed finer than the 3D: a Mali-G57 got 11 fps at 4x and 30 at the 3D's 2x (the TCL, 2026-11-05) */
-    android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < KHDAYS_OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
+    android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
                                                                                                    : ANDROID_2D_CAP;
-    if (model > 0 && model < KHDAYS_OLDER_ADRENO_BELOW) {
+    if (model > 0 && model < OLDER_ADRENO_BELOW) {
         fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
         return OLDER_ADRENO_WINDOW_CAP;
     }

@@ -16,13 +16,6 @@ typedef struct KhdaysFramePackage KhdaysFramePackage; /* runtime/display/frame_p
  * own; `notice` hears once why the card is not used. NULL when neither can be made. */
 SDL_Renderer *khdays_present_open(SDL_Window *window, KhdaysNotice notice);
 
-/* The Adreno's model number in the card's name ("Adreno (TM) 630": 630); 0 for any other card, or off Android. */
-int khdays_present_adreno_model(SDL_GPUDevice *gpu);
-
-/* Adreno models below this are the older ones: their window's resolution capped (gpu_present.c), the 3D drawn
- * by raster3d.hlsl (gpu_native3d.c: their drivers fault inside the native 3D's pack dispatch). */
-#define KHDAYS_OLDER_ADRENO_BELOW 700
-
 /* Lets go of the renderer and the device (the window stays). */
 void khdays_present_close(void);
 

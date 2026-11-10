@@ -44,9 +44,10 @@ const void *khdays_native3d_corners(void);
 /* Uploads the corners from `upload` at `offset`, in the caller's copy pass. */
 void khdays_native3d_upload(SDL_GPUCopyPass *copy, SDL_GPUTransferBuffer *upload, uint32_t offset, uint32_t bytes);
 
-/* Records the drawing of the prepared polygons into `cmd`, from the list's buffers (raster3d's), into
- * `color3d` and `attr3d`. */
-void khdays_native3d_draw(SDL_GPUCommandBuffer *cmd, const KhdaysNative3dFrame *frame, SDL_GPUBuffer *polys,
+/* Records the drawing of the prepared polygons into `*cmdp`, from the list's buffers (raster3d's), into
+ * `color3d` and `attr3d`. The drawing is submitted and the rest recorded into a new command buffer, left in
+ * `*cmdp` for the caller to go on with and submit (NULL when none could be had). */
+void khdays_native3d_draw(SDL_GPUCommandBuffer **cmdp, const KhdaysNative3dFrame *frame, SDL_GPUBuffer *polys,
                           SDL_GPUBuffer *verts, SDL_GPUBuffer *vram, SDL_GPUBuffer *hd, SDL_GPUTexture *color3d,
                           SDL_GPUTexture *attr3d);
 

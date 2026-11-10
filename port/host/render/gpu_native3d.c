@@ -4,7 +4,6 @@
  * native3d.hlsl's six targets, of which a picture writes only those its finishing reads; consecutive
  * polygons drawn alike are one draw. native3d_pack.hlsl then makes raster3d's two targets from them. */
 #include "gpu_native3d.h"
-#include "gpu_present.h"
 #include "../../gfx/character_shadow.h"
 #include "../../gfx/g3d.h"
 #include "../../runtime/display/frame_package.h"
@@ -483,15 +482,6 @@ void khdays_native3d_close(void)
 
 int khdays_native3d_open(SDL_GPUDevice *d)
 {
-#if defined(__ANDROID__)
-    const int adreno = khdays_present_adreno_model(d);
-    if (adreno > 0 && adreno < KHDAYS_OLDER_ADRENO_BELOW) {
-        /* an Adreno 630's and 640's drivers fault inside the pack's dispatch (a null read in the vendor's
-         * Vulkan driver, the first frame with 3D: the AYN Odin, a Galaxy S10+): raster3d.hlsl draws it there */
-        SDL_SetError("an Adreno %d's driver faults on its pack pass", adreno);
-        return 0;
-    }
-#endif
     device = d;
     polygon_vs =
         make_shader(native3d_vs_dxil, native3d_vs_dxil_size, native3d_vs_spirv, native3d_vs_spirv_size, native3d_vs_msl,
@@ -812,10 +802,11 @@ void khdays_native3d_upload(SDL_GPUCopyPass *copy, SDL_GPUTransferBuffer *upload
     SDL_UploadToGPUBuffer(copy, &src, &dst, true);
 }
 
-void khdays_native3d_draw(SDL_GPUCommandBuffer *cmd, const KhdaysNative3dFrame *frame, SDL_GPUBuffer *polys,
+void khdays_native3d_draw(SDL_GPUCommandBuffer **cmdp, const KhdaysNative3dFrame *frame, SDL_GPUBuffer *polys,
                           SDL_GPUBuffer *verts, SDL_GPUBuffer *vram, SDL_GPUBuffer *hd, SDL_GPUTexture *color3d,
                           SDL_GPUTexture *attr3d)
 {
+    SDL_GPUCommandBuffer *cmd = *cmdp;
     Params pr;
     SDL_GPUColorTargetInfo colours[TARGETS];
     SDL_GPUDepthStencilTargetInfo ds;
@@ -921,6 +912,18 @@ void khdays_native3d_draw(SDL_GPUCommandBuffer *cmd, const KhdaysNative3dFrame *
             }
         }
         SDL_EndGPURenderPass(pass);
+    }
+    /* The pack's dispatch in a command buffer of its own: older Adreno drivers (an Odin's 630 at 512.464, a
+     * Galaxy S10+'s 640 at 512.502) read a null pointer inside a compute dispatch recorded after a render
+     * pass in the same command buffer (the viewport and scissor it set); submitted apart, they draw it. */
+    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+        fprintf(stderr, "host: the native 3D's drawing could not be submitted: %s\n", SDL_GetError());
+        *cmdp = NULL;
+        return;
+    }
+    cmd = *cmdp = SDL_AcquireGPUCommandBuffer(device);
+    if (cmd == NULL) {
+        return; /* the caller sees no command buffer */
     }
     {
         /* the targets into raster3d's two */
