@@ -1,8 +1,10 @@
 // The native 3D renderer's targets (native3d.hlsl) as raster3d.hlsl's two, which finish3d.hlsli and the
-// composition read: the colour with the first translucent one over an empty pixel added back, the rear
-// plane's where nothing was drawn. The targets the picture did not write (`outputs`) are not read.
-
-ByteAddressBuffer vram : register(t0, space0);
+// composition read: the colour with the first translucent one over an empty pixel added back, the clear
+// colour where nothing was drawn (with the clear image on, native3d_pack_image.hlsl puts its colour there
+// after). The targets the picture did not write (`outputs`) are not read.
+//
+// It reads no buffer: with the clear image read here (rear_plane_at), newer Adreno drivers (a Tab A9+'s 619 at
+// 512.762, a Poco F9 Ultra's 840) ran it writing nothing at all, and the whole 3D vanished.
 
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> colour : register(u0, space1); // read only here
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> first : register(u1, space1);
@@ -14,7 +16,12 @@ ByteAddressBuffer vram : register(t0, space0);
 [[vk::image_format("r32ui")]] RWTexture2D<uint> out_attr : register(u7, space1);
 
 #include "native3d_params.hlsli"
-#include "g3d_vram.hlsli"
+
+// A 5-bit channel at the pass's precision (g3d_vram.hlsli channel5)
+int clear_channel(uint c)
+{
+    return fine != 0u ? (int)((c << 3) | (c >> 2)) : c != 0u ? (int)(c * 2u + 1u) : 0;
+}
 
 [numthreads(8, 8, 1)]
 void cs_main(uint3 id : SV_DispatchThreadID)
@@ -32,7 +39,9 @@ void cs_main(uint3 id : SV_DispatchThreadID)
         const float cmax = fine != 0u ? 255.0f : 63.0f;
         int3 rgb;
         if (a == 0) {
-            rgb = rear_plane_at((int)id.x / (int)scale + origin_x, id.y / scale).color.xyz;
+            // the rear plane's colour (rear_plane_at's with the clear colour)
+            rgb = int3(clear_channel(clear_color & 31u), clear_channel((clear_color >> 5) & 31u),
+                       clear_channel((clear_color >> 10) & 31u));
         } else {
             // the DS's blending truncates: so does this, a little over the stored colour's rounding (an
             // opaque colour comes out exact)

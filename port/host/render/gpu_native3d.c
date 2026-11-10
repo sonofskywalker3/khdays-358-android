@@ -2,12 +2,14 @@
  * triangles, drawn in the list's order. The pipelines carry the DS's per-pixel rules a fragment shader
  * cannot: the depth test, the polygon IDs and shadow masks in the stencil, the blending into
  * native3d.hlsl's six targets, of which a picture writes only those its finishing reads; consecutive
- * polygons drawn alike are one draw. native3d_pack.hlsl then makes raster3d's two targets from them. */
+ * polygons drawn alike are one draw. native3d_pack.hlsl then makes raster3d's two targets from them (and
+ * native3d_pack_image.hlsl puts the clear image's colour in, when it is on). */
 #include "gpu_native3d.h"
 #include "../../gfx/character_shadow.h"
 #include "../../gfx/g3d.h"
 #include "../../runtime/display/frame_package.h"
 #include "generated/native3d_pack_cs.h"
+#include "generated/native3d_pack_image_cs.h"
 #include "generated/native3d_ps.h"
 #include "generated/native3d_rear_ps.h"
 #include "generated/native3d_rear_vs.h"
@@ -70,7 +72,7 @@ static const int target_output[TARGETS] = {0, OUT_FIRST, OUT_FOG, OUT_IDS, 0, OU
 
 static SDL_GPUDevice *device;
 static SDL_GPUShader *polygon_vs, *polygon_ps, *polygon_ps_z, *rear_vs, *rear_ps;
-static SDL_GPUComputePipeline *pack;
+static SDL_GPUComputePipeline *pack, *pack_image;
 static SDL_GPUGraphicsPipeline *pipelines[KEYS], *rears[OUTPUTS], *clear_masks, *clear_translucent;
 static SDL_GPUTextureFormat depth_format;
 static SDL_GPUTexture *target[TARGETS], *depth;
@@ -133,30 +135,33 @@ static SDL_GPUShader *make_shader(const unsigned char *dxil, unsigned dxil_size,
     return SDL_CreateGPUShader(device, &info);
 }
 
-static SDL_GPUComputePipeline *make_pack(void)
+/* A compute pipeline of the pack's: `buffers` read-only storage buffers, `textures` read-write storage textures. */
+static SDL_GPUComputePipeline *make_compute(const unsigned char *dxil, unsigned dxil_size, const unsigned char *spirv,
+                                            unsigned spirv_size, const unsigned char *msl, unsigned msl_size,
+                                            const char *entry, Uint32 buffers, Uint32 textures)
 {
     SDL_GPUComputePipelineCreateInfo info;
     const SDL_GPUShaderFormat have = SDL_GetGPUShaderFormats(device);
     SDL_zero(info);
     if (have & SDL_GPU_SHADERFORMAT_DXIL) {
-        info.code = native3d_pack_cs_dxil;
-        info.code_size = native3d_pack_cs_dxil_size;
+        info.code = dxil;
+        info.code_size = dxil_size;
         info.format = SDL_GPU_SHADERFORMAT_DXIL;
     } else if (have & SDL_GPU_SHADERFORMAT_SPIRV) {
-        info.code = native3d_pack_cs_spirv;
-        info.code_size = native3d_pack_cs_spirv_size;
+        info.code = spirv;
+        info.code_size = spirv_size;
         info.format = SDL_GPU_SHADERFORMAT_SPIRV;
     } else if (have & SDL_GPU_SHADERFORMAT_MSL) {
-        info.code = native3d_pack_cs_msl;
-        info.code_size = native3d_pack_cs_msl_size - 1;
+        info.code = msl;
+        info.code_size = msl_size - 1;
         info.format = SDL_GPU_SHADERFORMAT_MSL;
     } else {
         SDL_SetError("the device takes none of the shader formats this build carries");
         return NULL;
     }
-    info.entrypoint = NATIVE3D_PACK_CS_ENTRY;
-    info.num_readonly_storage_buffers = 1;
-    info.num_readwrite_storage_textures = TARGETS + 2;
+    info.entrypoint = entry;
+    info.num_readonly_storage_buffers = buffers;
+    info.num_readwrite_storage_textures = textures;
     info.num_uniform_buffers = 1;
     info.threadcount_x = 8;
     info.threadcount_y = 8;
@@ -451,6 +456,8 @@ void khdays_native3d_close(void)
         SDL_ReleaseGPUGraphicsPipeline(device, clear_translucent);
     if (pack != NULL)
         SDL_ReleaseGPUComputePipeline(device, pack);
+    if (pack_image != NULL)
+        SDL_ReleaseGPUComputePipeline(device, pack_image);
     if (polygon_vs != NULL)
         SDL_ReleaseGPUShader(device, polygon_vs);
     if (polygon_ps != NULL)
@@ -464,7 +471,7 @@ void khdays_native3d_close(void)
     if (corner_buffer != NULL)
         SDL_ReleaseGPUBuffer(device, corner_buffer);
     clear_masks = clear_translucent = NULL;
-    pack = NULL;
+    pack = pack_image = NULL;
     polygon_vs = polygon_ps = polygon_ps_z = rear_vs = rear_ps = NULL;
     corner_buffer = NULL;
     corner_buffer_size = 0;
@@ -498,7 +505,13 @@ int khdays_native3d_open(SDL_GPUDevice *d)
     rear_ps = make_shader(native3d_rear_ps_dxil, native3d_rear_ps_dxil_size, native3d_rear_ps_spirv,
                           native3d_rear_ps_spirv_size, native3d_rear_ps_msl, native3d_rear_ps_msl_size,
                           NATIVE3D_REAR_PS_ENTRY, SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 1);
-    pack = make_pack();
+    pack = make_compute(native3d_pack_cs_dxil, native3d_pack_cs_dxil_size, native3d_pack_cs_spirv,
+                        native3d_pack_cs_spirv_size, native3d_pack_cs_msl, native3d_pack_cs_msl_size,
+                        NATIVE3D_PACK_CS_ENTRY, 0, TARGETS + 2);
+    pack_image = make_compute(native3d_pack_image_cs_dxil, native3d_pack_image_cs_dxil_size,
+                              native3d_pack_image_cs_spirv, native3d_pack_image_cs_spirv_size,
+                              native3d_pack_image_cs_msl, native3d_pack_image_cs_msl_size,
+                              NATIVE3D_PACK_IMAGE_CS_ENTRY, 1, 1);
     depth_format = SDL_GPUTextureSupportsFormat(device, SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT, SDL_GPU_TEXTURETYPE_2D,
                                                 SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                        ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT
@@ -516,7 +529,7 @@ int khdays_native3d_open(SDL_GPUDevice *d)
     corner_buffer_size = 1u << 16;
     corner_buffer = make_corner_buffer(corner_buffer_size);
     if (polygon_vs == NULL || polygon_ps == NULL || polygon_ps_z == NULL || rear_vs == NULL || rear_ps == NULL ||
-        pack == NULL || clear_masks == NULL || clear_translucent == NULL || corner_buffer == NULL) {
+        pack == NULL || pack_image == NULL || clear_masks == NULL || clear_translucent == NULL || corner_buffer == NULL) {
         char why[256];
         SDL_strlcpy(why, SDL_GetError(), sizeof(why));
         khdays_native3d_close();
@@ -939,6 +952,18 @@ void khdays_native3d_draw(SDL_GPUCommandBuffer **cmdp, const KhdaysNative3dFrame
         io[TARGETS + 1].cycle = true;
         compute = SDL_BeginGPUComputePass(cmd, io, TARGETS + 2, NULL, 0);
         SDL_BindGPUComputePipeline(compute, pack);
+        SDL_PushGPUComputeUniformData(cmd, 0, &pr, sizeof(pr));
+        SDL_DispatchGPUCompute(compute, (Uint32)(frame->width + 7) / 8, (Uint32)(frame->height + 7) / 8, 1);
+        SDL_EndGPUComputePass(compute);
+    }
+    if (frame->disp3dcnt & 0x4000u) {
+        /* the clear image's colour where nothing was drawn, into the colour the pack made (not cycled) */
+        SDL_GPUStorageTextureReadWriteBinding io;
+        SDL_GPUComputePass *compute;
+        SDL_zero(io);
+        io.texture = color3d;
+        compute = SDL_BeginGPUComputePass(cmd, &io, 1, NULL, 0);
+        SDL_BindGPUComputePipeline(compute, pack_image);
         SDL_BindGPUComputeStorageBuffers(compute, 0, &vram, 1);
         SDL_PushGPUComputeUniformData(cmd, 0, &pr, sizeof(pr));
         SDL_DispatchGPUCompute(compute, (Uint32)(frame->width + 7) / 8, (Uint32)(frame->height + 7) / 8, 1);
