@@ -156,11 +156,11 @@ uint layer_at(int b, int x, int row)
 
 // A part of this shader for a compiler that runs out of memory on the whole of it (gfx_render.c compose_for):
 // the wider picture's, or the DS's columns' with or without the one-screen picture's sources. Each is only
-// used for the frames its name says, so what it leaves out is not reached.
+// used for the frames its name says, so what it leaves out is not reached. The split part keeps the split
+// as the description says, as the whole shader does: with it fixed on, an Adreno 619 (driver 512.762) drew
+// the HUD's pieces of the one-screen picture as white boxes.
 #if defined(COMPOSE2D_PART_PLAIN)
 #define KD_SPLIT_ON(flags) false
-#elif defined(COMPOSE2D_PART_SPLIT)
-#define KD_SPLIT_ON(flags) true
 #endif
 
 #define KD_PLACE_USED() (g_place_used = true)

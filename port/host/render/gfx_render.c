@@ -426,20 +426,45 @@ static SDL_GPUComputePipeline *compose_for(uint32_t wide, uint32_t flags)
 /* The whole shader takes Mali's compiler over 3 GB of the process's memory (a Mali-G57, measured 2026-11-03: it
  * fails, or the process is aborted with it, so it can't be tried first); the three parts peak at 220-580 MB
  * and 2-3 s each. */
+/* An Adreno older than the 700s gets the parts as well: a Galaxy S10+'s 640 (driver 512.502, little memory
+ * free) refused the whole shader, then a part after it; each part is a third of the compiler's work. */
+#define PARTS_BELOW_ADRENO 700
+
 static int compose_too_big_here(void)
 {
     const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(device), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
-    return SDL_strstr(name, "Mali") != NULL;
+    const char *adreno = SDL_strstr(name, "Adreno");
+    int model = 0;
+    while (adreno != NULL && *adreno != '\0' && (*adreno < '0' || *adreno > '9')) {
+        ++adreno;
+    }
+    if (adreno != NULL) {
+        model = SDL_atoi(adreno);
+    }
+    return SDL_strstr(name, "Mali") != NULL || (model > 0 && model < PARTS_BELOW_ADRENO);
+}
+
+/* One part of the shader, its result in the log (a player's log says which one the card refused). */
+static SDL_GPUComputePipeline *make_compose_part(const char *which, const unsigned char *spirv, unsigned int size,
+                                                 const char *entry)
+{
+    SDL_GPUComputePipeline *made = make_pipeline_of(NULL, 0, spirv, size, NULL, 1, entry, 8, 7);
+    if (made == NULL) {
+        fprintf(stderr, "host: the 2D's shader, part %s: refused (%s)\n", which, SDL_GetError());
+    } else {
+        fprintf(stderr, "host: the 2D's shader, part %s: made\n", which);
+    }
+    return made;
 }
 
 static void make_compose_parts(void)
 {
-    compose_wide = make_pipeline_of(NULL, 0, compose2d_wide_cs_spirv, compose2d_wide_cs_spirv_size, NULL, 1,
-                                    COMPOSE2D_WIDE_CS_ENTRY, 8, 7);
-    compose_plain = make_pipeline_of(NULL, 0, compose2d_plain_cs_spirv, compose2d_plain_cs_spirv_size, NULL, 1,
-                                     COMPOSE2D_PLAIN_CS_ENTRY, 8, 7);
-    compose_split = make_pipeline_of(NULL, 0, compose2d_split_cs_spirv, compose2d_split_cs_spirv_size, NULL, 1,
-                                     COMPOSE2D_SPLIT_CS_ENTRY, 8, 7);
+    compose_wide = make_compose_part("wide", compose2d_wide_cs_spirv, compose2d_wide_cs_spirv_size,
+                                     COMPOSE2D_WIDE_CS_ENTRY);
+    compose_plain = make_compose_part("plain", compose2d_plain_cs_spirv, compose2d_plain_cs_spirv_size,
+                                      COMPOSE2D_PLAIN_CS_ENTRY);
+    compose_split = make_compose_part("split", compose2d_split_cs_spirv, compose2d_split_cs_spirv_size,
+                                      COMPOSE2D_SPLIT_CS_ENTRY);
 }
 #endif
 
@@ -724,8 +749,7 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     } else {
         compose = make_pipeline();
         if (compose == NULL) {
-            /* another card's compiler out of memory for it as well (an Adreno 640 with little free: a Galaxy
-             * S10+): the parts, as on a Mali */
+            /* another card's compiler refused it as well: the parts, as on a Mali */
             fprintf(stderr, "host: the 2D's shader cannot be made whole here (%s): in three parts\n",
                     SDL_GetError());
             make_compose_parts();
