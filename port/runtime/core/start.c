@@ -346,6 +346,14 @@ int main(int argc, char **argv)
     khdays_plugins_start(khdays_mods_folder(), plugin_said);
     khdays_log("the game's memory at %p (its references from there)", (void *)khdays_window);
     {
+        /* KHDAYS_CRASH_TEST=abort: stops here as a failed check would, to try what a crash leaves (diag.c's
+         * chain in the log, Android's record added at the next start) */
+        const char *crash_test = getenv("KHDAYS_CRASH_TEST");
+        if (crash_test != NULL && strcmp(crash_test, "abort") == 0) {
+            abort();
+        }
+    }
+    {
         /* The game runs on a context whose stack is in its memory (memory.c), so its locals are reached
          * by reference too. */
         KhdaysContext *game = khdays_context_create(run_game, NULL);

@@ -559,6 +559,8 @@ void khdays_diag_callers(char *out, int size, int skip)
 #include <unistd.h>
 #include <unwind.h>
 #include <pthread.h>
+#include <sys/syscall.h>
+#include <sys/uio.h>
 
 /* The handlers before the crash report's (the system's, which writes the tombstone): the crash goes on
  * to them once reported. */
@@ -611,6 +613,63 @@ static void print_frames(void *const *frames, int count)
     fflush(stderr);
 }
 
+#if defined(__aarch64__)
+/* One frame of a crash's chain in the log: its library and the offset in it (what llvm-addr2line takes, the
+ * library's own symbols being stripped from the app's copy), and the function's name when one is known. */
+static void log_crash_frame(int depth, uintptr_t address)
+{
+    Dl_info info;
+    if (dladdr((const void *)address, &info) && info.dli_fname != NULL) {
+        const char *slash = strrchr(info.dli_fname, '/');
+        khdays_log("crash:   #%-2d %p %s+0x%zx (%s)", depth, (void *)address,
+                   slash != NULL ? slash + 1 : info.dli_fname, (size_t)(address - (uintptr_t)info.dli_fbase),
+                   info.dli_sname != NULL ? info.dli_sname : "?");
+    } else {
+        khdays_log("crash:   #%-2d %p ?", depth, (void *)address);
+    }
+}
+
+/* Reads `bytes` at `address` without touching it: a pointer to nothing gives 0, not a second fault in the
+ * handler (which would take the system's tombstone with it). The system call itself (bionic declares
+ * process_vm_readv only under _GNU_SOURCE), so safe in a signal handler. */
+static int read_safely(uintptr_t address, void *out, size_t bytes)
+{
+    struct iovec local = {out, bytes};
+    struct iovec remote = {(void *)address, bytes};
+    return syscall(SYS_process_vm_readv, getpid(), &local, 1L, &remote, 1L, 0L) == (long)bytes;
+}
+
+/* A saved return address without its pointer authentication code (the bits above the address that a CPU with
+ * PAC signs it with): xpaclri, a no-op on CPUs without. */
+static uintptr_t strip_pac(uintptr_t address)
+{
+    register uintptr_t x30 __asm__("x30") = address;
+    __asm__("hint #7" : "+r"(x30));
+    return x30;
+}
+
+/* The crashed thread's frame chain into the session log, as print_frame_chain does (on whichever stack it ran:
+ * the thread's own or a game context's), each record read through read_safely: a broken frame pointer ends
+ * the chain. */
+static void log_crash_chain(uintptr_t pc, uintptr_t lr, uintptr_t fp)
+{
+    enum { MOST_FRAMES = 32 };
+    log_crash_frame(0, pc);
+    log_crash_frame(1, strip_pac(lr));
+    for (int depth = 2; depth < MOST_FRAMES && fp != 0 && (fp & 7) == 0; ++depth) {
+        uintptr_t record[2];
+        if (!read_safely(fp, record, sizeof(record)) || record[1] == 0) {
+            break;
+        }
+        log_crash_frame(depth, strip_pac(record[1]));
+        if (record[0] <= fp) {
+            break;
+        }
+        fp = record[0];
+    }
+}
+#endif
+
 static void on_crash(int signal_number, siginfo_t *info, void *context_pointer)
 {
     const ucontext_t *context = (const ucontext_t *)context_pointer;
@@ -623,6 +682,9 @@ static void on_crash(int signal_number, siginfo_t *info, void *context_pointer)
 #endif
     khdays_log("crash: signal %d at %p (%s), address %p, called from %p (%s)", signal_number, (void *)pc,
                symbol_name((const void *)pc), info->si_addr, (void *)lr, symbol_name((const void *)lr));
+#if defined(__aarch64__)
+    log_crash_chain(pc, lr, (uintptr_t)context->uc_mcontext.regs[29]);
+#endif
     khdays_log_close();
     fprintf(stderr, "khdays-native: signal %d at %p (%s), address %p, called from %p (%s)\n", signal_number,
             (void *)pc, symbol_name((const void *)pc), info->si_addr, (void *)lr, symbol_name((const void *)lr));
@@ -639,8 +701,21 @@ static void on_crash(int signal_number, siginfo_t *info, void *context_pointer)
                 (unsigned long)(pc - (uintptr_t)khdays_window));
     }
     fflush(stderr);
-    /* on to the system's handler, which writes the tombstone: taken again as the handler returns */
+    /* on to the system's handler, which writes the tombstone (and the abort message) */
     sigaction(signal_number, &previous_crash[signal_number], NULL);
+    if (signal_number == SIGABRT) {
+        /* abort() does not take it again as a fault does: once a handler returns it sets the default and raises
+         * the signal anew, and the process ends with no tombstone. So the system's handler is called here. */
+        const struct sigaction *previous = &previous_crash[SIGABRT];
+        /* with the signals it blocks blocked, as if the system had called it (only SIGABRT is, in here) */
+        pthread_sigmask(SIG_BLOCK, &previous->sa_mask, NULL);
+        if ((previous->sa_flags & SA_SIGINFO) != 0 && previous->sa_sigaction != NULL) {
+            previous->sa_sigaction(signal_number, info, context_pointer);
+        } else if (previous->sa_handler != SIG_DFL && previous->sa_handler != SIG_IGN && previous->sa_handler != NULL) {
+            previous->sa_handler(signal_number);
+        }
+    }
+    /* a fault is taken again as the handler returns, by the system's handler */
 }
 
 /* The frame chain from a stopped thread's registers: every file keeps its frame pointer

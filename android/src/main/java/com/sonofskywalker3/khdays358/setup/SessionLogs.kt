@@ -90,6 +90,13 @@ object SessionLogs {
     private fun publish(context: Context) {
         val last = newestLogs(context).firstOrNull()
         if (last != null && crashed(last)) {
+            try {
+                CrashRecord.appendTo(context, last)
+            } catch (e: IOException) {
+                Log.w(TAG, "session logs: Android's crash record not added: $e")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "session logs: Android's crash record not added: $e")
+            }
             copyToDownload(context, last)
         }
         logsFolder(context)?.let { prune(it) }
