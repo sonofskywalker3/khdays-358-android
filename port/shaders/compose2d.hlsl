@@ -56,7 +56,8 @@ cbuffer Params : register(b0, space2) {
 #define source3d (modes & 3u)         // 0 none, 1 layer3d_mem at 1x, 2 raster3d's targets at N x
 #define smooth3d ((modes >> 2) & 1u)  // 1: the 3D read between its texels (smooth scaling)
 #define hud3d ((modes >> 3) & 1u)     // 1: the HUD's 3D apart, over the rest
-#define pre_mode ((modes >> 4) & 3u)  // 0: each pixel composed here; 1: this is the DS-sized pass writing `pre`; 2: `pre` read
+#define pre_mode ((modes >> 4) & 3u)  // 0: each pixel composed here; 1: this is the DS-sized pass writing `pre`; 2: `pre` read;
+                                      // 3: a thread a DS pixel, its colour given to its N x N output pixels
 // the DS pixel the dispatch starts at, in eighths (only part of the screen composed: gfx_render.c one_reads)
 #define origin_x (((modes >> 8) & 0xfffu) * 8u)
 #define origin_y ((modes >> 20) * 8u)
@@ -233,9 +234,9 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID)
     uint c6, verdict = PRE_EACH;
     int x, row;
     // the dispatch covers the part of the screen from `origin` (DS pixels; output pixels N x that)
-    const uint2 id = dispatched.xy + (pre_mode == 1u ? uint2(origin_x, origin_y) : uint2(origin_x, origin_y) * scale);
-    if (pre_mode == 1u) {
-        // the pass at the DS's size: one thread a DS pixel, its colour at the first place in it
+    const uint2 id = dispatched.xy + ((pre_mode & 1u) != 0u ? uint2(origin_x, origin_y) : uint2(origin_x, origin_y) * scale);
+    if ((pre_mode & 1u) != 0u) {
+        // the pass at the DS's size, and pre_mode 3: one thread a DS pixel, its colour at the first place in it
         if (id.x >= width / scale || id.y >= height / scale) {
             return;
         }
@@ -275,6 +276,24 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID)
         verdict = !g_place_used && !g_3d_used ? PRE_SAME : alone3d ? PRE_3D_ONLY : PRE_EACH;
         pre[uint2(id.x * 2u, id.y)] = verdict;
         pre[uint2(id.x * 2u + 1u, id.y)] = c6;
+        return;
+    }
+    if (pre_mode == 3u) {
+        // the DS pixel's colour, composed at its first place, at each of its output pixels (gfx_render.c says when)
+        const uint flags = KD_DESC(KD_FLAGS);
+        const float4 whole = (flags & KDF_SPLIT) != 0u
+                                 ? float4((float)(c6 & 255u), (float)((c6 >> 8) & 255u), (float)((c6 >> 16) & 255u),
+                                          (float)(c6 >> 24)) / 255.0f
+                                 : (flags & KDF_FINE) != 0u
+                                       ? float4((float)(c6 & 255u) / 255.0f, (float)((c6 >> 8) & 255u) / 255.0f,
+                                                (float)((c6 >> 16) & 255u) / 255.0f, 1.0f)
+                                       : float4(channel8(c6 & 63u), channel8((c6 >> 8) & 63u),
+                                                channel8((c6 >> 16) & 63u), 1.0f);
+        for (uint fy = 0u; fy < scale; ++fy) {
+            for (uint fx = 0u; fx < scale; ++fx) {
+                out_screen[id.xy * scale + uint2(fx, fy)] = whole;
+            }
+        }
         return;
     }
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u) {

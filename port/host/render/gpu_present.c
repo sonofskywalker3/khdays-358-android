@@ -218,6 +218,7 @@ static int window_cap_for(SDL_GPUDevice *gpu)
     /* the 2D composed finer than the 3D: a Mali-G57 got 11 fps at 4x and 30 at the 3D's 2x (the TCL, 2026-11-05) */
     android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
                                                                                                    : ANDROID_2D_CAP;
+    khdays_gfx_render_set_coarse_2d(android_2d_cap == ANDROID_WEAK_2D_CAP);
     if (model > 0 && model < OLDER_ADRENO_BELOW) {
         fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
         return OLDER_ADRENO_WINDOW_CAP;

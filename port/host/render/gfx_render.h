@@ -70,6 +70,10 @@ void khdays_gfx_render_every_sprite(int every);
  * nearest (sharp). */
 void khdays_gfx_render_set_smooth_3d(int on);
 
+/* 1: the one-screen picture's two sources are composed a DS pixel at a time and enlarged, when the frame has
+ * no 2D graphics finer than the DS's (a weaker card: gpu_present.c window_cap_for). */
+void khdays_gfx_render_set_coarse_2d(int on);
+
 /* The size the window shows the draws that follow at, in window pixels a DS pixel. What is made larger
  * (the window's size rounded up, an internal resolution above it) is shrunk to it on the card
  * (shrink.hlsl), each pixel the average of the area under it. 0: as made. */

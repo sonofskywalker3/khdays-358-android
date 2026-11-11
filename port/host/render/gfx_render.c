@@ -36,7 +36,8 @@ typedef struct Compose2dParams {
     uint32_t hud3d, hud_width, hud_height; /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
     uint32_t row0, layers_off;   /* rows past the DS's (lower_layout.h), layers left out */
     uint32_t layers1x_rows; /* layers2d.hlsl's rows from row0, or 0 */
-    uint32_t pre_mode; /* compose2d.hlsl: 0 each pixel composed, 1 the DS-sized pass, 2 its verdicts read (pre2d) */
+    uint32_t pre_mode; /* compose2d.hlsl: 0 each pixel composed, 1 the DS-sized pass, 2 its verdicts read (pre2d),
+                        * 3 a thread a DS pixel (coarse_2d) */
     uint32_t origin_x, origin_y; /* the DS pixel the dispatch starts at, multiples of 8 (one_reads' tiles) */
 } Compose2dParams;
 
@@ -1442,6 +1443,34 @@ static void one_reads(const KhdaysOneScreenDraw *one, int upper, const int colum
     }
 }
 
+/* A weaker card composes the one-screen picture's sources a DS pixel at a time (draw). */
+static int coarse_2d = -1; /* KHDAYS_COARSE_2D=1 or 0 says it instead, to try it on any card */
+
+void khdays_gfx_render_set_coarse_2d(int on)
+{
+    const char *asked = SDL_getenv("KHDAYS_COARSE_2D");
+    coarse_2d = asked != NULL ? SDL_atoi(asked) != 0 : on != 0;
+}
+
+static int coarse_now(void)
+{
+    if (coarse_2d < 0) {
+        khdays_gfx_render_set_coarse_2d(0); /* not said: off, but for KHDAYS_COARSE_2D */
+    }
+    return coarse_2d;
+}
+
+/* Whether the frame's 2D has tiles a mod draws instead (runtime/mods/tiles2d.h): graphics finer than the DS's. */
+static int finer_than_ds(const KhdaysFramePackage *p)
+{
+    for (size_t i = 0; i < SDL_arraysize(p->hd2d); ++i) {
+        if (p->hd2d[i] != 0u) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
 static int smooth3d;
 
@@ -1602,6 +1631,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         return 0;
     }
     at = 0;
+    int drop_elements = 0;
     for (int e = 0; e < 2; ++e) {
         engine_at[e] = at;
         memcpy(mapped + at, p->desc2d[e], KHDAYS_DESC_WORDS * 4);
@@ -1628,9 +1658,16 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
                     d[KD_FLAGS] &= ~(1u << (KDF_BG_ON_SHIFT + b));
                 }
             }
-            if (SDL_strstr(drop, "el") != NULL) {
-                d[KD_ELEMENTS] = 0;
+            if (SDL_strstr(drop, "obj") != NULL) {
+                d[KD_FLAGS] &= ~KDF_OBJ_ON;
             }
+            if (SDL_strstr(drop, "blend") != NULL) {
+                d[KD_BLEND] = 0;
+            }
+            if (SDL_strstr(drop, "win") != NULL) {
+                d[KD_FLAGS] &= ~(7u << KDF_WIN_ON_SHIFT);
+            }
+            drop_elements = SDL_strstr(drop, "el") != NULL; /* their records emptied below: the tail stays put */
         }
         if (one != NULL && e == 0 && whole_a) {
             /* engine A whole, its 3D in it (whole_a), without the master brightness: the port's screen draws the
@@ -1647,6 +1684,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         at += 0x400;
         if (p->elements[e].count != 0) {
             memcpy(mapped + at, p->elements[e].records, p->elements[e].count * KE_WORDS * 4u);
+            for (uint32_t i = 0; drop_elements && i < p->elements[e].count; ++i) {
+                ((uint32_t *)(mapped + at))[i * KE_WORDS + KE_IW] = 0;
+            }
             at += p->elements[e].count * KE_WORDS * 4u;
         }
         if (p->desc2d[e][KD_LEFT_OUT] != 0) {
@@ -1897,6 +1937,35 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
                 part_count = reads.count[e];
             }
         }
+        {
+            /* KHDAYS_PERF: how much of each screen is composed, said every 300 pictures */
+            static int asked = -1, pictures[2], part_sum[2], sprite_sum[2], element_sum[2];
+            static long dots[2];
+            if (asked < 0) {
+                asked = SDL_getenv("KHDAYS_PERF") != NULL;
+            }
+            if (asked) {
+                for (int k = 0; k < part_count; ++k) {
+                    dots[e] += (long)(parts[k][2] - parts[k][0]) * (parts[k][3] - parts[k][1]);
+                }
+                part_sum[e] += part_count;
+                element_sum[e] += (int)p->elements[e].count;
+                for (int i = 0; i < 128; ++i) {
+                    sprite_sum[e] += (p->desc2d[e][KD_SPRITES + (uint32_t)i * KD_SPRITE_WORDS + KDS_SIZE] & KDS_SHOWN) != 0u;
+                }
+                if (++pictures[e] == 300) {
+                    fprintf(stderr,
+                            "host: engine %c composed %ld of %d dots a picture in %d parts at %dx (%s%s), %d sprites, "
+                            "%d elements, flags %08x\n",
+                            e == 0 ? 'A' : 'B', dots[e] / 300, screen_columns[e] * KHDAYS_FRAME_H, part_sum[e] / 300,
+                            scale, one == NULL ? "two screens" : "one screen", e == 0 && whole_a ? ", whole" :
+                            e == 0 && p->capture ? ", the capture" : "", sprite_sum[e] / 300, element_sum[e] / 300,
+                            (unsigned)p->desc2d[e][KD_FLAGS]);
+                    pictures[e] = part_sum[e] = sprite_sum[e] = element_sum[e] = 0;
+                    dots[e] = 0;
+                }
+            }
+        }
         SDL_zero(cp);
         cp.scale = (uint32_t)scale;
         cp.width = (uint32_t)(screen_columns[e] * scale);
@@ -1986,6 +2055,21 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             io[6].cycle = false;
             cp.pre_mode = 2u;
         }
+        /* A weaker card's one-screen sources (khdays_gfx_render_set_coarse_2d): a thread a DS pixel, its colour
+         * given to its N x N output pixels, so the card composes a quarter of the pixels at 2x. The DS's own
+         * graphics are the same at all of them; what is lost is finer than a DS pixel: where the 3D's edge
+         * crosses a HUD piece, and the texels between of an element drawn finer than its rectangle (the port's
+         * own text: at 2x, every other texel of it). The Tab A9+'s field (Adreno 619, 2x): 47 ms a picture
+         * composed at each output pixel, 22 ms so. Not a frame with a mod's finer tiles (finer_than_ds), nor a
+         * screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output pixel,
+         * to measure. */
+        const int coarse = coarse_now() && one != NULL && cp.pre_mode == 0u && scale > 1 &&
+                           !(e == 0 && (whole_a || p->capture)) && !whole_screens() && !finer_than_ds(p) &&
+                           !gpu_skip("coarse");
+        const uint32_t per = coarse ? 1u : cp.scale;
+        if (coarse) {
+            cp.pre_mode = 3u;
+        }
         pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
@@ -1994,8 +2078,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             cp.origin_x = (uint32_t)parts[k][0];
             cp.origin_y = (uint32_t)parts[k][1];
             compose_params(cmd, &cp);
-            SDL_DispatchGPUCompute(pass, ((uint32_t)(parts[k][2] - parts[k][0]) * cp.scale + 7) / 8,
-                                   ((uint32_t)(parts[k][3] - parts[k][1]) * cp.scale + 7) / 8,
+            SDL_DispatchGPUCompute(pass, ((uint32_t)(parts[k][2] - parts[k][0]) * per + 7) / 8,
+                                   ((uint32_t)(parts[k][3] - parts[k][1]) * per + 7) / 8,
                                    1); /* the shader skips pixels past the edge */
         }
         SDL_EndGPUComputePass(pass);
