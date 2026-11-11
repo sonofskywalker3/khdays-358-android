@@ -2055,7 +2055,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             io[6].cycle = false;
             cp.pre_mode = 2u;
         }
-        /* A weaker card's one-screen sources (khdays_gfx_render_set_coarse_2d): a thread a DS pixel, its colour
+        /* A weaker card's one-screen sources, and its screens without the 3D in them (a menu's two screens)
+         * (khdays_gfx_render_set_coarse_2d): a thread a DS pixel, its colour
          * given to its N x N output pixels, so the card composes a quarter of the pixels at 2x. The DS's own
          * graphics are the same at all of them; what is lost is finer than a DS pixel: where the 3D's edge
          * crosses a HUD piece, and the texels between of an element drawn finer than its rectangle (the port's
@@ -2063,7 +2064,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
          * composed at each output pixel, 22 ms so. Not a frame with a mod's finer tiles (finer_than_ds), nor a
          * screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output pixel,
          * to measure. */
-        const int coarse = coarse_now() && one != NULL && cp.pre_mode == 0u && scale > 1 &&
+        const int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && cp.pre_mode == 0u && scale > 1 &&
                            !(e == 0 && (whole_a || p->capture)) && !whole_screens() && !finer_than_ds(p) &&
                            !gpu_skip("coarse");
         const uint32_t per = coarse ? 1u : cp.scale;
