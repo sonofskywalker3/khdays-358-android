@@ -1180,6 +1180,39 @@ static int layer_of(const KhdaysG3dList *list, int hud, KhdaysG3dList *out)
     return 1;
 }
 
+/* KHDAYS_GPU_TIME: the 3D's work so far submitted and waited for, after the card is idle, its time said every
+ * 120 (as gfx_render.c's passes); a new command buffer for the rest. The whole is slower so, each step alone. */
+static void time_step(SDL_GPUCommandBuffer **cmd, const char *label)
+{
+    static const char *labels[12];
+    static double total[12];
+    static int count[12];
+    SDL_GPUFence *fence;
+    Uint64 t0;
+    int k = 0;
+    if (SDL_getenv("KHDAYS_GPU_TIME") == NULL || *cmd == NULL) {
+        return;
+    }
+    while (k < 11 && labels[k] != NULL && SDL_strcmp(labels[k], label) != 0) {
+        ++k;
+    }
+    labels[k] = label;
+    SDL_WaitForGPUIdle(device);
+    t0 = SDL_GetTicksNS();
+    fence = SDL_SubmitGPUCommandBufferAndAcquireFence(*cmd);
+    if (fence != NULL) {
+        SDL_WaitForGPUFences(device, true, &fence, 1);
+        SDL_ReleaseGPUFence(device, fence);
+    }
+    total[k] += (double)(SDL_GetTicksNS() - t0) / 1e6;
+    if (++count[k] == 120) {
+        fprintf(stderr, "gpu time: 3D %s %.2f ms on average\n", label, total[k] / count[k]);
+        total[k] = 0.0;
+        count[k] = 0;
+    }
+    *cmd = SDL_AcquireGPUCommandBuffer(device);
+}
+
 static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, int compose_too)
 {
     const KhdaysG3dList *list = list_instead != NULL ? list_instead : &p->list3d;
@@ -1406,7 +1439,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         at += (uint32_t)nchanged * KHDAYS_FRAME_VRAM_PAGE;
         SDL_EndGPUCopyPass(copy);
     }
+    time_step(&cmd, "upload");
     draw_shadows(cmd, list);
+    time_step(&cmd, "shadows");
     if (native) {
         khdays_native3d_draw(&cmd, &frame, polys, verts, vram, khdays_gpu_hd_buffer(), color3d, attr3d);
         if (cmd == NULL) {
@@ -1414,6 +1449,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
             return 0;
         }
     }
+    time_step(&cmd, "the card's rasterizer");
     if (rest) {
         RasterParams rp;
         SDL_GPUStorageTextureReadWriteBinding out[2];
@@ -1465,11 +1501,13 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         SDL_EndGPUComputePass(pass);
     }
     /* the antialiasing: the 3D's edges smoothed before anything reads it (the HUD drawn apart left sharp) */
+    time_step(&cmd, rest ? "polygons, some by raster3d.hlsl" : "polygons");
     if (fxaa_on && fxaa != NULL && !drawing_hud && !smooth_edges(cmd, w, h)) {
         fprintf(stderr, "host: no texture for the antialiasing at %dx%d (%s): drawn without it\n", w, h,
                 SDL_GetError());
         fxaa_on = 0;
     }
+    time_step(&cmd, "antialiasing");
     if (compose_too) {
         ComposeParams cp;
         SDL_GPUStorageTextureReadWriteBinding io[3];

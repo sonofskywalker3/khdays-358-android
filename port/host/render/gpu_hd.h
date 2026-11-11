@@ -39,4 +39,9 @@ void khdays_gpu_hd_set_most(uint64_t bytes);
 
 SDL_GPUBuffer *khdays_gpu_hd_buffer(void);
 
+/* A number that changes whenever the buffer's contents may have (an upload, a larger buffer, a pass that
+ * wrote into it: khdays_gpu_hd_written): what was drawn from it before is as good as new while it stays. */
+uint32_t khdays_gpu_hd_changes(void);
+void khdays_gpu_hd_written(void);
+
 #endif

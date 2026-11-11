@@ -874,8 +874,11 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     return 1;
 }
 
+static void forget_kept(void); /* (kept_screen, below) */
+
 static void drop_screens(void)
 {
+    forget_kept(); /* the screens kept were these textures' */
     for (int e = 0; e < 2; ++e) {
         if (wrapped[e] != NULL) {
             SDL_DestroyTexture(wrapped[e]);
@@ -1561,6 +1564,95 @@ static void one_covers(const KhdaysOneScreenDraw *one, int scale, int width, int
     }
 }
 
+/* A screen kept from the picture before: an engine that reads no 3D gives the same screen when what the card
+ * is sent for it (its description, palettes, elements and sprites: `sent`), its memory (a page of its areas
+ * changed since: `stale`), the replacements' buffer, its parts and its composition's parameters are the same.
+ * Its passes are then left out whole -- the screen's texture is not bound, so not made anew -- and what reads
+ * it finds what the last composition left. A menu that stands still, the lower screen under a field, and the
+ * pictures drawn between two game frames: on a Tab A9+ a screen's passes cost 4 to 7 ms of a 20 ms picture.
+ * Compared whole, not by a hash: a screen wrongly kept would stay wrong. Not while measuring or checking
+ * (KHDAYS_GPU_SKIP, KHDAYS_GPU_TIME, KHDAYS_GFX=check), and KHDAYS_KEEP_2D=0 composes every time. */
+typedef struct KeptHow {
+    Compose2dParams cp;
+    int parts[ONE_READS][4];
+    int part_count, how, coarse;
+    uint32_t hd_changes;
+    SDL_GPUComputePipeline *pipeline;
+    SDL_GPUTexture *texture;
+} KeptHow;
+
+static struct {
+    int ok, stale;
+    uint8_t *sent;
+    uint32_t sent_bytes, sent_room;
+    KeptHow how;
+} kept[2];
+
+static void forget_kept(void)
+{
+    kept[0].ok = kept[1].ok = 0;
+}
+
+/* What the card is sent for engine e this picture: its screen is stale when that differs from the last. */
+static void kept_sent(int e, const uint8_t *bytes, uint32_t n)
+{
+    if (kept[e].sent_bytes == n && kept[e].sent != NULL && memcmp(kept[e].sent, bytes, n) == 0) {
+        return;
+    }
+    kept[e].stale = 1;
+    if (n > kept[e].sent_room) {
+        uint8_t *grown = (uint8_t *)SDL_realloc(kept[e].sent, n);
+        if (grown == NULL) {
+            kept[e].sent_bytes = 0; /* not kept: never the same */
+            return;
+        }
+        kept[e].sent = grown;
+        kept[e].sent_room = n;
+    }
+    memcpy(kept[e].sent, bytes, n);
+    kept[e].sent_bytes = n;
+}
+
+static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int part_count, int how)
+{
+    static int asked = -1, perf = -1, pictures[2], hits[2];
+    KeptHow now;
+    int hit;
+    if (asked < 0) {
+        const char *keep = SDL_getenv("KHDAYS_KEEP_2D");
+        asked = keep == NULL || SDL_atoi(keep) != 0;
+        perf = SDL_getenv("KHDAYS_PERF") != NULL;
+    }
+    if (!asked || cp->source3d != 0u || part_count > ONE_READS || kept[e].sent_bytes == 0 || whole_screens() ||
+        SDL_getenv("KHDAYS_GPU_SKIP") != NULL || SDL_getenv("KHDAYS_GPU_TIME") != NULL) {
+        kept[e].ok = 0;
+        return 0;
+    }
+    SDL_zero(now); /* (its padding too: compared by its bytes) */
+    now.cp = *cp;
+    memcpy(now.parts, parts, sizeof(parts[0]) * (size_t)part_count);
+    now.part_count = part_count;
+    now.how = how;
+    now.coarse = coarse_now();
+    now.hd_changes = khdays_gpu_hd_changes();
+    now.pipeline = compose_engine[e];
+    now.texture = screen[e];
+    hit = kept[e].ok && !kept[e].stale && memcmp(&kept[e].how, &now, sizeof(now)) == 0;
+    hits[e] += hit;
+    if (perf && ++pictures[e] == 300) {
+        /* KHDAYS_PERF: how often each screen was kept */
+        fprintf(stderr, "host: engine %c's screen kept %d times in 300%c", e == 0 ? 'A' : 'B', hits[e], 10);
+        pictures[e] = hits[e] = 0;
+    }
+    if (hit) {
+        return 1;
+    }
+    kept[e].ok = 1;
+    kept[e].stale = 0;
+    kept[e].how = now;
+    return 0;
+}
+
 /* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
 static int smooth3d;
 
@@ -1698,6 +1790,16 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             hd2d_version[n] = p->hd2d_version[n];
         }
     }
+    for (int k = 0; k < nchanged + nhd; ++k) {
+        /* whose memory changed since its screen was composed (kept_screen): an engine's own areas, the bank
+         * a VRAM display shows for both */
+        uint32_t offset;
+        const int a = area_of(k < nchanged ? changed[k] : hd_changed[k - nchanged], &offset);
+        const int of_a = a == ABG || a == AOBJ || a == ABGEXT || a == AOBJEXT;
+        const int of_b = a == BBG || a == BOBJ || a == BBGEXT || a == BOBJEXT;
+        kept[0].stale |= !of_b;
+        kept[1].stale |= !of_a;
+    }
     valid = 1;
     size = fixed + shop_bytes + (uint32_t)nchanged * PAGE + (uint32_t)nhd * HD2D_PAGE;
     if (size > upload_size) {
@@ -1787,6 +1889,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         }
         sprite_rows(p->desc2d[e], (uint32_t *)(mapped + at));
         at += SPRITE_ROW_BYTES;
+        kept_sent(e, mapped + engine_at[e], at - engine_at[e]);
     }
     if (has3d) {
         memcpy(mapped + at, p->layer3d, KHDAYS_FRAME_PIXELS * 4);
@@ -2087,6 +2190,10 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             for (int i = 0; i < 8; ++i) {
                 cp.fog_table[i] = io32(io3d, 0x60 + 4u * (unsigned)i);
             }
+        }
+        if (kept_screen(e, &cp, parts, part_count,
+                        (one != NULL) | whole_a << 1 | (p->capture != 0) << 2 | finer_than_ds(p) << 3)) {
+            continue; /* the screen as it was composed: nothing it is made of changed */
         }
         in[0] = desc[e];
         in[1] = memory[b ? BBG : ABG];

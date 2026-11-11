@@ -182,6 +182,18 @@ SDL_GPUBuffer *khdays_gpu_hd_buffer(void)
     return buffer;
 }
 
+static uint32_t changes;
+
+uint32_t khdays_gpu_hd_changes(void)
+{
+    return changes;
+}
+
+void khdays_gpu_hd_written(void)
+{
+    ++changes;
+}
+
 void khdays_gpu_hd_next_frame(void)
 {
     ++now;
@@ -368,6 +380,7 @@ static int sync_changed(SDL_GPUCommandBuffer *cmd)
             dst.offset = (table_capacity * 4u + places[id]) * 4u;
             dst.size = n;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
+            khdays_gpu_hd_written();
             at += n;
         }
     }
@@ -429,6 +442,7 @@ static int grow(SDL_GPUCopyPass *copy, uint32_t count, uint64_t need)
         return 0; /* as large as it can be */
     }
     grown = make_buffer(table, (uint32_t)texels);
+    khdays_gpu_hd_written();
     khdays_log("hd: the card's replacement memory grown: %u pictures, %llu MB wanted, room for %llu MB%s", count,
                (unsigned long long)need * 4u >> 20, ((unsigned long long)table * 4u + texels) * 4u >> 20,
                grown == NULL ? " -- refused by the card" : "");
@@ -683,6 +697,7 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
         dst.buffer = buffer;
         dst.offset = 0;
         dst.size = entries * 16u;
+        khdays_gpu_hd_written();
         if (dst.size > 0)
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
         src.offset = entries * 16u;
