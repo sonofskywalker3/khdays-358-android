@@ -24,11 +24,15 @@ ByteAddressBuffer hd : register(t7, space0);         // the replacements (host/r
 // the DS-sized pass's verdicts (pre_mode): per DS pixel, at column 2x what it is (PRE_*), at 2x + 1 its colour
 [[vk::image_format("r32ui")]] RWTexture2D<uint> pre : register(u6, space1);
 
+// 32 words, 128 bytes, and no more: an Adreno 619 (driver 512.762.40) gave this shader nothing of its block past
+// them. When it was 36 words, row0 and the three after it read as 0 there, or as what layers2d.hlsl's pass had
+// left behind when that ran just before (the title's art in three bands, the one-screen picture without its
+// menus); a block of 32 is read whole (measured 2026-11-10). So the small ones share a word (`modes`).
 cbuffer Params : register(b0, space2) {
     uint scale;         // N
     uint width;         // the screen and raster3d's targets, pixels
     uint height;
-    uint source3d;      // 0 none, 1 layer3d_mem at 1x, 2 raster3d's targets at N x
+    uint modes;         // source3d, smooth3d, hud3d and pre_mode (below)
     uint disp3dcnt;
     uint swap_params;
     uint clear_color;   // CLEAR_COLOR
@@ -42,16 +46,17 @@ cbuffer Params : register(b0, space2) {
     uint scale3d;       // source3d 2: the 3D's N (`scale` but when the 2D is drawn finer than the 3D)
     uint width3d;       // its targets, texels
     uint height3d;
-    uint smooth3d;      // 1: the 3D read between its texels (smooth scaling)
-    uint hud3d;         // 1: the HUD's 3D apart, over the rest
-    uint hud_width;     // its targets, texels (as wide as the 3D's at N)
+    uint hud_width;     // the HUD's 3D apart: its targets, texels (as wide as the 3D's at N)
     uint hud_height;
-    uint unused5;
     uint row0;          // the DS row of the target's first (rows past the DS's 192 for a taller display)
     uint layers_off;    // layers left out (KDF_BG_ON_SHIFT's bits, KDF_OBJ_ON): compose.h KD_LAYERS_OFF
     uint layers1x_rows; // layers1x: each layer's rows from row0 (0: none; the layers looked up here)
-    uint pre_mode;      // 0: each pixel composed here; 1: this is the DS-sized pass writing `pre`; 2: `pre` read
 };
+// `modes` (gfx_render.c compose_params packs them):
+#define source3d (modes & 3u)         // 0 none, 1 layer3d_mem at 1x, 2 raster3d's targets at N x
+#define smooth3d ((modes >> 2) & 1u)  // 1: the 3D read between its texels (smooth scaling)
+#define hud3d ((modes >> 3) & 1u)     // 1: the HUD's 3D apart, over the rest
+#define pre_mode ((modes >> 4) & 3u)  // 0: each pixel composed here; 1: this is the DS-sized pass writing `pre`; 2: `pre` read
 
 #define FINISH3D_SCALED
 #include "finish3d.hlsli"

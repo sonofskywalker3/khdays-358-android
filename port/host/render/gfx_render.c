@@ -25,18 +25,60 @@
 
 #define PAGE KHDAYS_FRAME_VRAM_PAGE
 
-/* compose2d.hlsl's constant buffer, register for register. */
+/* compose2d.hlsl's parameters, as this file fills them in; compose_params gives them to the shader packed into
+ * its constant buffer's 32 words (the shader says why no more). */
 typedef struct Compose2dParams {
     uint32_t scale, width, height, source3d, disp3dcnt, swap_params, clear_color, clear_depth;
     uint32_t fog_color, fog_offset, fine, offset3d;
     uint32_t edge_colors[4];
     uint32_t fog_table[8];
     uint32_t scale3d, width3d, height3d, smooth3d;  /* the 3D's own scale (the 2D finer than it) */
-    uint32_t hud3d, hud_width, hud_height, unused5; /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
+    uint32_t hud3d, hud_width, hud_height; /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
     uint32_t row0, layers_off;   /* rows past the DS's (lower_layout.h), layers left out */
     uint32_t layers1x_rows; /* layers2d.hlsl's rows from row0, or 0 */
     uint32_t pre_mode; /* compose2d.hlsl: 0 each pixel composed, 1 the DS-sized pass, 2 its verdicts read (pre2d) */
 } Compose2dParams;
+
+/* compose2d.hlsl's constant buffer, register for register. */
+typedef struct Compose2dBlock {
+    uint32_t scale, width, height, modes, disp3dcnt, swap_params, clear_color, clear_depth;
+    uint32_t fog_color, fog_offset, fine, offset3d;
+    uint32_t edge_colors[4];
+    uint32_t fog_table[8];
+    uint32_t scale3d, width3d, height3d, hud_width;
+    uint32_t hud_height, row0, layers_off, layers1x_rows;
+} Compose2dBlock;
+SDL_COMPILE_TIME_ASSERT(compose2d_block_words, sizeof(Compose2dBlock) == 32 * sizeof(uint32_t));
+
+/* The next compose2d pass's parameters. */
+static void compose_params(SDL_GPUCommandBuffer *cmd, const Compose2dParams *p)
+{
+    Compose2dBlock b;
+    b.scale = p->scale;
+    b.width = p->width;
+    b.height = p->height;
+    /* compose2d.hlsl `modes`: source3d in bits 0-1, smooth3d in 2, hud3d in 3, pre_mode in 4-5 */
+    b.modes = (p->source3d & 3u) | (p->smooth3d != 0u ? 4u : 0u) | (p->hud3d != 0u ? 8u : 0u) | (p->pre_mode & 3u) << 4;
+    b.disp3dcnt = p->disp3dcnt;
+    b.swap_params = p->swap_params;
+    b.clear_color = p->clear_color;
+    b.clear_depth = p->clear_depth;
+    b.fog_color = p->fog_color;
+    b.fog_offset = p->fog_offset;
+    b.fine = p->fine;
+    b.offset3d = p->offset3d;
+    memcpy(b.edge_colors, p->edge_colors, sizeof(b.edge_colors));
+    memcpy(b.fog_table, p->fog_table, sizeof(b.fog_table));
+    b.scale3d = p->scale3d;
+    b.width3d = p->width3d;
+    b.height3d = p->height3d;
+    b.hud_width = p->hud_width;
+    b.hud_height = p->hud_height;
+    b.row0 = p->row0;
+    b.layers_off = p->layers_off;
+    b.layers1x_rows = p->layers1x_rows;
+    SDL_PushGPUComputeUniformData(cmd, 0, &b, sizeof(b));
+}
 
 /* layers2d.hlsl's constant buffer, register for register. */
 typedef struct Layers2dParams {
@@ -183,9 +225,6 @@ static SDL_GPUTexture *screen[2];
 /* layers2d.hlsl: each engine's layers at each DS pixel, looked up once, before compose2d.hlsl's pass */
 static SDL_GPUComputePipeline *layers_pipeline;
 static SDL_GPUTexture *layers1x[2];
-/* A pass of another shader between layers2d.hlsl's and compose2d.hlsl's (pass_between): one group of
- * shrink.hlsl, these two texels bound for it. */
-static SDL_GPUTexture *between[2];
 /* compose2d.hlsl's DS-sized pass: per DS pixel (PRE_COLUMNS of them a row) whether its output pixels can skip the
  * composition, and its colour when they all have it */
 static SDL_GPUTexture *pre2d[2];
@@ -712,33 +751,6 @@ static int shrink(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *big, int w, int h, 
     return 1;
 }
 
-/* After layers2d.hlsl's pass and before compose2d.hlsl's. An Adreno 619 (driver 512.762.40) runs compose2d's
- * pass wrong when it is the next compute pass after layers2d's: every row is drawn 256 pixels further down
- * its target (the title's art in three bands, the middle one never drawn), whatever compose2d reads and however
- * small layers2d's pass was. Measured outside the game as well (2026-11-10, the two shaders' SPIR-V in a
- * Vulkan program of its own, on what the game gave them): a wait, a copy or a barrier between the two changes
- * nothing, one group of another shader's pass between them does. The group draws nothing: shrink.hlsl's
- * small picture is given no texels, so no thread reads or writes one (the two textures are only bound). */
-static void pass_between(SDL_GPUCommandBuffer *cmd)
-{
-    struct {
-        Uint32 width, height, big_width, big_height;
-    } params = {0, 0, 1, 1};
-    SDL_GPUStorageTextureReadWriteBinding io[2];
-    SDL_GPUComputePass *pass;
-    if (shrinker == NULL || between[0] == NULL || between[1] == NULL) {
-        return;
-    }
-    SDL_zeroa(io);
-    io[0].texture = between[0];
-    io[1].texture = between[1];
-    pass = SDL_BeginGPUComputePass(cmd, io, 2, NULL, 0);
-    SDL_BindGPUComputePipeline(pass, shrinker);
-    SDL_PushGPUComputeUniformData(cmd, 0, &params, sizeof(params));
-    SDL_DispatchGPUCompute(pass, 1, 1, 1);
-    SDL_EndGPUComputePass(pass);
-}
-
 /* A card texture (w x h) as a texture of `renderer`, made once for it (in `made`, `made_for`). */
 static SDL_Texture *wrap(SDL_Renderer *renderer, SDL_GPUTexture *texture, int w, int h, SDL_Texture **made,
                          SDL_Renderer **made_for)
@@ -826,9 +838,8 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
                                    KHDAYS_FRAME_W, 4 * KHDAYS_FRAME_H);
         dummy_hud[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
         pre2d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, pre_usage, 2 * PRE_COLUMNS, 4 * KHDAYS_FRAME_H);
-        between[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
         ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL && layers1x[e] != NULL &&
-             pre2d[e] != NULL && between[e] != NULL;
+             pre2d[e] != NULL;
     }
     layers_pipeline = make_layers_pipeline();
     ok = ok && layers_pipeline != NULL;
@@ -992,9 +1003,6 @@ void khdays_gfx_render_close(void)
         if (pre2d[e] != NULL)
             SDL_ReleaseGPUTexture(device, pre2d[e]);
         pre2d[e] = NULL;
-        if (between[e] != NULL)
-            SDL_ReleaseGPUTexture(device, between[e]);
-        between[e] = NULL;
         if (dummy_hud[e] != NULL)
             SDL_ReleaseGPUTexture(device, dummy_hud[e]);
         desc[e] = NULL;
@@ -1793,7 +1801,6 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             SDL_PushGPUComputeUniformData(cmd, 0, &lp, sizeof(lp));
             SDL_DispatchGPUCompute(lpass, KHDAYS_FRAME_W / 8, KHDAYS_FRAME_H / 8, 1);
             SDL_EndGPUComputePass(lpass);
-            pass_between(cmd);
             gpu_split(device, &cmd, e == 0 ? "layers A" : "layers B");
             cp.layers1x_rows = KHDAYS_FRAME_H;
         }
@@ -1814,7 +1821,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
             SDL_BindGPUComputePipeline(pass, compose_engine[e]);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-            SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+            compose_params(cmd, &cp);
             SDL_DispatchGPUCompute(pass, (uint32_t)(screen_columns[e] + 7) / 8, KHDAYS_FRAME_H / 8, 1);
             SDL_EndGPUComputePass(pass);
             gpu_split(device, &cmd, e == 0 ? "pre A" : "pre B");
@@ -1825,7 +1832,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-        SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+        compose_params(cmd, &cp);
         if (!gpu_skip(e == 0 ? "2da" : "2db"))
             SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8,
                                    1); /* the shader skips pixels past the edge */
@@ -1875,7 +1882,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
             SDL_BindGPUComputePipeline(pass, compose_engine[1]);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-            SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+            compose_params(cmd, &cp);
             if (!gpu_skip("rows"))
                 SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);
             SDL_EndGPUComputePass(pass);
@@ -1926,7 +1933,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_for(0, 0)); /* a shop's description: not split, not wide */
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-        SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
+        compose_params(cmd, &cp);
         SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);
         shop_made[s][v] = shop_pictures;
