@@ -1225,7 +1225,11 @@ static Uint64 package_ns; /* when the latest package came */
 static void perf_tick(void)
 {
     const Uint64 now = SDL_GetTicksNS();
-    if (!khdays_shop_screen_shown()) {
+    static int asked = -1; /* KHDAYS_PERF: the timings wherever the game is, not only in the shop */
+    if (asked < 0) {
+        asked = SDL_getenv("KHDAYS_PERF") != NULL;
+    }
+    if (!khdays_shop_screen_shown() && !asked) {
         if (perf.since != 0) {
             unsigned jobs, alike;
             double ms, most;
@@ -1243,11 +1247,12 @@ static void perf_tick(void)
         unsigned jobs, alike;
         double ms, most;
         khdays_onescreen_shop_work(&jobs, &ms, &most, &alike);
-        khdays_log("shop: timings over %.1f s: the game's pictures %.0f a second (its VBlanks %.0f), pictures drawn "
+        khdays_log("%s: timings over %.1f s: the game's pictures %.0f a second (its VBlanks %.0f), pictures drawn "
                    "%.0f, window %.0f; a picture %.2f ms (most %.2f), the window's drawing %.2f ms (most %.2f), "
                    "presenting %.2f ms (most %.2f); over 25 ms: %u; the DS's screens composed %u times, %.2f ms each "
                    "(most %.2f), %u pictures alike",
-                   s, perf.packages / s, perf.packages ? (double)(perf.last_frame - perf.first_frame + 1u) / s : 0.0,
+                   khdays_shop_screen_shown() ? "shop" : "perf", s, perf.packages / s,
+                   perf.packages ? (double)(perf.last_frame - perf.first_frame + 1u) / s : 0.0,
                    perf.presents / s, perf.redraws / s, perf.presents ? perf.present_ns / 1e6 / perf.presents : 0.0,
                    perf.present_most / 1e6, perf.redraws ? perf.drawing_ns / 1e6 / perf.redraws : 0.0,
                    perf.drawing_most / 1e6, perf.redraws ? perf.presenting_ns / 1e6 / perf.redraws : 0.0,
