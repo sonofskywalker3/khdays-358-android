@@ -870,16 +870,16 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "Las imágenes dibujadas por segundo y los fotogramas del juego por segundo."},
     [TXT_VIDEO_FAST_2D] = {"Fast 2D", "2D rapide", "Schnelles 2D", "2D veloce", "2D rápido"},
     [TXT_VIDEO_FAST_2D_NOTE] =
-        {"The HUD and menus are drawn at the DS's size and enlarged: much faster on a weaker graphics card, "
-         "small text a little less sharp. Automatic turns it on for a weaker card.",
-         "L'ATH et les menus sont dessinés à la taille de la DS puis agrandis : bien plus rapide sur une carte "
-         "graphique modeste, le petit texte un peu moins net. Automatique l'active sur une carte modeste.",
-         "HUD und Menüs werden in DS-Größe gezeichnet und vergrößert: viel schneller auf einer schwächeren "
-         "Grafikkarte, kleiner Text etwas weniger scharf. Automatisch schaltet es bei einer schwächeren Karte ein.",
-         "HUD e menu sono disegnati alla dimensione del DS e ingranditi: molto più veloce su una scheda grafica "
-         "debole, il testo piccolo un po' meno nitido. Automatica lo attiva su una scheda debole.",
-         "El HUD y los menús se dibujan al tamaño de la DS y se amplían: mucho más rápido en una tarjeta gráfica "
-         "modesta, el texto pequeño algo menos nítido. Automática lo activa en una tarjeta modesta."},
+        {"The HUD and menus are drawn at the DS's size and enlarged, their text apart at full detail: much "
+         "faster on a weaker graphics card. Automatic turns it on for a weaker card.",
+         "L'ATH et les menus sont dessinés à la taille de la DS puis agrandis, leur texte à part en plein "
+         "détail : bien plus rapide sur une carte graphique modeste. Automatique l'active sur une carte modeste.",
+         "HUD und Menüs werden in DS-Größe gezeichnet und vergrößert, ihr Text getrennt in voller Schärfe: viel "
+         "schneller auf einer schwächeren Grafikkarte. Automatisch schaltet es bei einer schwächeren Karte ein.",
+         "HUD e menu sono disegnati alla dimensione del DS e ingranditi, il loro testo a parte in pieno "
+         "dettaglio: molto più veloce su una scheda grafica debole. Automatica lo attiva su una scheda debole.",
+         "El HUD y los menús se dibujan al tamaño de la DS y se amplían, su texto aparte con todo detalle: mucho "
+         "más rápido en una tarjeta gráfica modesta. Automática lo activa en una tarjeta modesta."},
     [TXT_VIDEO_PARTIAL_2D] = {"Draw only what is shown", "Ne dessiner que ce qui est affiché",
                               "Nur Sichtbares zeichnen", "Disegna solo ciò che è mostrato",
                               "Dibujar solo lo que se muestra"},

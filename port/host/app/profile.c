@@ -1849,7 +1849,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# show_fps: the pictures drawn a second, in a corner\n"
             "show_fps = %s\n"
             "# fast_2d: auto (on for a weaker graphics card), on or off -- the 2D drawn at the DS's size and\n"
-            "#          enlarged: much faster there, small text a little less sharp\n"
+            "#          enlarged, its text apart at full detail: much faster there\n"
             "fast_2d = %s\n"
             "# partial_2d: on or off -- on one screen, only the parts of the DS's screens shown are drawn\n"
             "partial_2d = %s\n"

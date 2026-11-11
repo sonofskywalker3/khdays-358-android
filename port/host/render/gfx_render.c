@@ -1585,6 +1585,92 @@ static void one_covers(const KhdaysOneScreenDraw *one, int scale, int width, int
     }
 }
 
+/* A screen composed a DS pixel at a time (coarse_now), but where an element is drawn finer than the DS's pixels
+ * or between them (the port's own text): the parts' 8 x 8 tiles such an element touches are composed at each
+ * output pixel, as without it, and the rest a DS pixel at a time. The parts in two sets (x0, y0, x1, y1, DS
+ * dots), each tile in one; -1 when they are too many, and the screen is then composed at each output pixel. */
+#define FINE_PARTS 96
+typedef struct FineParts {
+    int count[2]; /* [0] a DS pixel at a time, [1] each output pixel */
+    int rect[2][FINE_PARTS][4];
+} FineParts;
+
+static void fine_parts(const KhdaysFramePackage *p, int e, int split, int (*parts)[4], int part_count, int columns,
+                       FineParts *out)
+{
+    static unsigned char marked[ONE_TILES_Y][ONE_TILES_X];
+    const int tiles_x = (columns + ONE_TILE - 1) / ONE_TILE;
+    SDL_zerop(out);
+    if (tiles_x > ONE_TILES_X || tiles_x <= 0) {
+        out->count[0] = out->count[1] = -1;
+        return;
+    }
+    memset(marked, 0, sizeof(marked));
+    for (uint32_t i = 0; i < p->elements[e].count; ++i) {
+        const uint32_t *w = p->elements[e].records + (size_t)i * KE_WORDS;
+        float x, y, ew, eh;
+        int c0, c1, r0, r1;
+        memcpy(&x, &w[KE_X], 4);
+        memcpy(&y, &w[KE_Y], 4);
+        memcpy(&ew, &w[KE_W], 4);
+        memcpy(&eh, &w[KE_H], 4);
+        if (w[KE_IW] == 0u || w[KE_IH] == 0u || (split && (w[KE_SLOT] & KES_PICTURE) != 0u)) {
+            continue; /* not drawn here (compose.h kd_element_texel) */
+        }
+        if (!finite_dots(x) || !finite_dots(y) || !finite_dots(ew) || !finite_dots(eh)) {
+            out->count[0] = out->count[1] = -1; /* numbers that say no place */
+            return;
+        }
+        if ((float)w[KE_IW] == ew && (float)w[KE_IH] == eh && x == SDL_floorf(x) && y == SDL_floorf(y)) {
+            continue; /* a texel a DS pixel, on the DS's pixels: the same all over each */
+        }
+        if (x + ew <= 0.0f || y + eh <= 0.0f || x >= (float)columns || y >= (float)KHDAYS_FRAME_H) {
+            continue;
+        }
+        c0 = (int)clamp_dots(SDL_floorf(x), (float)(columns - 1)) / ONE_TILE;
+        c1 = (int)clamp_dots(SDL_ceilf(x + ew), (float)(columns - 1)) / ONE_TILE;
+        r0 = (int)clamp_dots(SDL_floorf(y), (float)(KHDAYS_FRAME_H - 1)) / ONE_TILE;
+        r1 = (int)clamp_dots(SDL_ceilf(y + eh), (float)(KHDAYS_FRAME_H - 1)) / ONE_TILE;
+        for (int ty = r0; ty <= r1; ++ty) {
+            memset(&marked[ty][c0], 1, (size_t)(c1 - c0 + 1));
+        }
+    }
+    for (int k = 0; k < part_count; ++k) {
+        /* each part's tiles by rows, a run of one set joined to the part above it when as wide */
+        const int first[2] = {out->count[0], out->count[1]};
+        for (int y0 = parts[k][1]; y0 < parts[k][3]; y0 += ONE_TILE) {
+            const int y1 = SDL_min(y0 + ONE_TILE, parts[k][3]);
+            int x0 = parts[k][0];
+            while (x0 < parts[k][2]) {
+                const int set = marked[SDL_min(y0 / ONE_TILE, ONE_TILES_Y - 1)][SDL_min(x0 / ONE_TILE, tiles_x - 1)];
+                int x1 = x0, joined = 0;
+                while (x1 < parts[k][2] &&
+                       marked[SDL_min(y0 / ONE_TILE, ONE_TILES_Y - 1)][SDL_min(x1 / ONE_TILE, tiles_x - 1)] == set) {
+                    x1 = SDL_min((x1 / ONE_TILE + 1) * ONE_TILE, parts[k][2]);
+                }
+                for (int j = first[set]; j < out->count[set] && !joined; ++j) {
+                    int *r = out->rect[set][j];
+                    if (r[3] == y0 && r[0] == x0 && r[2] == x1) {
+                        r[3] = y1;
+                        joined = 1;
+                    }
+                }
+                if (!joined && out->count[set] == FINE_PARTS) {
+                    out->count[0] = out->count[1] = -1;
+                    return;
+                } else if (!joined) {
+                    int *r = out->rect[set][out->count[set]++];
+                    r[0] = x0;
+                    r[1] = y0;
+                    r[2] = x1;
+                    r[3] = y1;
+                }
+                x0 = x1;
+            }
+        }
+    }
+}
+
 /* A screen kept from the picture before: an engine that reads no 3D gives the same screen when what the card
  * is sent for it (its description, palettes, elements and sprites: `sent`), its memory (a page of its areas
  * changed since: `stale`), the replacements' buffer, its parts and its composition's parameters are the same.
@@ -2283,30 +2369,41 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         /* A weaker card's one-screen sources, and its screens without the 3D in them (a menu's two screens)
          * (khdays_gfx_render_set_coarse_2d): a thread a DS pixel, its colour
          * given to its N x N output pixels, so the card composes a quarter of the pixels at 2x. The DS's own
-         * graphics are the same at all of them; what is lost is finer than a DS pixel: where the 3D's edge
-         * crosses a HUD piece, and the texels between of an element drawn finer than its rectangle (the port's
-         * own text: at 2x, every other texel of it). The Tab A9+'s field (Adreno 619, 2x): 47 ms a picture
-         * composed at each output pixel, 22 ms so. Not a frame with a mod's finer tiles (finer_than_ds), nor a
-         * screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output pixel,
-         * to measure. */
-        const int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && cp.pre_mode == 0u && scale > 1 &&
-                           !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
-                           !gpu_skip("coarse");
-        const uint32_t per = coarse ? 1u : cp.scale;
+         * graphics are the same at all of them; what is finer than a DS pixel is an element drawn finer than its
+         * rectangle (the port's own text), whose tiles are composed at each output pixel (fine_parts), and the
+         * 3D's edge where it crosses a HUD piece, which is lost. The Tab A9+'s field (Adreno 619, 2x): 47 ms a
+         * picture composed at each output pixel, 22 ms so. Not a frame with a mod's finer tiles (finer_than_ds),
+         * nor a screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output
+         * pixel, to measure. */
+        static FineParts fine;
+        int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && cp.pre_mode == 0u && scale > 1 &&
+                     !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
+                     !gpu_skip("coarse");
         if (coarse) {
-            cp.pre_mode = 3u;
+            fine_parts(p, e, one != NULL && !(e == 0 && whole_a), parts, part_count, screen_columns[e], &fine);
+            coarse = fine.count[0] >= 0;
         }
         pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-        for (int k = 0; k < part_count && !gpu_skip(e == 0 ? "2da" : "2db"); ++k) {
-            /* each part in the same pass: the screen made anew (cycled) once, at its start */
-            cp.origin_x = (uint32_t)parts[k][0];
-            cp.origin_y = (uint32_t)parts[k][1];
-            compose_params(cmd, &cp);
-            SDL_DispatchGPUCompute(pass, ((uint32_t)(parts[k][2] - parts[k][0]) * per + 7) / 8,
-                                   ((uint32_t)(parts[k][3] - parts[k][1]) * per + 7) / 8,
-                                   1); /* the shader skips pixels past the edge */
+        for (int set = coarse ? 0 : 1; set < 2 && !gpu_skip(e == 0 ? "2da" : "2db"); ++set) {
+            /* each part in the same pass: the screen made anew (cycled) once, at its start; no texel twice */
+            int (*const rects)[4] = coarse ? fine.rect[set] : parts;
+            const int count = coarse ? fine.count[set] : part_count;
+            const uint32_t per = coarse && set == 0 ? 1u : cp.scale;
+            const uint32_t pre_mode = cp.pre_mode;
+            if (coarse && set == 0) {
+                cp.pre_mode = 3u;
+            }
+            for (int k = 0; k < count; ++k) {
+                cp.origin_x = (uint32_t)rects[k][0];
+                cp.origin_y = (uint32_t)rects[k][1];
+                compose_params(cmd, &cp);
+                SDL_DispatchGPUCompute(pass, ((uint32_t)(rects[k][2] - rects[k][0]) * per + 7) / 8,
+                                       ((uint32_t)(rects[k][3] - rects[k][1]) * per + 7) / 8,
+                                       1); /* the shader skips pixels past the edge */
+            }
+            cp.pre_mode = pre_mode;
         }
         SDL_EndGPUComputePass(pass);
         gpu_split(device, &cmd, e == 0 ? "2d A" : "2d B");
