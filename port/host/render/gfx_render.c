@@ -1609,6 +1609,10 @@ static void kept_sent(int e, const uint8_t *bytes, uint32_t n)
         kept[e].sent = grown;
         kept[e].sent_room = n;
     }
+    if (kept[e].sent == NULL) {
+        kept[e].sent_bytes = 0; /* (nothing sent, nothing to keep it by) */
+        return;
+    }
     memcpy(kept[e].sent, bytes, n);
     kept[e].sent_bytes = n;
 }
