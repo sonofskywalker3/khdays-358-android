@@ -598,6 +598,21 @@ static void build_video(Builder *b, KhdaysProfile *w)
     r->warning = khdays_text(TXT_VIDEO_PACE_WARNING); /* the pictures between the game's can go wrong */
     r->safe = 1;                                      /* As on the DS */
     add_switch(b, KHDAYS_SET_SHOW_FPS, TXT_VIDEO_SHOW_FPS, &v->show_fps, 1, khdays_text(TXT_VIDEO_SHOW_FPS_NOTE));
+    {
+        /* what the picture's 2D may leave out or draw coarser, for speed (host/render/gfx_render.c) */
+        static const char *fast[KHDAYS_FAST_2D_COUNT];
+        fast[KHDAYS_FAST_2D_AUTO] = khdays_text(TXT_VIDEO_BACKEND_AUTO);
+        fast[KHDAYS_FAST_2D_ON] = khdays_text(TXT_ON);
+        fast[KHDAYS_FAST_2D_OFF] = khdays_text(TXT_OFF);
+        needs_graphics_card(b, add_choice(b, KHDAYS_SET_FAST_2D, TXT_VIDEO_FAST_2D, &v->fast_2d, fast,
+                                          KHDAYS_FAST_2D_COUNT),
+                            TXT_VIDEO_FAST_2D_NOTE);
+        needs_graphics_card(b, add_switch(b, KHDAYS_SET_PARTIAL_2D, TXT_VIDEO_PARTIAL_2D, &v->partial_2d, 1, NULL),
+                            TXT_VIDEO_PARTIAL_2D_NOTE);
+        needs_graphics_card(b, add_switch(b, KHDAYS_SET_KEEP_SCREENS, TXT_VIDEO_KEEP_SCREENS, &v->keep_screens, 1,
+                                          NULL),
+                            TXT_VIDEO_KEEP_SCREENS_NOTE);
+    }
     if (!HANDHELD) { /* Android has Vulkan only */
         add_choice(b, KHDAYS_SET_BACKEND, TXT_VIDEO_BACKEND, &v->backend, backends, KHDAYS_BACKEND_COUNT)->note =
             khdays_text(TXT_VIDEO_BACKEND_NOTE);

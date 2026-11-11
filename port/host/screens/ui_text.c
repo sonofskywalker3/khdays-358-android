@@ -868,6 +868,46 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "Die gezeichneten Bilder pro Sekunde und die Spielbilder pro Sekunde.",
                                  "Le immagini disegnate al secondo e i fotogrammi del gioco al secondo.",
                                  "Las imágenes dibujadas por segundo y los fotogramas del juego por segundo."},
+    [TXT_VIDEO_FAST_2D] = {"Fast 2D", "2D rapide", "Schnelles 2D", "2D veloce", "2D rápido"},
+    [TXT_VIDEO_FAST_2D_NOTE] =
+        {"The HUD and menus are drawn at the DS's size and enlarged: much faster on a weaker graphics card, "
+         "small text a little less sharp. Automatic turns it on for a weaker card.",
+         "L'ATH et les menus sont dessinés à la taille de la DS puis agrandis : bien plus rapide sur une carte "
+         "graphique modeste, le petit texte un peu moins net. Automatique l'active sur une carte modeste.",
+         "HUD und Menüs werden in DS-Größe gezeichnet und vergrößert: viel schneller auf einer schwächeren "
+         "Grafikkarte, kleiner Text etwas weniger scharf. Automatisch schaltet es bei einer schwächeren Karte ein.",
+         "HUD e menu sono disegnati alla dimensione del DS e ingranditi: molto più veloce su una scheda grafica "
+         "debole, il testo piccolo un po' meno nitido. Automatica lo attiva su una scheda debole.",
+         "El HUD y los menús se dibujan al tamaño de la DS y se amplían: mucho más rápido en una tarjeta gráfica "
+         "modesta, el texto pequeño algo menos nítido. Automática lo activa en una tarjeta modesta."},
+    [TXT_VIDEO_PARTIAL_2D] = {"Draw only what is shown", "Ne dessiner que ce qui est affiché",
+                              "Nur Sichtbares zeichnen", "Disegna solo ciò che è mostrato",
+                              "Dibujar solo lo que se muestra"},
+    [TXT_VIDEO_PARTIAL_2D_NOTE] =
+        {"On one screen, only the parts of the DS's screens that the picture shows are drawn. The same picture, "
+         "faster. Turn it off if part of the picture is missing.",
+         "Sur un écran, seules les parties des écrans de la DS que l'image montre sont dessinées. La même image, "
+         "plus vite. Désactivez-le s'il manque une partie de l'image.",
+         "Auf einem Bildschirm werden nur die gezeigten Teile der DS-Bildschirme gezeichnet. Dasselbe Bild, "
+         "schneller. Ausschalten, wenn ein Teil des Bildes fehlt.",
+         "Su uno schermo vengono disegnate solo le parti degli schermi del DS che l'immagine mostra. La stessa "
+         "immagine, più veloce. Disattivalo se manca una parte dell'immagine.",
+         "En una pantalla solo se dibujan las partes de las pantallas de la DS que la imagen muestra. La misma "
+         "imagen, más rápido. Desactívalo si falta una parte de la imagen."},
+    [TXT_VIDEO_KEEP_SCREENS] = {"Keep unchanged screens", "Garder les écrans inchangés",
+                                "Unveränderte Bildschirme behalten", "Mantieni gli schermi invariati",
+                                "Conservar pantallas sin cambios"},
+    [TXT_VIDEO_KEEP_SCREENS_NOTE] =
+        {"A screen whose 2D did not change is not drawn again. The same picture, faster. Turn it off if a menu "
+         "or the HUD shows something old.",
+         "Un écran dont la 2D n'a pas changé n'est pas redessiné. La même image, plus vite. Désactivez-le si un "
+         "menu ou l'ATH montre quelque chose d'ancien.",
+         "Ein Bildschirm, dessen 2D sich nicht geändert hat, wird nicht neu gezeichnet. Dasselbe Bild, schneller. "
+         "Ausschalten, wenn ein Menü oder das HUD etwas Altes zeigt.",
+         "Uno schermo il cui 2D non è cambiato non viene ridisegnato. La stessa immagine, più veloce. "
+         "Disattivalo se un menu o l'HUD mostra qualcosa di vecchio.",
+         "Una pantalla cuyo 2D no ha cambiado no se vuelve a dibujar. La misma imagen, más rápido. Desactívalo "
+         "si un menú o el HUD muestra algo antiguo."},
     [TXT_VIDEO_DISPLAY] = {"Display mode", "Mode d'affichage", "Anzeigemodus", "Modalità schermo", "Modo de pantalla"},
     [TXT_VIDEO_DISPLAY_WINDOW] = {"Window", "Fenêtre", "Fenster", "Finestra", "Ventana"},
     [TXT_VIDEO_DISPLAY_BORDERLESS] = {"Borderless window", "Fenêtre sans bordure", "Randloses Fenster",

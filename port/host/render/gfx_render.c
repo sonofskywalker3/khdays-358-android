@@ -1328,10 +1328,31 @@ static void hold_capture(const KhdaysFramePackage *p)
 
 /* The screens composed whole on one screen too: KHDAYS_GFX=check reads them back whole (gpu_present.c
  * port2d_compare), and KHDAYS_GPU_SKIP=full2d measures what the parts spare. */
-static int whole_screens(void)
+static int partial_2d = 1, keep_2d = 1; /* [video] partial_2d, keep_screens */
+
+void khdays_gfx_render_set_savings(int partial, int keep)
+{
+    partial_2d = partial != 0;
+    keep_2d = keep != 0;
+}
+
+static int reference; /* khdays_gfx_render_set_reference */
+
+void khdays_gfx_render_set_reference(int on)
+{
+    reference = on != 0;
+}
+
+static int checked_whole(void)
 {
     const char *gfx = SDL_getenv("KHDAYS_GFX");
     return (gfx != NULL && SDL_strcmp(gfx, "check") == 0) || gpu_skip("full2d");
+}
+
+/* ... or as the settings say (partial_2d off): then they are still composed coarse and kept. */
+static int whole_screens(void)
+{
+    return checked_whole() || !partial_2d || reference;
 }
 
 /* The parts of each engine's screen the one-screen picture reads, in DS dots: x0, y0, x1, y1 (x1, y1 past the
@@ -1622,12 +1643,15 @@ static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int pa
     static int asked = -1, perf = -1, pictures[2], hits[2];
     KeptHow now;
     int hit;
+    if (reference) {
+        return 0; /* composed anew; what is kept is as good after it (the same screen, whole) */
+    }
     if (asked < 0) {
         const char *keep = SDL_getenv("KHDAYS_KEEP_2D");
         asked = keep == NULL || SDL_atoi(keep) != 0;
         perf = SDL_getenv("KHDAYS_PERF") != NULL;
     }
-    if (!asked || cp->source3d != 0u || part_count > ONE_READS || kept[e].sent_bytes == 0 || whole_screens() ||
+    if (!asked || cp->source3d != 0u || part_count > ONE_READS || kept[e].sent_bytes == 0 || !keep_2d || checked_whole() ||
         SDL_getenv("KHDAYS_GPU_SKIP") != NULL || SDL_getenv("KHDAYS_GPU_TIME") != NULL) {
         kept[e].ok = 0;
         return 0;
@@ -2266,7 +2290,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
          * screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output pixel,
          * to measure. */
         const int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && cp.pre_mode == 0u && scale > 1 &&
-                           !(e == 0 && (whole_a || p->capture)) && !whole_screens() && !finer_than_ds(p) &&
+                           !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
                            !gpu_skip("coarse");
         const uint32_t per = coarse ? 1u : cp.scale;
         if (coarse) {
@@ -2477,7 +2501,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             static OneCovers covers;
             const uint32_t shape_count = op.shape_count;
             one_covers(one, scale, (int)op.width, (int)op.height, &covers);
-            if (covers.count[0] < 0 || gpu_skip("tiles")) {
+            if (covers.count[0] < 0 || !partial_2d || reference || gpu_skip("tiles")) {
                 covers.count[0] = 1;
                 covers.count[1] = 0;
                 covers.rect[0][0][0] = covers.rect[0][0][1] = 0;

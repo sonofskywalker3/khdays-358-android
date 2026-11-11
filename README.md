@@ -382,6 +382,9 @@ dump_graphics = off       # write what is drawn to saves/dump/graphics
 movies = hd               # hd (your HD videos, the rest pc), pc (full colour) or ds (the DS's)
 picture_pace = smooth     # smooth (the monitor's rate) or ds
 show_fps = off            # the live counter
+fast_2d = auto            # auto (on for a weaker graphics card), on or off: the 2D at the DS's size, enlarged
+partial_2d = on           # on one screen, only the parts of the DS's screens shown are drawn
+keep_screens = on         # a screen whose 2D did not change is not drawn again
 backend = auto            # auto, direct3d12 or vulkan
 ```
 

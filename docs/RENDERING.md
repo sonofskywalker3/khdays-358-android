@@ -389,7 +389,12 @@ Testing knobs: `KHDAYS_SHOTS_HD=DIR` (the `KHDAYS_SHOTS` frames as presented,
 at the resolution drawn; each at the first frame presented from it on, named
 by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
-old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
+old way at N x, every 300 frames); `KHDAYS_GFX=savings` (each one-screen
+picture drawn a second time whole, in one piece and with no screen kept, and
+the two compared: what `[video] partial_2d` and `keep_screens` leave out must
+not show; rows sliding in and the map's marker differ between two draws by
+themselves, so compare with a run that has both settings off);
+`KHDAYS_PROFILE` (frames never drawn, and
 the time preparing the 3D took); `KHDAYS_SPRITE_ROWS=all` (every pixel of the
 port's 2D looks at all 128 sprites, instead of only those `gfx_render.c` lists
 for its row: the same picture, slower); `KHDAYS_GPU_TIME` (each pass submitted

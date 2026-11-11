@@ -279,6 +279,9 @@ void khdays_video_default(KhdaysVideo *v)
     v->movies = KHDAYS_MOVIES_HD; /* the maintainer's choice */
     v->picture_ds = 0;            /* the maintainer's choice */
     v->show_fps = 0;
+    v->fast_2d = KHDAYS_FAST_2D_AUTO;
+    v->partial_2d = 1;
+    v->keep_screens = 1;
     v->backend = KHDAYS_BACKEND_AUTO;
     v->hd_graphics = 1;
     v->dump_graphics = 0;
@@ -1084,6 +1087,29 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         }
         return;
     }
+    if (SDL_strcasecmp(key, "fast_2d") == 0) {
+        if (SDL_strcasecmp(value, "auto") == 0) {
+            v->fast_2d = KHDAYS_FAST_2D_AUTO;
+        } else if (SDL_strcasecmp(value, "on") == 0) {
+            v->fast_2d = KHDAYS_FAST_2D_ON;
+        } else if (SDL_strcasecmp(value, "off") == 0) {
+            v->fast_2d = KHDAYS_FAST_2D_OFF;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "auto");
+            v->fast_2d = defaults.fast_2d;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "partial_2d") == 0 || SDL_strcasecmp(key, "keep_screens") == 0) {
+        int *const to = SDL_strcasecmp(key, "partial_2d") == 0 ? &v->partial_2d : &v->keep_screens;
+        if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
+            *to = SDL_strcasecmp(value, "on") == 0;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "on");
+            *to = 1;
+        }
+        return;
+    }
     if (SDL_strcasecmp(key, "backend") == 0) {
         static const char *const names[KHDAYS_BACKEND_COUNT] = {"auto", "direct3d12", "vulkan"};
         for (int b = 0; b < KHDAYS_BACKEND_COUNT; ++b) {
@@ -1822,6 +1848,13 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "picture_pace = %s\n"
             "# show_fps: the pictures drawn a second, in a corner\n"
             "show_fps = %s\n"
+            "# fast_2d: auto (on for a weaker graphics card), on or off -- the 2D drawn at the DS's size and\n"
+            "#          enlarged: much faster there, small text a little less sharp\n"
+            "fast_2d = %s\n"
+            "# partial_2d: on or off -- on one screen, only the parts of the DS's screens shown are drawn\n"
+            "partial_2d = %s\n"
+            "# keep_screens: on or off -- a screen whose 2D did not change is not drawn again\n"
+            "keep_screens = %s\n"
             "# backend: the graphics API -- auto (Direct3D 12 on Windows, Vulkan under Wine or Proton),\n"
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
@@ -1837,6 +1870,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             : v->movies == KHDAYS_MOVIES_HD_SMOOTH ? "hd-smooth"
                                                    : "hd",
             v->subtitles ? "on" : "off", v->subtitle_size, v->picture_ds ? "ds" : "smooth", v->show_fps ? "on" : "off",
+            v->fast_2d == KHDAYS_FAST_2D_ON ? "on" : v->fast_2d == KHDAYS_FAST_2D_OFF ? "off" : "auto",
+            v->partial_2d ? "on" : "off", v->keep_screens ? "on" : "off",
             v->backend == KHDAYS_BACKEND_D3D12    ? "direct3d12"
             : v->backend == KHDAYS_BACKEND_VULKAN ? "vulkan"
                                                   : "auto");

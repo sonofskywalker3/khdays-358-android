@@ -171,6 +171,14 @@ typedef enum KhdaysTwoScreens {
     KHDAYS_TWO_SCREENS_COUNT
 } KhdaysTwoScreens;
 
+/* [video] fast_2d: as the graphics card is (on for a weaker one), or said. */
+typedef enum KhdaysFast2d {
+    KHDAYS_FAST_2D_AUTO,
+    KHDAYS_FAST_2D_ON,
+    KHDAYS_FAST_2D_OFF,
+    KHDAYS_FAST_2D_COUNT
+} KhdaysFast2d;
+
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
     int antialiasing;        /* 1 off, 2 FXAA: the 3D's edges smoothed once it is drawn */
@@ -183,6 +191,9 @@ typedef struct KhdaysVideo {
     int movies;        /* KhdaysMovies: HD videos, full colour or the DS's */
     int picture_ds;    /* the DS's pace (a picture each logic frame), else the 3D at the monitor's rate */
     int show_fps;      /* the pictures and the game's frames a second, in a corner of the window */
+    int fast_2d;       /* KhdaysFast2d: the 2D drawn at the DS's size and enlarged (a weaker graphics card) */
+    int partial_2d;    /* on one screen, only the parts of the DS's screens the picture shows are drawn */
+    int keep_screens;  /* a screen whose 2D did not change is kept from the picture before */
     int backend;       /* KhdaysBackend: the graphics API the picture goes through */
     int one_screen;    /* screens = one: one picture, else the DS's two */
     int one_screen_second; /* screens_second_display = one: with a second display (the Thor's), both screens

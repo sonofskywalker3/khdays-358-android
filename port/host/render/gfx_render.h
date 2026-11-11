@@ -71,8 +71,15 @@ void khdays_gfx_render_every_sprite(int every);
 void khdays_gfx_render_set_smooth_3d(int on);
 
 /* 1: the one-screen picture's two sources are composed a DS pixel at a time and enlarged, when the frame has
- * no 2D graphics finer than the DS's (a weaker card: gpu_present.c window_cap_for). */
+ * no 2D graphics finer than the DS's ([video] fast_2d; auto: a weaker card, gpu_present.c window_cap_for). */
 void khdays_gfx_render_set_coarse_2d(int on);
+/* [video] partial_2d and keep_screens: on one screen only the parts of the screens the picture's shapes read
+ * are composed and its texels no shape reaches drawn without them; a screen whose 2D did not change is kept
+ * from the picture before. Both on unless said. */
+void khdays_gfx_render_set_savings(int partial, int keep);
+/* 1: the pictures drawn from here on are composed whole, in one piece and anew, whatever the settings say, and
+ * leave what is kept as it was: the picture the savings must give too (gpu_present.c, KHDAYS_GFX=savings). */
+void khdays_gfx_render_set_reference(int on);
 
 /* The size the window shows the draws that follow at, in window pixels a DS pixel. What is made larger
  * (the window's size rounded up, an internal resolution above it) is shrunk to it on the card

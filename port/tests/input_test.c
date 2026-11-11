@@ -672,9 +672,12 @@ static void test_video_settings(void)
     CHECK(load_text("version = 1\n", &q) == 0 && memcmp(&q.video, &p.video, sizeof(p.video)) == 0);
 
     /* Every value, and back through a save. */
+    CHECK(p.video.fast_2d == KHDAYS_FAST_2D_AUTO && p.video.partial_2d && p.video.keep_screens);
     CHECK(load_text("[video]\ninternal_resolution = window\naspect = 16:10\nscaling = smooth\n"
-                    "texture_smoothing = on\nhd_graphics = off\ndump_graphics = on\n",
+                    "texture_smoothing = on\nhd_graphics = off\ndump_graphics = on\n"
+                    "fast_2d = off\npartial_2d = off\nkeep_screens = off\n",
                     &q) == 0);
+    CHECK(q.video.fast_2d == KHDAYS_FAST_2D_OFF && !q.video.partial_2d && !q.video.keep_screens);
     CHECK(q.video.internal_resolution == KHDAYS_RESOLUTION_WINDOW && q.video.aspect == KHDAYS_ASPECT_16_10);
     CHECK(q.video.smooth_scaling && q.video.texture_smoothing && !q.video.hd_graphics && q.video.dump_graphics);
     path_of("video.ini", path, sizeof(path));
@@ -1058,6 +1061,9 @@ static void test_settings_model(void)
         {KHDAYS_SET_SUBTITLES, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_PACE, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_SHOW_FPS, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_FAST_2D, KHDAYS_ROW_CHOICE, 0, KHDAYS_FAST_2D_COUNT - 1, 0},
+        {KHDAYS_SET_PARTIAL_2D, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_KEEP_SCREENS, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_BACKEND, KHDAYS_ROW_CHOICE, 0, KHDAYS_BACKEND_COUNT - 1, 0},
         {KHDAYS_SET_RESTORE_VIDEO, KHDAYS_ROW_COMMAND, 0, 0, 0},
         {KHDAYS_SET_VOLUME, KHDAYS_ROW_NUMBER, 0, 100, 5},
