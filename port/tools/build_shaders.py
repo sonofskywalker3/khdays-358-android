@@ -18,7 +18,10 @@ OUT = ROOT / "port" / "host" / "render" / "generated"
 STAGES = {"vs_main": "vs", "ps_main": "ps", "cs_main": "cs"}
 
 # Parts of a shader for Vulkan drivers that can't compile all of it at once (gfx_render.c compose_for): SPIR-V alone.
-PARTS = {"compose2d": {"wide": "COMPOSE2D_PART_WIDE", "plain": "COMPOSE2D_PART_PLAIN", "split": "COMPOSE2D_PART_SPLIT"}}
+PARTS = {
+    "compose2d": {"wide": "COMPOSE2D_PART_WIDE", "plain": "COMPOSE2D_PART_PLAIN", "split": "COMPOSE2D_PART_SPLIT"},
+    "onescreen": {"plain": "ONESCREEN_PART_PLAIN"},
+}
 
 
 def tool(name: str) -> str:

@@ -60,8 +60,8 @@ cbuffer Params : register(b0, space2) {
     uint height3d;
     uint smooth3d;        // 1: the 3D read between its texels (smooth scaling)
     uint hud3d;           // 1: the HUD's 3D apart, over the rest (as wide as the picture, at N)
-    uint unused5;
-    uint unused6;
+    uint origin_x;        // the texel the dispatch starts at (part of the picture: gfx_render.c one_covers)
+    uint origin_y;
     uint unused7;
 };
 
@@ -216,14 +216,20 @@ uint backdrop_at(uint2 id)
 }
 
 [numthreads(8, 8, 1)]
-void cs_main(uint3 id : SV_DispatchThreadID)
+void cs_main(uint3 dispatched : SV_DispatchThreadID)
 {
     uint c;
+    const uint3 id = uint3(dispatched.xy + uint2(origin_x, origin_y), 0u);
     if (id.x >= width || id.y >= height) {
         return;
     }
     c = ko_pixel(((float)id.x + 0.5f) / (float)scale, ((float)id.y + 0.5f) / (float)scale, 1.0f / (float)scale,
-                 x3d_at(id.xy), shape_count,
+                 x3d_at(id.xy),
+#if defined(ONESCREEN_PART_PLAIN)
+                 0u, // the part for the texels no shape reaches: the 3D or the backdrop, and the brightness
+#else
+                 shape_count,
+#endif
                  rule, masters, backdrop_at(id.xy), (float)width / (float)scale / 2.0f, a_upper);
     out_picture[id.xy] = float4((float)(c & 255u) / 255.0f, (float)((c >> 8) & 255u) / 255.0f,
                                 (float)((c >> 16) & 255u) / 255.0f, 1.0f);

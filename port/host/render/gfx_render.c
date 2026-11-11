@@ -16,6 +16,7 @@
 #endif
 #include "generated/layers2d_cs.h"
 #include "generated/onescreen_cs.h"
+#include "generated/onescreen_plain_cs.h"
 #include "generated/shrink_cs.h"
 #include "../../gfx/onescreen.h"
 #include "../screens/game_pause.h"
@@ -102,7 +103,8 @@ typedef struct OneScreenParams {
     uint32_t animated;                            /* 1: an animated picture (`backdrop` its ground) */
     uint32_t bin_tile, bin_tiles_x, bin_tiles_y;  /* its pieces' tiles (bin_pieces), after the pieces */
     uint32_t scale3d, width3d, height3d, smooth3d; /* the 3D's own scale (the picture finer than it) */
-    uint32_t hud3d, unused5[3];                    /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
+    uint32_t hud3d;                                /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
+    uint32_t origin_x, origin_y, unused7;          /* the texel a dispatch starts at (one_covers) */
 } OneScreenParams;
 
 /* The areas of the package's 2D memory, each in a buffer of its own. */
@@ -247,6 +249,7 @@ static uint32_t upload_size;
 /* The one-screen picture: its shader, its shapes and keys (each buffer grows to the most any frame
  * needed), and the picture. */
 static SDL_GPUComputePipeline *onescreen;
+static SDL_GPUComputePipeline *onescreen_plain; /* its part for the texels no shape reaches (Vulkan), or NULL */
 static SDL_GPUBuffer *shape_buffer, *key_buffer, *piece_buffer;
 static uint32_t shape_buffer_bytes, key_buffer_bytes, piece_buffer_bytes;
 #define PIECE_BYTES 128u /* ui/composition.h KhdaysPiece: KHDAYS_PIECE_WORDS words */
@@ -808,6 +811,10 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
                                 shrink_cs_msl, shrink_cs_msl_size, SHRINK_CS_ENTRY, 0, 2);
     onescreen = make_pipeline_of(onescreen_cs_dxil, onescreen_cs_dxil_size, onescreen_cs_spirv, onescreen_cs_spirv_size,
                                  onescreen_cs_msl, onescreen_cs_msl_size, ONESCREEN_CS_ENTRY, 4, 8);
+    onescreen_plain = (SDL_GetGPUShaderFormats(device) & SDL_GPU_SHADERFORMAT_SPIRV) != 0
+                          ? make_pipeline_of(NULL, 0, onescreen_plain_cs_spirv, onescreen_plain_cs_spirv_size, NULL, 1,
+                                             ONESCREEN_PLAIN_CS_ENTRY, 4, 8)
+                          : NULL; /* (without it the whole shader draws those texels, with no shapes) */
     /* without it the screen blends show the DS's bank, as before */
     capturer = make_pipeline_of(capture_cs_dxil, capture_cs_dxil_size, capture_cs_spirv, capture_cs_spirv_size,
                                 capture_cs_msl, capture_cs_msl_size, CAPTURE_CS_ENTRY, 0, 3);
@@ -965,6 +972,10 @@ void khdays_gfx_render_close(void)
     picture_w = picture_h = picture_columns = 0;
     if (onescreen != NULL)
         SDL_ReleaseGPUComputePipeline(device, onescreen);
+    if (onescreen_plain != NULL) {
+        SDL_ReleaseGPUComputePipeline(device, onescreen_plain);
+        onescreen_plain = NULL;
+    }
     for (int i = 0; i < BACKDROPS_KEPT; ++i) {
         if (backdrops[i].texture != NULL)
             SDL_ReleaseGPUTexture(device, backdrops[i].texture);
@@ -1469,6 +1480,85 @@ static int finer_than_ds(const KhdaysFramePackage *p)
         }
     }
     return 0;
+}
+
+/* The one-screen picture's texels in two sets of parts (x0, y0, x1, y1, texels): those a shape can reach, and
+ * the rest, which are the 3D or the backdrop alone and need no shape looked at -- most of a field's picture.
+ * On the picture's 8 x 8 tiles (whole dispatch groups), each tile in one set, as one_reads' parts. */
+#define COVER_TILES_X 512
+#define COVER_TILES_Y 160
+#define COVER_PARTS 96
+typedef struct OneCovers {
+    int count[2]; /* [0] the texels a shape can reach, [1] the rest; -1: the picture in one piece */
+    int rect[2][COVER_PARTS][4];
+} OneCovers;
+
+static void one_covers(const KhdaysOneScreenDraw *one, int scale, int width, int height, OneCovers *out)
+{
+    static unsigned char marked[COVER_TILES_Y][COVER_TILES_X];
+    const int tiles_x = (width + 7) / 8, tiles_y = (height + 7) / 8;
+    SDL_zerop(out);
+    if (tiles_x > COVER_TILES_X || tiles_y > COVER_TILES_Y || tiles_x <= 0 || tiles_y <= 0) {
+        out->count[0] = out->count[1] = -1;
+        return;
+    }
+    for (int ty = 0; ty < tiles_y; ++ty) {
+        memset(marked[ty], 0, (size_t)tiles_x);
+    }
+    for (int i = 0; i < one->shape_count; ++i) {
+        const uint32_t *w = one->shapes + (size_t)i * KO_WORDS;
+        float x1, y1, x2, y2;
+        int c0 = 0, c1 = tiles_x - 1, r0 = 0, r1 = tiles_y - 1;
+        memcpy(&x1, &w[KO_DST_X1], 4);
+        memcpy(&y1, &w[KO_DST_Y1], 4);
+        memcpy(&x2, &w[KO_DST_X2], 4);
+        memcpy(&y2, &w[KO_DST_Y2], 4);
+        if (!finite_dots(x1) || !finite_dots(y1) || !finite_dots(x2) || !finite_dots(y2)) {
+            out->count[0] = out->count[1] = -1; /* numbers that say no place */
+            return;
+        }
+        /* ko_pixel takes the texel whose middle, in DS dots, is within x1..x2 and y1..y2 (a repeated shape:
+         * every column, or every row); a texel more each side for the rounding */
+        if ((w[KO_FLAGS] & KOF_REPEAT_X) == 0u) {
+            c0 = (int)clamp_dots(SDL_floorf(SDL_min(x1, x2) * (float)scale) - 1.0f, (float)(width - 1)) / 8;
+            c1 = (int)clamp_dots(SDL_ceilf(SDL_max(x1, x2) * (float)scale) + 1.0f, (float)(width - 1)) / 8;
+        }
+        if ((w[KO_FLAGS] & KOF_REPEAT_Y) == 0u) {
+            r0 = (int)clamp_dots(SDL_floorf(SDL_min(y1, y2) * (float)scale) - 1.0f, (float)(height - 1)) / 8;
+            r1 = (int)clamp_dots(SDL_ceilf(SDL_max(y1, y2) * (float)scale) + 1.0f, (float)(height - 1)) / 8;
+        }
+        for (int ty = r0; ty <= r1; ++ty) {
+            memset(&marked[ty][c0], 1, (size_t)(c1 - c0 + 1));
+        }
+    }
+    for (int ty = 0; ty < tiles_y; ++ty) {
+        int tx = 0;
+        while (tx < tiles_x) {
+            const int set = marked[ty][tx] ? 0 : 1;
+            int end = tx, joined = 0;
+            while (end < tiles_x && (marked[ty][end] ? 0 : 1) == set) {
+                ++end;
+            }
+            for (int k = 0; k < out->count[set] && !joined; ++k) {
+                int *r = out->rect[set][k];
+                if (r[3] == ty * 8 && r[0] == tx * 8 && r[2] == end * 8) {
+                    r[3] += 8; /* the part above, as wide, ends where this run starts: grown down */
+                    joined = 1;
+                }
+            }
+            if (!joined && out->count[set] == COVER_PARTS) {
+                out->count[0] = out->count[1] = -1; /* too many: in one piece */
+                return;
+            } else if (!joined) {
+                int *r = out->rect[set][out->count[set]++];
+                r[0] = tx * 8;
+                r[1] = ty * 8;
+                r[2] = end * 8;
+                r[3] = (ty + 1) * 8;
+            }
+            tx = end;
+        }
+    }
 }
 
 /* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
@@ -2270,11 +2360,35 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         io[6].texture = hud ? hud_color : dummy_hud[0];
         io[7].texture = hud ? hud_attr : dummy_hud[1];
         pass = SDL_BeginGPUComputePass(cmd, io, 8, NULL, 0);
-        SDL_BindGPUComputePipeline(pass, onescreen);
-        SDL_BindGPUComputeStorageBuffers(pass, 0, in, 4);
-        SDL_PushGPUComputeUniformData(cmd, 0, &op, sizeof(op));
-        if (!gpu_skip("one"))
-            SDL_DispatchGPUCompute(pass, (op.width + 7) / 8, (op.height + 7) / 8, 1);
+        if (!gpu_skip("one")) {
+            /* the texels a shape can reach, then the rest without the shapes (one_covers): no texel twice.
+             * KHDAYS_GPU_SKIP=tiles draws the picture in one piece, to measure */
+            static OneCovers covers;
+            const uint32_t shape_count = op.shape_count;
+            one_covers(one, scale, (int)op.width, (int)op.height, &covers);
+            if (covers.count[0] < 0 || gpu_skip("tiles")) {
+                covers.count[0] = 1;
+                covers.count[1] = 0;
+                covers.rect[0][0][0] = covers.rect[0][0][1] = 0;
+                covers.rect[0][0][2] = (int)op.width;
+                covers.rect[0][0][3] = (int)op.height;
+            }
+            for (int set = 0; set < 2; ++set) {
+                if (covers.count[set] == 0) {
+                    continue;
+                }
+                SDL_BindGPUComputePipeline(pass, set == 1 && onescreen_plain != NULL ? onescreen_plain : onescreen);
+                SDL_BindGPUComputeStorageBuffers(pass, 0, in, 4);
+                op.shape_count = set == 1 ? 0u : shape_count;
+                for (int k = 0; k < covers.count[set]; ++k) {
+                    const int *r = covers.rect[set][k];
+                    op.origin_x = (uint32_t)r[0];
+                    op.origin_y = (uint32_t)r[1];
+                    SDL_PushGPUComputeUniformData(cmd, 0, &op, sizeof(op));
+                    SDL_DispatchGPUCompute(pass, (uint32_t)(r[2] - r[0] + 7) / 8, (uint32_t)(r[3] - r[1] + 7) / 8, 1);
+                }
+            }
+        }
         SDL_EndGPUComputePass(pass);
         gpu_split(device, &cmd, "one");
     }
