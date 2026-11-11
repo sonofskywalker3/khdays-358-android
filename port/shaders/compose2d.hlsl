@@ -32,7 +32,7 @@ cbuffer Params : register(b0, space2) {
     uint scale;         // N
     uint width;         // the screen and raster3d's targets, pixels
     uint height;
-    uint modes;         // source3d, smooth3d, hud3d and pre_mode (below)
+    uint modes;         // source3d, smooth3d, hud3d, pre_mode and the origin (below)
     uint disp3dcnt;
     uint swap_params;
     uint clear_color;   // CLEAR_COLOR
@@ -57,6 +57,9 @@ cbuffer Params : register(b0, space2) {
 #define smooth3d ((modes >> 2) & 1u)  // 1: the 3D read between its texels (smooth scaling)
 #define hud3d ((modes >> 3) & 1u)     // 1: the HUD's 3D apart, over the rest
 #define pre_mode ((modes >> 4) & 3u)  // 0: each pixel composed here; 1: this is the DS-sized pass writing `pre`; 2: `pre` read
+// the DS pixel the dispatch starts at, in eighths (only part of the screen composed: gfx_render.c one_reads)
+#define origin_x (((modes >> 8) & 0xfffu) * 8u)
+#define origin_y ((modes >> 20) * 8u)
 
 #define FINISH3D_SCALED
 #include "finish3d.hlsli"
@@ -225,10 +228,12 @@ void read3d_once(int x, int row)
 // The composition is called once, below, whatever pre_mode is: each call of it is the whole of compose.h inlined,
 // and Mali's compiler runs out of memory on a shader with more than one.
 [numthreads(8, 8, 1)]
-void cs_main(uint3 id : SV_DispatchThreadID)
+void cs_main(uint3 dispatched : SV_DispatchThreadID)
 {
     uint c6, verdict = PRE_EACH;
     int x, row;
+    // the dispatch covers the part of the screen from `origin` (DS pixels; output pixels N x that)
+    const uint2 id = dispatched.xy + (pre_mode == 1u ? uint2(origin_x, origin_y) : uint2(origin_x, origin_y) * scale);
     if (pre_mode == 1u) {
         // the pass at the DS's size: one thread a DS pixel, its colour at the first place in it
         if (id.x >= width / scale || id.y >= height / scale) {

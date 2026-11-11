@@ -37,6 +37,7 @@ typedef struct Compose2dParams {
     uint32_t row0, layers_off;   /* rows past the DS's (lower_layout.h), layers left out */
     uint32_t layers1x_rows; /* layers2d.hlsl's rows from row0, or 0 */
     uint32_t pre_mode; /* compose2d.hlsl: 0 each pixel composed, 1 the DS-sized pass, 2 its verdicts read (pre2d) */
+    uint32_t origin_x, origin_y; /* the DS pixel the dispatch starts at, multiples of 8 (one_reads' tiles) */
 } Compose2dParams;
 
 /* compose2d.hlsl's constant buffer, register for register. */
@@ -57,8 +58,10 @@ static void compose_params(SDL_GPUCommandBuffer *cmd, const Compose2dParams *p)
     b.scale = p->scale;
     b.width = p->width;
     b.height = p->height;
-    /* compose2d.hlsl `modes`: source3d in bits 0-1, smooth3d in 2, hud3d in 3, pre_mode in 4-5 */
-    b.modes = (p->source3d & 3u) | (p->smooth3d != 0u ? 4u : 0u) | (p->hud3d != 0u ? 8u : 0u) | (p->pre_mode & 3u) << 4;
+    /* compose2d.hlsl `modes`: source3d in bits 0-1, smooth3d in 2, hud3d in 3, pre_mode in 4-5, and the origin in
+     * eighths (one_reads' tiles): x in bits 8-19, y in 20-31. In this word, the block's 32 words all taken */
+    b.modes = (p->source3d & 3u) | (p->smooth3d != 0u ? 4u : 0u) | (p->hud3d != 0u ? 8u : 0u) | (p->pre_mode & 3u) << 4 |
+              ((p->origin_x / 8u) & 0xfffu) << 8 | ((p->origin_y / 8u) & 0xfffu) << 20;
     b.disp3dcnt = p->disp3dcnt;
     b.swap_params = p->swap_params;
     b.clear_color = p->clear_color;
@@ -1308,6 +1311,137 @@ static void hold_capture(const KhdaysFramePackage *p)
     drawn_any = 1;
 }
 
+/* The screens composed whole on one screen too: KHDAYS_GFX=check reads them back whole (gpu_present.c
+ * port2d_compare), and KHDAYS_GPU_SKIP=full2d measures what the parts spare. */
+static int whole_screens(void)
+{
+    const char *gfx = SDL_getenv("KHDAYS_GFX");
+    return (gfx != NULL && SDL_strcmp(gfx, "check") == 0) || gpu_skip("full2d");
+}
+
+/* The parts of each engine's screen the one-screen picture reads, in DS dots: x0, y0, x1, y1 (x1, y1 past the
+ * last). The source rectangles of the shapes that take from a screen (onescreen.h ko_pixel), a dot wider each side
+ * for the sampling's rounding, mark the screen's 8 x 8 tiles they touch; each row's runs of marked tiles, joined
+ * to the part above when it spans the same columns, are the parts. On the tiles' grid the parts never overlap and
+ * are whole dispatch groups (8 x 8 DS pixels in the pre pass, 8 x 8 output pixels in the composition), so no two
+ * threads write one texel: Vulkan counts that a race even with the same value. The rest of the screen is not
+ * composed: on a one-screen picture that borrows two corners of the lower screen, that was most of its cost
+ * (the Tab A9+'s field: 25 ms of a 70 ms frame). */
+#define ONE_TILE 8
+#define ONE_TILES_X (PRE_COLUMNS / ONE_TILE)
+#define ONE_TILES_Y (KHDAYS_FRAME_H / ONE_TILE)
+#define ONE_READS 64
+typedef struct OneReads {
+    int count[2]; /* -1: the screen composed whole (a shape's numbers not usable, or too many parts) */
+    int rect[2][ONE_READS][4];
+} OneReads;
+
+static int finite_dots(float v)
+{
+    return SDL_isinff(v) == 0 && SDL_isnanf(v) == 0;
+}
+
+/* v clamped to 0..hi, as a float: before it becomes an integer */
+static float clamp_dots(float v, float hi)
+{
+    return v < 0.0f ? 0.0f : v > hi ? hi : v;
+}
+
+static void one_reads(const KhdaysOneScreenDraw *one, int upper, const int columns[2], OneReads *out)
+{
+    static unsigned char marked[2][ONE_TILES_Y][ONE_TILES_X];
+    int tiles_x[2];
+    SDL_zerop(out);
+    SDL_zeroa(marked);
+    for (int e = 0; e < 2; ++e) {
+        tiles_x[e] = SDL_min((columns[e] + ONE_TILE - 1) / ONE_TILE, ONE_TILES_X);
+        if (columns[e] > PRE_COLUMNS || columns[e] <= 0) {
+            out->count[e] = -1;
+        }
+    }
+    for (int i = 0; i < one->shape_count; ++i) {
+        const uint32_t *w = one->shapes + (size_t)i * KO_WORDS;
+        float sx, sy, sw, sh, x1, y1, x2, y2, gx, gy;
+        int e;
+        if ((w[KO_FLAGS] & (KOF_3D | KOF_IMAGE)) != 0u) {
+            continue; /* the 3D, or an image of its own: no screen read */
+        }
+        memcpy(&sx, &w[KO_SRC_X], 4);
+        memcpy(&sy, &w[KO_SRC_Y], 4);
+        memcpy(&sw, &w[KO_SRC_W], 4);
+        memcpy(&sh, &w[KO_SRC_H], 4);
+        memcpy(&x1, &w[KO_DST_X1], 4);
+        memcpy(&y1, &w[KO_DST_Y1], 4);
+        memcpy(&x2, &w[KO_DST_X2], 4);
+        memcpy(&y2, &w[KO_DST_Y2], 4);
+        memcpy(&gx, &w[KO_SCALE_X], 4);
+        memcpy(&gy, &w[KO_SCALE_Y], 4);
+        e = (w[KO_FLAGS] & KOF_LOWER) != 0u ? !upper : upper;
+        /* a repeated shape wraps at its destination's length in source dots, which may pass its rectangle; turned
+         * over (mirror), the part past it lies before its start: both sides taken */
+        if (gx > 0.0f && (x2 - x1) / gx > sw) {
+            const float more = (x2 - x1) / gx - sw;
+            sx -= more;
+            sw += 2.0f * more;
+        }
+        if (gy > 0.0f && (y2 - y1) / gy > sh) {
+            const float more = (y2 - y1) / gy - sh;
+            sy -= more;
+            sh += 2.0f * more;
+        }
+        if (!finite_dots(sx) || !finite_dots(sy) || !finite_dots(sx + sw) || !finite_dots(sy + sh) || sw < 0.0f ||
+            sh < 0.0f) {
+            out->count[e] = -1; /* numbers that say no place: the whole screen */
+            continue;
+        }
+        {
+            /* source_at clamps to the screen: a rectangle past its edge reads the edge */
+            const float wide = (float)columns[e] - 1.0f, high = (float)KHDAYS_FRAME_H - 1.0f;
+            const int c0 = (int)clamp_dots(SDL_floorf(sx) - 1.0f, wide) / ONE_TILE;
+            const int r0 = (int)clamp_dots(SDL_floorf(sy) - 1.0f, high) / ONE_TILE;
+            const int c1 = (int)clamp_dots(SDL_ceilf(sx + sw) + 1.0f, wide) / ONE_TILE;
+            const int r1 = (int)clamp_dots(SDL_ceilf(sy + sh) + 1.0f, high) / ONE_TILE;
+            for (int ty = r0; ty <= r1 && ty < ONE_TILES_Y; ++ty) {
+                for (int tx = c0; tx <= c1 && tx < tiles_x[e]; ++tx) {
+                    marked[e][ty][tx] = 1;
+                }
+            }
+        }
+    }
+    for (int e = 0; e < 2; ++e) {
+        for (int ty = 0; ty < ONE_TILES_Y && out->count[e] >= 0; ++ty) {
+            int tx = 0;
+            while (tx < tiles_x[e] && out->count[e] >= 0) {
+                int end = tx, joined = 0;
+                if (!marked[e][ty][tx]) {
+                    ++tx;
+                    continue;
+                }
+                while (end < tiles_x[e] && marked[e][ty][end]) {
+                    ++end;
+                }
+                for (int k = 0; k < out->count[e] && !joined; ++k) {
+                    int *r = out->rect[e][k];
+                    if (r[3] == ty * ONE_TILE && r[0] == tx * ONE_TILE && r[2] == end * ONE_TILE) {
+                        r[3] += ONE_TILE; /* the part above, as wide, ends where this run starts: grown down */
+                        joined = 1;
+                    }
+                }
+                if (!joined && out->count[e] == ONE_READS) {
+                    out->count[e] = -1; /* too many: the whole screen */
+                } else if (!joined) {
+                    int *r = out->rect[e][out->count[e]++];
+                    r[0] = tx * ONE_TILE;
+                    r[1] = ty * ONE_TILE;
+                    r[2] = end * ONE_TILE;
+                    r[3] = (ty + 1) * ONE_TILE;
+                }
+                tx = end;
+            }
+        }
+    }
+}
+
 /* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
 static int smooth3d;
 
@@ -1737,14 +1871,32 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         }
         SDL_EndGPUCopyPass(copy);
     }
-    /* the one-screen picture reads the screens only through its shapes: without any (an HD picture
-     * alone) they are not composed */
-    for (int e = 0; e < (one != NULL && one->shape_count == 0 ? 0 : 2); ++e) {
+    /* the one-screen picture reads the screens only through its shapes (one_reads): without any (an HD picture
+     * alone) they are not composed, but where kept whole (the capture) */
+    OneReads reads;
+    if (one != NULL) {
+        one_reads(one, p->upper, screen_columns, &reads);
+    }
+    for (int e = 0; e < 2; ++e) {
         Compose2dParams cp;
         SDL_GPUStorageTextureReadWriteBinding io[7];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         const int b = e == 1;
+        /* the parts composed, DS pixels: the whole screen, or on one screen what its shapes read (one_reads). Engine
+         * A whole when it is shown whole, or its screen is kept as the capture (hold_capture) */
+        int whole[1][4] = {{0, 0, screen_columns[e], KHDAYS_FRAME_H}};
+        int (*parts)[4] = whole;
+        int part_count = 1;
+        if (one != NULL && !(e == 0 && (whole_a || p->capture)) && !whole_screens()) {
+            if (reads.count[e] == 0) {
+                continue; /* nothing of this screen shown */
+            }
+            if (reads.count[e] > 0) {
+                parts = reads.rect[e];
+                part_count = reads.count[e];
+            }
+        }
         SDL_zero(cp);
         cp.scale = (uint32_t)scale;
         cp.width = (uint32_t)(screen_columns[e] * scale);
@@ -1821,8 +1973,13 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
             SDL_BindGPUComputePipeline(pass, compose_engine[e]);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-            compose_params(cmd, &cp);
-            SDL_DispatchGPUCompute(pass, (uint32_t)(screen_columns[e] + 7) / 8, KHDAYS_FRAME_H / 8, 1);
+            for (int k = 0; k < part_count; ++k) {
+                cp.origin_x = (uint32_t)parts[k][0];
+                cp.origin_y = (uint32_t)parts[k][1];
+                compose_params(cmd, &cp);
+                SDL_DispatchGPUCompute(pass, (uint32_t)(parts[k][2] - parts[k][0] + 7) / 8,
+                                       (uint32_t)(parts[k][3] - parts[k][1] + 7) / 8, 1);
+            }
             SDL_EndGPUComputePass(pass);
             gpu_split(device, &cmd, e == 0 ? "pre A" : "pre B");
             io[2].cycle = false; /* the screen the pass above bound: not made anew for the composition */
@@ -1832,10 +1989,15 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
-        compose_params(cmd, &cp);
-        if (!gpu_skip(e == 0 ? "2da" : "2db"))
-            SDL_DispatchGPUCompute(pass, (cp.width + 7) / 8, (cp.height + 7) / 8,
+        for (int k = 0; k < part_count && !gpu_skip(e == 0 ? "2da" : "2db"); ++k) {
+            /* each part in the same pass: the screen made anew (cycled) once, at its start */
+            cp.origin_x = (uint32_t)parts[k][0];
+            cp.origin_y = (uint32_t)parts[k][1];
+            compose_params(cmd, &cp);
+            SDL_DispatchGPUCompute(pass, ((uint32_t)(parts[k][2] - parts[k][0]) * cp.scale + 7) / 8,
+                                   ((uint32_t)(parts[k][3] - parts[k][1]) * cp.scale + 7) / 8,
                                    1); /* the shader skips pixels past the edge */
+        }
         SDL_EndGPUComputePass(pass);
         gpu_split(device, &cmd, e == 0 ? "2d A" : "2d B");
     }
