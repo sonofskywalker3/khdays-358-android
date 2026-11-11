@@ -183,6 +183,9 @@ static SDL_GPUTexture *screen[2];
 /* layers2d.hlsl: each engine's layers at each DS pixel, looked up once, before compose2d.hlsl's pass */
 static SDL_GPUComputePipeline *layers_pipeline;
 static SDL_GPUTexture *layers1x[2];
+/* A pass of another shader between layers2d.hlsl's and compose2d.hlsl's (pass_between): one group of
+ * shrink.hlsl, these two texels bound for it. */
+static SDL_GPUTexture *between[2];
 /* compose2d.hlsl's DS-sized pass: per DS pixel (PRE_COLUMNS of them a row) whether its output pixels can skip the
  * composition, and its colour when they all have it */
 static SDL_GPUTexture *pre2d[2];
@@ -709,6 +712,33 @@ static int shrink(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *big, int w, int h, 
     return 1;
 }
 
+/* After layers2d.hlsl's pass and before compose2d.hlsl's. An Adreno 619 (driver 512.762.40) runs compose2d's
+ * pass wrong when it is the next compute pass after layers2d's: every row is drawn 256 pixels further down
+ * its target (the title's art in three bands, the middle one never drawn), whatever compose2d reads and however
+ * small layers2d's pass was. Measured outside the game as well (2026-11-10, the two shaders' SPIR-V in a
+ * Vulkan program of its own, on what the game gave them): a wait, a copy or a barrier between the two changes
+ * nothing, one group of another shader's pass between them does. The group draws nothing: shrink.hlsl's
+ * small picture is given no texels, so no thread reads or writes one (the two textures are only bound). */
+static void pass_between(SDL_GPUCommandBuffer *cmd)
+{
+    struct {
+        Uint32 width, height, big_width, big_height;
+    } params = {0, 0, 1, 1};
+    SDL_GPUStorageTextureReadWriteBinding io[2];
+    SDL_GPUComputePass *pass;
+    if (shrinker == NULL || between[0] == NULL || between[1] == NULL) {
+        return;
+    }
+    SDL_zeroa(io);
+    io[0].texture = between[0];
+    io[1].texture = between[1];
+    pass = SDL_BeginGPUComputePass(cmd, io, 2, NULL, 0);
+    SDL_BindGPUComputePipeline(pass, shrinker);
+    SDL_PushGPUComputeUniformData(cmd, 0, &params, sizeof(params));
+    SDL_DispatchGPUCompute(pass, 1, 1, 1);
+    SDL_EndGPUComputePass(pass);
+}
+
 /* A card texture (w x h) as a texture of `renderer`, made once for it (in `made`, `made_for`). */
 static SDL_Texture *wrap(SDL_Renderer *renderer, SDL_GPUTexture *texture, int w, int h, SDL_Texture **made,
                          SDL_Renderer **made_for)
@@ -796,8 +826,9 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
                                    KHDAYS_FRAME_W, 4 * KHDAYS_FRAME_H);
         dummy_hud[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
         pre2d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, pre_usage, 2 * PRE_COLUMNS, 4 * KHDAYS_FRAME_H);
+        between[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
         ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL && layers1x[e] != NULL &&
-             pre2d[e] != NULL;
+             pre2d[e] != NULL && between[e] != NULL;
     }
     layers_pipeline = make_layers_pipeline();
     ok = ok && layers_pipeline != NULL;
@@ -961,6 +992,9 @@ void khdays_gfx_render_close(void)
         if (pre2d[e] != NULL)
             SDL_ReleaseGPUTexture(device, pre2d[e]);
         pre2d[e] = NULL;
+        if (between[e] != NULL)
+            SDL_ReleaseGPUTexture(device, between[e]);
+        between[e] = NULL;
         if (dummy_hud[e] != NULL)
             SDL_ReleaseGPUTexture(device, dummy_hud[e]);
         desc[e] = NULL;
@@ -1759,6 +1793,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             SDL_PushGPUComputeUniformData(cmd, 0, &lp, sizeof(lp));
             SDL_DispatchGPUCompute(lpass, KHDAYS_FRAME_W / 8, KHDAYS_FRAME_H / 8, 1);
             SDL_EndGPUComputePass(lpass);
+            pass_between(cmd);
             gpu_split(device, &cmd, e == 0 ? "layers A" : "layers B");
             cp.layers1x_rows = KHDAYS_FRAME_H;
         }
