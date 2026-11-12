@@ -1341,9 +1341,13 @@ static void hold_capture(const KhdaysFramePackage *p)
     drawn_before = drawn_any ? drawn_frame : p->frame;
     drawn_frame = p->frame;
     drawn_capture = p->capture;
-    /* the game changing screens and taking a capture at this very VBlank: when it stops, engine B's screen is
-     * engine B's again at once (a package that stays shown, the game standing still, never grows old) */
-    drawn_both = p->both && p->dispcapcnt != 0u;
+    /* the game changing screens VBlank by VBlank (the 3D on both screens): the other screen's copy may be a few
+     * VBlanks old. Not only at the VBlanks it arms a capture: when the game takes two VBlanks over a frame, engine
+     * A stays on its screen for the second with no capture armed, and that package (one in every three to six at
+     * the start of the Coliseum's scene on the Thor) showed the other screen as engine B's own picture, the DS's
+     * capture. The game says it changes screens for 8 VBlanks after the last change (frame_package.h `both`);
+     * the copy is too old after KHDAYS_KEPT_VBLANKS, so engine B's screen is its own again soon after it stops. */
+    drawn_both = p->both != 0;
     drawn_upper = p->upper;
     drawn_any = 1;
     if (trace_capture() && (drawn_capture || drawn_both)) {
