@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#if !defined(_WIN32)
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 static FILE *file;
 static SRWLOCK lock = SRWLOCK_INIT;
@@ -157,6 +162,93 @@ void khdays_log_frame(u32 value)
         }
         ReleaseSRWLockExclusive(&lock);
     }
+}
+
+#define MEMORY_EVERY_S 60
+
+#if !defined(_WIN32)
+/* Reads `path` to its end through `buffer` without the C library's streams (they allocate, and this is read
+ * when there may be no memory left to give): the bytes read, or -1 when it cannot be read whole. `lines`,
+ * when given, takes its line ends; the buffer keeps the file's first bytes, ended with a 0. */
+static long long read_proc(const char *path, char *buffer, size_t size, unsigned long long *lines)
+{
+    static char rest[16384];
+    const int fd = open(path, O_RDONLY | O_CLOEXEC);
+    long long total = 0;
+    size_t kept = 0;
+    if (fd < 0) {
+        return -1;
+    }
+    for (;;) {
+        const ssize_t n = read(fd, rest, sizeof(rest));
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        if (n < 0) {
+            close(fd);
+            return -1;
+        }
+        if (n == 0) {
+            break;
+        }
+        for (ssize_t i = 0; i < n; ++i) {
+            if (lines != NULL && rest[i] == '\n') {
+                ++*lines;
+            }
+            if (kept + 1 < size) {
+                buffer[kept++] = rest[i];
+            }
+        }
+        total += n;
+    }
+    close(fd);
+    buffer[kept] = '\0';
+    return total;
+}
+#endif
+
+void khdays_log_memory(void)
+{
+    static LONGLONG next;
+    LARGE_INTEGER now, rate;
+    if (!khdays_log_on()) {
+        return;
+    }
+    QueryPerformanceCounter(&now);
+    if (next != 0 && now.QuadPart < next) {
+        return;
+    }
+    QueryPerformanceFrequency(&rate);
+    next = now.QuadPart + MEMORY_EVERY_S * rate.QuadPart;
+#if !defined(_WIN32)
+    {
+        /* /proc/self/statm: the program's size and what of it is in memory, in pages; /proc/self/maps: a
+         * line a mapping. What cannot be read is said so, not counted as none */
+        char text[64], size_text[32] = "?", held_text[32] = "?", maps_text[32] = "?";
+        unsigned long long size = 0, resident = 0, mappings = 0;
+        const unsigned long long page = (unsigned long long)sysconf(_SC_PAGESIZE);
+        if (read_proc("/proc/self/statm", text, sizeof(text), NULL) > 0 &&
+            sscanf(text, "%llu %llu", &size, &resident) == 2) {
+            snprintf(size_text, sizeof(size_text), "%llu", size * page >> 20);
+            snprintf(held_text, sizeof(held_text), "%llu", resident * page >> 20);
+        }
+        if (read_proc("/proc/self/maps", text, sizeof(text), &mappings) > 0) {
+            snprintf(maps_text, sizeof(maps_text), "%llu", mappings);
+        }
+        khdays_log("memory: this game holds %s MB (%s MB of addresses) in %s mappings", held_text, size_text,
+                   maps_text);
+    }
+#else
+    {
+        MEMORYSTATUSEX memory;
+        memory.dwLength = sizeof(memory);
+        if (GlobalMemoryStatusEx(&memory)) {
+            khdays_log("memory: %llu MB free, %llu MB of this game's addresses in use",
+                       (unsigned long long)(memory.ullAvailPhys >> 20),
+                       (unsigned long long)((memory.ullTotalVirtual - memory.ullAvailVirtual) >> 20));
+        }
+    }
+#endif
 }
 
 void khdays_log(const char *format, ...)

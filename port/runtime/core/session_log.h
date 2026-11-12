@@ -34,6 +34,10 @@ void khdays_log_frame(u32 frame);
 
 /* One line (no newline in `format`). */
 void khdays_log(const char *format, ...);
+/* Called as the game waits for a frame: once a minute, a line with the memory this process holds and, where
+ * the system counts them (Linux, Android), its mappings -- a process is refused more past a limit of those
+ * (65,530 by default) however much memory is free, and its allocator then stops it. */
+void khdays_log_memory(void);
 
 /* F12: a line the player can find. */
 void khdays_log_mark(void);

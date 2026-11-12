@@ -297,6 +297,7 @@ void khdays_runtime_wait(void)
     static u64 log_wait_end;
     const u64 enter = khdays_clock_cycles();
     profile_wait(enter);
+    khdays_log_memory();
     if (log_wait_end != 0 && enter - log_wait_end > KHDAYS_CLOCK_HZ / 20 && khdays_log_on()) {
         /* the session log: over 50 ms without a wait (so without a frame), and in which scene */
         /* the memory free then: a PC short of it pages, and the game's thread waits on the disk */
