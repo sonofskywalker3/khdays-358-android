@@ -268,6 +268,23 @@ typedef struct KhdaysG3dClipVertex {
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent, int sky);
 
+/* How far past the view's sides a piece or a polygon of a mod's model must lie, wholly, to be left
+ * out (khdays_g3d_mod_cull_sides): this many times the view's half-width and half-height, so that a
+ * picture between two of the game's steps (g3d_interp.h), the camera turning, finds everything it
+ * shows. */
+#define KHDAYS_G3D_CULL_MARGIN 2.0f
+
+/* Whether a mod's polygons can be left out of what is being drawn (in a model draw: not otherwise,
+ * where a polygon's place is its material's count) and, if so, the view's sides they must lie wholly
+ * past, in clip space: x > *kx * w or x < -*kx * w, y > *ky * w or y < -*ky * w
+ * (KHDAYS_G3D_CULL_MARGIN times the sides finish_mod_polygon clips at). */
+int khdays_g3d_mod_cull_sides(float *kx, float *ky);
+
+/* `polygons` polygons of a mod's, of attributes `attr`, left out of the model draw: counted as made
+ * without making them, so that each later polygon of the draw keeps its place (the pictures between
+ * steps pair polygons by it). */
+void khdays_g3d_mod_skip(uint32_t attr, uint32_t polygons);
+
 /* A triangle of a mod model's closed clip volume (runtime/mods/secondary model_link.h clip_volumes), both sides,
  * first in the drawing order: not drawn; a polygon not of such a model (not KHDAYS_G3D_CLIP_OWNER) is left out
  * where it lies between the nearest and the farthest of the volumes a pixel shows (docs/RENDERING.md). */
