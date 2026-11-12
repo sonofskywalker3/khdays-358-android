@@ -8,6 +8,8 @@
 #include <string.h>
 #include <windows.h>
 #if !defined(_WIN32)
+#include "memory_parts.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -205,6 +207,54 @@ static long long read_proc(const char *path, char *buffer, size_t size, unsigned
     buffer[kept] = '\0';
     return total;
 }
+
+/* What the memory held is made of (memory_parts.h), said when it has grown by MEMORY_PARTS_GROWTH_MB since
+ * it was last said (and once at the start, to compare with): reading it takes the kernel a few tens of
+ * milliseconds, so not with every line. A leak's log then names what grew: the allocator's small or large
+ * blocks, the graphics card's memory, a file. */
+#define MEMORY_PARTS_GROWTH_MB 200
+#define MEMORY_PARTS_SAID 8
+
+static void log_memory_parts(unsigned long long held_mb)
+{
+    static unsigned long long said_at;
+    static KhdaysMemoryParts parts;
+    static char chunk[16384], text[MEMORY_PARTS_SAID * (KHDAYS_MEMORY_PART_NAME + 40)];
+    size_t at = 0;
+    int fd;
+    if (held_mb == 0 || (said_at != 0 && held_mb < said_at + MEMORY_PARTS_GROWTH_MB)) {
+        return;
+    }
+    fd = open("/proc/self/smaps", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return;
+    }
+    said_at = held_mb;
+    khdays_memory_parts_begin(&parts);
+    for (;;) {
+        const ssize_t n = read(fd, chunk, sizeof(chunk));
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        if (n <= 0) {
+            break;
+        }
+        khdays_memory_parts_take(&parts, chunk, (size_t)n);
+    }
+    close(fd);
+    khdays_memory_parts_end(&parts);
+    text[0] = '\0';
+    for (int i = 0; i < parts.count && i < MEMORY_PARTS_SAID; ++i) {
+        const int n = snprintf(text + at, sizeof(text) - at, "%s%s %llu MB in %u", i != 0 ? "; " : "",
+                               parts.parts[i].name, parts.parts[i].held_kb >> 10, parts.parts[i].mappings);
+        if (n < 0 || (size_t)n >= sizeof(text) - at) {
+            text[at] = '\0';
+            break;
+        }
+        at += (size_t)n;
+    }
+    khdays_log("memory: the most of it: %s", text);
+}
 #endif
 
 void khdays_log_memory(void)
@@ -237,6 +287,7 @@ void khdays_log_memory(void)
         }
         khdays_log("memory: this game holds %s MB (%s MB of addresses) in %s mappings", held_text, size_text,
                    maps_text);
+        log_memory_parts(resident * page >> 20);
     }
 #else
     {

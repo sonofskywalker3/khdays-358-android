@@ -519,6 +519,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     }
 #if defined(__ANDROID__)
     if (!khdays_game_surface_frame_begin()) {
+        khdays_present_unshown("its surface is away");
         return; /* no surface to show into now (host/android/game_surface.h) */
     }
 #endif
@@ -581,6 +582,9 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
             said = 1;
             SDL_Log("window: the picture could not be shown: %s", SDL_GetError());
         }
+    }
+    if (SDL_GetWindowFlags(window) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED)) {
+        khdays_present_unshown("the window is hidden"); /* (SDL's renderer presented nothing) */
     }
     latency_presented();
     khdays_present_redraw_took(drawn - began, SDL_GetTicksNS() - drawn); /* (the shop's timings) */

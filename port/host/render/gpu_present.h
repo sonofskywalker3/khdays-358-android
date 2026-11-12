@@ -106,6 +106,13 @@ void khdays_present_port_screen(int covered);
  * caller's textures for the old one are gone). */
 SDL_Renderer *khdays_present_event(const SDL_Event *event, int *renewed);
 
+/* A picture was drawn for the game but none reaches the window (`why`, for the log: its surface is away, or the
+ * window is hidden or minimized, where SDL's renderer presents nothing): SDL's Vulkan backend lets go of what
+ * its finished commands held -- their descriptor sets, the buffers and pictures released meanwhile -- only when
+ * a picture is presented to a window, so the commands of every picture drawn meanwhile would stay, a few
+ * hundred KB each, until the card's driver had no memory left. Waits for the card and lets them go. */
+void khdays_present_unshown(const char *why);
+
 /* Android: the window's surface came again after going (another app over the game, then back). The
  * swapchain is made again on it, the one of the surface that went let go first; SDL's own remaking
  * waits for the driver to say the surface was lost, and a Mali phone showed only black instead. If no

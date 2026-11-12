@@ -823,6 +823,7 @@ target_sources(khdays-native PRIVATE
     runtime/mods/sheet_colours.c        # the colours each 2D sheet is drawn with, for the studio
     runtime/core/files.c
     runtime/core/session_log.c
+    runtime/core/memory_parts.c
     runtime/movies/video.c
     runtime/movies/video_mod.c
     runtime/movies/movie_hd.c             # an HD video in a movie's place
@@ -1268,6 +1269,10 @@ add_test(NAME khdays-select-pages COMMAND khdays-select-pages-test)
 add_executable(khdays-present-layout-test tests/present_layout_test.c host/render/two_screens.c)
 target_compile_options(khdays-present-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-present-layout COMMAND khdays-present-layout-test)
+
+add_executable(khdays-memory-parts-test tests/memory_parts_test.c runtime/core/memory_parts.c)
+target_compile_options(khdays-memory-parts-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-memory-parts COMMAND khdays-memory-parts-test)
 
 add_executable(khdays-updates-test tests/updates_test.c host/app/release_version.c)
 target_compile_options(khdays-updates-test PRIVATE /W4 /std:c17)

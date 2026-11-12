@@ -77,6 +77,7 @@ static int window_scale_cap;               /* the most "window" makes on this de
 static int android_2d_cap = ANDROID_2D_CAP;  /* scale2d_now's cap on Android (window_cap_for) */
 #endif
 static int weaker_card; /* a Mali or an older Adreno (window_cap_for): [video] fast_2d = auto is on there */
+#define UNSHOWN_SAID_EVERY_MS 60000 /* khdays_present_unshown: its line in the log, at most this often */
 #define NEW_SURFACE_TRIES 120         /* khdays_present_new_surface: turns of the loop (about 2 s) */
 
 /* The graphics card stopped answering (a driver reset: D3D12's device removed, hung or reset, Vulkan's
@@ -2009,6 +2010,9 @@ static void bottom_show_finished(void)
     for (int i = 0; i < BOTTOM_SLOTS; ++i) {
         BottomSlot *s = &bottom_slots[i];
         if (s->fence != NULL && SDL_QueryGPUFence(device, s->fence)) {
+            /* (the fence is passed: this waits for nothing, and has SDL let go of what the finished commands
+             * held -- khdays_present_unshown says why that cannot be left to the window's picture) */
+            SDL_WaitForGPUFences(device, true, &s->fence, 1);
             SDL_ReleaseGPUFence(device, s->fence);
             s->fence = NULL;
             if (newest == NULL || s->order > newest->order) {
@@ -2320,6 +2324,21 @@ void khdays_present_draw(void)
     }
     /* around a scene's videos the game goes down to black and comes up from it */
     darken(1.0f - khdays_movie_hd_game_level());
+}
+
+void khdays_present_unshown(const char *why)
+{
+    static Uint64 said_at;
+    const Uint64 now = SDL_GetTicks();
+    if (device == NULL || device_lost) {
+        return;
+    }
+    SDL_WaitForGPUIdle(device);
+    if (said_at == 0 || now - said_at >= UNSHOWN_SAID_EVERY_MS) {
+        said_at = now != 0 ? now : 1;
+        khdays_log("graphics: no picture reaches the window (%s): what the card has finished is let go without one",
+                   why);
+    }
 }
 
 int khdays_present_new_surface(void)
