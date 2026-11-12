@@ -24,6 +24,15 @@ typedef struct KhdaysTwoScreensLayout {
  * shows its middle 256). */
 KhdaysTwoScreensLayout khdays_two_screens_layout(int side_by_side, int columns, float upper_w, float lower_w);
 
+/* The 3D on both screens: the game draws a screen's view at one VBlank and the other's at the next, and the
+ * screen it is not drawing shows the window's own copy of that screen's last picture (gfx_render.c). Whether a
+ * copy taken at VBlank `kept_at` shows at VBlank `now`: when it is of the package drawn just before this one
+ * (`before`), or, while the game changes screens and takes its capture at `now` (`both`), at most
+ * KHDAYS_KEPT_VBLANKS old -- a package the window did not draw, or a change of screens the game skipped, leaves
+ * the copy of the picture before on the screen, not the DS's own small capture. */
+#define KHDAYS_KEPT_VBLANKS 4
+int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both);
+
 #ifdef __cplusplus
 }
 #endif

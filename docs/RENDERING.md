@@ -396,7 +396,15 @@ rest), the walk's scenes the same.
 With the 3D on both screens the game moves engine A to the other screen at
 every VBlank (POWCNT1 bit 15), drawing each screen's view in turn while the
 display capture keeps the other's; the one-screen picture is the upper
-screen's, so it is made on the VBlanks engine A shows the upper screen.
+screen's, so it is made on the VBlanks engine A shows the upper screen. On two
+screens the window keeps its own copy of engine A's picture for each screen
+(`gfx_render.c` `hold_capture`) and shows the other screen's from it, not from
+the DS's 256 x 192 capture: the copy of the package before, or while the game
+changes screens and arms its capture one up to four VBlanks old (`two_screens.h`), so a
+package the window did not draw or a change the game skipped does not put the
+small capture on a screen for a picture. A package says the capture is in use
+(`capture`) while the game armed one, showed a bank or changed screens in the
+last eight VBlanks (`display.c`), not for the rest of the session.
 
 The screen blends (a cut between an event's camera shots) capture engine A's
 picture blended with a VRAM bank back into it while engine A shows the bank.

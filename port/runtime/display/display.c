@@ -1204,6 +1204,7 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
     /* the game uses the display capture: for the 3D on both screens the host shows engine A's
      * kept picture, at its own resolution (gfx_render.c) */
     p->capture = (uint8_t)capture;
+    p->both = (uint8_t)(engine_swaps != 0u);
     package_capture(p);
     p->field_wipe = (uint32_t)khdays_field_wipe_running(frame);
     if (want & KHDAYS_WANT_SITUATION) {
@@ -1413,7 +1414,13 @@ static void profile_frame(LARGE_INTEGER t0, LARGE_INTEGER ta, LARGE_INTEGER t1, 
  * EVB -- into a VRAM bank, and clears the enable. The game shows such banks (the VRAM display mode,
  * engine B's bitmaps) for its screen blends, its motion blur and the 3D on both screens. Taken here at
  * the VBlank of that frame, after it is drawn: a bank shown and written at once shows the frame before. */
-static int capture_used;               /* the game has armed a capture (the host's p->capture) */
+/* The host's p->capture: the game armed a capture or showed a VRAM bank in the last CAPTURE_VBLANKS VBlanks, or
+ * moved engine A to the other screen in the last 8 (engine_swaps) -- the 3D on both screens arms one every
+ * VBlank, a screen blend every frame of the blend. Not for the rest of the session: while it is set the host
+ * keeps a copy of engine A's screen every game frame, composes that screen whole and leaves its faster ways of
+ * drawing off. */
+#define CAPTURE_VBLANKS 8
+static int capture_left; /* VBlanks before a capture armed or a bank shown counts as no longer in use */
 static uint16_t capture_a[PIXELS];     /* source A, BGR555 with its alpha bit */
 static uint32_t capture_layer[PIXELS]; /* the frame's 3D, when layer3d does not hold it */
 static u32 *capture_kinds;             /* the kinds logged: DISPCAPCNT without its enable, EVA and EVB */
@@ -1600,15 +1607,17 @@ static void vblank(u32 frame)
     LARGE_INTEGER t0, ta, t1, t2;
     int skip_2d = 0;
     const KhdaysGpu2dState window_a = states[0]; /* engine A's windows at the frame's start */
-    if (IO32(0x64) & 0x80000000u) {
-        capture_used = 1;
-    }
     {
         /* the 3D on both screens: the game swaps engine A's screen (POWCNT1 bit 15) every VBlank,
          * skipping one now and then when its frame runs late */
         const int a_upper = (IO16(0x304) & 0x8000) != 0;
         engine_swaps = khdays_situation_recent(&swap_history, a_upper != engine_upper);
         engine_upper = a_upper;
+    }
+    if ((IO32(0x64) & 0x80000000u) || ((IO32(0x000) >> 16) & 3u) == 2u) {
+        capture_left = CAPTURE_VBLANKS;
+    } else if (capture_left > 0) {
+        --capture_left;
     }
     if (InterlockedExchange(&mark_requests, 0) != 0 && mark_frame == ~0u) {
         mark_frame = frame + 2u; /* F12: two VBlanks on, so the frame before it draws its 3D */
@@ -1674,7 +1683,7 @@ static void vblank(u32 frame)
         skip_2d_frame(&in);
         ta = t1 = t0;
     } else {
-        draw_frame(frame, want, capture_used, &in, &t0, &ta, &t1);
+        draw_frame(frame, want, capture_left > 0 || engine_swaps != 0u, &in, &t0, &ta, &t1);
     }
     display_capture(&in, &window_a);
     draw_3d_for_next(frame, want);

@@ -33,6 +33,13 @@ int main(void)
     l = khdays_two_screens_layout(1, 342, 342.0f, 256.0f);
     CHECK(l.width == 512 && l.height == 192);
     CHECK(same(l.upper, 0, 0, 256, 192) && same(l.lower, 256, 0, 256, 192));
+    /* the 3D on both screens: the other screen's copy, of the package just before or a few VBlanks old */
+    CHECK(khdays_two_screens_kept_shows(101, 100, 100, 1));  /* each VBlank drawn */
+    CHECK(khdays_two_screens_kept_shows(103, 100, 102, 1));  /* a package not drawn between: the copy stays */
+    CHECK(!khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS + 1, 100, 104, 1)); /* too old */
+    CHECK(khdays_two_screens_kept_shows(110, 100, 100, 0));  /* one change of screens: the package before */
+    CHECK(!khdays_two_screens_kept_shows(103, 100, 102, 0)); /* ... and no older one */
+    CHECK(!khdays_two_screens_kept_shows(100, 100, 100, 1)); /* its own picture */
     if (failures == 0) {
         printf("present layout: ok\n");
     }

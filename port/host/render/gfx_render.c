@@ -6,6 +6,7 @@
 #include "gpu_hd.h"
 #include "kh2_sequence_gpu.h"
 #include "gpu_raster3d.h"
+#include "two_screens.h"
 #include "../../runtime/display/frame_package.h"
 #include "generated/capture_cs.h"
 #include "generated/compose2d_cs.h"
@@ -351,13 +352,19 @@ static uint32_t backdrop_clock;
 /* The 3D on both screens (Gfx_SetupSubScreenCapture): each game frame the DS captures engine A's
  * picture, and the next one engine B shows it on the other screen. The port's capture is at the DS's
  * size (display.c), so for that screen this keeps engine A's picture of the previous package when the
- * capture was in use, with the screen it was on, and remembers the last package drawn. */
-static SDL_GPUTexture *held;
-static int held_w, held_h, held_columns, held_screen, held_ok;
-static SDL_Texture *held_wrapped;
-static SDL_Renderer *held_for;
-static uint32_t drawn_frame;
-static int drawn_any, drawn_capture, drawn_upper;
+ * capture was in use, one for each screen it was on, and remembers the last package drawn and the one
+ * before it. Which copy shows: two_screens.h. */
+typedef struct CaptureCopy {
+    SDL_GPUTexture *texture;
+    int w, h, columns, ok;
+    uint32_t frame; /* the package it is the picture of */
+    SDL_Texture *wrapped;
+    SDL_Renderer *wrapped_for;
+} CaptureCopy;
+static CaptureCopy capture_copy[2]; /* engine A's picture when it was on the upper screen, on the lower */
+static void drop_capture_copy(CaptureCopy *k);
+static uint32_t drawn_frame, drawn_before;
+static int drawn_any, drawn_capture, drawn_upper, drawn_both;
 /* The screen blends (a cut between an event's camera shots, Ov023_CmdStartScreenBlend): engine A shows a
  * VRAM bank while its picture, blended with that bank, is captured back into it. The port's capture is at
  * the DS's size, so each one is taken again here from what the window shows, and the bank shown from
@@ -948,14 +955,8 @@ void khdays_gfx_render_close(void)
     if (shrinker != NULL)
         SDL_ReleaseGPUComputePipeline(device, shrinker);
     shrinker = NULL;
-    if (held_wrapped != NULL)
-        SDL_DestroyTexture(held_wrapped);
-    if (held != NULL)
-        SDL_ReleaseGPUTexture(device, held);
-    held_wrapped = NULL;
-    held_for = NULL;
-    held = NULL;
-    held_w = held_h = held_columns = held_ok = 0;
+    drop_capture_copy(&capture_copy[0]);
+    drop_capture_copy(&capture_copy[1]);
     drawn_any = 0;
     for (int b = 0; b < 4; ++b) {
         drop_hd_bank(&hd_bank[b]);
@@ -1278,6 +1279,27 @@ static int ensure_shop(const KhdaysFramePackage *p, int count, const int *screen
     return 1;
 }
 
+static void drop_capture_copy(CaptureCopy *k)
+{
+    if (k->wrapped != NULL)
+        SDL_DestroyTexture(k->wrapped);
+    if (k->texture != NULL)
+        SDL_ReleaseGPUTexture(device, k->texture);
+    SDL_zerop(k);
+}
+
+/* The copy engine B's screen shows instead of engine B's picture, or NULL: engine A's picture of when it was on
+ * that screen (the one it is not on in the package drawn last), while the capture is in use. */
+static CaptureCopy *capture_copy_shown(void)
+{
+    CaptureCopy *k = &capture_copy[drawn_upper == 0 ? 1 : 0];
+    if (!drawn_any || !drawn_capture || !k->ok || k->texture == NULL ||
+        !khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both)) {
+        return NULL;
+    }
+    return k;
+}
+
 /* When a new package comes (not the same one drawn again between two
  * pictures): keep engine A's picture of the previous one, if it was captured
  * (see above). */
@@ -1286,24 +1308,20 @@ static void hold_capture(const KhdaysFramePackage *p)
     if (drawn_any && p->frame == drawn_frame) {
         return;
     }
-    held_ok = 0;
     if (drawn_any && drawn_capture && screen[0] != NULL) {
         /* as it was shown: shrunk to the size shown */
         SDL_GPUTexture *const as_shown = screens_shrunk ? shrunk_screen[0].texture : screen[0];
         const int w = screens_shrunk ? shrunk_screen[0].w : screen_columns[0] * screen_scale;
         const int h = screens_shrunk ? shrunk_screen[0].h : KHDAYS_FRAME_H * screen_scale;
-        if (held == NULL || held_w != w || held_h != h) {
-            if (held_wrapped != NULL)
-                SDL_DestroyTexture(held_wrapped);
-            if (held != NULL)
-                SDL_ReleaseGPUTexture(device, held);
-            held_wrapped = NULL;
-            held_for = NULL;
-            held = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
-            held_w = held != NULL ? w : 0;
-            held_h = held != NULL ? h : 0;
+        CaptureCopy *k = &capture_copy[drawn_upper == 0 ? 0 : 1];
+        k->ok = 0;
+        if (k->texture == NULL || k->w != w || k->h != h) {
+            drop_capture_copy(k);
+            k->texture = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
+            k->w = k->texture != NULL ? w : 0;
+            k->h = k->texture != NULL ? h : 0;
         }
-        if (held != NULL) {
+        if (k->texture != NULL) {
             SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
             if (cmd != NULL) {
                 SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
@@ -1311,19 +1329,34 @@ static void hold_capture(const KhdaysFramePackage *p)
                 SDL_zero(from);
                 SDL_zero(to);
                 from.texture = as_shown;
-                to.texture = held;
+                to.texture = k->texture;
                 SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)w, (Uint32)h, 1, false);
                 SDL_EndGPUCopyPass(copy);
-                held_ok = SDL_SubmitGPUCommandBuffer(cmd);
-                held_columns = screen_columns[0];
-                held_screen = drawn_upper == 0 ? 0 : 1;
+                k->ok = SDL_SubmitGPUCommandBuffer(cmd);
+                k->columns = screen_columns[0];
+                k->frame = drawn_frame;
             }
         }
     }
+    drawn_before = drawn_any ? drawn_frame : p->frame;
     drawn_frame = p->frame;
     drawn_capture = p->capture;
+    /* the game changing screens and taking a capture at this very VBlank: when it stops, engine B's screen is
+     * engine B's again at once (a package that stays shown, the game standing still, never grows old) */
+    drawn_both = p->both && p->dispcapcnt != 0u;
     drawn_upper = p->upper;
     drawn_any = 1;
+    if (trace_capture() && (drawn_capture || drawn_both)) {
+        const CaptureCopy *shown_copy = capture_copy_shown();
+        fprintf(stderr, "capture: frame %u, engine A on the %s screen%s%s; the other screen shows ", p->frame,
+                drawn_upper == 0 ? "upper" : "lower", p->both ? " (the 3D on both)" : "",
+                p->dispcapcnt != 0u ? ", a capture armed" : "");
+        if (shown_copy != NULL) {
+            fprintf(stderr, "the copy of frame %u\n", shown_copy->frame);
+        } else {
+            fprintf(stderr, "engine B's own picture\n");
+        }
+    }
 }
 
 /* The screens composed whole on one screen too: KHDAYS_GFX=check reads them back whole (gpu_present.c
@@ -2738,16 +2771,17 @@ int khdays_gfx_render_columns(int engine)
 int khdays_gfx_render_captured_shown(void)
 {
     /* engine B is on the screen engine A was on in the previous package (the upper when A is on the lower) */
-    return held_ok && held != NULL && drawn_any && held_screen == (drawn_upper == 0 ? 1 : 0);
+    return capture_copy_shown() != NULL;
 }
 
 SDL_Texture *khdays_gfx_render_captured(SDL_Renderer *renderer, int *columns)
 {
-    if (!khdays_gfx_render_captured_shown()) {
+    CaptureCopy *k = capture_copy_shown();
+    if (k == NULL) {
         return NULL;
     }
-    *columns = held_columns;
-    return wrap(renderer, held, held_w, held_h, &held_wrapped, &held_for);
+    *columns = k->columns;
+    return wrap(renderer, k->texture, k->w, k->h, &k->wrapped, &k->wrapped_for);
 }
 
 uint32_t *khdays_gfx_render_read(int engine, int *width, int *height)
@@ -2756,9 +2790,13 @@ uint32_t *khdays_gfx_render_read(int engine, int *width, int *height)
     SDL_GPUTexture *texture;
     int w, h;
     if (engine == 3) {
-        texture = held;
-        w = held_w;
-        h = held_h;
+        const CaptureCopy *k = capture_copy_shown();
+        if (k == NULL) {
+            return NULL;
+        }
+        texture = k->texture;
+        w = k->w;
+        h = k->h;
     } else if (engine == 2) {
         texture = picture_shrunk ? shrunk_picture.texture : picture;
         w = picture_shrunk ? shrunk_picture.w : picture_w;

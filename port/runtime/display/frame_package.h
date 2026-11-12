@@ -71,7 +71,7 @@ typedef struct KhdaysFramePackage {
     uint8_t upper;      /* the engine on the upper screen (POWCNT1 bit 15) */
     uint8_t list3d_cut; /* nothing to draw between the list before and list3d */
     uint8_t capture;    /* the game uses the display capture: engine A's picture may show on the other screen next */
-    uint8_t pad[1];
+    uint8_t both;       /* engine A changed screens in the last 8 VBlanks: the 3D on both screens */
     uint64_t time;          /* the VBlank's time, in the game's cycles (runtime/core/clock.h) */
     uint64_t list3d_time;   /* the VBlank list3d was first shown at: the logic frame's time */
     uint32_t list3d_serial; /* moves with each new list3d (one per logic frame) */

@@ -20,3 +20,12 @@ KhdaysTwoScreensLayout khdays_two_screens_layout(int side_by_side, int columns, 
     }
     return l;
 }
+
+int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both)
+{
+    const unsigned age = now - kept_at;
+    if (age == 0u) {
+        return 0; /* this package's own picture: on its own screen */
+    }
+    return kept_at == before || (both && age <= KHDAYS_KEPT_VBLANKS);
+}
