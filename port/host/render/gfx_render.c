@@ -1513,6 +1513,7 @@ static void one_reads(const KhdaysOneScreenDraw *one, int upper, const int colum
 
 /* A weaker card composes the one-screen picture's sources a DS pixel at a time (draw). */
 static int coarse_2d = -1; /* KHDAYS_COARSE_2D=1 or 0 says it instead, to try it on any card */
+static int coarse_pictures[2]; /* KHDAYS_PERF: the pictures each engine's screen was composed so, since it last said */
 
 void khdays_gfx_render_set_coarse_2d(int on)
 {
@@ -2297,12 +2298,13 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
                 if (++pictures[e] == 300) {
                     fprintf(stderr,
                             "host: engine %c composed %ld of %d dots a picture in %d parts at %dx (%s%s), %d sprites, "
-                            "%d elements, flags %08x\n",
+                            "%d elements, flags %08x; a DS pixel at a time (fast 2D) in %d of 300 pictures%s\n",
                             e == 0 ? 'A' : 'B', dots[e] / 300, screen_columns[e] * KHDAYS_FRAME_H, part_sum[e] / 300,
                             scale, one == NULL ? "two screens" : "one screen", e == 0 && whole_a ? ", whole" :
                             e == 0 && p->capture ? ", the capture" : "", sprite_sum[e] / 300, element_sum[e] / 300,
-                            (unsigned)p->desc2d[e][KD_FLAGS]);
-                    pictures[e] = part_sum[e] = sprite_sum[e] = element_sum[e] = 0;
+                            (unsigned)p->desc2d[e][KD_FLAGS], coarse_pictures[e],
+                            !coarse_now() ? " (the setting is off)" : finer_than_ds(p) ? " (a mod's tiles now)" : "");
+                    pictures[e] = part_sum[e] = sprite_sum[e] = element_sum[e] = coarse_pictures[e] = 0;
                     dots[e] = 0;
                 }
             }
@@ -2379,7 +2381,28 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         io[4].texture = e == 0 && hud ? hud_attr : dummy_hud[1];
         io[5].texture = layers1x[e]; /* read only */
         io[6].texture = pre2d[e];
-        if (scale >= PRE_SCALE_MIN && cp.source3d == 0u && screen_columns[e] <= PRE_COLUMNS && !gpu_skip("pre")) {
+        /* A weaker card's one-screen sources, and its screens without the 3D in them (a menu's two screens)
+         * (khdays_gfx_render_set_coarse_2d): a thread a DS pixel, its colour
+         * given to its N x N output pixels, so the card composes a quarter of the pixels at 2x. The DS's own
+         * graphics are the same at all of them; what is finer than a DS pixel is an element drawn finer than its
+         * rectangle (the port's own text), whose tiles are composed at each output pixel (fine_parts), and the
+         * 3D's edge where it crosses a HUD piece, which is lost. The Tab A9+'s field (Adreno 619, 2x): 47 ms a
+         * picture composed at each output pixel, 22 ms so. Not a frame with a mod's finer tiles (finer_than_ds),
+         * nor a screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output
+         * pixel, to measure. Decided before the DS-sized pass below, which it replaces: that pass still starts a
+         * thread at every output pixel, and from 3x up it was always the one taken -- the setting did nothing
+         * there (the Thor at 5x: the same 42 pictures a second with it on or off). */
+        static FineParts fine;
+        int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && scale > 1 &&
+                     !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
+                     !gpu_skip("coarse");
+        if (coarse) {
+            fine_parts(p, e, one != NULL && !(e == 0 && whole_a), parts, part_count, screen_columns[e], &fine);
+            coarse = fine.count[0] >= 0;
+        }
+        coarse_pictures[e] += coarse;
+        if (!coarse && scale >= PRE_SCALE_MIN && cp.source3d == 0u && screen_columns[e] <= PRE_COLUMNS &&
+            !gpu_skip("pre")) {
             /* each DS pixel once: whether its N x N output pixels are all alike. Not for an engine that reads the
              * 3D: its pixels are seldom alike, and the pass cost the TCL's Mali 2.5 ms for nothing (2026-11-05) */
             io[6].cycle = true;
@@ -2399,23 +2422,6 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             io[2].cycle = false; /* the screen the pass above bound: not made anew for the composition */
             io[6].cycle = false;
             cp.pre_mode = 2u;
-        }
-        /* A weaker card's one-screen sources, and its screens without the 3D in them (a menu's two screens)
-         * (khdays_gfx_render_set_coarse_2d): a thread a DS pixel, its colour
-         * given to its N x N output pixels, so the card composes a quarter of the pixels at 2x. The DS's own
-         * graphics are the same at all of them; what is finer than a DS pixel is an element drawn finer than its
-         * rectangle (the port's own text), whose tiles are composed at each output pixel (fine_parts), and the
-         * 3D's edge where it crosses a HUD piece, which is lost. The Tab A9+'s field (Adreno 619, 2x): 47 ms a
-         * picture composed at each output pixel, 22 ms so. Not a frame with a mod's finer tiles (finer_than_ds),
-         * nor a screen kept whole (the capture, KHDAYS_GFX=check). KHDAYS_GPU_SKIP=coarse composes each output
-         * pixel, to measure. */
-        static FineParts fine;
-        int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && cp.pre_mode == 0u && scale > 1 &&
-                     !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
-                     !gpu_skip("coarse");
-        if (coarse) {
-            fine_parts(p, e, one != NULL && !(e == 0 && whole_a), parts, part_count, screen_columns[e], &fine);
-            coarse = fine.count[0] >= 0;
         }
         pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose_engine[e]);
