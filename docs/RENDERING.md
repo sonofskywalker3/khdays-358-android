@@ -294,6 +294,27 @@ internal resolution 1 on a 2736x1536 window, the 2D at 8x): the command menu's
 HD words and the panels as sharp as at the window's resolution, the 3D at the
 DS's size, smoothed or square by the scaling.
 
+From 3x up the 2D is composed once a DS pixel and only where something finer
+needs it at each output pixel (`gfx/spread2d.h`), for a screen of the DS's
+width or the wider picture up to 1024 columns that doesn't show the 3D itself
+(the one-screen picture's sources, and screens without 3D); not for
+`KHDAYS_GFX=check`. `KHDAYS_2D_SPARSE=0` uses the composition as it was. The DS-sized pass gives each DS pixel a verdict:
+the same at every place in it, nothing of the 2D over the one-screen picture's
+3D, the 3D over the backdrop by its alpha, the same wherever the 3D's alpha is
+the one it was composed with, or composed at each place. It looks at the
+elements' texels in the pixel, so an element that is transparent all over it
+(a picture as large as the screen with a HUD piece in one corner) neither makes
+it composed at each place nor is looked at there later. `shaders/spread2d.hlsl`
+then writes, a thread an output pixel, every pixel the verdict settles (reading
+the 3D at its place as the composition does, `raster3d_at.hlsli`) and lists the
+DS pixels it can't; the composition runs on the listed pixels' output pixels
+alone, as many as the list holds (an indirect dispatch). The pictures are the
+same as composed at each pixel (`KHDAYS_GFX=savings` compares them).
+`KHDAYS_PERF` says how many pixels were listed and why. Measured 2026-11-12, one
+screen at the field: AYN Thor (Adreno 740, 5x) 39 to 60 pictures a second;
+Intel UHD 770 (8x) 41 to 29 ms a picture; AYANEO Air Mini (Mali-G76) at 3x 26
+to 32 (at 2x the DS-sized pass costs what it spares, so not there).
+
 Before each screen's composition, `shaders/layers2d.hlsl` looks each layer's
 colour up once for each DS pixel (the N x N output pixels of a DS pixel would
 each look it up again): `compose2d.hlsl` takes those, and looks up itself only

@@ -19,6 +19,8 @@
 #include "generated/onescreen_cs.h"
 #include "generated/onescreen_plain_cs.h"
 #include "generated/shrink_cs.h"
+#include "generated/spread2d_cs.h"
+#include "../../gfx/spread2d.h"
 #include "../../gfx/onescreen.h"
 #include "../screens/game_pause.h"
 
@@ -40,6 +42,7 @@ typedef struct Compose2dParams {
     uint32_t layers1x_rows; /* layers2d.hlsl's rows from row0, or 0 */
     uint32_t pre_mode; /* compose2d.hlsl: 0 each pixel composed, 1 the DS-sized pass, 2 its verdicts read (pre2d),
                         * 3 a thread a DS pixel (coarse_2d) */
+    uint32_t list;     /* with pre_mode 2: only the dots spread2d.hlsl listed (sparse) */
     uint32_t origin_x, origin_y; /* the DS pixel the dispatch starts at, multiples of 8 (one_reads' tiles) */
 } Compose2dParams;
 
@@ -61,10 +64,10 @@ static void compose_params(SDL_GPUCommandBuffer *cmd, const Compose2dParams *p)
     b.scale = p->scale;
     b.width = p->width;
     b.height = p->height;
-    /* compose2d.hlsl `modes`: source3d in bits 0-1, smooth3d in 2, hud3d in 3, pre_mode in 4-5, and the origin in
-     * eighths (one_reads' tiles): x in bits 8-19, y in 20-31. In this word, the block's 32 words all taken */
+    /* compose2d.hlsl `modes`: source3d in bits 0-1, smooth3d in 2, hud3d in 3, pre_mode in 4-5, list in 6, and the
+     * origin in eighths (one_reads' tiles): x in bits 8-19, y in 20-31. In this word, the block's 32 words all taken */
     b.modes = (p->source3d & 3u) | (p->smooth3d != 0u ? 4u : 0u) | (p->hud3d != 0u ? 8u : 0u) | (p->pre_mode & 3u) << 4 |
-              ((p->origin_x / 8u) & 0xfffu) << 8 | ((p->origin_y / 8u) & 0xfffu) << 20;
+              (p->list != 0u ? 0x40u : 0u) | ((p->origin_x / 8u) & 0xfffu) << 8 | ((p->origin_y / 8u) & 0xfffu) << 20;
     b.disp3dcnt = p->disp3dcnt;
     b.swap_params = p->swap_params;
     b.clear_color = p->clear_color;
@@ -85,6 +88,11 @@ static void compose_params(SDL_GPUCommandBuffer *cmd, const Compose2dParams *p)
     b.layers1x_rows = p->layers1x_rows;
     SDL_PushGPUComputeUniformData(cmd, 0, &b, sizeof(b));
 }
+
+/* spread2d.hlsl's constant buffer, register for register. */
+typedef struct Spread2dParams {
+    uint32_t dots_w, dots_h, flags, origin_x, origin_y, hofs3d, backdrop8, pad0;
+} Spread2dParams; /* (its pass also takes compose2d.hlsl's block, as the screen's composition does) */
 
 /* layers2d.hlsl's constant buffer, register for register. */
 typedef struct Layers2dParams {
@@ -133,18 +141,20 @@ static uint32_t desc_bytes[2];
 
 /* KHDAYS_GPU_SKIP=a,b: passes not dispatched, to measure what each costs (the picture is then wrong) */
 /* KHDAYS_GPU_TIME: each submission waited for, after the card is idle, and its time said every 120 */
+#define GPU_TIME_LABELS 32
 static int gpu_submit_timed(SDL_GPUDevice *dev, SDL_GPUCommandBuffer *cmd, const char *label)
 {
-    static const char *labels[8];
-    static double total_ms[8];
-    static int count[8];
+    /* (8 were too few: a picture has a dozen passes or more, and every label past the eighth was counted as one) */
+    static const char *labels[GPU_TIME_LABELS];
+    static double total_ms[GPU_TIME_LABELS];
+    static int count[GPU_TIME_LABELS];
     SDL_GPUFence *fence;
     Uint64 t0;
     int k = 0;
     if (SDL_getenv("KHDAYS_GPU_TIME") == NULL) {
         return SDL_SubmitGPUCommandBuffer(cmd);
     }
-    while (k < 7 && labels[k] != NULL && SDL_strcmp(labels[k], label) != 0) {
+    while (k < GPU_TIME_LABELS - 1 && labels[k] != NULL && SDL_strcmp(labels[k], label) != 0) {
         ++k;
     }
     labels[k] = label;
@@ -237,6 +247,18 @@ static SDL_GPUTexture *layers1x[2];
 static SDL_GPUTexture *pre2d[2];
 #define PRE_COLUMNS (4 * KHDAYS_FRAME_W)
 #define PRE_SCALE_MIN 3 /* below it the DS-sized pass costs more than it spares (2x on the TCL: 30 fps with, 33 without) */
+SDL_COMPILE_TIME_ASSERT(spread_list_w, 2 * PRE_COLUMNS == SPREAD_LIST_W && SPREAD_LIST_ROW == 4 * KHDAYS_FRAME_H &&
+                                           SPREAD_LIST_W * SPREAD_LIST_ROWS >= PRE_COLUMNS * KHDAYS_FRAME_H + 1 &&
+                                           SPREAD_FLAG_WORDS * 32 == PRE_COLUMNS * KHDAYS_FRAME_H &&
+                                           SPREAD_FLAG_ROWS * SPREAD_LIST_W >= SPREAD_FLAG_WORDS);
+/* The 2D composed once a DS dot (gfx/spread2d.h, KHDAYS_2D_SPARSE=0 turns it off): after the DS-sized pass,
+ * spread2d.hlsl writes the output texels of the dots alike at every place in them and lists the others; compose2d
+ * composes only the listed dots' texels, as many groups as `spread_groups` (an indirect dispatch's) says. */
+static SDL_GPUComputePipeline *spread_pipeline;
+static SDL_GPUBuffer *spread_groups[2];
+static int sparse_2d = -1;
+static uint32_t sent_flags[2]; /* each description's KD_FLAGS as the card was sent it (draw) */
+static int pre_shared; /* pre2d is made for reading and writing (and atomics) in one pass: the list needs it */
 /* The lower screen's rows past the DS's 192 (or under its frame) for a taller second display, composed
  * with some layers left out (host/screens/lower_layout.h): asked for, then drawn into `rows_texture`. */
 static int rows_row0, rows_count, rows_scale, rows_drawn;
@@ -429,10 +451,10 @@ static SDL_GPUTexture *make_texture(SDL_GPUTextureFormat format, SDL_GPUTextureU
     return SDL_CreateGPUTexture(device, &info);
 }
 
-static SDL_GPUComputePipeline *make_pipeline_of(const unsigned char *dxil, unsigned dxil_size,
+static SDL_GPUComputePipeline *make_pipeline_rw(const unsigned char *dxil, unsigned dxil_size,
                                                 const unsigned char *spirv, unsigned spirv_size,
                                                 const unsigned char *msl, unsigned msl_size, const char *entry,
-                                                int buffers, int textures)
+                                                int buffers, int textures, int rw_buffers, int uniforms)
 {
     SDL_GPUComputePipelineCreateInfo info;
     const SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
@@ -456,11 +478,20 @@ static SDL_GPUComputePipeline *make_pipeline_of(const unsigned char *dxil, unsig
     info.entrypoint = entry;
     info.num_readonly_storage_buffers = (Uint32)buffers;
     info.num_readwrite_storage_textures = (Uint32)textures;
-    info.num_uniform_buffers = 1;
+    info.num_readwrite_storage_buffers = (Uint32)rw_buffers;
+    info.num_uniform_buffers = (Uint32)uniforms;
     info.threadcount_x = 8;
     info.threadcount_y = 8;
     info.threadcount_z = 1;
     return SDL_CreateGPUComputePipeline(device, &info);
+}
+
+static SDL_GPUComputePipeline *make_pipeline_of(const unsigned char *dxil, unsigned dxil_size,
+                                                const unsigned char *spirv, unsigned spirv_size,
+                                                const unsigned char *msl, unsigned msl_size, const char *entry,
+                                                int buffers, int textures)
+{
+    return make_pipeline_rw(dxil, dxil_size, spirv, spirv_size, msl, msl_size, entry, buffers, textures, 0, 1);
 }
 
 static SDL_GPUComputePipeline *make_layers_pipeline(void)
@@ -847,6 +878,7 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
                                      SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE)
             ? SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE
             : SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+    pre_shared = (pre_usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE) != 0;
     for (int e = 0; e < 2; ++e) {
         desc[e] = make_buffer(DESC_BYTES + SPRITE_ROW_BYTES);
         desc_bytes[e] = DESC_BYTES + SPRITE_ROW_BYTES;
@@ -855,12 +887,29 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         layers1x[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
                                    KHDAYS_FRAME_W, 4 * KHDAYS_FRAME_H);
         dummy_hud[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
-        pre2d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, pre_usage, 2 * PRE_COLUMNS, 4 * KHDAYS_FRAME_H);
+        /* the verdicts' rows, then spread2d.hlsl's list (gfx/spread2d.h) */
+        pre2d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, pre_usage, 2 * PRE_COLUMNS,
+                                4 * KHDAYS_FRAME_H + (int)(SPREAD_LIST_ROWS + SPREAD_FLAG_ROWS));
         ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL && layers1x[e] != NULL &&
              pre2d[e] != NULL;
     }
     layers_pipeline = make_layers_pipeline();
     ok = ok && layers_pipeline != NULL;
+    /* without them the 2D is composed as before (sparse_now) */
+    spread_pipeline = make_pipeline_rw(spread2d_cs_dxil, spread2d_cs_dxil_size, spread2d_cs_spirv,
+                                       spread2d_cs_spirv_size, spread2d_cs_msl, spread2d_cs_msl_size,
+                                       SPREAD2D_CS_ENTRY, 0, 6, 1, 2);
+    for (int e = 0; e < 2; ++e) {
+        SDL_GPUBufferCreateInfo info;
+        SDL_zero(info);
+        info.usage = SDL_GPU_BUFFERUSAGE_INDIRECT | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+        info.size = 16;
+        spread_groups[e] = SDL_CreateGPUBuffer(device, &info);
+    }
+    if (spread_pipeline == NULL || spread_groups[0] == NULL || spread_groups[1] == NULL) {
+        fprintf(stderr, "host: the 2D a DS dot at a time: refused (%s); composed at each output pixel\n",
+                SDL_GetError());
+    }
     layer3d = make_buffer(KHDAYS_FRAME_PIXELS * 4);
     ok = ok && layer3d != NULL && khdays_gpu_hd_open(d);
     ok = ok && khdays_sequence_gpu_open(d);
@@ -1032,6 +1081,14 @@ void khdays_gfx_render_close(void)
     if (layers_pipeline != NULL)
         SDL_ReleaseGPUComputePipeline(device, layers_pipeline);
     layers_pipeline = NULL;
+    if (spread_pipeline != NULL)
+        SDL_ReleaseGPUComputePipeline(device, spread_pipeline);
+    spread_pipeline = NULL;
+    for (int e = 0; e < 2; ++e) {
+        if (spread_groups[e] != NULL)
+            SDL_ReleaseGPUBuffer(device, spread_groups[e]);
+        spread_groups[e] = NULL;
+    }
     if (layer3d != NULL)
         SDL_ReleaseGPUBuffer(device, layer3d);
     if (upload != NULL)
@@ -1523,6 +1580,84 @@ void khdays_gfx_render_set_coarse_2d(int on)
 {
     const char *asked = SDL_getenv("KHDAYS_COARSE_2D");
     coarse_2d = asked != NULL ? SDL_atoi(asked) != 0 : on != 0;
+}
+
+/* Whether the 2D is composed once a DS dot (spread2d.hlsl): on, but for KHDAYS_2D_SPARSE=0. */
+static int sparse_now(void)
+{
+    if (sparse_2d < 0) {
+        const char *asked = SDL_getenv("KHDAYS_2D_SPARSE");
+        sparse_2d = asked == NULL ? 1 : SDL_atoi(asked) == 2 ? 2 : SDL_atoi(asked) != 0; /* 2: at 2x too, to measure */
+        fprintf(stderr, "host: the 2D a DS dot at a time (KHDAYS_2D_SPARSE): %s%s\n", sparse_2d ? "on" : "off",
+                sparse_2d && !pre_shared ? ", but the card can't read and write its verdicts in one pass: off" : "");
+    }
+    return sparse_2d && pre_shared && spread_pipeline != NULL && spread_groups[0] != NULL && spread_groups[1] != NULL;
+}
+
+/* KHDAYS_PERF: how many dots spread2d.hlsl listed for engine e's screen, and why (SPREAD_WHY_*), read back from
+ * the card (the frame's work so far submitted and waited for: every 300 pictures only). */
+static int spread_report(int e, SDL_GPUCommandBuffer **cmd)
+{
+    static const char *const why[SPREAD_WHYS] = {"a replacement's or element's texel", "the 3D read", "only the 3D there",
+                                                 "the 3D alone allowed", "split", "backdrop a second target",
+                                                 "wide"};
+    SDL_GPUTransferBufferCreateInfo info;
+    SDL_GPUTransferBuffer *download;
+    SDL_GPUCopyPass *copy;
+    SDL_GPUFence *fence;
+    SDL_zero(info);
+    info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    info.size = 1024;
+    download = SDL_CreateGPUTransferBuffer(device, &info);
+    if (download == NULL) {
+        return 1; /* (no report this time; the frame goes on) */
+    }
+    copy = SDL_BeginGPUCopyPass(*cmd);
+    for (int k = 0; k < 2; ++k) {
+        SDL_GPUTextureRegion region;
+        SDL_GPUTextureTransferInfo to;
+        SDL_zero(region);
+        region.texture = pre2d[e];
+        region.x = k == 0 ? 0u : SPREAD_STATS_X;
+        region.y = k == 0 ? SPREAD_LIST_ROW : SPREAD_STATS_ROW;
+        region.w = k == 0 ? 1u : 8u;
+        region.h = 1;
+        region.d = 1;
+        SDL_zero(to);
+        to.transfer_buffer = download;
+        to.offset = (Uint32)k * 512u;
+        to.pixels_per_row = 64; /* rows 256 bytes apart, as Direct3D 12 places them */
+        to.rows_per_layer = 1;
+        SDL_DownloadFromGPUTexture(copy, &region, &to);
+    }
+    SDL_EndGPUCopyPass(copy);
+    fence = SDL_SubmitGPUCommandBufferAndAcquireFence(*cmd);
+    *cmd = SDL_AcquireGPUCommandBuffer(device);
+    if (fence == NULL || *cmd == NULL) {
+        /* the frame's work so far not submitted, or no command buffer for the rest: the frame fails */
+        if (fence != NULL) {
+            SDL_ReleaseGPUFence(device, fence);
+        }
+        SDL_ReleaseGPUTransferBuffer(device, download);
+        return 0;
+    }
+    if (SDL_WaitForGPUFences(device, true, &fence, 1)) {
+        const uint32_t *w = (const uint32_t *)SDL_MapGPUTransferBuffer(device, download, false);
+        if (w != NULL) {
+            char line[512];
+            int at = SDL_snprintf(line, sizeof(line), "host: engine %c listed %u dots to compose at each texel (",
+                                  e == 0 ? 'A' : 'B', (unsigned)w[0]);
+            for (unsigned b = 0; b < SPREAD_WHYS && at > 0 && at < (int)sizeof(line); ++b) {
+                at += SDL_snprintf(line + at, sizeof(line) - (size_t)at, "%s%s %u", b ? ", " : "", why[b],
+                                   (unsigned)w[128 + b]);
+            }
+            fprintf(stderr, "%s)\n", line);
+            SDL_UnmapGPUTransferBuffer(device, download);
+        }
+    }
+    SDL_ReleaseGPUFence(device, fence);
+    SDL_ReleaseGPUTransferBuffer(device, download);
+    return 1;
 }
 
 static int coarse_now(void)
@@ -2024,6 +2159,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         }
         compose_engine[e] =
             compose_for(((const uint32_t *)(mapped + at))[KD_WIDE], ((const uint32_t *)(mapped + at))[KD_FLAGS]);
+        sent_flags[e] = ((const uint32_t *)(mapped + at))[KD_FLAGS]; /* (KDF_SPLIT, KDF_FINE: the card's, not the game's) */
         at += KHDAYS_DESC_WORDS * 4;
         memcpy(mapped + at, p->palette2d + 0x400 * e, 0x400);
         at += 0x400;
@@ -2396,6 +2532,113 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
          * pixel, to measure. Decided before the DS-sized pass below, which it replaces: that pass still starts a
          * thread at every output pixel, and from 3x up it was always the one taken -- the setting did nothing
          * there (the Thor at 5x: the same 42 pictures a second with it on or off). */
+        /* The 2D a DS dot at a time (sparse_now): the DS-sized pass gives each dot a verdict, spread2d.hlsl writes
+         * the texels of the dots alike at every place in them (and those the one-screen picture leaves to the 3D)
+         * and lists the rest, and the composition then runs only at the listed dots' texels. Exact: the listed
+         * texels are composed as before, the others are given what the composition would give them. Not past the
+         * verdicts' columns, below 3x (the Air Mini's Mali at 2x: 49 pictures a second so, 54 with Fast 2D; at 3x
+         * 32 so, 27 with Fast 2D, 26 composed at each texel), for a screen that shows the 3D (most of its dots would be
+         * listed; the one-screen picture's source is split from the 3D and has none), nor for the check, nor for the
+         * picture KHDAYS_GFX=savings draws again to compare (`reference`): that one is composed at each texel. */
+        const int split = one != NULL && !(e == 0 && whole_a);
+        const int sparse = sparse_now() && (scale >= PRE_SCALE_MIN || (sparse_2d == 2 && scale > 1)) &&
+                           screen_columns[e] <= PRE_COLUMNS &&
+                           (cp.source3d == 0u || split) && !checked_whole() && !reference && !gpu_skip("sparse");
+        if (sparse) {
+            Spread2dParams sp;
+            SDL_GPUStorageTextureReadWriteBinding sio[6];
+            SDL_GPUStorageBufferReadWriteBinding sbuf;
+            SDL_GPUComputePass *spass;
+            /* the verdicts (pre_mode 1): a thread a DS dot */
+            io[6].cycle = true;
+            cp.pre_mode = 1u;
+            pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
+            SDL_BindGPUComputePipeline(pass, compose_engine[e]);
+            SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
+            for (int k = 0; k < part_count; ++k) {
+                cp.origin_x = (uint32_t)parts[k][0];
+                cp.origin_y = (uint32_t)parts[k][1];
+                compose_params(cmd, &cp);
+                SDL_DispatchGPUCompute(pass, (uint32_t)(parts[k][2] - parts[k][0] + 7) / 8,
+                                       (uint32_t)(parts[k][3] - parts[k][1] + 7) / 8, 1);
+            }
+            SDL_EndGPUComputePass(pass);
+            gpu_split(device, &cmd, e == 0 ? "pre A" : "pre B");
+            /* the list emptied, then the dots spread or listed (each part's texels) */
+            SDL_zeroa(sio);
+            sio[0].texture = pre2d[e];
+            sio[1].texture = screen[e];
+            sio[2].texture = io[0].texture; /* the 3D's targets and the HUD's apart (or the dummies), read only */
+            sio[3].texture = io[1].texture;
+            sio[4].texture = io[3].texture;
+            sio[5].texture = io[4].texture;
+            SDL_zero(sbuf);
+            sbuf.buffer = spread_groups[e];
+            SDL_zero(sp);
+            static int perf = -1, spread_pictures[2];
+            if (perf < 0) {
+                perf = SDL_getenv("KHDAYS_PERF") != NULL;
+            }
+            sp.flags = SPREAD_RESET | (perf ? SPREAD_STATS : 0u);
+            spass = SDL_BeginGPUComputePass(cmd, sio, 6, &sbuf, 1);
+            SDL_BindGPUComputePipeline(spass, spread_pipeline);
+            compose_params(cmd, &cp);
+            SDL_PushGPUComputeUniformData(cmd, 1, &sp, sizeof(sp));
+            SDL_DispatchGPUCompute(spass, 64, 2, 1); /* a thread a word of the dots' flags (SPREAD_FLAG_WORDS) */
+            SDL_EndGPUComputePass(spass);
+            sp.flags = ((sent_flags[e] & KDF_SPLIT) != 0u ? SPREAD_SPLIT : 0u) |
+                       ((sent_flags[e] & KDF_FINE) != 0u ? SPREAD_FINE : 0u) | (perf ? SPREAD_STATS : 0u) |
+                       (gpu_skip("spreadall") ? SPREAD_ALL : 0u);
+            /* the 3D read at each texel where only it lies over the backdrop, as compose2d.hlsl reads it there
+             * (raster3d_at.hlsli: the card's 3D, at any scale) */
+            if (e == 0 && raster && cp.source3d == 2u) {
+                const uint32_t bd = p->desc2d[e][KD_BACKDROP] & 0x7fffu;
+                sp.flags |= SPREAD_SOLID;
+                sp.hofs3d = p->desc2d[e][KD_HOFS3D];
+                /* compose.h kd_fine */
+                for (uint32_t n = 0; n < 3; ++n) {
+                    const uint32_t c = (bd >> (5u * n)) & 31u;
+                    sp.backdrop8 |= ((c << 3) | (c >> 2)) << (8u * n);
+                }
+            }
+            spass = SDL_BeginGPUComputePass(cmd, sio, 6, &sbuf, 1);
+            SDL_BindGPUComputePipeline(spass, spread_pipeline);
+            compose_params(cmd, &cp);
+            for (int k = 0; k < part_count && !gpu_skip("spread"); ++k) {
+                sp.origin_x = (uint32_t)parts[k][0];
+                sp.origin_y = (uint32_t)parts[k][1];
+                sp.dots_w = (uint32_t)SDL_min(parts[k][2], screen_columns[e]);
+                sp.dots_h = (uint32_t)SDL_min(parts[k][3], KHDAYS_FRAME_H);
+                SDL_PushGPUComputeUniformData(cmd, 1, &sp, sizeof(sp));
+                SDL_DispatchGPUCompute(spass, ((uint32_t)(parts[k][2] - parts[k][0]) * (uint32_t)scale + 7) / 8,
+                                       ((uint32_t)(parts[k][3] - parts[k][1]) * (uint32_t)scale + 7) / 8, 1);
+            }
+            SDL_EndGPUComputePass(spass);
+            gpu_split(device, &cmd, e == 0 ? "spread A" : "spread B");
+            /* the listed dots' texels, composed */
+            io[2].cycle = false;
+            io[6].cycle = false;
+            cp.pre_mode = 2u;
+            cp.list = 1u;
+            cp.origin_x = cp.origin_y = 0u;
+            pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
+            SDL_BindGPUComputePipeline(pass, compose_engine[e]);
+            SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
+            compose_params(cmd, &cp);
+            if (!gpu_skip(e == 0 ? "2da" : "2db")) {
+                SDL_DispatchGPUComputeIndirect(pass, spread_groups[e], 0);
+            }
+            SDL_EndGPUComputePass(pass);
+            gpu_split(device, &cmd, e == 0 ? "2d A" : "2d B");
+            if (perf && ++spread_pictures[e] % 300 == 0 && !spread_report(e, &cmd)) {
+                if (cmd != NULL) {
+                    SDL_CancelGPUCommandBuffer(cmd);
+                }
+                valid = 0;
+                return 0; /* (SDL's error says why) */
+            }
+            continue;
+        }
         static FineParts fine;
         int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && scale > 1 &&
                      !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
