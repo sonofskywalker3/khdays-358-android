@@ -3299,6 +3299,10 @@ static void prepare_breakthrough(int scale)
     }
 }
 
+/* The text's HD images drawn by the window over the finished picture, at a scale finer than the 2D's (a
+ * weaker card's coarse 2D: host/render/text_overlay.h): KES_OVERLAY on their elements, else 0. Set by emit. */
+static uint32_t overlay_slot;
+
 static void emit_obtained(void)
 {
     Canvas *c = &obtained.canvas;
@@ -3320,7 +3324,7 @@ static void emit_obtained(void)
                 khdays_ui_emit(KHDAYS_UI_TEXT, &e);
                 if (c->hd_image >= 0) {
                     e.image = c->hd_image;
-                    e.slot |= KES_DIRECT | KES_FINE;
+                    e.slot |= KES_DIRECT | KES_FINE | overlay_slot;
                     khdays_ui_emit(KHDAYS_UI_TEXT, &e);
                 }
             }
@@ -3437,12 +3441,16 @@ static void emit(void)
     clock_t elapsed[5] = {0};
     int profiled_glyphs = 0;
     const int scale = khdays_ui_scale();
+    /* the canvases' HD images: at the 2D's scale in the composition, or finer and drawn apart */
+    const int apart = khdays_host_text_scale();
+    const int hd_scale = apart > scale ? apart : scale;
     uint32_t palettes[2] = {0};
     unsigned palettes_valid = 0;
+    overlay_slot = apart > scale ? KES_OVERLAY : 0u;
     khdays_ui_information_begin();
     khdays_ui_mission_panel_emit();
     khdays_ui_obtained_begin();
-    prepare_obtained(scale);
+    prepare_obtained(hd_scale);
     prepare_obtained_sequence(scale);
     prepare_breakthrough(scale);
     for (int i = 0; i < canvas_count; ++i) {
@@ -3504,7 +3512,7 @@ static void emit(void)
             palettes[c->engine] = khdays_ui_palette_hash(c->engine);
             palettes_valid |= 1u << c->engine;
         }
-        build_extra(c, &l, ox, oy, scale, palettes[c->engine]);
+        build_extra(c, &l, ox, oy, hd_scale, palettes[c->engine]);
         if (profile)
             elapsed[2] += clock() - stamp;
         if (tracing() && c->said_shown != 1) {
@@ -3520,7 +3528,7 @@ static void emit(void)
             stamp = clock();
         }
         if (c->cells)
-            build_hd(c, scale, palettes[c->engine]);
+            build_hd(c, hd_scale, palettes[c->engine]);
         if (profile) {
             elapsed[4] += clock() - stamp;
             stamp = clock();
@@ -3583,7 +3591,7 @@ static void emit(void)
                     khdays_ui_emit(KHDAYS_UI_TEXT, &e);
                     if (c->hd_image >= 0) {
                         e.image = c->hd_image;
-                        e.slot = (uint32_t)c->bg | KES_DIRECT | KES_FINE;
+                        e.slot = (uint32_t)c->bg | KES_DIRECT | KES_FINE | overlay_slot;
                         khdays_ui_emit(KHDAYS_UI_TEXT, &e);
                         e.image = c->image;
                         e.slot = (uint32_t)c->bg;
@@ -3611,7 +3619,7 @@ static void emit(void)
             khdays_ui_emit_following(KHDAYS_UI_TEXT, &e, &anchor);
             if (m->hd_image >= 0) {
                 e.image = m->hd_image;
-                e.slot |= KES_DIRECT | KES_FINE;
+                e.slot |= KES_DIRECT | KES_FINE | overlay_slot;
                 khdays_ui_emit_following(KHDAYS_UI_TEXT, &e, &anchor);
             }
             for (int my = 0; my < EXTRA_ROWS; ++my) {

@@ -42,6 +42,9 @@ float khdays_host_frame_widen(void);
  * finer; 1 when headless), for what the game thread draws at that resolution (the port's own elements:
  * HD text, the KH2 HUD's pictures). It only changes between frames. */
 int khdays_host_frame_scale(void);
+/* The scale the text drawn apart from the picture is made at (host/render/text_overlay.h), or 0 when the
+ * text goes into the composition as the other elements do. It only changes between frames. */
+int khdays_host_text_scale(void);
 
 /* Whether the settings key would do something now: open the settings menu, or with the Menu Overhaul the
  * pause it opens over an HD video or a monologue. 0 in the middle of play on one screen with the Overhaul

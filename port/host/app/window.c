@@ -95,6 +95,7 @@ static SDL_AtomicInt mailbox; /* = 2 at the start */
 static SDL_AtomicInt wants;   /* KHDAYS_WANT_* */
 static SDL_AtomicInt columns; /* how wide the 3D should be, in DS pixels (256 is the DS's width) */
 static SDL_AtomicInt scale;   /* the internal resolution the picture is composed at */
+static SDL_AtomicInt text_scale; /* the text drawn apart from the picture: its images' scale, or 0 */
 
 static SDL_Mutex *input_lock;
 static KhdaysInputSnapshot input;
@@ -223,6 +224,7 @@ static void tell_game(void)
     SDL_SetAtomicInt(&wants, khdays_present_wants());
     SDL_SetAtomicInt(&columns, khdays_present_columns());
     SDL_SetAtomicInt(&scale, khdays_present_scale());
+    SDL_SetAtomicInt(&text_scale, khdays_present_text_scale());
 }
 
 /* The window as [video] display and resolution say (profile.h KhdaysDisplay): a window (that size,
@@ -1472,6 +1474,11 @@ int khdays_host_frame_scale(void)
 {
     const int n = SDL_GetAtomicInt(&started) ? SDL_GetAtomicInt(&scale) : 1;
     return n < 1 ? 1 : n;
+}
+
+int khdays_host_text_scale(void)
+{
+    return SDL_GetAtomicInt(&started) ? SDL_GetAtomicInt(&text_scale) : 0;
 }
 
 KhdaysFramePackage *khdays_host_frame_begin(void)

@@ -56,7 +56,7 @@ static void image_shape(KhdaysShape *shape, const uint32_t *r, uint32_t lower, f
 {
     uint32_t *dst = shape->words;
     memset(dst, 0, KO_WORDS * sizeof(*dst));
-    dst[KO_FLAGS] = KOF_IMAGE | lower;
+    dst[KO_FLAGS] = KOF_IMAGE | lower | ((r[KE_SLOT] & KES_OVERLAY) ? KOF_OVERLAY : 0u);
     dst[KO_KEYS] = r[KE_IMAGE];
     const float opacity = 1;
     memcpy(dst + KO_OPACITY, &opacity, 4);

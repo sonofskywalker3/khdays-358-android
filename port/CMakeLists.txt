@@ -778,6 +778,7 @@ target_sources(khdays-native PRIVATE
     host/screens/layout_editor_screen.c   # moving the HUD's groups and those controls
     host/screens/layout_demo.c            # ... with no one at the mouse, for a film of it
     host/render/onescreen_images.c
+    host/render/text_overlay.c            # the text drawn apart, over a coarse picture
     host/screens/layout_screen.c           # the port's screens drawn from a mod's pieces
     host/screens/save_screen.c             # the port's save list on the screen
     host/screens/cine_screen.c             # MODO CINE's list as the HD theater's chapters
@@ -1192,7 +1193,8 @@ add_test(NAME khdays-mod-polygon COMMAND khdays-mod-polygon-test)
 # The one-screen picture: the compositions' places and the port's own file, the pass's steps and the 2D
 # apart from the 3D, on the CPU.
 add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/hud_layout.c ui/situation.c ui/situation_decide.c
-                                     host/render/png_io.c host/render/onescreen_images.c)
+                                     host/render/png_io.c host/render/onescreen_images.c
+                                     host/render/text_overlay.c)
 target_include_directories(khdays-onescreen-test PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(khdays-onescreen-test PRIVATE khdays-gfx SDL3::SDL3)
 target_compile_definitions(khdays-onescreen-test PRIVATE "KHDAYS_PORT_COMPOSITIONS_FILE=\"${KHDAYS_PORT_COMPOSITIONS}\""

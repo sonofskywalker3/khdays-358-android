@@ -983,6 +983,8 @@ KD_FN uint kd_element_texel(uint e, int x, int row)
     const uint base = e * KE_WORDS;
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u && (KD_ELEMENT(base + KE_SLOT) & KES_PICTURE) != 0u)
         return 0u;
+    if ((KD_ELEMENT(base + KE_SLOT) & KES_OVERLAY) != 0u)
+        return 0u; /* the window's, over the finished picture */
     const float ex = KD_ASFLOAT(KD_ELEMENT(base + KE_X)), ey = KD_ASFLOAT(KD_ELEMENT(base + KE_Y));
     const float ew = KD_ASFLOAT(KD_ELEMENT(base + KE_W)), eh = KD_ASFLOAT(KD_ELEMENT(base + KE_H));
     const uint iw = KD_ELEMENT(base + KE_IW), ih = KD_ELEMENT(base + KE_IH);

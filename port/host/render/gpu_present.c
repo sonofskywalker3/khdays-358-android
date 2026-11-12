@@ -9,6 +9,7 @@
 #include "gpu_raster3d.h"
 #include "../movies/movie_hd.h"
 #include "../movies/movie_subtitles.h"
+#include "text_overlay.h"
 #include "../../runtime/menus/newgame.h"
 #include "onescreen.h"
 #include "png_io.h"
@@ -366,6 +367,7 @@ static void destroy(void)
         hd_movie = NULL;
     }
     khdays_movie_subtitles_release();
+    khdays_text_overlay_close();
     port2d_drawn = 0;
     if (port2d_ready) {
         khdays_gfx_render_close(); /* close it before the renderer and the device */
@@ -521,22 +523,24 @@ static int scale2d_now(int n3d)
 {
     const float s = shown_scale();
     int n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
-#if defined(__ANDROID__)
     {
         /* a tablet's screen is 9 to 12 times the DS's: the 2D composed at that costs the card 100 ms and more a
-         * picture, so on one display it stops at android_2d_cap and is stretched the rest of the way. Two
-         * displays (the Thor's) keep the window's: 59.8 fps there at 2x. KHDAYS_2D_CAP sets another, for
-         * measuring */
+         * picture, so on one Android display it stops at android_2d_cap and is stretched the rest of the way.
+         * Two displays (the Thor's) keep the window's: 59.8 fps there at 2x. KHDAYS_2D_CAP sets another, for
+         * measuring, and on a PC for seeing what such a device shows */
         static int asked = -1;
         int cap;
         if (asked < 0) {
             const char *e = SDL_getenv("KHDAYS_2D_CAP");
             asked = e != NULL && SDL_atoi(e) > 0 ? SDL_atoi(e) : 0;
         }
+#if defined(__ANDROID__)
         cap = asked > 0 ? asked : two_displays ? 0 : android_2d_cap;
+#else
+        cap = asked;
+#endif
         n = cap > 0 && n > cap ? cap : n;
     }
-#endif
     if (port2d_mode == 2 || n < n3d) {
         n = n3d;
     }
@@ -581,6 +585,16 @@ int khdays_present_columns(void)
 int khdays_present_scale(void)
 {
     return port2d_ready && device != NULL ? scale2d_now(scale_now()) : 1;
+}
+
+int khdays_present_text_scale(void)
+{
+    /* only while the one-screen picture is what shows: nothing else draws the overlay's elements */
+    if (!port2d_ready || device == NULL || !video.one_screen || !one_drawn) {
+        return 0;
+    }
+    return khdays_text_overlay_scale(scale2d_now(scale_now()), shown_scale(), khdays_onescreen_scene(),
+                                     khdays_onescreen_states());
 }
 
 /* Lays out the picture for its width now: the two screens one above the other or side by side
@@ -1638,6 +1652,12 @@ static void present_now(const KhdaysFramePackage *p, int first)
         khdays_gfx_render_set_coarse_2d(video.fast_2d == KHDAYS_FAST_2D_ON ||
                                         (video.fast_2d == KHDAYS_FAST_2D_AUTO && weaker_card));
         khdays_gfx_render_set_savings(video.partial_2d, video.keep_screens);
+        /* the text drawn apart (text_overlay.h): whose each marked element is, before anything composes them.
+         * A picture the card reads back keeps them all: the 3D on both screens' capture, a screen blend's
+         * frame, the 2D's check. (The package is the window's own until the next one; the marks taken off
+         * stay off when it is drawn again.) */
+        khdays_text_overlay_take((KhdaysFramePackage *)p, picture ? &one : NULL,
+                                 !p->capture && !blend_frame && port2d_mode != 2);
         if (picture) {
             SDL_GPUTexture *c3d = NULL, *a3d = NULL;
             int raster_columns = one.columns;
@@ -1657,6 +1677,9 @@ static void present_now(const KhdaysFramePackage *p, int first)
             }
             one_drawn = drawn;
             one_made = one_made || drawn;
+            if (!drawn) {
+                khdays_text_overlay_clear();
+            }
             /* the room change's quad, in the list this picture was drawn from, when its 3D shows in it */
             find_wipe(raster && p->field_wipe && one_kind == KHDAYS_SCREENS_UPPER && p->upper == 0
                           ? (list != NULL ? list : &p->list3d)
@@ -2216,6 +2239,7 @@ void khdays_present_draw(void)
             one_at_w = at.w;
             SDL_SetTextureScaleMode(picture, mode_for(picture, at.w, at.h));
             SDL_RenderTexture(renderer, picture, NULL, &at);
+            khdays_text_overlay_draw(renderer, at.x);
             if (wipe.on) {
                 draw_wipe(&at);
             }

@@ -454,6 +454,24 @@ int khdays_ui_scale(void)
 {
     return test_scale;
 }
+static int test_text_scale; /* the scale the window asks the text drawn apart at, 0 none */
+int khdays_host_text_scale(void)
+{
+    return test_text_scale;
+}
+/* How many of the last emit's HD elements there are, and how many of them are marked to be drawn apart. */
+static int fine_submissions(int *apart)
+{
+    int fine = 0;
+    *apart = 0;
+    for (int i = 0; i < submission_count; ++i) {
+        if (submissions[i].slot & KES_FINE) {
+            ++fine;
+            *apart += (submissions[i].slot & KES_OVERLAY) != 0;
+        }
+    }
+    return fine;
+}
 void khdays_ui_register(int part, void (*fn)(void))
 {
     (void)part;
@@ -1485,6 +1503,21 @@ static void fitted_duplicate_tail_tests(void)
             }
         }
         CHECK(primary_right == 53 * test_scale - 1 && duplicate_right == primary_right);
+    }
+    {
+        /* Drawn apart from a coarse picture (host/render/text_overlay.h): the HD images at the finer scale
+         * the window asks for and their elements marked; at the 2D's again, unmarked, once it no longer asks. */
+        int apart = 0;
+        test_scale = 2;
+        test_text_scale = 6;
+        submission_count = 0;
+        emit();
+        CHECK(c->hd_scale == 6 && c->extra->scale == 6);
+        CHECK(fine_submissions(&apart) > 0 && apart == fine_submissions(&apart));
+        test_text_scale = 0;
+        submission_count = 0;
+        emit();
+        CHECK(c->hd_scale == 2 && fine_submissions(&apart) > 0 && apart == 0);
     }
     test_scale = 8;
     emit(); /* Settle the primary image's scale-change invalidation. */

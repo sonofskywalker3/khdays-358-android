@@ -21,6 +21,7 @@
 #define KOF_3D 0x8000u           /* `3d`: the 3D at the texel (the backdrop where none is), not its source */
 #define KOF_IMAGE 0x10000u       /* an independent RGBA image; KO_KEYS holds its replacement id */
 #define KOF_NATIVE_FADE 0x20000u /* image group: apply its native layer's fade after composing its images */
+#define KOF_OVERLAY 0x40000u     /* an image the window draws over the finished picture (KES_OVERLAY): not the pass's */
 
 #define KO_SRC_X 1 /* float: the source rectangle, DS dots of its screen */
 #define KO_SRC_Y 2
@@ -179,8 +180,8 @@ KO_FN uint ko_pixel(float px, float py, float texel, uint x3d, uint shape_count,
         float ax = texel / sx, ay = 0.0f, bx = 0.0f, by = texel / sy;
         uint colour;
         /* a repeated shape keeps its own rows (repeat x) or columns (repeat y) */
-        if (!(((px >= x1 && px <= x2) || (flags & KOF_REPEAT_X) != 0u) &&
-              ((py >= y1 && py <= y2) || (flags & KOF_REPEAT_Y) != 0u))) {
+        if ((flags & KOF_OVERLAY) != 0u || !(((px >= x1 && px <= x2) || (flags & KOF_REPEAT_X) != 0u) &&
+                                             ((py >= y1 && py <= y2) || (flags & KOF_REPEAT_Y) != 0u))) {
             continue;
         }
         if ((flags & KOF_3D) != 0u) {

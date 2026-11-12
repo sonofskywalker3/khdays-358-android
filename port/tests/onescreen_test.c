@@ -6,6 +6,9 @@
 #include "../ui/hud_options.h"
 #include "../host/render/png_io.h"
 #include "../host/render/onescreen_images.h"
+#include "../host/render/text_overlay.h"
+#include "../runtime/mods/textures.h"
+#include "../ui/situation.h"
 #include "../runtime/display/frame_package.h"
 
 #include <math.h>
@@ -1982,8 +1985,123 @@ static void test_touch(void)
     CHECK(khdays_composition_touch(&c, 100.0f, 50.0f, &screen, &sx, &sy) == 0);
 }
 
+/* (text_overlay.c's textures: none is made here) */
+const KhdaysTextureReplacement *khdays_textures_replacement(int id)
+{
+    (void)id;
+    return NULL;
+}
+uint32_t khdays_textures_version(int id)
+{
+    (void)id;
+    return 0;
+}
+void khdays_textures_read_begin(int id)
+{
+    (void)id;
+}
+void khdays_textures_read_end(int id)
+{
+    (void)id;
+}
+
+/* The text drawn apart: where its elements land in the picture, and when it is. */
+static void test_text_overlay(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    uint32_t records[3 * KE_WORDS] = {0}, shapes[3 * KO_WORDS] = {0};
+    KhdaysOneScreenDraw one = {0};
+    const KhdaysTextPiece *pieces;
+    int count = 0;
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    /* a coarse 2D under a window 5 times the DS's: apart in the field, not in a menu or with a fine 2D */
+    CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_FIELD, 0) == 5);
+    CHECK(khdays_text_overlay_scale(2, 9.6f, KHDAYS_SIT_FIELD, 0) == 6);
+    CHECK(khdays_text_overlay_scale(4, 5.0f, KHDAYS_SIT_FIELD, 0) == 0);
+    CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_CAMP_MENU, 0) == 0);
+    CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_TUTORIAL, 0) == 0);
+    CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_EVENT) == 0);
+    /* the upper screen's rows 100-160 at 1.5 times their size from (10, 120), and an image of the pass's */
+    put_float(shapes, KO_SRC_X, 0), put_float(shapes, KO_SRC_Y, 100);
+    put_float(shapes, KO_SRC_W, 256), put_float(shapes, KO_SRC_H, 60);
+    put_float(shapes, KO_DST_X1, 10), put_float(shapes, KO_DST_Y1, 120);
+    put_float(shapes, KO_DST_X2, 10 + 256 * 1.5f), put_float(shapes, KO_DST_Y2, 120 + 60 * 1.5f);
+    put_float(shapes, KO_SCALE_X, 1.5f), put_float(shapes, KO_SCALE_Y, 1.5f);
+    shapes[KO_WORDS + KO_FLAGS] = KOF_IMAGE | KOF_OVERLAY | KOF_NATIVE_FADE;
+    shapes[KO_WORDS + KO_KEYS] = 9;
+    put_float(shapes + KO_WORDS, KO_SRC_W, 80), put_float(shapes + KO_WORDS, KO_SRC_H, 40);
+    put_float(shapes + KO_WORDS, KO_DST_X1, 4), put_float(shapes + KO_WORDS, KO_DST_Y1, 6);
+    put_float(shapes + KO_WORDS, KO_DST_X2, 24), put_float(shapes + KO_WORDS, KO_DST_Y2, 16);
+    put_float(shapes + KO_WORDS, KO_SCALE_X, 0.25f), put_float(shapes + KO_WORDS, KO_SCALE_Y, 0.25f);
+    put_float(shapes + KO_WORDS, KO_IMAGE_ALPHA, 0.5f);
+    shapes[2 * KO_WORDS + KO_FLAGS] = KOF_IMAGE; /* (not the overlay's) */
+    put_float(shapes + 2 * KO_WORDS, KO_SCALE_X, 1), put_float(shapes + 2 * KO_WORDS, KO_SCALE_Y, 1);
+    /* inside the shape's rows; across their top; and one the composition keeps */
+    records[KE_SLOT] = KES_DIRECT | KES_FINE | KES_OVERLAY | 1;
+    records[KE_IMAGE] = 7, records[KE_IW] = 320, records[KE_IH] = 80;
+    put_float(records, KE_X, 16), put_float(records, KE_Y, 110), put_float(records, KE_W, 64);
+    put_float(records, KE_H, 16);
+    records[KE_WORDS + KE_SLOT] = KES_DIRECT | KES_FINE | KES_OVERLAY | 2;
+    records[KE_WORDS + KE_IMAGE] = 8, records[KE_WORDS + KE_IW] = 100, records[KE_WORDS + KE_IH] = 100;
+    put_float(records + KE_WORDS, KE_X, 0), put_float(records + KE_WORDS, KE_Y, 90);
+    put_float(records + KE_WORDS, KE_W, 20), put_float(records + KE_WORDS, KE_H, 20);
+    records[2 * KE_WORDS + KE_SLOT] = KES_DIRECT | KES_FINE | 1;
+    records[2 * KE_WORDS + KE_IMAGE] = 6, records[2 * KE_WORDS + KE_IW] = 16, records[2 * KE_WORDS + KE_IH] = 16;
+    put_float(records + 2 * KE_WORDS, KE_X, 16), put_float(records + 2 * KE_WORDS, KE_Y, 110);
+    put_float(records + 2 * KE_WORDS, KE_W, 8), put_float(records + 2 * KE_WORDS, KE_H, 8);
+    p->upper = 0;
+    p->elements[0].records = records;
+    p->elements[0].count = 3;
+    /* the upper screen half way down to black; BG2 blended at 4 of 16 over the backdrop */
+    uint32_t kept[3 * KE_WORDS];
+    p->desc2d[0][KD_MASTER] = (2u << 14) | 8u;
+    p->desc2d[0][KD_BLEND] = (1u << 2) | 0x2000u | (1u << 16);
+    p->desc2d[0][KD_COEF] = 4u;
+    one.shapes = shapes;
+    one.shape_count = 3;
+    one.rule = KOB_OWN;
+    one.columns = 342;
+    memcpy(kept, records, sizeof(kept));
+    khdays_text_overlay_take(p, &one, 1);
+    pieces = khdays_text_overlay_pieces(&count);
+    CHECK(count == 3);
+    if (count == 3) {
+        /* the last shape's first: the pass's image, then the screen's elements, the topmost last; each as
+         * dark as the screen, its opacity its own */
+        CHECK(pieces[0].image == 9 && pieces[0].src[2] == 80 && pieces[0].dst[0] == 4 && pieces[0].dst[2] == 20);
+        CHECK(fabsf(pieces[0].alpha - 0.5f) < .001f && fabsf(pieces[0].shade - 0.5f) < .001f);
+        CHECK(pieces[1].image == 8 && pieces[1].src[1] == 50 && pieces[1].src[3] == 50 && pieces[1].src[2] == 100);
+        CHECK(pieces[1].dst[0] == 10 && pieces[1].dst[1] == 120 && pieces[1].dst[2] == 30 && pieces[1].dst[3] == 15);
+        CHECK(fabsf(pieces[1].alpha - 0.25f) < .001f);
+        CHECK(pieces[2].image == 7 && pieces[2].src[0] == 0 && pieces[2].src[2] == 320 && pieces[2].src[3] == 80);
+        CHECK(pieces[2].dst[0] == 34 && pieces[2].dst[1] == 135 && pieces[2].dst[2] == 96 && pieces[2].dst[3] == 24);
+        CHECK(pieces[2].alpha == 1.0f && fabsf(pieces[2].shade - 0.5f) < .001f);
+    }
+    CHECK((records[KE_SLOT] & KES_OVERLAY) && (shapes[KO_WORDS + KO_FLAGS] & KOF_OVERLAY));
+    /* a shape that fades along an edge keeps its text in the composition; the pass's image stays apart */
+    shapes[KO_FLAGS] |= KOF_WEIGHT;
+    put_float(shapes, KO_OPACITY, 1), put_float(shapes, KO_FADE + 2, 12);
+    khdays_text_overlay_take(p, &one, 1);
+    khdays_text_overlay_pieces(&count);
+    CHECK(count == 1 && !(records[KE_SLOT] & KES_OVERLAY) && !(records[KE_WORDS + KE_SLOT] & KES_OVERLAY));
+    /* a picture that is read back, or not the one-screen picture: every mark taken off */
+    memcpy(records, kept, sizeof(kept));
+    put_float(shapes, KO_FADE + 2, 0);
+    khdays_text_overlay_take(p, &one, 0);
+    khdays_text_overlay_pieces(&count);
+    CHECK(count == 0 && !(records[KE_SLOT] & KES_OVERLAY) && !(shapes[KO_WORDS + KO_FLAGS] & KOF_OVERLAY));
+    memcpy(records, kept, sizeof(kept));
+    khdays_text_overlay_take(p, NULL, 1);
+    CHECK(!(records[KE_SLOT] & KES_OVERLAY) && !(records[KE_WORDS + KE_SLOT] & KES_OVERLAY));
+    khdays_text_overlay_clear();
+    free(p);
+}
+
 int main(void)
 {
+    test_text_overlay();
     test_places();
     test_real_file();
     test_field_hud_reference();

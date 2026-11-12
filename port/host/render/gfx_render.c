@@ -1614,7 +1614,8 @@ static void fine_parts(const KhdaysFramePackage *p, int e, int split, int (*part
         memcpy(&y, &w[KE_Y], 4);
         memcpy(&ew, &w[KE_W], 4);
         memcpy(&eh, &w[KE_H], 4);
-        if (w[KE_IW] == 0u || w[KE_IH] == 0u || (split && (w[KE_SLOT] & KES_PICTURE) != 0u)) {
+        if (w[KE_IW] == 0u || w[KE_IH] == 0u || (split && (w[KE_SLOT] & KES_PICTURE) != 0u) ||
+            (w[KE_SLOT] & KES_OVERLAY) != 0u) {
             continue; /* not drawn here (compose.h kd_element_texel) */
         }
         if (!finite_dots(x) || !finite_dots(y) || !finite_dots(ew) || !finite_dots(eh)) {

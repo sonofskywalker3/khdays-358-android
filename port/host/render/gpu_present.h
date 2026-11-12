@@ -37,6 +37,8 @@ int khdays_present_columns(void);
 
 /* The scale the port's 2D is composed at (1 without it): the window's, or the 3D's when that is finer. */
 int khdays_present_scale(void);
+/* The scale the text drawn apart from the one-screen picture is made at, or 0 (text_overlay.h). */
+int khdays_present_text_scale(void);
 
 /* The window changed size: the "window" resolution and aspect follow it. */
 void khdays_present_resized(void);

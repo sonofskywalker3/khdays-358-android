@@ -130,6 +130,26 @@ keys' buffer, BGR555), `KO_ASFLOAT(u)`, `KO_FLOOR(f)`, `KO_ABS(i)`, and
 `KO_SOURCE(lower, x, y)` (the source screen's texel at DS dots: the upper's as
 `kd_split` gives it, the lower's colour with alpha 0 on the backdrop).
 
+### The text drawn apart
+
+Where the 2D is composed at half the window's size or less (a weaker Android
+card: 2x under a 5x window), the HD font's strokes are thinner than a texel and
+come out grey. In the field and the day's card the text's HD images are then
+made at the window's size (6x at most), their elements marked `KES_OVERLAY`:
+the composition and the pass leave them out (an image placed by itself is a
+shape with `KOF_OVERLAY`), and `host/render/text_overlay.c` draws them over the
+finished picture, each where its screen's shapes put it. The window decides it
+for each picture before composing it and takes the mark off the others: a
+picture that is not the one-screen one, one the card reads back (the 3D on both
+screens' capture, a screen blend), an element under a shape that fades along an
+edge or turns its source over. They are over everything in the picture, and
+take the screens' master brightness, their layer's blend and their shape's
+`opacity` and `dim`, nothing else: the menus, whose lists pass under their
+frames, and the tutorial, whose page lies over the field, keep their text in
+the composition.
+`KHDAYS_TEXT_OVERLAY=0` turns it off; `KHDAYS_2D_CAP=2` on a PC composes the 2D
+as such a device does.
+
 ## The 3D
 
 `port/gfx/g3d.h` is the port's 3D geometry: it answers what NitroSystem and the
