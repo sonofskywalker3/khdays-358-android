@@ -657,6 +657,30 @@ static void save_settings(void)
     khdays_profile_save(khdays_settings_profile(), path, notice);
 }
 
+/* The system sends the port to the background (Android: Home, the recent apps, another app in front) or is about
+ * to end it: what the open menu changed is written now. A port put away with its menu open is often ended there
+ * without another word, and the change went with it (seen 2026-11-12: a setting changed, Home, the app closed --
+ * the file still the old one). Called as the event is sent, on the window's thread: its loop may not run again.
+ * Once written so, the file is ahead of the profile the menu opened with: whatever the menu holds when it is
+ * left, or when the port goes to the background again, is written too -- a change put back by hand included. */
+static int saved_in_background;
+
+static int settings_unsaved(void)
+{
+    return khdays_settings_profile_changed() || saved_in_background;
+}
+
+static bool SDLCALL keep_settings_in_background(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    if ((event->type == SDL_EVENT_WILL_ENTER_BACKGROUND || event->type == SDL_EVENT_TERMINATING) &&
+        khdays_settings_is_open() && settings_unsaved()) {
+        save_settings();
+        saved_in_background = 1;
+    }
+    return true;
+}
+
 /* Applies each change in the open menu as it is made: each part of the profile goes where it would go
  * when the menu closes. (The game gets no input while the menu is open, so
  * new controls take effect from the first press after it closes; the menu
@@ -805,7 +829,10 @@ static void close_settings(void)
                                      khdays_settings_profile()->save.autosave);
         khdays_boot_owner_name(); /* the nickname, for the next multiplayer session */
         tell_game();
+    } else if (saved_in_background) {
+        save_settings(); /* the menu left as it opened, the file not (keep_settings_in_background) */
     }
+    saved_in_background = 0;
     /* Whatever is still held (the button that closed the menu) only counts for
      * the game once it has been released, and the settings button that closed
      * the menu does not reopen it. */
@@ -983,6 +1010,10 @@ static int host_thread(void *unused)
     display_now(profile.video.display, profile.video.screen_resolution);
     khdays_present_set_video(&profile.video);
     renderer = window ? khdays_present_open(window, notice) : NULL;
+    if (!SDL_AddEventWatch(keep_settings_in_background, NULL)) {
+        fprintf(stderr, "host: settings changed in the open menu are not kept when the port is put away: %s\n",
+                SDL_GetError());
+    }
     frame_event = SDL_RegisterEvents(3);
     close_event = frame_event + 1;
     wake_event = frame_event + 2;
@@ -1127,7 +1158,7 @@ static int host_thread(void *unused)
         }
         mouse_follow(window);
         if (event.type == SDL_EVENT_QUIT) {
-            if (khdays_settings_is_open() && khdays_settings_profile_changed()) {
+            if (khdays_settings_is_open() && settings_unsaved()) {
                 save_settings(); /* closed with the menu open: keep what was changed */
             }
             khdays_plugins_quit(1000); /* stopped on the game's thread, if it answers within a second */
@@ -1136,7 +1167,7 @@ static int host_thread(void *unused)
         if (event.type == close_event) {
             if (khdays_settings_is_open()) {
                 khdays_clock_hold(KHDAYS_HOLD_SETTINGS, 0); /* a reset while the menu was open */
-                if (khdays_settings_profile_changed()) {
+                if (settings_unsaved()) {
                     save_settings(); /* keep what was changed, as closing the menu would */
                 }
             }
