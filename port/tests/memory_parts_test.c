@@ -96,11 +96,25 @@ int main(void)
         at += 400;
         at += (size_t)snprintf(text + at, sizeof(text) - at, "/x/name.so\nRss:   12 kB\n");
         khdays_memory_parts_take(&odd, text, at);
+        /* the Java runtime's mappings as one, and the system's files of an extension as one */
+        at = (size_t)snprintf(text, sizeof(text),
+                              "3000-4000 rw-p 00000000 00:00 0    [anon:dalvik-main space]\nRss:    3 kB\n"
+                              "4000-5000 rw-p 00000000 00:00 0    [anon:dalvik-/system/framework/boot.art]\n"
+                              "Rss:    4 kB\n"
+                              "5000-6000 r--p 00000000 fd:05 9    /system/framework/boot.oat\nRss:    5 kB\n"
+                              "6000-7000 r--p 00000000 fd:05 10   /data/dalvik-cache/"
+                              "system@framework@boot-framework-connectivity-common-and-more.oat (deleted)\n"
+                              "Rss:    6 kB\n");
+        khdays_memory_parts_take(&odd, text, at);
         khdays_memory_parts_end(&odd);
         p = named(&odd, "my file.bin (deleted)");
         CHECK(p != NULL && p->held_kb == 8);
         p = named(&odd, KHDAYS_MEMORY_PARTS_LONG);
-        CHECK(p != NULL && p->held_kb == 12 && odd.count == 2);
+        CHECK(p != NULL && p->held_kb == 12);
+        p = named(&odd, KHDAYS_MEMORY_PARTS_DALVIK);
+        CHECK(p != NULL && p->held_kb == 7 && p->mappings == 2);
+        p = named(&odd, "(.oat files)");
+        CHECK(p != NULL && p->held_kb == 11 && p->mappings == 2 && odd.count == 4);
     }
     return failures != 0;
 }

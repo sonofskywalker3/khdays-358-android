@@ -1,6 +1,8 @@
 /* What a program's memory is made of, from Linux's /proc/self/smaps: the memory held (Rss) and the count of
  * its mappings added up by the mappings' names, for the session log's memory line when the game's memory has
- * grown (session_log.c). Nothing here allocates: it is read when there may be no memory left to give. */
+ * grown (session_log.c). An Android program maps hundreds of the system's files, so the families that say
+ * nothing apart are added up as one: the Java runtime's own ("[anon:dalvik-...]" as "[anon:dalvik]") and the
+ * files of KHDAYS_MEMORY_PARTS_FAMILIES' extensions ("(.oat files)"); libraries and devices keep their names. Nothing here allocates: it is read when there may be no memory left to give. */
 #ifndef KHDAYS_RUNTIME_CORE_MEMORY_PARTS_H
 #define KHDAYS_RUNTIME_CORE_MEMORY_PARTS_H
 
@@ -10,10 +12,11 @@
 extern "C" {
 #endif
 
-#define KHDAYS_MEMORY_PARTS 48     /* names kept apart; the ones past them are added up as the last */
+#define KHDAYS_MEMORY_PARTS 384    /* names kept apart; the ones past them are added up as the last */
 #define KHDAYS_MEMORY_PART_NAME 48 /* a name's room: a file's name without its folders, cut at this */
 #define KHDAYS_MEMORY_PARTS_UNNAMED "(unnamed)"
 #define KHDAYS_MEMORY_PARTS_OTHERS "(others)"
+#define KHDAYS_MEMORY_PARTS_DALVIK "[anon:dalvik]"
 #define KHDAYS_MEMORY_PARTS_LONG "(long paths)" /* files whose path passes a line's room */
 
 typedef struct KhdaysMemoryPart {
