@@ -1829,7 +1829,8 @@ void khdays_present_set_video(const KhdaysVideo *given)
         (v->movies == KHDAYS_MOVIES_DS ? KHDAYS_HOST_MOVIES_DS : 0) |
         (v->movies == KHDAYS_MOVIES_HD || v->movies == KHDAYS_MOVIES_HD_SMOOTH ? KHDAYS_HOST_MOVIES_HD : 0) |
         (v->movies == KHDAYS_MOVIES_HD_SMOOTH ? KHDAYS_HOST_MOVIES_SMOOTH : 0) |
-        (v->one_screen ? KHDAYS_HOST_ONE_SCREEN : 0);
+        (v->one_screen ? KHDAYS_HOST_ONE_SCREEN : 0) |
+        (v->culling ? 0 : KHDAYS_HOST_NO_CULLING);
     khdays_subtitles_set(v->subtitles);
     if (v->internal_resolution != video.internal_resolution) {
         refused_scale = 0; /* try the new choice */

@@ -284,6 +284,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->keep_screens = 1;
     v->backend = KHDAYS_BACKEND_AUTO;
     v->hd_graphics = 1;
+    v->culling = 1;
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
     v->one_screen_second = 0; /* each screen on its own display */
@@ -1230,6 +1231,7 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } switches[] = {
             {"texture_smoothing", offsetof(KhdaysVideo, texture_smoothing)},
             {"hd_graphics", offsetof(KhdaysVideo, hd_graphics)},
+            {"culling", offsetof(KhdaysVideo, culling)},
             {"dump_graphics", offsetof(KhdaysVideo, dump_graphics)},
         };
         for (size_t i = 0; i < sizeof(switches) / sizeof(switches[0]); ++i) {
@@ -1835,7 +1837,11 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#                       (the DS's shape, black bars) or fullscreen (as tall as the display,\n"
             "#                       each screen laid out again for it, never stretched)\n"
             "second_screen_aspect = %s\n"
-            "texture_smoothing = %s\nhd_graphics = %s\ndump_graphics = %s\n"
+            "texture_smoothing = %s\nhd_graphics = %s\n"
+            "# culling: on or off -- what of a mod's models lies wholly past the view is left out before it\n"
+            "# is drawn (a big room mod runs faster); off draws all of it\n"
+            "culling = %s\n"
+            "dump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), hd-smooth (hd, their 60 fps versions in data/cutscenes/cinematics60\n"
             "#         first), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
@@ -1864,7 +1870,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp",
             v->second_screen_aspect == KHDAYS_SECOND_SCREEN_FULLSCREEN ? "fullscreen" : "original",
-            v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off", v->dump_graphics ? "on" : "off",
+            v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off", v->culling ? "on" : "off",
+            v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS          ? "ds"
             : v->movies == KHDAYS_MOVIES_PC        ? "pc"
             : v->movies == KHDAYS_MOVIES_HD_SMOOTH ? "hd-smooth"

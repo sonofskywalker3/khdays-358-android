@@ -119,6 +119,7 @@ enum KhdaysSettingId {
     KHDAYS_SET_SECOND_SCREEN, /* a second display: the lower screen's aspect ratio */
     KHDAYS_SET_TEXTURES,
     KHDAYS_SET_HD_GRAPHICS,
+    KHDAYS_SET_CULLING,
     KHDAYS_SET_DUMP_GRAPHICS,
     KHDAYS_SET_MOVIES,
     KHDAYS_SET_SUBTITLES,
