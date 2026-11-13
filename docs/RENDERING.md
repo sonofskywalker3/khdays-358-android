@@ -310,7 +310,10 @@ the 3D at its place as the composition does, `raster3d_at.hlsli`) and lists the
 DS pixels it can't; the composition runs on the listed pixels' output pixels
 alone, as many as the list holds (an indirect dispatch). The pictures are the
 same as composed at each pixel (`KHDAYS_GFX=savings` compares them).
-`KHDAYS_PERF` says how many pixels were listed and why. Measured 2026-11-12, one
+`KHDAYS_PERF` says how many pixels were listed and why. The composition's shader for it is
+`compose2d_sparse.hlsl` (`compose2d.hlsl` with `COMPOSE2D_SPARSE`), made the
+first time it is wanted; `compose2d.hlsl` itself is built without any of it,
+since its code alone, unused, made an Adreno 619's field slower. Measured 2026-11-12, one
 screen at the field: AYN Thor (Adreno 740, 5x) 39 to 60 pictures a second;
 Intel UHD 770 (8x) 41 to 29 ms a picture; AYANEO Air Mini (Mali-G76) at 3x 26
 to 32 (at 2x the DS-sized pass costs what it spares, so not there).

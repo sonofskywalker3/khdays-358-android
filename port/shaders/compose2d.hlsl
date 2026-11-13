@@ -33,7 +33,9 @@ ByteAddressBuffer hd : register(t7, space0);         // the replacements (host/r
 
 #define FINISH3D_SCALED
 #include "finish3d.hlsli"
+#if defined(COMPOSE2D_SPARSE)
 #include "raster3d_at.hlsli"
+#endif
 
 static uint g_fx, g_fy; // the output pixel's place inside its DS pixel
 static bool g_place_used; // KD_PLACE_USED said: a replacement's or an element's texel decides the colour
@@ -53,9 +55,27 @@ uint layer3d_read(uint x, int row)
     if (source3d == 1u) {
         return layer3d_mem.Load(((uint)row * 256u + x) * 4u);
     }
+#if defined(COMPOSE2D_SPARSE)
     if (source3d == 2u) {
         return raster3d_at(x, row, g_fx, g_fy);
     }
+#else
+    if (source3d == 2u && scale3d == scale) {
+        return finished3d((int)((x + offset3d) * scale + g_fx), (int)((uint)row * scale + g_fy));
+    }
+    if (source3d == 2u) {
+        // the 2D finer than the 3D: the 3D at this output pixel's middle, the HUD's drawn apart over it
+        const uint world =
+            finished3d_at(((float)(x + offset3d) + ((float)g_fx + 0.5f) / (float)scale) * (float)scale3d,
+                          ((float)row + ((float)g_fy + 0.5f) / (float)scale) * (float)scale3d);
+        if (hud3d == 0u) {
+            return world;
+        }
+        return over3d(finish3d_texel(hud_color3d, hud_attr3d, (int)hud_width, (int)hud_height,
+                                     (int)((x + offset3d) * scale + g_fx), (int)((uint)row * scale + g_fy)),
+                      world);
+    }
+#endif
     return 0u;
 }
 
@@ -131,8 +151,10 @@ uint layer_at(int b, int x, int row)
 #define KD_PLACE_USED() (g_place_used = true)
 // the elements (the first 31) left out of the DS pixel: transparent all over it (element_empty_at, in the DS-sized
 // pass; read back from it in pre_mode 2)
+#if defined(COMPOSE2D_SPARSE)
 static uint g_el_skip;
 #define KD_ELEMENT_SKIP(e) ((e) < PRE_ELEMENTS_MOST && ((g_el_skip >> (e)) & 1u) != 0u)
+#endif
 // PRE_3D_ONLY read: the 3D's layer alone looked up
 #define KD_STACK_FLAGS(flags) \
     (g_only3d ? (flags) & ~(KDF_OBJ_ON | (14u << KDF_BG_ON_SHIFT)) : (flags))
@@ -142,6 +164,7 @@ static uint g_el_skip;
                        (s).spr.color == 0u && (s).spr.window == 0u)
 #include "../gfx/compose.h"
 
+#if defined(COMPOSE2D_SPARSE)
 // Whether element e gives no texel anywhere in DS pixel (x, row) -- x in its DS columns (the wider picture's minus its
 // margin) -- as kd_element_texel takes them: every texel of its image the places inside the pixel can fall on is
 // transparent (a few more at the far edge: never fewer). An element whose texels there are too many to look at
@@ -180,6 +203,7 @@ bool element_empty_at(uint e, int x, int row)
     }
     return true;
 }
+#endif
 
 float channel8(uint c6)
 {
@@ -228,11 +252,16 @@ void read3d_once(int x, int row)
 // The composition is called once, below, whatever pre_mode is: each call of it is the whole of compose.h inlined,
 // and Mali's compiler runs out of memory on a shader with more than one.
 [numthreads(8, 8, 1)]
+#if defined(COMPOSE2D_SPARSE)
 void cs_main(uint3 dispatched : SV_DispatchThreadID, uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+#else
+void cs_main(uint3 dispatched : SV_DispatchThreadID)
+#endif
 {
     uint c6, verdict = PRE_EACH;
     int x, row;
     // the dispatch covers the part of the screen from `origin` (DS pixels; output pixels N x that)
+#if defined(COMPOSE2D_SPARSE)
     uint2 id = dispatched.xy + ((pre_mode & 1u) != 0u ? uint2(origin_x, origin_y) : uint2(origin_x, origin_y) * scale);
     if (list_mode != 0u) {
         // the listed dots' output texels, N x N of them a dot one after another (spread2d.hlsl's list, in `pre`)
@@ -244,6 +273,9 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint3 group : SV_GroupID, u
         const uint dot = pre[uint2((entry + 1u) % SPREAD_LIST_W, SPREAD_LIST_ROW + (entry + 1u) / SPREAD_LIST_W)];
         id = uint2((dot & 0xffffu) * scale + sub % scale, (dot >> 16) * scale + sub / scale);
     }
+#else
+    const uint2 id = dispatched.xy + ((pre_mode & 1u) != 0u ? uint2(origin_x, origin_y) : uint2(origin_x, origin_y) * scale);
+#endif
     if ((pre_mode & 1u) != 0u) {
         // the pass at the DS's size, and pre_mode 3: one thread a DS pixel, its colour at the first place in it
         if (id.x >= width / scale || id.y >= height / scale) {
@@ -262,16 +294,21 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint3 group : SV_GroupID, u
         x = (int)(id.x / scale);
         row = (int)(id.y / scale) + (int)row0;
         if (pre_mode == 2u) {
+#if defined(COMPOSE2D_SPARSE)
             verdict = pre[uint2((uint)x * 2u, id.y / scale)] & PRE_VERDICT;
             if (verdict == PRE_NOTHING) {
                 // kd_split's 0 at every place of the DS pixel: the 3D is not read for it
                 out_screen[id.xy] = float4(0.0f, 0.0f, 0.0f, 0.0f);
                 return;
             }
+#else
+            verdict = pre[uint2((uint)x * 2u, id.y / scale)];
+#endif
         }
     }
     g_place_used = false;
     g_3d_used = false;
+#if defined(COMPOSE2D_SPARSE)
     g_el_skip = 0u;
     if (pre_mode == 2u && verdict != PRE_SAME && verdict != PRE_SAME_ALPHA3D) {
         // only the elements the DS-sized pass found showing something in this DS pixel are looked at
@@ -286,6 +323,7 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint3 group : SV_GroupID, u
             }
         }
     }
+#endif
     g_stack_3d_only = false;
     g_only3d = verdict == PRE_3D_ONLY;
     if (verdict == PRE_SAME) {
@@ -298,6 +336,14 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint3 group : SV_GroupID, u
         // which of the DS pixel's output pixels can skip the composition: all of them when no place inside it
         // decided the colour (PRE_SAME), or have only the 3D looked up when it lay there alone (PRE_3D_ONLY)
         const uint flags = KD_DESC(KD_FLAGS) & ~(uint)(KD_LAYERS_OFF);
+#if !defined(COMPOSE2D_SPARSE)
+        const bool alone3d = g_stack_3d_only && KD_DESC(KD_WIDE) == 0u && (flags & KDF_DISPLAY_MASK) == 1u &&
+                             (flags & KDF_FORCED_BLANK) == 0u && !KD_SPLIT_ON(flags) &&
+                             (flags & KDF_BG0_IS_3D) != 0u && (flags & (1u << KDF_BG_ON_SHIFT)) != 0u;
+        verdict = !g_place_used && !g_3d_used ? PRE_SAME : alone3d ? PRE_3D_ONLY : PRE_EACH;
+        pre[uint2(id.x * 2u, id.y)] = verdict;
+        pre[uint2(id.x * 2u + 1u, id.y)] = c6;
+#else
         const bool only3d = g_stack_3d_only && KD_DESC(KD_WIDE) == 0u && (flags & KDF_DISPLAY_MASK) == 1u &&
                             (flags & KDF_FORCED_BLANK) == 0u && (flags & KDF_BG0_IS_3D) != 0u &&
                             (flags & (1u << KDF_BG_ON_SHIFT)) != 0u;
@@ -337,6 +383,7 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint3 group : SV_GroupID, u
         // DS pixel (none in a PRE_SAME_ALPHA3D one: no place used)
         pre[uint2(id.x * 2u + 1u, id.y)] =
             verdict == PRE_SAME || verdict == PRE_SAME_ALPHA3D ? c6 : ~g_el_skip & PRE_ELEMENTS;
+#endif
         return;
     }
     if (pre_mode == 3u) {

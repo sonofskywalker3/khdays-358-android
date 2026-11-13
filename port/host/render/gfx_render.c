@@ -10,10 +10,14 @@
 #include "../../runtime/display/frame_package.h"
 #include "generated/capture_cs.h"
 #include "generated/compose2d_cs.h"
+#include "generated/compose2d_sparse_cs.h"
 #if defined(__ANDROID__)
 #include "generated/compose2d_plain_cs.h"
 #include "generated/compose2d_split_cs.h"
 #include "generated/compose2d_wide_cs.h"
+#include "generated/compose2d_sparse_plain_cs.h"
+#include "generated/compose2d_sparse_split_cs.h"
+#include "generated/compose2d_sparse_wide_cs.h"
 #endif
 #include "generated/layers2d_cs.h"
 #include "generated/onescreen_cs.h"
@@ -129,6 +133,9 @@ static SDL_GPUDevice *device;
 static SDL_GPUComputePipeline *compose;
 /* Instead of it where its driver can't compile all of it (make_compose_parts): one for each kind of frame. */
 static SDL_GPUComputePipeline *compose_wide, *compose_plain, *compose_split;
+/* compose2d_sparse.hlsl, as compose and its parts: made when the 2D is first composed once a DS pixel (sparse_for) */
+static SDL_GPUComputePipeline *sparse_whole, *sparse_wide, *sparse_plain, *sparse_split;
+static int sparse_made; /* 0 not tried, 1 made, -1 refused */
 static SDL_GPUComputePipeline *compose_engine[2]; /* this frame's, by what the engine's description ended up as */
 /* Eight buffers per pass, the most SDL's GPU API binds. The layers' and sprites' memory buffers also
  * hold the map of their replaced (HD) tiles; each description buffer also holds its palettes. */
@@ -257,7 +264,7 @@ SDL_COMPILE_TIME_ASSERT(spread_list_w, 2 * PRE_COLUMNS == SPREAD_LIST_W && SPREA
 static SDL_GPUComputePipeline *spread_pipeline;
 static SDL_GPUBuffer *spread_groups[2];
 static int sparse_2d = -1;
-static uint32_t sent_flags[2]; /* each description's KD_FLAGS as the card was sent it (draw) */
+static uint32_t sent_flags[2], sent_wide[2]; /* each description's KD_FLAGS and KD_WIDE as the card was sent them */
 static int pre_shared; /* pre2d is made for reading and writing (and atomics) in one pass: the list needs it */
 /* The lower screen's rows past the DS's 192 (or under its frame) for a taller second display, composed
  * with some layers left out (host/screens/lower_layout.h): asked for, then drawn into `rows_texture`. */
@@ -507,6 +514,47 @@ static SDL_GPUComputePipeline *compose_for(uint32_t wide, uint32_t flags)
         return compose;
     }
     return wide != 0 ? compose_wide : (flags & KDF_SPLIT) != 0 ? compose_split : compose_plain;
+}
+
+/* ... when the 2D is composed once a DS pixel (compose2d_sparse.hlsl): whole where compose is whole, else in its
+ * parts. Made the first time it is wanted, so a card that never composes so (below 3x) never makes it; NULL when
+ * the card refused it (the screen is then composed as before). */
+#if defined(__ANDROID__)
+static SDL_GPUComputePipeline *make_compose_part(const char *which, const unsigned char *spirv, unsigned int size,
+                                                 const char *entry);
+#endif
+static SDL_GPUComputePipeline *sparse_for(uint32_t wide, uint32_t flags)
+{
+    if (sparse_made == 0) {
+        if (compose != NULL) {
+            sparse_whole = make_pipeline_of(compose2d_sparse_cs_dxil, compose2d_sparse_cs_dxil_size,
+                                            compose2d_sparse_cs_spirv, compose2d_sparse_cs_spirv_size,
+                                            compose2d_sparse_cs_msl, compose2d_sparse_cs_msl_size,
+                                            COMPOSE2D_SPARSE_CS_ENTRY, 8, 7);
+            sparse_made = sparse_whole != NULL ? 1 : -1;
+        } else {
+#if defined(__ANDROID__)
+            sparse_wide = make_compose_part("wide, a DS pixel at a time", compose2d_sparse_wide_cs_spirv,
+                                            compose2d_sparse_wide_cs_spirv_size, COMPOSE2D_SPARSE_WIDE_CS_ENTRY);
+            sparse_plain = make_compose_part("plain, a DS pixel at a time", compose2d_sparse_plain_cs_spirv,
+                                             compose2d_sparse_plain_cs_spirv_size, COMPOSE2D_SPARSE_PLAIN_CS_ENTRY);
+            sparse_split = make_compose_part("split, a DS pixel at a time", compose2d_sparse_split_cs_spirv,
+                                             compose2d_sparse_split_cs_spirv_size, COMPOSE2D_SPARSE_SPLIT_CS_ENTRY);
+            sparse_made = sparse_wide != NULL && sparse_plain != NULL && sparse_split != NULL ? 1 : -1;
+#else
+            sparse_made = -1;
+#endif
+        }
+        fprintf(stderr, "host: the 2D's shader for a DS pixel at a time: %s\n",
+                sparse_made > 0 ? "made" : "refused, the 2D composed as before");
+    }
+    if (sparse_made < 0) {
+        return NULL;
+    }
+    if (sparse_whole != NULL) {
+        return sparse_whole;
+    }
+    return wide != 0 ? sparse_wide : (flags & KDF_SPLIT) != 0 ? sparse_split : sparse_plain;
 }
 
 #if defined(__ANDROID__)
@@ -1056,6 +1104,15 @@ void khdays_gfx_render_close(void)
     if (compose_split != NULL)
         SDL_ReleaseGPUComputePipeline(device, compose_split);
     compose_wide = compose_plain = compose_split = NULL;
+    {
+        SDL_GPUComputePipeline **made[4] = {&sparse_whole, &sparse_wide, &sparse_plain, &sparse_split};
+        for (int k = 0; k < 4; ++k) {
+            if (*made[k] != NULL)
+                SDL_ReleaseGPUComputePipeline(device, *made[k]);
+            *made[k] = NULL;
+        }
+        sparse_made = 0;
+    }
     for (int a = 0; a < AREAS; ++a) {
         if (memory[a] != NULL)
             SDL_ReleaseGPUBuffer(device, memory[a]);
@@ -2160,6 +2217,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         compose_engine[e] =
             compose_for(((const uint32_t *)(mapped + at))[KD_WIDE], ((const uint32_t *)(mapped + at))[KD_FLAGS]);
         sent_flags[e] = ((const uint32_t *)(mapped + at))[KD_FLAGS]; /* (KDF_SPLIT, KDF_FINE: the card's, not the game's) */
+        sent_wide[e] = ((const uint32_t *)(mapped + at))[KD_WIDE];
         at += KHDAYS_DESC_WORDS * 4;
         memcpy(mapped + at, p->palette2d + 0x400 * e, 0x400);
         at += 0x400;
@@ -2544,7 +2602,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
         const int sparse = sparse_now() && (scale >= PRE_SCALE_MIN || (sparse_2d == 2 && scale > 1)) &&
                            screen_columns[e] <= PRE_COLUMNS &&
                            (cp.source3d == 0u || split) && !checked_whole() && !reference && !gpu_skip("sparse");
-        if (sparse) {
+        SDL_GPUComputePipeline *const sparse_pipeline = sparse ? sparse_for(sent_wide[e], sent_flags[e]) : NULL;
+        if (sparse_pipeline != NULL) {
             Spread2dParams sp;
             SDL_GPUStorageTextureReadWriteBinding sio[6];
             SDL_GPUStorageBufferReadWriteBinding sbuf;
@@ -2553,7 +2612,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             io[6].cycle = true;
             cp.pre_mode = 1u;
             pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
-            SDL_BindGPUComputePipeline(pass, compose_engine[e]);
+            SDL_BindGPUComputePipeline(pass, sparse_pipeline);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
             for (int k = 0; k < part_count; ++k) {
                 cp.origin_x = (uint32_t)parts[k][0];
@@ -2622,7 +2681,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
             cp.list = 1u;
             cp.origin_x = cp.origin_y = 0u;
             pass = SDL_BeginGPUComputePass(cmd, io, 7, NULL, 0);
-            SDL_BindGPUComputePipeline(pass, compose_engine[e]);
+            SDL_BindGPUComputePipeline(pass, sparse_pipeline);
             SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
             compose_params(cmd, &cp);
             if (!gpu_skip(e == 0 ? "2da" : "2db")) {
