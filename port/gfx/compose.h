@@ -975,12 +975,20 @@ KD_FN uint kd_split(uint color[4], KdSprite spr, uint mask, int x, int row)
 
 /* --- The port's elements (gfx/elements.h) -------------------------------- */
 
+/* KD_ELEMENT_SKIP(e): 1 when the includer knows element e shows nothing anywhere in the DS pixel being composed
+ * (compose2d.hlsl's DS-sized pass looks at its texels there): it gives no texel, and no place is used for it. */
+#ifndef KD_ELEMENT_SKIP
+#define KD_ELEMENT_SKIP(e) 0
+#endif
+
 /* Element e's texel at the output pixel (x, row), or 0 when the pixel is
  * outside the element or the element is transparent there (a direct
  * element's texel with its alpha, any above 0). */
 KD_FN uint kd_element_texel(uint e, int x, int row)
 {
     const uint base = e * KE_WORDS;
+    if (KD_ELEMENT_SKIP(e))
+        return 0u; /* transparent at every place of this DS pixel */
     if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u && (KD_ELEMENT(base + KE_SLOT) & KES_PICTURE) != 0u)
         return 0u;
     if ((KD_ELEMENT(base + KE_SLOT) & KES_OVERLAY) != 0u)
