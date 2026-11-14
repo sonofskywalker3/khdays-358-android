@@ -40,6 +40,11 @@ int main(void)
     CHECK(khdays_two_screens_kept_shows(110, 100, 100, 0));  /* one change of screens: the package before */
     CHECK(!khdays_two_screens_kept_shows(103, 100, 102, 0)); /* ... and no older one */
     CHECK(!khdays_two_screens_kept_shows(100, 100, 100, 1)); /* its own picture */
+    /* each screen's 2D scale: as chosen, auto's for 0, never below the 3D's for the 3D's engine */
+    CHECK(khdays_two_screens_scale2d(2, 5, 1) == 2);
+    CHECK(khdays_two_screens_scale2d(0, 4, 1) == 4);
+    CHECK(khdays_two_screens_scale2d(2, 5, 3) == 3);
+    CHECK(khdays_two_screens_scale2d(0, 0, 0) == 1);
     if (failures == 0) {
         printf("present layout: ok\n");
     }

@@ -29,3 +29,12 @@ int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned befor
     }
     return kept_at == before || (both && age <= KHDAYS_KEPT_VBLANKS);
 }
+
+int khdays_two_screens_scale2d(int setting, int auto_scale, int at_least)
+{
+    int n = setting > 0 ? setting : auto_scale;
+    if (n < at_least) {
+        n = at_least;
+    }
+    return n < 1 ? 1 : n;
+}

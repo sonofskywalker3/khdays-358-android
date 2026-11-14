@@ -19,8 +19,9 @@ void khdays_gfx_render_close(void);
  * (drawn before by khdays_raster3d_rasterize): `scale`, or less when the 2D is
  * drawn finer than the 3D (the window's resolution over a lower internal one),
  * each output pixel then reading the 3D at its middle. Returns 0 (with the
- * reason in SDL_GetError) when it cannot. */
-int khdays_gfx_render_draw(const KhdaysFramePackage *package, int scale, int scale3d, int raster);
+ * reason in SDL_GetError) when it cannot. `scale` is engine A's (the 3D's) 2D
+ * scale, `scale_b` engine B's: each screen composed at its own. */
+int khdays_gfx_render_draw(const KhdaysFramePackage *package, int scale, int scale_b, int scale3d, int raster);
 
 /* What the one-screen picture is made of: the situation's shapes (gfx/onescreen.h) and the colours
  * they make transparent (keys), the frame (KOS_*), the brightness rule (KOB_*), and the picture's width
@@ -58,9 +59,9 @@ typedef struct KhdaysOneScreenDraw {
 
 /* Like khdays_gfx_render_draw, but for one screen: the screens are composed
  * without the 3D (KDF_SPLIT) at the DS's 256 columns, then the one picture is
- * made from them at `scale` and the 3D at `scale3d` (with `raster`, as wide as
- * one->columns). */
-int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int scale3d, int raster,
+ * made from them at `scale` (engine A's; engine B's screen composed at
+ * `scale_b`) and the 3D at `scale3d` (with `raster`, as wide as one->columns). */
+int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int scale_b, int scale3d, int raster,
                                const KhdaysOneScreenDraw *one);
 
 /* Tests: 1, each pixel looks at every sprite (as KHDAYS_SPRITE_ROWS=all), 0 only at those its row

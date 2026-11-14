@@ -620,6 +620,23 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the window allows", "Selon la fenêtre", "Wie das Fenster erlaubt",
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
 #endif
+    [TXT_VIDEO_UPPER_RESOLUTION] = {"Upper screen", "Écran du haut", "Oberer Bildschirm", "Schermo superiore",
+                                    "Pantalla superior"},
+    [TXT_VIDEO_LOWER_RESOLUTION] = {"Lower screen", "Écran du bas", "Unterer Bildschirm", "Schermo inferiore",
+                                    "Pantalla inferior"},
+    [TXT_VIDEO_SCREEN_2D_NOTE] = {"That screen's HUD, menus and text, at this many times the DS's 256x192, with one "
+                                  "screen or two. Lower is faster; the 3D has its own (Internal resolution).",
+                                  "Le HUD, les menus et le texte de cet écran, à ce multiple des 256x192 de la DS, "
+                                  "avec un écran ou deux. Plus bas est plus rapide ; la 3D a le sien (Résolution "
+                                  "interne).",
+                                  "HUD, Menüs und Text dieses Bildschirms, mit diesem Vielfachen der 256x192 des DS, "
+                                  "mit einem Bildschirm oder zwei. Niedriger ist schneller; das 3D hat sein eigenes "
+                                  "(Interne Auflösung).",
+                                  "HUD, menu e testi di questo schermo, a questo multiplo dei 256x192 del DS, con uno "
+                                  "schermo o due. Più basso è più veloce; il 3D ha il suo (Risoluzione interna).",
+                                  "El HUD, los menús y el texto de esa pantalla, a este múltiplo de los 256x192 de la "
+                                  "DS, con una pantalla o dos. Más bajo es más rápido; el 3D tiene el suyo "
+                                  "(Resolución interna)."},
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
     [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
                                      "card's work. The HUD, the menus and the text stay sharp.",

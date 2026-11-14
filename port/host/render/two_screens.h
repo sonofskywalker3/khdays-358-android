@@ -34,6 +34,11 @@ KhdaysTwoScreensLayout khdays_two_screens_layout(int side_by_side, int columns, 
 #define KHDAYS_KEPT_VBLANKS 4
 int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both);
 
+/* A screen's 2D scale ([video] upper_resolution / lower_resolution, profile.h): `setting` as chosen, or for 0
+ * (auto, KHDAYS_RESOLUTION_WINDOW) `auto_scale`; never below `at_least` (the 3D's scale for the 3D's engine, else
+ * 1). The same whether one screen or two is shown. */
+int khdays_two_screens_scale2d(int setting, int auto_scale, int at_least);
+
 #ifdef __cplusplus
 }
 #endif

@@ -516,14 +516,15 @@ static int scale_now(void)
     return n;
 }
 
-/* The 2D's scale over a 3D at `n3d`: the window's own (smooth scaling: the whole multiple at least as large,
- * shrunk on the card; sharp: the largest that fits), so the HUD, menus and text stay as sharp as the window
- * whatever the internal resolution; the 3D's when that is finer (an internal resolution above the
- * window's). The 2D check (KHDAYS_GFX=check) compares at the 3D's. */
-static int scale2d_now(int n3d)
+/* Auto's 2D scale (both engines', as before the two settings): the window's own (smooth scaling: the whole multiple
+ * at least as large, shrunk on the card; sharp: the largest that fits), so the HUD, menus and text stay as sharp as
+ * the window whatever the internal resolution. It follows the window's layout, so it changes with one screen or two;
+ * a number chosen in the settings does not. */
+static int auto_scale2d(void)
 {
     const float s = shown_scale();
-    int n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
+    int n;
+    n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
     {
         /* a tablet's screen is 9 to 12 times the DS's: the 2D composed at that costs the card 100 ms and more a
          * picture, so on one Android display it stops at android_2d_cap and is stretched the rest of the way.
@@ -542,10 +543,28 @@ static int scale2d_now(int n3d)
 #endif
         n = cap > 0 && n > cap ? cap : n;
     }
-    if (port2d_mode == 2 || n < n3d) {
-        n = n3d;
-    }
     return n < 1 ? 1 : n;
+}
+
+/* Engine `engine`'s 2D scale over a 3D at `n3d`: [video] upper_resolution (engine A) or lower_resolution (B) as
+ * chosen, or auto (auto_scale2d); engine A's never below the 3D's. The 2D check (KHDAYS_GFX=check) compares at
+ * the 3D's. */
+static int scale2d_for(int engine, int n3d)
+{
+    if (port2d_mode == 2) {
+        return n3d < 1 ? 1 : n3d;
+    }
+    const int setting = engine == 0 ? video.upper_resolution : video.lower_resolution;
+    /* auto as before for both: never below the 3D's; a number chosen for B as it is (B has no 3D) */
+    return khdays_two_screens_scale2d(setting, auto_scale2d(),
+                                      engine == 0 || setting == KHDAYS_RESOLUTION_WINDOW ? n3d : 1);
+}
+
+/* The finer of the two engines' 2D scales: the HD pieces' images are made at it, each screen then reading them at
+ * its own. */
+static int scale2d_finer(int n3d)
+{
+    return SDL_max(scale2d_for(0, n3d), scale2d_for(1, n3d));
 }
 
 /* Whether engine A's 3D is drawn on the graphics card: at an internal
@@ -585,7 +604,7 @@ int khdays_present_columns(void)
 
 int khdays_present_scale(void)
 {
-    return port2d_ready && device != NULL ? scale2d_now(scale_now()) : 1;
+    return port2d_ready && device != NULL ? scale2d_finer(scale_now()) : 1;
 }
 
 int khdays_present_text_scale(void)
@@ -594,7 +613,7 @@ int khdays_present_text_scale(void)
     if (!port2d_ready || device == NULL || !video.one_screen || !one_drawn) {
         return 0;
     }
-    return khdays_text_overlay_scale(scale2d_now(scale_now()), shown_scale(), khdays_onescreen_scene(),
+    return khdays_text_overlay_scale(scale2d_finer(scale_now()), shown_scale(), khdays_onescreen_scene(),
                                      khdays_onescreen_states());
 }
 
@@ -680,7 +699,7 @@ static SDL_FRect ds_columns(SDL_Texture *texture, int width)
  * it composed whole are what a later picture keeps: a screen wrongly kept is caught where it first shows.
  * What moves between the two draws differs by itself (a list's rows sliding in, the map's marker): a run with
  * both settings off says those too, and only what the run with them on says more is theirs. */
-static void check_savings(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
+static void check_savings(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d, int raster,
                           const KhdaysOneScreenDraw *one)
 {
     static int asked = -1, pictures, differing;
@@ -695,7 +714,7 @@ static void check_savings(const KhdaysFramePackage *p, int scale, int scale3d, i
     }
     fast = khdays_gfx_render_read(2, &w, &h);
     khdays_gfx_render_set_reference(1);
-    if (fast != NULL && khdays_gfx_render_draw_one(p, scale, scale3d, raster, one)) {
+    if (fast != NULL && khdays_gfx_render_draw_one(p, scale, scale_b, scale3d, raster, one)) {
         whole = khdays_gfx_render_read(2, &rw, &rh);
     }
     khdays_gfx_render_set_reference(0);
@@ -1630,7 +1649,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         const int blend_frame = khdays_gfx_render_capture_frame(p);
         const int can_raster = !picture_only && raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) &&
                                n != refused_scale && (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame);
-        const int n2d = scale2d_now(n);
+        const int n2d = scale2d_for(0, n), n2d_b = scale2d_for(1, n); /* engine A's (the upper setting's), B's */
         khdays_gpu_hd_next_frame(); /* (what the last picture drew may leave the card) */
         /* the 3D coarser than the 2D (an internal resolution below the window's): the HUD's polygons (the
          * command menu) drawn apart at the 2D's scale, as sharp as the rest of the HUD */
@@ -1652,7 +1671,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
             static int last_apart = -1;
             const int apart = can_raster && n2d > n;
             if (apart != last_apart) {
-                khdays_log("graphics: the 2D at %dx, the 3D at %dx%s", n2d, n,
+                khdays_log("graphics: the 2D at %dx (the lower screen's at %dx), the 3D at %dx%s", n2d, n2d_b, n,
                            apart ? ", the HUD's 3D apart at the 2D's" : "");
                 last_apart = apart;
             }
@@ -1661,7 +1680,9 @@ static void present_now(const KhdaysFramePackage *p, int first)
         const int raster = can_raster && khdays_raster3d_rasterize(p, n, video.texture_smoothing);
         /* shrunk to the size the window shows it at (smooth scaling: its own pixels; sharp: the DS's
          * pixels kept square, then stretched by whole pixels) */
-        khdays_gfx_render_set_shown(video.smooth_scaling || picture_only ? shown_scale() : n2d > n ? (float)n2d : (float)n);
+        /* (sharp: no screen shrunk, whichever is the finer) */
+        khdays_gfx_render_set_shown(video.smooth_scaling || picture_only ? shown_scale()
+                                                                         : (float)SDL_max(SDL_max(n2d, n2d_b), n));
         khdays_gfx_render_set_smooth_3d(video.smooth_scaling);
         khdays_gfx_render_set_coarse_2d(video.fast_2d == KHDAYS_FAST_2D_ON ||
                                         (video.fast_2d == KHDAYS_FAST_2D_AUTO && weaker_card));
@@ -1683,11 +1704,10 @@ static void present_now(const KhdaysFramePackage *p, int first)
             }
             /* at the DS's own size without 3D, but for a picture with a backdrop of its own (the
              * camp's Preferences page: an HD picture, no model) or a mod's tiles */
-            drawn = khdays_gfx_render_draw_one(
-                p, raster || one.backdrop != NULL || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster, &one);
+            const int scaled = raster || one.backdrop != NULL || hd_tiles || port2d_mode != 2;
+            drawn = khdays_gfx_render_draw_one(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster, &one);
             if (drawn) {
-                check_savings(p, raster || one.backdrop != NULL || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster,
-                              &one);
+                check_savings(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster, &one);
             }
             one_drawn = drawn;
             one_made = one_made || drawn;
@@ -1709,7 +1729,8 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 wipe = wipe_next;
             }
         } else {
-            drawn = khdays_gfx_render_draw(p, raster || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster);
+            const int scaled = raster || hd_tiles || port2d_mode != 2;
+            drawn = khdays_gfx_render_draw(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster);
         }
         if (drawn) {
             port2d_drawn = 1;

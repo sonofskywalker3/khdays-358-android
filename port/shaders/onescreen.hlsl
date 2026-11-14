@@ -62,7 +62,7 @@ cbuffer Params : register(b0, space2) {
     uint hud3d;           // 1: the HUD's 3D apart, over the rest (as wide as the picture, at N)
     uint origin_x;        // the texel the dispatch starts at (part of the picture: gfx_render.c one_covers)
     uint origin_y;
-    uint unused7;
+    uint source_scales;   // upper2d's N in bits 0-15, lower2d's in 16-31 (each screen at its own)
 };
 
 #define FINISH3D_SCALED
@@ -74,11 +74,12 @@ uint pack(float4 c)
            ((uint)(c.a * 255.0f + 0.5f) << 24);
 }
 
-// A source screen's texel at (x, y) DS dots: the nearest of its N x N.
+// A source screen's texel at (x, y) DS dots: the nearest of its N x N, N that screen's own (source_scales).
 uint source_at(uint lower, float x, float y)
 {
-    const int tx = (int)floor(x * (float)scale), ty = (int)floor(y * (float)scale);
-    const int limit_x = 256 * (int)scale - 1, limit_y = 192 * (int)scale - 1;
+    const int n = (int)(lower != 0u ? source_scales >> 16 : source_scales & 0xffffu);
+    const int tx = (int)floor(x * (float)n), ty = (int)floor(y * (float)n);
+    const int limit_x = 256 * n - 1, limit_y = 192 * n - 1;
     const uint2 at = uint2((uint)clamp(tx, 0, limit_x), (uint)clamp(ty, 0, limit_y));
     return pack(lower != 0u ? lower2d[at] : upper2d[at]);
 }

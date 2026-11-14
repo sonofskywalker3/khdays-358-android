@@ -178,7 +178,7 @@ static int same_with_sprite_lists(const KhdaysFramePackage *p, const char *name)
         int w[2] = {0, 0}, h[2] = {0, 0};
         for (int every = 0; every < 2; ++every) {
             khdays_gfx_render_every_sprite(every);
-            if (khdays_gfx_render_draw(p, 2, 2, 0)) {
+            if (khdays_gfx_render_draw(p, 2, 2, 2, 0)) {
                 pictures[every] = khdays_gfx_render_read(e, &w[every], &h[every]);
             }
         }
@@ -478,7 +478,7 @@ int main(int argc, char **argv)
             failures += !same_with_sprite_lists(p, names[f]);
         }
         if (gpu2d && (p->wants & KHDAYS_WANT_2D) && SDL_getenv("KHDAYS_RENDER_2D3D_OUT") != NULL &&
-            khdays_gfx_render_draw(p, 2, 2, 0)) {
+            khdays_gfx_render_draw(p, 2, 2, 2, 0)) {
             /* both screens' 2D at 2x, raw, to compare builds */
             for (int e = 0; e < 2; ++e) {
                 int w = 0, h = 0;
@@ -493,7 +493,7 @@ int main(int argc, char **argv)
         }
         if (gpu2d && (p->wants & KHDAYS_WANT_2D) && (p->wants & KHDAYS_WANT_3D) && p->info[0].is3d &&
             SDL_getenv("KHDAYS_RENDER_2D3D_OUT") != NULL && khdays_raster3d_rasterize(p, 2, 0) &&
-            khdays_gfx_render_draw(p, 2, 2, 1)) {
+            khdays_gfx_render_draw(p, 2, 2, 2, 1)) {
             /* engine A's 2D over its 3D at 2x, raw, to compare builds */
             int w = 0, h = 0;
             uint32_t *pixels = khdays_gfx_render_read(0, &w, &h);

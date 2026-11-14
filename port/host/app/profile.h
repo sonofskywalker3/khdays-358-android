@@ -160,6 +160,8 @@ typedef enum KhdaysSecondScreenAspect {
 } KhdaysSecondScreenAspect;
 
 #define KHDAYS_RESOLUTION_WINDOW 0 /* internal_resolution = window */
+#define KHDAYS_SCREEN_RESOLUTION_MIN 2  /* upper_resolution, lower_resolution: the smallest number */
+#define KHDAYS_SCREEN_RESOLUTION_MAX 16 /* and the largest (the settings offer up to 16, as internal_resolution) */
 #define KHDAYS_MENU_SIZE_MAX 4     /* menu_size: 1 to this */
 #define KHDAYS_SUBTITLE_SIZE_MAX 5 /* subtitle_size: 1 to this */
 
@@ -181,6 +183,11 @@ typedef enum KhdaysFast2d {
 
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
+    /* the 2D's scale of each screen (the HUD, menus and text): 2 to 16, the same with one screen or two, or
+     * KHDAYS_RESOLUTION_WINDOW (auto: the window's, which changes with them). The upper one goes with the 3D's
+     * engine, the lower one with the other, whichever screen each is on */
+    int upper_resolution;
+    int lower_resolution;
     int antialiasing;        /* 1 off, 2 FXAA: the 3D's edges smoothed once it is drawn */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
