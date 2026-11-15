@@ -253,6 +253,10 @@ static SDL_GPUDevice *make_device(int debug, const char *driver)
     SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
     SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
     SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
+    /* KHDAYS_GPU_LOW_POWER=1: the low-power card (a PC's integrated graphics), for measuring there */
+    if (SDL_GetHintBoolean("KHDAYS_GPU_LOW_POWER", false)) {
+        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_PREFERLOWPOWER_BOOLEAN, true);
+    }
     if (driver != NULL) {
         SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, driver);
     }
