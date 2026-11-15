@@ -352,12 +352,14 @@ static char *ping_line(void)
 typedef struct ModNotice {
     char *line;
     Uint64 until;
+    int auto_line; /* Auto's (gpu_present.c): a later one of Auto's replaces it */
+    int held;      /* Auto's testing line: shown while the test runs, gone when it stops */
 } ModNotice;
 static ModNotice *mod_notices;
 static int mod_notice_count, mod_notice_capacity;
 
 /* A line for the corner, five seconds, as a mod's: `name`: `text` (also on the settings menu's notice line). */
-static void corner_notice(const char *name, const char *text)
+static void corner_notice_as(const char *name, const char *text, int auto_line, int held)
 {
     char *line = NULL;
     if (SDL_asprintf(&line, "%s: %s", name, text) < 0) {
@@ -375,10 +377,17 @@ static void corner_notice(const char *name, const char *text)
     if (mod_notice_count < mod_notice_capacity) {
         mod_notices[mod_notice_count].line = line;
         mod_notices[mod_notice_count].until = SDL_GetTicks() + 5000;
+        mod_notices[mod_notice_count].auto_line = auto_line;
+        mod_notices[mod_notice_count].held = held;
         ++mod_notice_count;
     } else {
         SDL_free(line);
     }
+}
+
+static void corner_notice(const char *name, const char *text)
+{
+    corner_notice_as(name, text, 0, 0);
 }
 
 static void take_mod_notices(void)
@@ -386,8 +395,10 @@ static void take_mod_notices(void)
     const Uint64 now = SDL_GetTicks();
     int kind, kept = 0;
     char *mod, *text;
+    const int testing = khdays_present_auto_testing();
     for (int i = 0; i < mod_notice_count; ++i) {
-        if (mod_notices[i].until > now) {
+        const int keep = mod_notices[i].held ? testing : mod_notices[i].until > now;
+        if (keep) {
             mod_notices[kept++] = mod_notices[i];
         } else {
             SDL_free(mod_notices[i].line);
@@ -417,6 +428,8 @@ static void take_mod_notices(void)
             if (mod_notice_count < mod_notice_capacity) {
                 mod_notices[mod_notice_count].line = line;
                 mod_notices[mod_notice_count].until = now + 5000;
+                mod_notices[mod_notice_count].auto_line = 0;
+                mod_notices[mod_notice_count].held = 0;
                 ++mod_notice_count;
             } else {
                 SDL_free(line);
@@ -677,8 +690,16 @@ static void keep_auto(void)
             khdays_profile_save(&p, path, notice);
         }
     }
+    /* Auto's line: a new one replaces the one before; the testing one is held while the test runs
+     * (take_mod_notices), the others last as a mod's */
     while (khdays_present_take_notice(text, (int)sizeof(text))) {
-        corner_notice(khdays_text(TXT_AUTO_NAME), text);
+        for (int i = 0; i < mod_notice_count; ++i) {
+            if (mod_notices[i].auto_line) {
+                mod_notices[i].until = 0;
+                mod_notices[i].held = 0; /* replaced: gone at the next take_mod_notices */
+            }
+        }
+        corner_notice_as(khdays_text(TXT_AUTO_NAME), text, 1, khdays_present_auto_testing());
     }
 }
 

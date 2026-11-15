@@ -95,6 +95,8 @@ void khdays_present_set_video(const KhdaysVideo *video);
  * video's auto_upper, auto_lower, auto_fps and auto_card copied into `into`. */
 int khdays_present_take_auto(KhdaysVideo *into);
 /* Auto's line for the corner (testing, the pair kept, a step down): 1 and the text. */
+/* Whether Auto is testing now: its notice stays up until the result's replaces it. */
+int khdays_present_auto_testing(void);
 int khdays_present_take_notice(char *text, int size);
 
 /* Draws the picture; the caller draws the settings menu over it and

@@ -928,6 +928,11 @@ int khdays_present_take_auto(KhdaysVideo *into)
     return 1;
 }
 
+int khdays_present_auto_testing(void)
+{
+    return auto_state != AUTO_IDLE;
+}
+
 int khdays_present_take_notice(char *text, int size)
 {
     if (!auto_notice_pending) {
