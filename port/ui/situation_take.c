@@ -247,6 +247,7 @@ void khdays_situation_take(KhdaysSituationInputs *in, uint32_t frame)
     }
     in->movie = (uint8_t)khdays_movie_game_playing();
     in->mission_flags = u8_at(MISSION_FLAGS);
+    in->mission = in->scene == 2 ? (int32_t)u16_at(KHDAYS_DS_gMissionNumber) : -1; /* 2: the field */
     in->event_status = -1;
     if (khdays_overlay_loaded(OV_EVENT)) {
         const u32 scene = u32_at(EVENT_ROOT + 4u);

@@ -91,6 +91,12 @@ void khdays_present_redraw_took(uint64_t drawing_ns, uint64_t presenting_ns);
 /* The picture settings, from the next frame drawn. */
 void khdays_present_set_video(const KhdaysVideo *video);
 
+/* Auto (auto_quality.h): a pair measured or stepped down since last asked, for the settings file: 1 and the
+ * video's auto_upper, auto_lower, auto_fps and auto_card copied into `into`. */
+int khdays_present_take_auto(KhdaysVideo *into);
+/* Auto's line for the corner (testing, the pair kept, a step down): 1 and the text. */
+int khdays_present_take_notice(char *text, int size);
+
 /* Draws the picture; the caller draws the settings menu over it and
  * presents. */
 void khdays_present_draw(void);

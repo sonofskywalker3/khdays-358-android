@@ -768,6 +768,7 @@ target_sources(khdays-native PRIVATE
     host/settings/settings_sample.cpp       # the settings menu's volume samples
     host/render/gpu_present.c
     host/render/two_screens.c             # the two screens' places: stacked or side by side
+    host/render/auto_quality.c            # Auto: the screens' scales measured, the watch over play
     host/render/gpu_raster3d.c
     host/render/gpu_native3d.c
     host/render/gfx_render.c
@@ -1266,7 +1267,7 @@ add_executable(khdays-select-pages-test tests/select_pages_test.c runtime/menus/
 target_compile_options(khdays-select-pages-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-select-pages COMMAND khdays-select-pages-test)
 
-add_executable(khdays-present-layout-test tests/present_layout_test.c host/render/two_screens.c)
+add_executable(khdays-present-layout-test tests/present_layout_test.c host/render/two_screens.c host/render/auto_quality.c)
 target_compile_options(khdays-present-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-present-layout COMMAND khdays-present-layout-test)
 

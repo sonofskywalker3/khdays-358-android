@@ -187,6 +187,7 @@ void khdays_profile_set_thor(int thor);
 int khdays_profile_thor(void);
 
 #define KHDAYS_SETTINGS_VERSION 2 /* the settings file's version as written */
+#define KHDAYS_AUTO_CARD_SIZE 320 /* [video] auto_card: as long as the card's line (gpu_present.c card_line) */
 
 typedef struct KhdaysVideo {
     /* the upper screen's scale, its 3D and its HUD, menus and text together (the settings' "Upper screen"; the
@@ -196,6 +197,11 @@ typedef struct KhdaysVideo {
     /* the lower screen's 2D scale (its HUD, menus and text): 2 to 16, the same with one screen or two, or
      * KHDAYS_RESOLUTION_WINDOW (auto: the window's, which changes with them) */
     int lower_resolution;
+    /* Auto's results, measured where the player played ([video] auto_one, auto_two): the pair a screen on auto
+     * takes with one screen [0] and with two [1] -- the upper's scale, the lower's, the pictures a second they
+     * gave; 0 not measured yet. On the graphics card and driver in auto_card (another one measures again). */
+    int auto_upper[2], auto_lower[2], auto_fps[2];
+    char auto_card[KHDAYS_AUTO_CARD_SIZE];
     int antialiasing;        /* 1 off, 2 FXAA: the 3D's edges smoothed once it is drawn */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */

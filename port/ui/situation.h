@@ -86,6 +86,8 @@ typedef struct KhdaysSituationInputs {
     uint8_t pause_mode;    /* gPauseMode (PauseMenu_SetMode): the pause */
     uint8_t movie;         /* the game's own movie plays (runtime/movies/movie_hd.h khdays_movie_game_playing:
                                * Ov024_MobiClip_OpenStreamSlot to Ov024_MobiClip_StopPlayback) */
+    int32_t mission;       /* gMissionNumber while the scene is the field (0 between missions, the Grey Area), else
+                               * -1: Auto's step down waits for 0 (host/render/gpu_present.c) */
     uint8_t mission_flags; /* data_0204c240: bit 1 a challenge after the story's camp (Ov025_MissionList_StartMission
                                * sets 3 with the challenge's thresholds, 1 otherwise; RUNTIME_MAP 15.6) */
     uint8_t party;         /* the battle's party members: data_ov022_020b2e78[1] + 0x34, ov022 loaded

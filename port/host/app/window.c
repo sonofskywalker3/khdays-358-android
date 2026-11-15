@@ -356,6 +356,31 @@ typedef struct ModNotice {
 static ModNotice *mod_notices;
 static int mod_notice_count, mod_notice_capacity;
 
+/* A line for the corner, five seconds, as a mod's: `name`: `text` (also on the settings menu's notice line). */
+static void corner_notice(const char *name, const char *text)
+{
+    char *line = NULL;
+    if (SDL_asprintf(&line, "%s: %s", name, text) < 0) {
+        return;
+    }
+    khdays_settings_add_notice(line);
+    if (mod_notice_count == mod_notice_capacity) {
+        const int grown = mod_notice_capacity == 0 ? 4 : mod_notice_capacity * 2;
+        ModNotice *more = SDL_realloc(mod_notices, (size_t)grown * sizeof(*more));
+        if (more != NULL) {
+            mod_notices = more;
+            mod_notice_capacity = grown;
+        }
+    }
+    if (mod_notice_count < mod_notice_capacity) {
+        mod_notices[mod_notice_count].line = line;
+        mod_notices[mod_notice_count].until = SDL_GetTicks() + 5000;
+        ++mod_notice_count;
+    } else {
+        SDL_free(line);
+    }
+}
+
 static void take_mod_notices(void)
 {
     const Uint64 now = SDL_GetTicks();
@@ -632,6 +657,31 @@ static void keep_chase_free(void)
     khdays_profile_save(&p, path, notice);
 }
 
+/* Keeps what Auto measured (render/auto_quality.h): in the profile and the settings file (not under the open
+ * menu, whose profile would undo it: taken once it closes); its lines in the corner. */
+static void keep_auto(void)
+{
+    char text[240];
+    if (!khdays_settings_is_open()) {
+        KhdaysVideo got;
+        if (khdays_present_take_auto(&got)) {
+            KhdaysProfile p = *khdays_devices_profile();
+            char path[512];
+            SDL_memcpy(p.video.auto_upper, got.auto_upper, sizeof(p.video.auto_upper));
+            SDL_memcpy(p.video.auto_lower, got.auto_lower, sizeof(p.video.auto_lower));
+            SDL_memcpy(p.video.auto_fps, got.auto_fps, sizeof(p.video.auto_fps));
+            SDL_strlcpy(p.video.auto_card, got.auto_card, sizeof(p.video.auto_card));
+            khdays_devices_set_profile(&p);
+            khdays_present_set_video(&p.video);
+            khdays_settings_path(path, sizeof(path));
+            khdays_profile_save(&p, path, notice);
+        }
+    }
+    while (khdays_present_take_notice(text, (int)sizeof(text))) {
+        corner_notice(khdays_text(TXT_AUTO_NAME), text);
+    }
+}
+
 /* Alt+Enter, as on most PC games: from a window to the full screen chosen last (the borderless
  * window if none), from either full screen to a window; kept in the profile and the settings file
  * as the menu keeps it. */
@@ -801,10 +851,14 @@ static int settings_allowed(void)
     return allowed;
 }
 
+/* The settings as the menu opened (close_settings: a screen set to auto again). */
+static KhdaysVideo video_at_open;
+
 /* Opens the settings menu (the game pauses, stop_game_for_menu). */
 static void open_settings(void)
 {
     char text[160];
+    video_at_open = khdays_devices_profile()->video;
     stop_game_for_menu();
     while (khdays_devices_take_notice(text, sizeof(text))) {
         khdays_settings_add_notice(text);
@@ -824,9 +878,26 @@ static void close_settings(void)
     khdays_scripts_ask(KHDAYS_ASK_SETTINGS_CLOSED, NULL, NULL, 0);
     khdays_settings_sample_stop();
     if (khdays_settings_changed()) {
+        const KhdaysVideo *before = &video_at_open, *after = &khdays_settings_profile()->video;
+        const int chose_auto = (after->internal_resolution == KHDAYS_RESOLUTION_WINDOW &&
+                                before->internal_resolution != KHDAYS_RESOLUTION_WINDOW) ||
+                               (after->lower_resolution == KHDAYS_RESOLUTION_WINDOW &&
+                                before->lower_resolution != KHDAYS_RESOLUTION_WINDOW);
         khdays_devices_set_profile(khdays_settings_profile()); /* as closing may have fixed it */
-        save_settings();
-        khdays_present_set_video(&khdays_settings_profile()->video);
+        if (chose_auto) {
+            /* a screen set to auto again: Auto measures again, both modes */
+            KhdaysProfile p = *khdays_devices_profile();
+            for (int m = 0; m < 2; ++m) {
+                p.video.auto_upper[m] = p.video.auto_lower[m] = p.video.auto_fps[m] = 0;
+            }
+            khdays_devices_set_profile(&p);
+        }
+        {
+            char path[512];
+            khdays_settings_path(path, sizeof(path));
+            khdays_profile_save(khdays_devices_profile(), path, notice);
+        }
+        khdays_present_set_video(&khdays_devices_profile()->video);
         khdays_sound_output_set(&khdays_settings_profile()->sound);
         khdays_log_want(khdays_settings_profile()->session_log);
         khdays_savelist_set_settings(khdays_settings_profile()->save.all_files,
@@ -1099,6 +1170,7 @@ static int host_thread(void *unused)
         const int settling = khdays_present_settling();
         keep_subtitles();
         keep_chase_free();
+        keep_auto();
         if (!khdays_settings_is_open()) {
             khdays_cine_screen_buttons(khdays_cinelist_seen()); /* MODO CINE's chapters, the port's list */
         }

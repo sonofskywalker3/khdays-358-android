@@ -711,6 +711,27 @@ static void test_video_settings(void)
     CHECK(q.video.internal_resolution == 5 && q.video.lower_resolution == 3);
     CHECK(load_text("version = 2\n[video]\ninternal_resolution = 2\nlower_resolution = auto\n", &q) == 0);
     CHECK(q.video.internal_resolution == 2 && q.video.lower_resolution == KHDAYS_RESOLUTION_WINDOW);
+
+    /* Auto's results: none by default; each mode's pair and its card read, and back through a save; a bad one
+     * says so and is none */
+    CHECK(p.video.auto_upper[0] == 0 && p.video.auto_upper[1] == 0 && p.video.auto_card[0] == '\0');
+    CHECK(load_text("version = 2\n[video]\nauto_one = 4,2,103\nauto_two = 3,2,95\nauto_card = vulkan on Adreno 740\n",
+                    &q) == 0);
+    CHECK(q.video.auto_upper[0] == 4 && q.video.auto_lower[0] == 2 && q.video.auto_fps[0] == 103);
+    CHECK(q.video.auto_upper[1] == 3 && q.video.auto_lower[1] == 2 && q.video.auto_fps[1] == 95);
+    CHECK(strcmp(q.video.auto_card, "vulkan on Adreno 740") == 0);
+    {
+        char auto_path[600];
+        path_of("auto.ini", auto_path, sizeof(auto_path));
+        CHECK(khdays_profile_save(&q, auto_path, count_notice) == 0);
+        khdays_profile_load(&r, auto_path, count_notice);
+        CHECK(memcmp(r.video.auto_upper, q.video.auto_upper, sizeof(q.video.auto_upper)) == 0 &&
+              memcmp(r.video.auto_lower, q.video.auto_lower, sizeof(q.video.auto_lower)) == 0 &&
+              memcmp(r.video.auto_fps, q.video.auto_fps, sizeof(q.video.auto_fps)) == 0 &&
+              strcmp(r.video.auto_card, q.video.auto_card) == 0);
+    }
+    CHECK(load_text("version = 2\n[video]\nauto_one = 4,x\nauto_two = none\n", &q) == 1);
+    CHECK(q.video.auto_upper[0] == 0 && q.video.auto_upper[1] == 0);
     khdays_profile_set_thor(0);
     CHECK(load_text("version = 1\n[video]\ninternal_resolution = 2\n", &q) == 0 && q.video.internal_resolution == 2);
     khdays_profile_set_thor(-1);

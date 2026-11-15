@@ -309,6 +309,10 @@ void khdays_video_default(KhdaysVideo *v)
         v->lower_resolution = KHDAYS_RESOLUTION_WINDOW;
 #endif
     }
+    for (int m = 0; m < 2; ++m) {
+        v->auto_upper[m] = v->auto_lower[m] = v->auto_fps[m] = 0; /* nothing measured */
+    }
+    SDL_memset(v->auto_card, 0, sizeof(v->auto_card));
     v->antialiasing = 1;            /* off */
 #if defined(__ANDROID__)
     v->aspect = KHDAYS_ASPECT_WINDOW; /* for one screen: a phone's or a tablet's whole screen; two screens use 4:3 */
@@ -1070,6 +1074,28 @@ static void read_video(Reader *r, const char *key, const char *value, const char
     }
     if (SDL_strcasecmp(key, "upper_resolution") == 0) {
         return; /* a test build's: the upper screen goes with the 3D since (internal_resolution) */
+    }
+    if (SDL_strcasecmp(key, "auto_one") == 0 || SDL_strcasecmp(key, "auto_two") == 0) {
+        const int m = SDL_strcasecmp(key, "auto_two") == 0;
+        int upper = 0, lower = 0, fps = 0;
+        char tail = 0;
+        if (SDL_strcasecmp(value, "none") == 0) {
+            v->auto_upper[m] = v->auto_lower[m] = v->auto_fps[m] = 0;
+        } else if (SDL_sscanf(value, "%d,%d,%d%c", &upper, &lower, &fps, &tail) == 3 && upper >= 1 &&
+                   upper <= KHDAYS_SCREEN_RESOLUTION_MAX && lower >= 1 && lower <= KHDAYS_SCREEN_RESOLUTION_MAX &&
+                   fps >= 0 && fps < 10000) {
+            v->auto_upper[m] = upper;
+            v->auto_lower[m] = lower;
+            v->auto_fps[m] = fps;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "none");
+            v->auto_upper[m] = v->auto_lower[m] = v->auto_fps[m] = 0;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "auto_card") == 0) {
+        SDL_strlcpy(v->auto_card, value, sizeof(v->auto_card));
+        return;
     }
     if (SDL_strcasecmp(key, "lower_resolution") == 0) {
         int *to = &v->lower_resolution;
@@ -1987,6 +2013,24 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             v->backend == KHDAYS_BACKEND_D3D12    ? "direct3d12"
             : v->backend == KHDAYS_BACKEND_VULKAN ? "vulkan"
                                                   : "auto");
+        {
+            char one[40], two[40];
+            for (int m = 0; m < 2; ++m) {
+                char *to = m == 0 ? one : two;
+                if (v->auto_upper[m] > 0 && v->auto_lower[m] > 0) {
+                    SDL_snprintf(to, 40, "%d,%d,%d", v->auto_upper[m], v->auto_lower[m], v->auto_fps[m]);
+                } else {
+                    SDL_strlcpy(to, "none", 40);
+                }
+            }
+            add(&t,
+                "# auto_one, auto_two, auto_card: what Auto measured (upper,lower,pictures a second) for one screen and\n"
+                "# two, on that graphics card -- the port writes them; none measures again\n"
+                "auto_one = %s\n"
+                "auto_two = %s\n"
+                "auto_card = %s\n",
+                one, two, v->auto_card);
+        }
     }
     add_unknown(&t, "video");
     {

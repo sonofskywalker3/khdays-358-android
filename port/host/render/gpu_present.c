@@ -14,6 +14,9 @@
 #include "onescreen.h"
 #include "png_io.h"
 #include "two_screens.h"
+#include "auto_quality.h"
+#include "../settings/settings_ui.h"
+#include "../../ui/situation.h"
 #include "../screens/ds_select_pages.h"
 #include "../../ui/composition.h"
 #include "../../ui/text.h"
@@ -496,13 +499,21 @@ static float shown_scale(void)
     return sx < sy ? sx : sy;
 }
 
+/* Auto (auto_quality.h): with a screen on auto, the pair measured for the screen mode shown (one screen [0], two
+ * [1]), or while a test runs its candidate. 0: none (auto as before: the window's). */
+static int auto_test_upper, auto_test_lower;
+static int auto_upper_now(void);
+static int auto_lower_now(void);
+
 /* The internal resolution now: the setting, or for "window" the window's own size (smooth scaling:
  * the whole multiple at least as large, shrunk on the card; sharp: the largest that fits with square
  * DS pixels). If the card could not make a scale (refused_scale) the next one down is used. */
 static int scale_now(void)
 {
     int n = video.internal_resolution;
-    if (n == KHDAYS_RESOLUTION_WINDOW) {
+    if (n == KHDAYS_RESOLUTION_WINDOW && auto_upper_now() > 0) {
+        n = auto_upper_now();
+    } else if (n == KHDAYS_RESOLUTION_WINDOW) {
         const float s = shown_scale();
         n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
         n = n < 1 ? 1 : n;
@@ -555,6 +566,9 @@ static int scale2d_for(int engine, int n3d)
         return n3d < 1 ? 1 : n3d;
     }
     const int setting = video.lower_resolution;
+    if (setting == KHDAYS_RESOLUTION_WINDOW && auto_lower_now() > 0) {
+        return auto_lower_now();
+    }
     return khdays_two_screens_scale2d(setting, auto_scale2d(), setting == KHDAYS_RESOLUTION_WINDOW ? n3d : 1);
 }
 
@@ -563,6 +577,365 @@ static int scale2d_for(int engine, int n3d)
 static int scale2d_finer(int n3d)
 {
     return SDL_max(scale2d_for(0, n3d), scale2d_for(1, n3d));
+}
+
+/* ---- Auto: the pair measured where the player plays (auto_quality.h) ---------------------------------------
+ * With a screen on auto, the first time the player is in the field in a screen mode with no pair measured for it
+ * (or after a screen was set to auto again, or on another graphics card) the candidates are tried in turn while the
+ * game goes on: each applied (the game fills its next packages at it), let settle, its pictures counted. The best
+ * that holds KHDAYS_AUTO_TARGET is kept for that mode and written to the settings file by the window. Anything but
+ * play in the field (a menu, a scene, a person's words, the pause, the settings) stops it; it starts again later.
+ * Then a watch over play: under KHDAYS_AUTO_FLOOR for some seconds owes a step down, taken between missions. */
+#define AUTO_STABLE_MS 1500    /* in the field this long before a test starts */
+#define AUTO_SETTLE_MS 700     /* after a candidate is applied, before its pictures count */
+#define AUTO_SETTLE_PICTURES 15
+#define AUTO_MEASURE_MS 1500
+#define AUTO_LIMIT_MS 30000    /* a test's most */
+#define AUTO_RETRY_MS 10000    /* after a test stopped */
+#define AUTO_NOTICE_SIZE 240
+
+enum { AUTO_IDLE, AUTO_SETTLING, AUTO_MEASURING };
+static int auto_state, auto_test_mode;
+static KhdaysAutoSearch auto_search;
+static Uint64 auto_began, auto_phase_at, auto_field_since, auto_retry_at;
+static unsigned auto_pictures;
+static KhdaysAutoWatch auto_watch[2]; /* each screen mode's */
+static int auto_watched_mode = -1;     /* the mode the watch's seconds were counted in */
+static Uint64 auto_watch_since;
+static unsigned auto_watch_pictures;
+static SDL_AtomicInt auto_mission = {-1};              /* the last package's situation.mission (-1 none) */
+static int auto_save_pending;                   /* khdays_present_take_auto */
+static char auto_notice[AUTO_NOTICE_SIZE];       /* khdays_present_take_notice */
+static int auto_notice_pending;
+
+/* Whether Auto has anything to do: the port's 2D drawing and a screen on auto. */
+static int auto_on(void)
+{
+    return device != NULL && port2d_ready && port2d_mode == 1 &&
+           (video.internal_resolution == KHDAYS_RESOLUTION_WINDOW || video.lower_resolution == KHDAYS_RESOLUTION_WINDOW);
+}
+
+static int auto_mode(void)
+{
+    return video.one_screen ? 0 : 1;
+}
+
+/* The graphics card's key for its pairs: card_line as the settings file keeps it ('#' starts a comment there). */
+static void auto_card_key(char *key, size_t size)
+{
+    SDL_strlcpy(key, card_line, size);
+    for (char *c = key; *c != '\0'; ++c) {
+        if (*c == '#') {
+            *c = '_';
+        }
+    }
+}
+
+/* The mode's measured pair, on this graphics card. */
+static int auto_have(int mode)
+{
+    char key[KHDAYS_AUTO_CARD_SIZE];
+    if (video.auto_upper[mode] <= 0 || video.auto_lower[mode] <= 0 || card_line[0] == '\0') {
+        return 0;
+    }
+    auto_card_key(key, sizeof(key));
+    return SDL_strcmp(video.auto_card, key) == 0;
+}
+
+static int auto_upper_now(void)
+{
+    if (auto_test_upper > 0) {
+        return auto_test_upper;
+    }
+    return auto_have(auto_mode()) ? video.auto_upper[auto_mode()] : 0;
+}
+
+static int auto_lower_now(void)
+{
+    if (auto_test_lower > 0) {
+        return auto_test_lower;
+    }
+    return auto_have(auto_mode()) ? video.auto_lower[auto_mode()] : 0;
+}
+
+/* The player plays in the field: no event's scene or words, the HUD up, no pause, menu or HD movie. */
+static int auto_field_ok(void)
+{
+    const unsigned states = khdays_onescreen_states();
+    const unsigned busy = (1u << KHDAYS_ST_EVENT) | (1u << KHDAYS_ST_SCENE) | (1u << KHDAYS_ST_DIALOG);
+    return khdays_onescreen_scene() == KHDAYS_SIT_FIELD && (states & busy) == 0u &&
+           (states & (1u << KHDAYS_ST_HUD)) != 0u && !khdays_onescreen_paused() && !khdays_movie_hd_showing() &&
+           !khdays_settings_is_open();
+}
+
+static int auto_round(float s)
+{
+    const int n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
+    return n < 1 ? 1 : n;
+}
+
+/* The most the upper screen's display fits: the picture's own scale (one screen, or two in one window); with the
+ * lower screen on a display of its own, the upper display alone. */
+static int auto_upper_max(void)
+{
+    float s = shown_scale();
+#if defined(__ANDROID__)
+    if (two_displays && !video.one_screen) {
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(window, &pw, &ph);
+        const float sx = (float)pw / (float)columns_now(), sy = (float)ph / (float)H;
+        s = sx < sy ? sx : sy;
+    }
+#endif
+    int n = auto_round(s);
+    if (window_scale_cap > 0 && n > window_scale_cap) {
+        n = window_scale_cap; /* an older handheld's card (window_cap_for) */
+    }
+    if (refused_scale > 1 && n >= refused_scale) {
+        n = refused_scale - 1;
+    }
+    return n;
+}
+
+/* The most for the lower screen: its own display's fit, else (one picture) the upper's. */
+static int auto_lower_max(int upper_max)
+{
+#if defined(__ANDROID__)
+    int w = 0, h = 0;
+    if (two_displays && !video.one_screen && khdays_bottom_fit_size(&w, &h) && w > 0 && h > 0) {
+        const float sx = (float)w / (float)W, sy = (float)h / (float)H;
+        return auto_round(sx < sy ? sx : sy);
+    }
+#endif
+    return upper_max;
+}
+
+/* The pictures a second asked of a pair: KHDAYS_AUTO_TARGET, or with a display that shows fewer (VSync: its
+ * refresh; the DS picture: the game's 60) a little under what it shows -- no headroom left to measure there. */
+static int auto_target(void)
+{
+    float shows = 0.0f;
+    const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+    if (mode != NULL && mode->refresh_rate > 0.0f) {
+        shows = mode->refresh_rate;
+    }
+    if (video.picture_ds && (shows <= 0.0f || shows > 60.0f)) {
+        shows = 60.0f;
+    }
+    if (shows > 0.0f && (int)shows - 3 < KHDAYS_AUTO_TARGET) {
+        return (int)shows - 3;
+    }
+    return KHDAYS_AUTO_TARGET;
+}
+
+/* The watch's floor: KHDAYS_AUTO_FLOOR, or under what a slower display shows (as auto_target). */
+static int auto_floor(void)
+{
+    const int target = auto_target();
+    return target - 3 < KHDAYS_AUTO_FLOOR && target < KHDAYS_AUTO_TARGET ? target - 3 : KHDAYS_AUTO_FLOOR;
+}
+
+static void auto_say(const char *text)
+{
+    SDL_strlcpy(auto_notice, text, sizeof(auto_notice));
+    auto_notice_pending = 1;
+}
+
+static void auto_apply(Uint64 now)
+{
+    auto_test_upper = auto_search.setup.upper_auto ? auto_search.upper : 0;
+    auto_test_lower = auto_search.setup.lower_auto ? auto_search.lower : 0;
+    auto_state = AUTO_SETTLING;
+    auto_phase_at = now;
+    auto_pictures = 0;
+}
+
+static void auto_stop(Uint64 now, const char *why)
+{
+    auto_test_upper = auto_test_lower = 0;
+    auto_state = AUTO_IDLE;
+    auto_retry_at = now + AUTO_RETRY_MS;
+    fprintf(stderr, "host: auto: the test stopped (%s); tried again later\n", why);
+    khdays_log("graphics: auto: the test stopped (%s); tried again later", why);
+}
+
+static void auto_begin(Uint64 now, int mode)
+{
+    KhdaysAutoSetup setup;
+    setup.upper_auto = video.internal_resolution == KHDAYS_RESOLUTION_WINDOW;
+    setup.lower_auto = video.lower_resolution == KHDAYS_RESOLUTION_WINDOW;
+    setup.upper_max = auto_upper_max();
+    setup.lower_max = auto_lower_max(setup.upper_max);
+    setup.upper_fixed = setup.upper_auto ? setup.upper_max : scale_now();
+    setup.lower_fixed = setup.lower_auto ? KHDAYS_AUTO_SCALE_MIN : video.lower_resolution;
+    setup.target = auto_target();
+    khdays_auto_search_start(&auto_search, &setup);
+    auto_test_mode = mode;
+    auto_began = now;
+    auto_apply(now);
+    fprintf(stderr, "host: auto: testing %s (upper to %dx, lower to %dx) for %d pictures a second\n",
+            mode == 0 ? "one screen" : "two screens", setup.upper_max, setup.lower_max, setup.target);
+    khdays_log("graphics: auto: testing %s (upper to %dx, lower to %dx) for %d pictures a second",
+               mode == 0 ? "one screen" : "two screens", setup.upper_max, setup.lower_max, setup.target);
+    {
+        char text[AUTO_NOTICE_SIZE];
+        SDL_snprintf(text, sizeof(text), khdays_text(TXT_AUTO_TESTING), setup.target);
+        auto_say(text);
+    }
+}
+
+/* A pair to keep for `mode`: the window writes it to the settings file. */
+static void auto_keep(int mode, int upper, int lower, int fps)
+{
+    video.auto_upper[mode] = upper;
+    video.auto_lower[mode] = lower;
+    video.auto_fps[mode] = fps;
+    char key[KHDAYS_AUTO_CARD_SIZE];
+    auto_card_key(key, sizeof(key));
+    if (SDL_strcmp(video.auto_card, key) != 0) {
+        /* another card's pairs are not this one's */
+        video.auto_upper[!mode] = video.auto_lower[!mode] = video.auto_fps[!mode] = 0;
+        SDL_strlcpy(video.auto_card, key, sizeof(video.auto_card));
+    }
+    auto_save_pending = 1;
+}
+
+static void auto_done(void)
+{
+    const int mode = auto_test_mode;
+    khdays_auto_search_finish(&auto_search);
+    auto_test_upper = auto_test_lower = 0;
+    auto_state = AUTO_IDLE;
+    auto_keep(mode, auto_search.best_upper, auto_search.best_lower, auto_search.best_fps);
+    SDL_zero(auto_watch[mode]);
+    auto_watch_since = 0;
+    fprintf(stderr, "host: auto: %s kept upper %dx, lower %dx (%d pictures a second)\n",
+            mode == 0 ? "one screen" : "two screens", auto_search.best_upper, auto_search.best_lower,
+            auto_search.best_fps);
+    khdays_log("graphics: auto: %s kept upper %dx, lower %dx (%d pictures a second)",
+               mode == 0 ? "one screen" : "two screens", auto_search.best_upper, auto_search.best_lower,
+               auto_search.best_fps);
+    {
+        char text[AUTO_NOTICE_SIZE];
+        SDL_snprintf(text, sizeof(text), khdays_text(TXT_AUTO_SET), auto_search.setup.target, auto_search.best_upper,
+                     auto_search.best_lower, auto_search.best_fps);
+        auto_say(text);
+    }
+}
+
+/* The watch over play, with a pair in force: a second's pictures at a time in the field; a step owed is taken
+ * between missions (the Grey Area: no mission). */
+static void auto_watch_tick(Uint64 now, int playing, int mode)
+{
+    if (!auto_have(mode)) {
+        return;
+    }
+    if (!playing || mode != auto_watched_mode) {
+        /* the second in progress is left out, and the seconds in a row before it (another mode's too) */
+        auto_watch_since = 0;
+        auto_watch[0].low_seconds = auto_watch[1].low_seconds = 0;
+        auto_watched_mode = playing ? mode : -1;
+        if (!playing) {
+            return;
+        }
+    }
+    if (auto_watch_since == 0) {
+        auto_watch_since = now;
+        auto_watch_pictures = 0;
+    }
+    ++auto_watch_pictures;
+    if (now - auto_watch_since >= 1000u) {
+        const int pictures = (int)(auto_watch_pictures * 1000.0 / (double)(now - auto_watch_since) + 0.5);
+        khdays_auto_watch_second(&auto_watch[mode], pictures, auto_floor());
+        auto_watch_since = now;
+        auto_watch_pictures = 0;
+    }
+    if (auto_watch[mode].owed && SDL_GetAtomicInt(&auto_mission) == 0) {
+        int upper = video.auto_upper[mode], lower = video.auto_lower[mode];
+        auto_watch[mode].owed = 0;
+        if (khdays_auto_step_down(video.internal_resolution == KHDAYS_RESOLUTION_WINDOW,
+                                  video.lower_resolution == KHDAYS_RESOLUTION_WINDOW, &upper, &lower)) {
+            char text[AUTO_NOTICE_SIZE];
+            auto_keep(mode, upper, lower, 0);
+            fprintf(stderr, "host: auto: play fell under %d pictures a second; %s now upper %dx, lower %dx\n",
+                    KHDAYS_AUTO_FLOOR, mode == 0 ? "one screen" : "two screens", upper, lower);
+            khdays_log("graphics: auto: play fell under %d pictures a second; %s now upper %dx, lower %dx",
+                       KHDAYS_AUTO_FLOOR, mode == 0 ? "one screen" : "two screens", upper, lower);
+            SDL_snprintf(text, sizeof(text), khdays_text(TXT_AUTO_STEPPED), KHDAYS_AUTO_FLOOR, upper, lower);
+            auto_say(text);
+        }
+    }
+}
+
+/* Once a picture drawn (khdays_present_draw). */
+static void auto_tick(void)
+{
+    const Uint64 now = SDL_GetTicks();
+    const int playing = auto_on() && auto_field_ok();
+    const int mode = auto_mode();
+    if (!playing) {
+        auto_field_since = 0;
+    } else if (auto_field_since == 0) {
+        auto_field_since = now;
+    }
+    if (auto_state == AUTO_IDLE) {
+        if (playing && !auto_have(mode) && now >= auto_retry_at && now - auto_field_since >= AUTO_STABLE_MS) {
+            auto_begin(now, mode);
+        } else if (auto_on()) {
+            auto_watch_tick(now, playing, mode);
+        }
+        return;
+    }
+    if (!playing || mode != auto_test_mode) {
+        auto_stop(now, playing ? "the screens changed" : "no longer playing in the field");
+        return;
+    }
+    if (now - auto_began >= AUTO_LIMIT_MS) {
+        auto_done(); /* the best so far */
+        return;
+    }
+    ++auto_pictures;
+    if (auto_state == AUTO_SETTLING) {
+        if (now - auto_phase_at >= AUTO_SETTLE_MS && auto_pictures >= AUTO_SETTLE_PICTURES) {
+            auto_state = AUTO_MEASURING;
+            auto_phase_at = now;
+            auto_pictures = 0;
+        }
+    } else if (now - auto_phase_at >= AUTO_MEASURE_MS) {
+        const int fps = (int)(auto_pictures * 1000.0 / (double)(now - auto_phase_at) + 0.5);
+        fprintf(stderr, "host: auto: upper %dx, lower %dx: %d pictures a second\n", auto_search.upper,
+                auto_search.lower, fps);
+        khdays_log("graphics: auto: upper %dx, lower %dx: %d pictures a second", auto_search.upper, auto_search.lower,
+                   fps);
+        if (khdays_auto_search_measured(&auto_search, fps)) {
+            auto_apply(now);
+        } else {
+            auto_done();
+        }
+    }
+}
+
+int khdays_present_take_auto(KhdaysVideo *into)
+{
+    if (!auto_save_pending) {
+        return 0;
+    }
+    auto_save_pending = 0;
+    SDL_memcpy(into->auto_upper, video.auto_upper, sizeof(video.auto_upper));
+    SDL_memcpy(into->auto_lower, video.auto_lower, sizeof(video.auto_lower));
+    SDL_memcpy(into->auto_fps, video.auto_fps, sizeof(video.auto_fps));
+    SDL_strlcpy(into->auto_card, video.auto_card, sizeof(into->auto_card));
+    return 1;
+}
+
+int khdays_present_take_notice(char *text, int size)
+{
+    if (!auto_notice_pending) {
+        return 0;
+    }
+    auto_notice_pending = 0;
+    SDL_strlcpy(text, auto_notice, (size_t)size);
+    return 1;
 }
 
 /* Whether engine A's 3D is drawn on the graphics card: at an internal
@@ -583,6 +956,9 @@ int khdays_present_wants(void)
     }
     if (video.one_screen) {
         wants |= KHDAYS_WANT_SITUATION; /* what the one-screen picture needs to tell the situation */
+    }
+    if (auto_on()) {
+        wants |= KHDAYS_WANT_SITUATION; /* Auto tests and watches only in the field */
     }
 #if defined(__ANDROID__)
     if (two_displays) {
@@ -1630,6 +2006,11 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 khdays_raster3d_use_list(NULL, NULL);
                 return;
             }
+        } else if (auto_on()) {
+            khdays_onescreen_decide(p); /* the situation for Auto (one screen decides it in its prepare) */
+        }
+        if (p->situation.taken) {
+            SDL_SetAtomicInt(&auto_mission, p->situation.mission);
         }
         /* A picture only (an HD backdrop with `hide3d all` and none of the DS's screens in it: the title):
          * made at the smallest whole scale that covers the window, then shrunk to its pixels. The
@@ -1844,6 +2225,13 @@ void khdays_present_set_video(const KhdaysVideo *given)
         copy.one_screen = given->one_screen_second || title_one;
     }
 #endif
+    if (auto_save_pending) {
+        /* a pair kept here that the window has not taken yet stays (the settings given are older) */
+        SDL_memcpy(copy.auto_upper, video.auto_upper, sizeof(copy.auto_upper));
+        SDL_memcpy(copy.auto_lower, video.auto_lower, sizeof(copy.auto_lower));
+        SDL_memcpy(copy.auto_fps, video.auto_fps, sizeof(copy.auto_fps));
+        SDL_strlcpy(copy.auto_card, video.auto_card, sizeof(copy.auto_card));
+    }
     graphics_flags =
         (v->hd_graphics ? KHDAYS_HOST_HD_GRAPHICS : 0) | (v->dump_graphics ? KHDAYS_HOST_DUMP_GRAPHICS : 0) |
         (v->movies == KHDAYS_MOVIES_DS ? KHDAYS_HOST_MOVIES_DS : 0) |
@@ -1854,6 +2242,12 @@ void khdays_present_set_video(const KhdaysVideo *given)
     khdays_subtitles_set(v->subtitles);
     if (v->internal_resolution != video.internal_resolution) {
         refused_scale = 0; /* try the new choice */
+    }
+    if (auto_state != AUTO_IDLE &&
+        (v->internal_resolution != video.internal_resolution || v->lower_resolution != video.lower_resolution ||
+         v->one_screen != video.one_screen)) {
+        auto_test_upper = auto_test_lower = 0;
+        auto_state = AUTO_IDLE; /* chosen again: the test starts over when it can */
     }
     if (v->backend != video.backend && renderer != NULL) {
         backend_change = 1; /* the window remakes the renderer with it (khdays_present_lost) */
@@ -2240,6 +2634,7 @@ void khdays_present_draw(void)
         return;
     }
     fps_count();
+    auto_tick();
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     /* the game's pause over a scene's paused video: on one screen its panel over the video's picture
