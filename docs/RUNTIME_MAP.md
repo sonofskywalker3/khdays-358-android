@@ -192,10 +192,51 @@ both were 0. What only the decompilation's C says, not a trace, is marked
   `KHDAYS_TRACE_PAD` over a Mission Mode run read mode 0 in every game frame,
   on the title, the character select (scene 7), the camp (19) and the field
   (2); modes 1 (20 fps) and 2 (60 fps) were not seen.
-- **The actors read the pad a game frame late.** The local player's actor has
+- **The actors read the pad a game frame late -- on the DS.** The local player's actor has
   its buttons at +0x18 (pressed) and +0x1a (held), filled from the control
   packet: what `Pad_Sample` read in game frame N is there in frame N+1 (Up
-  read in frame 2329 was +0x1a = 0x40 in 2330; B read in 2577, in 2578).
+  read in frame 2329 was +0x1a = 0x40 in 2330; B read in 2577, in 2578). The
+  order is the battle's, a host's (section 16.1): `Ov022_RefreshSlotRows` copies
+  each member's row of the input table into its actor (`Ov022_LoadNodeFromResource`)
+  and updates it (`Ov022_ActorUpdate`, the command menu's `Ov022_UpdateCommandInput`
+  inside it), and only then the battle's network send (`func_ov022_02089704`, an
+  object's tick later in the same pass) builds this frame's packet
+  (`Ov022_SendControlPacket`: `gPadHeld`, the command chosen, the target). Nor
+  does that packet reach the table at once: alone the game runs in link mode 1
+  (`KHDAYS_TRACE_CONTROLS`), where `MsgQueue_SendGate` queues it
+  (`MsgQueue_Enqueue`); an object's tick (`ContextEntry_InitForRootHeap` ->
+  `Node_FlipDoubleBuffer` -> `AsyncMessage_Flush`) moves the queue into the
+  received channel (`dispatchByObjTypeBits`, `ChannelBuf_Append`; link mode 2's
+  "at once" for gates 3 and 0x12 goes there too), and only the next frame's
+  `List_TryInvokeEntry(0)`, first in `Ov022_RefreshSlotRows`, hands it to gate
+  3's handler (`CmdPacket_Dispatch` -> `Ov022_PublishRequestToSlot`: the
+  packet's 12 bytes to the row at `*data_ov022_020b2ea4` + 0x28 + slot * 0xc,
+  its buttons -- bits 3-14 of the halfword at +2 -- to +0x98 + slot * 6). Alone the
+  port builds a packet as `Ov022_RefreshSlotRows` is about to read the table
+  (after that dispatch, before `func_ov022_0208a1fc` makes the pressed buttons
+  from the held), once a game frame, and `MsgQueue_SendGate` gives only its
+  directions (Right, Left, Up, Down: bits 7-10 of the halfword) to the local
+  player's row as it stands, through gate 3's handler, instead of queueing it
+  (`port/tools/prepare.py`, `khdays_controls_send_early`,
+  `runtime/input/sequencers.c`); the command chosen and `bInput1`, which building
+  a packet clears, are put back. The game's own packet is still built by the
+  network send and queued, and brings the rest -- the other buttons, the command
+  chosen and its target (`func_ov022_02086654`), read after the update that chose
+  them. Given whole (the first try, 2026-11-10), and then with all its buttons,
+  the player could not talk to the Grey Area's members: the actor saw the A that
+  the command menu took for Talk a frame before the Talk came. The player moves
+  by the directions of the frame they were read in (commands and the other
+  buttons as on the DS), and the stick of analog
+  movement and of the KH2 camera's follow with them (`khdays_input_movement_snapshot`:
+  that frame's snapshot, not the one before). Not in a multiplayer session,
+  in Sora's memory (`data_0204be04`), with the mode word at 0x2a (its saved
+  masks are added to `gPadHeld` after that point), or while the network send's
+  object is paused (bit 0 of its first word); `KHDAYS_DS_CONTROL_ORDER=1` keeps
+  the game's order. Headless (`KHDAYS_TRACE_PLAYER=1`, a press of a direction
+  every 121 VBlanks in the field, 24 presses), the player first moved 3-4
+  VBlanks after the press in the game's order (3.54 on average), 1-2 with the
+  port's (1.54): a logic frame sooner. Built early but queued as the game
+  queues it, it still moved after 3-4 (3.50).
 - **Flip Foot** (the Tricky Monkey's status, `+0x2770` = 5): `Ov022_StepChargeSequence` swaps the
   held Up/Down and Left/Right at `+0x1a` (`Ov022_SwapPairedStateFlags`), `Ov022_TranslateCommandToAction`
   makes the heading from them and swaps them back. Analog movement's stick heading turns around when
@@ -402,6 +443,9 @@ The native build prints these to stderr when the variable is set:
   between (`alpha`), the polygons placed between of all,
   `between`/`newest`/`cut`, those two lists' times, and the camera's translation and turn between them
   (section 7, "The picture at the monitor's rate").
+- `KHDAYS_VSYNC=always` -- VSync kept on while the window draws only the
+  game's pictures as they come (it is off then: section 35); `KHDAYS_SMOOTH_VSYNC=1` -- the smooth pace with
+  VSync even while the screen's lock holds (without it then: section 35).
 - `KHDAYS_TRACE_UPDATES` -- each object update's change to the next.
 - `KHDAYS_TRACE_CAPTURE` -- each screen blend's frame as the window draws it:
   the bank shown from its copy, or at the DS's size and why, and the capture
@@ -434,7 +478,37 @@ The native build prints these to stderr when the variable is set:
 - `KHDAYS_TRACE_CONTROLS` -- what the field does with its controls, when it
   changes: the camera's input bits and targets, the lock-on and command-menu
   input and the calls they make, the movement heading and speed, the local
-  player's states, the frame-rate mode (`port/runtime/input/controls_hooks.c`).
+  player's states, the frame-rate mode, where the control packet is built
+  (`port/runtime/input/controls_hooks.c`).
+- `KHDAYS_DS_CONTROL_ORDER=1` -- the field's control packet built where the
+  game builds it, after the characters' update: the player a game frame behind
+  the buttons, as on the DS (section 3.1), to compare.
+- `KHDAYS_FAST_COMMANDS=0` -- commands a game frame later, as the game gives
+  them; by default an attack (the deck's Attack with the weapon out), magic or
+  an item the command menu chose is given to the local player in the frame it
+  was chosen (`khdays_controls_command_early`, `runtime/input/controls_hooks.c`;
+  not the Grey Area's A, which chooses none). Alone, as the directions.
+- `KHDAYS_TURN_EASE=N`, `KHDAYS_TURN_SPEED=N` -- how the local player turns:
+  each game frame N percent of the turn still left (`TURN_EASE`, default 50;
+  100 all at once, 0 the game's own turning), never less than N percent of the
+  game's speed (`TURN_SPEED`, default 100, up to 1100). A key's eighth or
+  quarter turn so eases out over three or four frames, and a stick turned
+  round quickly is followed half a step behind (fast enough, the player spins
+  where he stands); the game's snap round past 157 degrees is left out, so a
+  turn about eases too. Every steer asks
+  `Ov022_ClampAngleTowardTarget` how far it may turn a frame, at most the
+  actor's +0x4b0 (0xc00 of a turn on the ground: 17 degrees a frame, a whole
+  turn in 0.7 s), which kept a running player from circling tighter
+  (`khdays_controls_turn_limit`, `runtime/input/controls_hooks.c`). Stick, keys
+  and D-pad alike; not in a session, nor with `KHDAYS_DS_CONTROL_ORDER`.
+- `KHDAYS_PRESS_PACE=0` -- without the press pace, on by default (`runtime/input/input.c`, main's
+  frame loop in `prepare.py`): at 30 game frames a second a new press (a
+  button down or let go, the movement stick started or stopped, not its turns)
+  ends the frame's wait for its second VBlank, so the next frame starts at the
+  coming VBlank and reads it, as at 60; the next frame with nothing new waits a
+  VBlank more to give it back, keeping 30 a second. One player alone, the 30 a
+  second mode alone; `KHDAYS_TRACE_PRESS_PACE` logs each early start and each
+  VBlank given back.
 
 `KHDAYS_HEADLESS=1` runs without a window; `KHDAYS_INPUT` plays a script of
 key presses, touches and stick positions (`port/runtime/input/input.h`).
@@ -5831,3 +5905,112 @@ pauses (0.2-1.2 s). The port adds nothing a frame of its own: the picture is pre
 the package arrives (one frame in flight). What waits is the screen's refresh after it, which the
 screen's lock (PLATFORM.md, "Threads, interrupts and time") keeps short and the same each time on a
 60 Hz screen.
+
+Measured again 2026-11-11 on the player's PC (`KHDAYS_TRACE_LATENCY`, the moves walk's field from the player's
+save with their mods, a borderless window over a 60 Hz screen, internal resolution `window`, Direct3D 12),
+the presses in the field only:
+
+| from the press to | the window | the game's pad sample | the picture presented | in all |
+|---|---|---|---|---|
+| the DS's pace, before | 12.4 ms | 20.5 ms more | 53.4 ms more | 86 ms |
+| the DS's pace, now | 0.4 | 16.2 | 36.0 | 52 |
+| the smooth pace, before | 12.8 | 21.8 | 53.4 | 88 |
+| the smooth pace, timed (taken out) | 1.0 | 17.3 | 53.2 | 71 |
+
+Measured 2026-11-14 on the same PC and walk (the borderless window, the player's settings): both paces had
+gone back to 87-88 ms -- the window's thread in `SDL_RenderPresent` 15.5 ms of each refresh, without VSync
+too, with the picture at its lightest (internal resolution 2, no FXAA) as well, and 0.3 ms in a window
+with borders. Two frames in flight had been two swapchain images, not three (SDL makes as many as the
+frames in flight, two at the least), and Windows' independent flip of the borderless window held each
+present until the other image came off the screen:
+
+| from the press to | the window | the game's pad sample | the picture presented | in all |
+|---|---|---|---|---|
+| the DS's pace, two frames in flight | 12.4 ms | 21.6 ms more | 53.2 ms more | 87 ms |
+| the smooth pace (VSync) | 12.7 | 21.5 | 53.5 | 88 |
+| the DS's pace, three frames in flight | 0.1 | 17.5 | 34.1 | 52 |
+| the smooth pace at the refreshes, no VSync | 0.2 | 17.0 | 34.2 | 51 |
+
+- **No VSync while only the game's pictures are drawn** (`khdays_present_wait_for_refresh`,
+  `host/render/gpu_present.c`). With it, `SDL_RenderPresent` waited for a free swapchain image for most
+  of each refresh (15 ms of each 16.7), on the window's thread, which also takes the keyboard's and the
+  gamepads' events: a press waited there, and each picture was presented a refresh after it was drawn.
+  Without it SDL's renderer presents MAILBOX (on Direct3D 12 a flip-discard present at sync interval 0
+  without tearing): the newest picture shown at the next refresh, none waited for. With two swapchain
+  images a present still waited a refresh where the picture went to the screen without the compositor (a
+  borderless window over it: Windows' independent flip), so without VSync the card keeps three frames in
+  flight, three images (two frames in flight were two images: the table above). SDL builds the swapchain
+  anew at each change. VSync is on while the window draws on its own time (an animated backdrop, a movie,
+  the KH2 pause, a settling picture, the settings menu, a monologue), which without it would be drawn as
+  fast as the card goes.
+- **The smooth pace at the screen's refreshes, without VSync** (`smooth_unblocked`,
+  `khdays_present_between_due_ms`, `host/render/gpu_present.c`; `host/app/window.c`). While the screen's
+  lock holds (PLATFORM.md: the game's VBlank 6 ms before each refresh, at 60, 120 or 240 Hz), the smooth
+  pace draws as the DS's does: each package as it comes, presented without waiting and shown at the
+  coming refresh, and on a screen faster than 60 Hz a picture at each refresh between packages, timed from
+  the package. The 3D is placed by the refreshes since the newer list's package came, one refresh's share
+  already at the first: at 60 Hz half of the step at the package that brings it, the whole at the next,
+  evenly -- the step starts on screen at the same refresh as at the DS's pace, never past the newer; a
+  game frame of one VBlank (the press pace's early start) shows its newest at once. Where the lock does not
+  hold (a screen at 75 or 144 Hz, a session, the time held) or with `KHDAYS_SMOOTH_VSYNC=1`, the smooth pace
+  keeps VSync and its steady delay (`picture_delay`, section 7).
+- **Not done: the pad read later.** The game reads the pad (`Pad_Sample`) every VBlank, 3 ms after it,
+  and works 5-10 ms after the read (up to 12) before its next wait. A read held until a margin before the
+  next VBlank gained 2 ms; held past it (to the game's next frame, the field's two VBlanks), the 3D's
+  swap came a VBlank later in half the frames (30 of 60), and the presses took longer in all: the game's
+  work belongs right after its VBlank. Nor is a picture drawn before its VBlank: the VBlank's handler
+  changes the 2D then.
+
+## 36. The Dark Corridors
+
+Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `mission.start(6)`; the play walk's input;
+`KHDAYS_TRACE_CORRIDORS=2`, `=3`):
+
+- **Days's standing oval** is a model: `mi/ob/06.z`'s `E000_xx_000` (13 nodes: `Box01`-`Box04`, the floor's
+  `Plane01`-`04`, `bilbord` with `S1`, `Plane02`, `s3`, `cs`), drawn as a field object through the 3D engine's Flush
+  at scale 1. Its file's joint clips are `E000_xx_000` (opening, 70 frames), `E010_xx_000` (holding, 60) and
+  `E020_xx_000` (closing, 61), with material and texture animations of the same names. In mission 6 it is first drawn
+  at the game's frame 1659 (E000), holds from 1727 (E010), closes from 1787 (E020) -- its `bilbord` parts fading from
+  that clip's 40th frame, nothing seen from its 53rd -- and is no longer drawn from 1847; Roxas and Vexen step out of
+  it meanwhile. `mi/ob/09.z` has the same model with `E010_xx_000` alone; `mi/ob/07.z`'s `E_100_xx_000` (the same
+  look, one clip of 167 frames) was not seen in play. `mi/ob/08.z`'s `E110_xx_000` (thorns, a whirlpool) is another
+  effect. The floor swirl (`mo/mo#45`, `E040_xx_000`) and the corridor home's floor hole (`mo/mo#46`) are others.
+- **Its size as seen**: its smoke lines' model reaches 7.556 above its floor, but its pictures fade out well inside
+  it: on the frames its darkness (each pixel's change from the frame before it showed) reaches 3.6-3.8 above its floor
+  at its middle and is 2.4 across, the screen's rows taken to the model's heights through the oval's own matrices.
+- **Its floor**: the oval stands sunk in the ground -- its floor at the world's -0.090, Vexen and Roxas beside it at
+  0.000 (every model's place, `=3`). Its flat floor pieces lie above its floor: `smog_c` at 0.039 and 0.083 (under
+  the ground there) and its floor shadow `smog_d` at 0.135, the one seen.
+- **KH2's corridor** is the first effect of KH2's `event/effect/tt_event_904.pax` (docs/FORMATS.md, "KH2's effects"):
+  one repeating emitter of 34 layers and 150 frames. Its oval -- a bowl behind a depth-only mask holed in its shape,
+  seen through the hole from its +z -- reaches 430 above its floor (its y 0, y down) and is 300 across; told to stop,
+  it closes in 92 ticks (KH2's 60 a second).
+- **The port** (`port/runtime/mods/kh2_corridors.cpp`, with the KH2 Prizes mod's `kh2fx/` files and the settings'
+  "KH2 Dark Corridors" on): the oval's draw is taken (`khdays_models_draw_begin`), its shapes left out
+  (`khdays_models_shape`, their matrix commands still run), and the corridor run 60 times a second of the game's
+  frames (two ticks a frame at 30) and drawn there: KH2's floor on Days's floor shadow (0.135 above the oval's floor;
+  on the oval's own, KH2's shadow -- discs and rings at its y 0 -- lay under the ground and was hidden), its top on
+  the oval's seen top ((3.7 - 0.135) / 430 of the oval's units a KH2 unit, then 2.5 across), its axes the oval's
+  turned half a turn about z (y up, its front on the oval's +z) and the oval turned about its up so that its front
+  looks at the camera (seen from the front, as KH2's are: the maintainer's choice), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
+  scene. It closes within the oval's closing clip, when the clip has as long left as its closing takes (92 ticks:
+  46 frames), so both end together; an oval that stops being drawn without one closes it where it was, its triangles
+  added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD
+  ones (`kh2fx/<file's stem>/-<n>.dds`) with HD graphics on. Each copy of a multiplayer game draws its own from its
+  own game; nothing is sent.
+- **Its sounds** (`KHDAYS_TRACE_SOUND=1`): Days's oval starts `seqarc/EV_DARK_APPEAR/se_ev_dark_appear` (2.5 s) and
+  `se_ev_dark_loop` (a 5.2 s loop) together as it opens, `seqarc/EV_DARK_DISAPPEAR/se_ev_dark_disappear` (3.2 s) as
+  it closes, and stops the loop 8 frames (60 a second) after that -- in mission 6 and the scenes that load
+  `mi/ob/06.z`; the play walk's arrival (the floor swirl) starts none of them. KH2's corridor effect names no sound
+  (its element's is -1): KH2's scenes play their own (docs/FORMATS.md, "KH2's sound banks and its scenes' sounds").
+  Twilight Town's event 904 (tt04, bank 2984) starts its sound 10 (10.4 s: it rises, holds about 7 s and fades) at
+  frame 1953 and the corridor at 1954, and its sounds 16 (6.4 s) and 17 (3.6 s, footsteps) at 2874, stopping the
+  corridor at 2892; di02's event 899 (a variant of the corridor, bank 3101) starts none at its corridors, and no
+  sound of the other banks goes with one (those the Organization's banks share are their attacks'). The KH2 Prizes
+  mod (`tools/mods/kh2_prizes.py`) plays KH2's sound 10 as the loop -- heard from the opening, stopped with the
+  loop -- leaves the appear silent and plays sound 16 as the disappear (on to its end), its `sounds/switches.txt`
+  tying the three to "KH2 Dark Corridors" (docs/SOUND.md, "Mods' sounds").
+- **Checked against a reference player** drawing the same effect with KH2's own pictures from the game's camera
+  (`=3` logs it) over the frame before the oval showed: the hole's inside within 1-2% (each region's mean colour),
+  once its bare-colour triangles took the GS's rule (the vertex colour itself without a picture: they had been twice
+  as bright).
