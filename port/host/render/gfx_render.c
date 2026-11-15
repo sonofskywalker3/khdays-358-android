@@ -394,7 +394,8 @@ typedef struct CaptureCopy {
 static CaptureCopy capture_copy[2]; /* engine A's picture when it was on the upper screen, on the lower */
 static void drop_capture_copy(CaptureCopy *k);
 static uint32_t drawn_frame, drawn_before;
-static int drawn_any, drawn_capture, drawn_upper, drawn_both;
+static int drawn_any, drawn_capture, drawn_upper, drawn_both, drawn_armed;
+static KhdaysArmedSeen armed_seen; /* the last drawn package with a capture armed */
 /* The screen blends (a cut between an event's camera shots, Ov023_CmdStartScreenBlend): engine A shows a
  * VRAM bank while its picture, blended with that bank, is captured back into it. The port's capture is at
  * the DS's size, so each one is taken again here from what the window shows, and the bank shown from
@@ -1056,6 +1057,7 @@ void khdays_gfx_render_close(void)
     drop_capture_copy(&capture_copy[0]);
     drop_capture_copy(&capture_copy[1]);
     drawn_any = 0;
+    armed_seen.valid = 0;
     for (int b = 0; b < 4; ++b) {
         drop_hd_bank(&hd_bank[b]);
     }
@@ -1412,7 +1414,7 @@ static CaptureCopy *capture_copy_shown(void)
 {
     CaptureCopy *k = &capture_copy[drawn_upper == 0 ? 1 : 0];
     if (!drawn_any || !drawn_capture || !k->ok || k->texture == NULL ||
-        !khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both)) {
+        !khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both, drawn_armed)) {
         return NULL;
     }
     return k;
@@ -1466,6 +1468,7 @@ static void hold_capture(const KhdaysFramePackage *p)
      * capture. The game says it changes screens for 8 VBlanks after the last change (frame_package.h `both`);
      * the copy is too old after KHDAYS_KEPT_VBLANKS, so engine B's screen is its own again soon after it stops. */
     drawn_both = p->both != 0;
+    drawn_armed = khdays_two_screens_armed_seen(&armed_seen, p->frame, p->dispcapcnt != 0u);
     drawn_upper = p->upper;
     drawn_any = 1;
     if (trace_capture() && (drawn_capture || drawn_both)) {

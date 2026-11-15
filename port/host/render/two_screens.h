@@ -30,9 +30,23 @@ KhdaysTwoScreensLayout khdays_two_screens_layout(int side_by_side, int columns, 
  * (`before`), or, while the game changes screens VBlank by VBlank (`both`: the package's own flag, armed capture
  * or not), at most
  * KHDAYS_KEPT_VBLANKS old -- a package the window did not draw, or a change of screens the game skipped, leaves
- * the copy of the picture before on the screen, not the DS's own small capture. */
+ * the copy of the picture before on the screen, not the DS's own small capture. While the game still captures
+ * (`armed`: a package drawn in the last KHDAYS_KEPT_VBLANKS had a capture armed; a game frame over two VBlanks
+ * arms it on the first only; tearing the scene down stops it) up to KHDAYS_KEPT_VBLANKS_ARMED: a window drawing
+ * two packages in four that misses one leaves the copy 5 or 6 old (the Coliseum's scene on the Thor at 5x: one
+ * package in eight to twenty fell back to the DS's capture with 4 alone). */
 #define KHDAYS_KEPT_VBLANKS 4
-int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both);
+#define KHDAYS_KEPT_VBLANKS_ARMED 8
+int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both, int armed);
+
+/* `armed` above, from the packages drawn: khdays_two_screens_armed_seen with each drawn package's VBlank and whether
+ * it has a capture armed answers whether one had in the last KHDAYS_KEPT_VBLANKS. A VBlank before the last armed
+ * one (a load, a replay) forgets it. Zeroed: none seen. */
+typedef struct KhdaysArmedSeen {
+    unsigned at;
+    int valid;
+} KhdaysArmedSeen;
+int khdays_two_screens_armed_seen(KhdaysArmedSeen *seen, unsigned now, int armed_now);
 
 /* A screen's 2D scale ([video] upper_resolution / lower_resolution, profile.h): `setting` as chosen, or for 0
  * (auto, KHDAYS_RESOLUTION_WINDOW) `auto_scale`; never below `at_least` (the 3D's scale for the 3D's engine, else

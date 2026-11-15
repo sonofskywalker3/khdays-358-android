@@ -21,13 +21,26 @@ KhdaysTwoScreensLayout khdays_two_screens_layout(int side_by_side, int columns, 
     return l;
 }
 
-int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both)
+int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both, int armed)
 {
     const unsigned age = now - kept_at;
     if (age == 0u) {
         return 0; /* this package's own picture: on its own screen */
     }
-    return kept_at == before || (both && age <= KHDAYS_KEPT_VBLANKS);
+    return kept_at == before ||
+           (both && (age <= KHDAYS_KEPT_VBLANKS || (armed && age <= KHDAYS_KEPT_VBLANKS_ARMED)));
+}
+
+int khdays_two_screens_armed_seen(KhdaysArmedSeen *seen, unsigned now, int armed_now)
+{
+    if (seen->valid && now < seen->at) {
+        seen->valid = 0; /* the VBlanks went back */
+    }
+    if (armed_now) {
+        seen->at = now;
+        seen->valid = 1;
+    }
+    return seen->valid && now - seen->at <= KHDAYS_KEPT_VBLANKS;
 }
 
 int khdays_two_screens_scale2d(int setting, int auto_scale, int at_least)
