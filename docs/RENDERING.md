@@ -317,12 +317,16 @@ DS's size, smoothed or square by the scaling.
 
 From 3x up the 2D is composed once a DS pixel and only where something finer
 needs it at each output pixel (`gfx/spread2d.h`), for a screen of the DS's
-width or the wider picture up to 1024 columns that doesn't show the 3D itself
-(the one-screen picture's sources, and screens without 3D); not for
-`KHDAYS_GFX=check`. `KHDAYS_2D_SPARSE=0` uses the composition as it was. The DS-sized pass gives each DS pixel a verdict:
+width or the wider picture up to 1024 columns: the one-screen picture's sources,
+screens without 3D, and a screen with the card's 3D in it (engine A's in the
+field, widescreen too); not for `KHDAYS_GFX=check`. `KHDAYS_2D_SPARSE=0` uses
+the composition as it was. The DS-sized pass gives each DS pixel a verdict:
 the same at every place in it, nothing of the 2D over the one-screen picture's
 3D, the 3D over the backdrop by its alpha, the same wherever the 3D's alpha is
-the one it was composed with, or composed at each place. It looks at the
+the one it was composed with, the 2D the same at every place over a 3D that
+varies (the 2D taken once, the 3D at each place put among it as the
+composition would: `gfx/compose_core.h` `kd_over3d`, the arithmetic
+`compose.h` composes with), or composed at each place. It looks at the
 elements' texels in the pixel, so an element that is transparent all over it
 (a picture as large as the screen with a HUD piece in one corner) neither makes
 it composed at each place nor is looked at there later. `shaders/spread2d.hlsl`

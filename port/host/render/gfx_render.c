@@ -96,6 +96,7 @@ static void compose_params(SDL_GPUCommandBuffer *cmd, const Compose2dParams *p)
 /* spread2d.hlsl's constant buffer, register for register. */
 typedef struct Spread2dParams {
     uint32_t dots_w, dots_h, flags, origin_x, origin_y, hofs3d, backdrop8, pad0;
+    uint32_t desc_flags, desc_blend, desc_coef, desc_master, desc_wide, pad1, pad2, pad3; /* PRE_OVER3D's */
 } Spread2dParams; /* (its pass also takes compose2d.hlsl's block, as the screen's composition does) */
 
 /* layers2d.hlsl's constant buffer, register for register. */
@@ -266,6 +267,8 @@ static SDL_GPUComputePipeline *spread_pipeline;
 static SDL_GPUBuffer *spread_groups[2];
 static int sparse_2d = -1;
 static uint32_t sent_flags[2], sent_wide[2]; /* each description's KD_FLAGS and KD_WIDE as the card was sent them */
+/* ... its KD_BLEND, KD_COEF and KD_MASTER (spread2d.hlsl's PRE_OVER3D dots) */
+static uint32_t sent_blend[2], sent_coef[2], sent_master[2];
 static int pre_shared; /* pre2d is made for reading and writing (and atomics) in one pass: the list needs it */
 /* The lower screen's rows past the DS's 192 (or under its frame) for a taller second display, composed
  * with some layers left out (host/screens/lower_layout.h): asked for, then drawn into `rows_texture`. */
@@ -2227,6 +2230,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
             compose_for(((const uint32_t *)(mapped + at))[KD_WIDE], ((const uint32_t *)(mapped + at))[KD_FLAGS]);
         sent_flags[e] = ((const uint32_t *)(mapped + at))[KD_FLAGS]; /* (KDF_SPLIT, KDF_FINE: the card's, not the game's) */
         sent_wide[e] = ((const uint32_t *)(mapped + at))[KD_WIDE];
+        sent_blend[e] = ((const uint32_t *)(mapped + at))[KD_BLEND];
+        sent_coef[e] = ((const uint32_t *)(mapped + at))[KD_COEF];
+        sent_master[e] = ((const uint32_t *)(mapped + at))[KD_MASTER];
         at += KHDAYS_DESC_WORDS * 4;
         memcpy(mapped + at, p->palette2d + 0x400 * e, 0x400);
         at += 0x400;
@@ -2605,13 +2611,19 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
          * and lists the rest, and the composition then runs only at the listed dots' texels. Exact: the listed
          * texels are composed as before, the others are given what the composition would give them. Not past the
          * verdicts' columns, below 3x (the Air Mini's Mali at 2x: 49 pictures a second so, 54 with Fast 2D; at 3x
-         * 32 so, 27 with Fast 2D, 26 composed at each texel), for a screen that shows the 3D (most of its dots would be
-         * listed; the one-screen picture's source is split from the 3D and has none), nor for the check, nor for the
-         * picture KHDAYS_GFX=savings draws again to compare (`reference`): that one is composed at each texel. */
+         * 32 so, 27 with Fast 2D, 26 composed at each texel), for a screen that shows the 3D from its 1x copy (most
+         * of its dots would be listed: spread2d.hlsl reads the card's 3D at each texel, SPREAD_SOLID; the one-screen
+         * picture's source is split from the 3D and has none), nor for the check, nor for the picture
+         * KHDAYS_GFX=savings draws again to compare (`reference`): that one is composed at each texel. A screen with
+         * the card's 3D in it (engine A's in the field, widescreen too): only the dots whose 2D is finer than a DS
+         * pixel are composed at each texel, the others get the 3D put among their 2D (PRE_OVER3D). Before, on a UHD
+         * 770 at 3840x2160 (11x), a mission's fight on one screen: engine A's 2D 49 ms a picture, every texel
+         * composed. */
         const int split = one != NULL && !(e == 0 && whole_a);
         const int sparse = sparse_now() && (se >= PRE_SCALE_MIN || (sparse_2d == 2 && se > 1)) &&
                            screen_columns[e] <= PRE_COLUMNS &&
-                           (cp.source3d == 0u || split) && !checked_whole() && !reference && !gpu_skip("sparse");
+                           (cp.source3d == 0u || split || (cp.source3d == 2u && e == 0 && raster)) &&
+                           !checked_whole() && !reference && !gpu_skip("sparse");
         SDL_GPUComputePipeline *const sparse_pipeline = sparse ? sparse_for(sent_wide[e], sent_flags[e]) : NULL;
         if (sparse_pipeline != NULL) {
             Spread2dParams sp;
@@ -2664,6 +2676,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
                 const uint32_t bd = p->desc2d[e][KD_BACKDROP] & 0x7fffu;
                 sp.flags |= SPREAD_SOLID;
                 sp.hofs3d = p->desc2d[e][KD_HOFS3D];
+                sp.desc_flags = sent_flags[e];
+                sp.desc_blend = sent_blend[e];
+                sp.desc_coef = sent_coef[e];
+                sp.desc_master = sent_master[e];
+                sp.desc_wide = sent_wide[e];
                 /* compose.h kd_fine */
                 for (uint32_t n = 0; n < 3; ++n) {
                     const uint32_t c = (bd >> (5u * n)) & 31u;
@@ -2710,7 +2727,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
         }
         static FineParts fine;
         int coarse = coarse_now() && (one != NULL || cp.source3d == 0u) && se > 1 &&
-                     !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) &&
+                     !(e == 0 && (whole_a || p->capture)) && !checked_whole() && !finer_than_ds(p) && !reference &&
                      !gpu_skip("coarse");
         if (coarse) {
             fine_parts(p, e, one != NULL && !(e == 0 && whole_a), parts, part_count, screen_columns[e], &fine);
@@ -2718,7 +2735,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
         }
         coarse_pictures[e] += coarse;
         if (!coarse && se >= PRE_SCALE_MIN && cp.source3d == 0u && screen_columns[e] <= PRE_COLUMNS &&
-            !gpu_skip("pre")) {
+            !reference && !gpu_skip("pre")) {
             /* each DS pixel once: whether its N x N output pixels are all alike. Not for an engine that reads the
              * 3D: its pixels are seldom alike, and the pass cost the TCL's Mali 2.5 ms for nothing (2026-11-05) */
             io[6].cycle = true;

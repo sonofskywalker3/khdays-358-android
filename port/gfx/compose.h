@@ -3,7 +3,7 @@
  * run the same code; the includer defines KD_FN, KD_VOID, KD_DESC, the memories, palettes, 3D and
  * replacements' accessors (KD_*), and the types `uint`, `int` and `float` (docs/RENDERING.md). */
 
-#define KD_OPAQUE 0x8000u
+#include "compose_core.h"
 
 /* whether these flags ask for the one-screen picture's sources (kd_split); a shader made for one case
  * says which (compose2d.hlsl) */
@@ -25,6 +25,11 @@
 #endif
 #ifndef KD_STACK_SEEN
 #define KD_STACK_SEEN(s)
+#endif
+/* What kd_compose was given (the layers' colours, the topmost sprite, the window mask, the layers' priorities as
+ * kd_pick takes them), for compose2d.hlsl's pass at the DS's size: nothing told by default. */
+#ifndef KD_COMPOSE_SEEN
+#define KD_COMPOSE_SEEN(color, spr, mask, prios)
 #endif
 
 KD_FN int kd_s16(uint v)
@@ -59,20 +64,8 @@ KD_FN uint kd_obj16(uint a)
     return KD_OBJ16(a & kd_obj_mask() & ~1u);
 }
 
-/* --- Tiles drawn instead (HD 2D from mods; not the DS) ----------------------------------
- * A layer's or a sprite's colour is KD_OPAQUE | BGR555, or, from a replaced
- * tile in its own colours, KD_HD | RGB888 (red in bits 0-7). */
-#define KD_HD 0x80000000u
+/* --- Tiles drawn instead (HD 2D from mods; not the DS): compose_core.h's KD_HD ------------ */
 #define KD_HD_INDEX 0x40000000u /* from kd_hd: a palette index whose colour is still to be looked up */
-
-KD_FN uint kd_shown(uint c)
-{
-    return (c & (KD_OPAQUE | KD_HD)) != 0u ? 1u : 0u;
-}
-KD_FN uint kd_keep(uint c)
-{
-    return (c & KD_HD) != 0u ? c : (c & 0x7fffu);
-}
 
 KD_FN float kd_minf(float a, float b)
 {
@@ -441,12 +434,7 @@ KD_FN uint kd_moved3d(int x, int row)
 
 /* --- The sprites at (x, row) --------------------------------------------------- */
 
-typedef struct KdSprite {
-    uint color; /* KD_OPAQUE | BGR555 of the topmost, or 0 */
-    uint prio;
-    uint mode;
-    uint window; /* 1: a sprite-window sprite covers the pixel */
-} KdSprite;
+/* (KdSprite: compose_core.h) */
 
 KD_FN uint kd_sprite_texel(uint flags, uint tile_word, uint w, uint tx, uint ty, float fu, float fv, float ru, float rv)
 {
@@ -636,133 +624,6 @@ KD_FN uint kd_window_y(uint window, int row)
     return (KD_DESC(KD_WINY + window * 6u + (uint)row / 32u) >> ((uint)row & 31u)) & 1u;
 }
 
-KD_FN uint kd_channel(uint c, uint shift)
-{
-    return (c >> shift) & 31u;
-}
-
-KD_FN uint kd_blend(uint a, uint b, uint eva, uint evb)
-{
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 15u; shift += 5u) {
-        const uint v = (kd_channel(a, shift) * eva + kd_channel(b, shift) * evb) >> 4;
-        acc |= (v > 31u ? 31u : v) << shift;
-    }
-    return acc;
-}
-
-KD_FN uint kd_brighten(uint a, uint evy)
-{
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 15u; shift += 5u) {
-        const uint v = kd_channel(a, shift);
-        acc |= (v + (((31u - v) * evy) >> 4)) << shift;
-    }
-    return acc;
-}
-
-KD_FN uint kd_darken(uint a, uint evy)
-{
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 15u; shift += 5u) {
-        const uint v = kd_channel(a, shift);
-        acc |= (v - ((v * evy) >> 4)) << shift;
-    }
-    return acc;
-}
-
-/* The master brightness on the 6-bit intensities: R in bits 0-5, G 8-13, B 16-21. */
-KD_FN uint kd_bright(uint color, uint master)
-{
-    const uint factor = master & 31u;
-    const uint mode = (master >> 14) & 3u;
-    uint acc = 0u;
-    uint n;
-    for (n = 0u; n < 3u; ++n) {
-        const uint c5 = kd_channel(color, 5u * n);
-        uint c = c5 != 0u ? c5 * 2u + 1u : 0u;
-        if (mode == 1u) {
-            c += (63u - c) * factor / 16u;
-        } else if (mode == 2u) {
-            c -= c * factor / 16u;
-        }
-        acc |= c << (8u * n);
-    }
-    return acc;
-}
-
-/* --- In 8 bits per channel (KDF_FINE: when HD textures are drawn; not the DS) -------
- * RGB888 with red in bits 0-7, green 8-15, blue 16-23: the same effects on
- * wider channels. */
-
-KD_FN uint kd_fine(uint bgr555)
-{
-    uint acc = 0u;
-    uint n;
-    for (n = 0u; n < 3u; ++n) {
-        const uint c = kd_channel(bgr555, 5u * n);
-        acc |= ((c << 3) | (c >> 2)) << (8u * n);
-    }
-    return acc;
-}
-
-KD_FN uint kd_blend8(uint a, uint b, uint eva, uint evb)
-{
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 24u; shift += 8u) {
-        const uint v = (((a >> shift) & 255u) * eva + ((b >> shift) & 255u) * evb) >> 4;
-        acc |= (v > 255u ? 255u : v) << shift;
-    }
-    return acc;
-}
-
-KD_FN uint kd_brighten8(uint a, uint evy)
-{
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 24u; shift += 8u) {
-        const uint v = (a >> shift) & 255u;
-        acc |= (v + (((255u - v) * evy) >> 4)) << shift;
-    }
-    return acc;
-}
-
-KD_FN uint kd_darken8(uint a, uint evy)
-{
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 24u; shift += 8u) {
-        const uint v = (a >> shift) & 255u;
-        acc |= (v - ((v * evy) >> 4)) << shift;
-    }
-    return acc;
-}
-
-KD_FN uint kd_bright8(uint color, uint master)
-{
-    const uint factor = master & 31u;
-    const uint mode = (master >> 14) & 3u;
-    uint acc = 0u;
-    uint shift;
-    for (shift = 0u; shift < 24u; shift += 8u) {
-        uint c = (color >> shift) & 255u;
-        if (mode == 1u) {
-            c += (255u - c) * factor / 16u;
-        } else if (mode == 2u) {
-            c -= c * factor / 16u;
-        }
-        acc |= c << shift;
-    }
-    return acc;
-}
-
-#define KD_LAYER_SPRITE 4u
-#define KD_LAYER_BACKDROP 5u
-
 /* What the windows let show at (x, row): layers 0-3 in bits 0-3, the sprites
  * in bit 4, and the colour effects in bit 5. */
 KD_FN uint kd_mask(int x, int row, uint sprite_window)
@@ -790,96 +651,16 @@ KD_FN uint kd_mask(int x, int row, uint sprite_window)
  * master brightness; with KDF_FINE RGB888, the 3D layer's own 8-bit colour `fine3d`. */
 KD_FN uint kd_compose(uint color[4], KdSprite spr, uint mask, uint alpha3d, uint fine3d)
 {
-    const uint flags = KD_DESC(KD_FLAGS);
-    const uint blendw = KD_DESC(KD_BLEND), coef = KD_DESC(KD_COEF);
-    const uint eva = coef & 31u, evb = (coef >> 8) & 31u, evy = (coef >> 16) & 31u;
-    const uint effect = (blendw >> 16) & 3u;
-    uint layer0 = KD_LAYER_BACKDROP, layer1 = KD_LAYER_BACKDROP;
-    uint c0 = KD_DESC(KD_BACKDROP), c1 = KD_DESC(KD_BACKDROP);
-    uint found = 0u;
-    uint result, p;
+    uint prios = 0u;
+    KdPick t;
     int b;
-    for (p = 0u; p < 4u && found < 2u; ++p) {
-        if (kd_shown(spr.color) != 0u && spr.prio == p && (mask & 0x10u)) {
-            if (found == 0u) {
-                layer0 = KD_LAYER_SPRITE;
-                c0 = kd_keep(spr.color);
-            } else {
-                layer1 = KD_LAYER_SPRITE;
-                c1 = kd_keep(spr.color);
-            }
-            ++found;
-        }
-        for (b = 0; b < 4 && found < 2u; ++b) {
-            const uint prio = (KD_DESC(KD_LAYERS + (uint)b * KD_LAYER_WORDS + KDL_KIND) >> 8) & 3u;
-            if (prio == p && kd_shown(color[b]) != 0u && (mask & (1u << (uint)b))) {
-                if (found == 0u) {
-                    layer0 = (uint)b;
-                    c0 = kd_keep(color[b]);
-                } else {
-                    layer1 = (uint)b;
-                    c1 = kd_keep(color[b]);
-                }
-                ++found;
-            }
-        }
+    for (b = 0; b < 4; ++b) {
+        prios |= ((KD_DESC(KD_LAYERS + (uint)b * KD_LAYER_WORDS + KDL_KIND) >> 8) & 3u) << (2u * (uint)b);
     }
-    if ((flags & KDF_FINE) != 0u) {
-        const uint is3d = (flags & KDF_BG0_IS_3D) != 0u ? 1u : 0u;
-        const uint second = (blendw >> 8) & (1u << layer1);
-        const uint f0 = is3d != 0u && layer0 == 0u ? fine3d : (c0 & KD_HD) != 0u ? c0 & 0xffffffu : kd_fine(c0);
-        const uint f1 = is3d != 0u && layer1 == 0u ? fine3d : (c1 & KD_HD) != 0u ? c1 & 0xffffffu : kd_fine(c1);
-        if (is3d != 0u && layer0 == 0u && second != 0u && (alpha3d < 31u || (effect == 1u && (blendw & 1u)))) {
-            return alpha3d < 31u ? kd_blend8(f0, f1, alpha3d / 2u, 16u - alpha3d / 2u) : f0;
-        }
-        if (mask & 0x20u) {
-            if (layer0 == KD_LAYER_SPRITE && (spr.mode == 1u || spr.mode == 3u) && second != 0u) {
-                return kd_blend8(f0, f1, eva, evb);
-            }
-            if (blendw & (1u << layer0)) {
-                if (effect == 1u && second != 0u)
-                    return kd_blend8(f0, f1, eva, evb);
-                if (effect == 2u)
-                    return kd_brighten8(f0, evy);
-                if (effect == 3u)
-                    return kd_darken8(f0, evy);
-            }
-        }
-        return f0;
-    }
-    /* a replaced tile's own colour, cut down to the DS's 5 bits */
-    if ((c0 & KD_HD) != 0u) {
-        c0 = ((c0 >> 3) & 31u) | (((c0 >> 11) & 31u) << 5) | (((c0 >> 19) & 31u) << 10);
-    }
-    if ((c1 & KD_HD) != 0u) {
-        c1 = ((c1 >> 3) & 31u) | (((c1 >> 11) & 31u) << 5) | (((c1 >> 19) & 31u) << 10);
-    }
-    {
-        const uint is3d = (flags & KDF_BG0_IS_3D) != 0u ? 1u : 0u;
-        const uint second = (blendw >> 8) & (1u << layer1);
-        if (is3d != 0u && layer0 == 0u && second != 0u && (alpha3d < 31u || (effect == 1u && (blendw & 1u)))) {
-            /* the 3D over a second target blends by its own alpha, never
-             * BLDALPHA's (GBATEK: probably EVA = A/2, EVB = 16 - A/2): an
-             * opaque 3D pixel stays itself */
-            result = alpha3d < 31u ? kd_blend(c0, c1, alpha3d / 2u, 16u - alpha3d / 2u) : c0;
-        } else {
-            result = c0;
-            if (mask & 0x20u) {
-                if (layer0 == KD_LAYER_SPRITE && (spr.mode == 1u || spr.mode == 3u) && second != 0u) {
-                    result = kd_blend(c0, c1, eva, evb);
-                } else if (blendw & (1u << layer0)) {
-                    if (effect == 1u && second != 0u) {
-                        result = kd_blend(c0, c1, eva, evb);
-                    } else if (effect == 2u) {
-                        result = kd_brighten(c0, evy);
-                    } else if (effect == 3u) {
-                        result = kd_darken(c0, evy);
-                    }
-                }
-            }
-        }
-    }
-    return result;
+    KD_COMPOSE_SEEN(color, spr, mask, prios);
+    t = kd_pick(color, spr, mask, prios, KD_DESC(KD_BACKDROP));
+    return kd_effects(KD_DESC(KD_FLAGS), KD_DESC(KD_BLEND), KD_DESC(KD_COEF), mask, t.layer0, t.c0, t.layer1, t.c1,
+                      spr.mode, alpha3d, fine3d);
 }
 
 /* --- The 2D without the 3D (KDF_SPLIT) ------------------------- */

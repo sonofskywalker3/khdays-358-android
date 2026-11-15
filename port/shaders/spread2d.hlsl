@@ -2,11 +2,15 @@
 // alike at every place in it (PRE_SAME) gets its colour at each of its N x N output texels; one the one-screen picture's
 // source leaves to the 3D (PRE_NOTHING) gets nothing there; one that depends on the 3D's alpha alone
 // (PRE_NOTHING_BACKDROP, PRE_SAME_ALPHA3D) is worked out at each texel from the 3D there, or put on the list where it
-// can't be; any other is put on the list, and compose2d.hlsl then composes each of its output texels (gfx_render.c
+// can't be; one whose 2D is the same at every place, on a screen showing the 3D with its layers (PRE_OVER3D), gets
+// the 3D there put among the rest as the composition would (compose_core.h kd_over3d); any other is put on the list, and compose2d.hlsl then composes each of its output texels (gfx_render.c
 // `sparse`). Small on purpose: the dots that need none of the
 // composition are written without the whole of it in the shader.
 
+#include "../gfx/frame.h"
 #include "../gfx/spread2d.h"
+#define KD_FN
+#include "../gfx/compose_core.h"
 
 [[vk::image_format("r32ui")]] RWTexture2D<uint> pre : register(u0, space1); // compose2d.hlsl's verdicts, then the list
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> out_screen : register(u1, space1);
@@ -30,6 +34,16 @@ cbuffer Spread : register(b1, space2) {
     uint hofs3d;    // the description's KD_HOFS3D (SPREAD_SOLID)
     uint backdrop8; // the backdrop's colour, 8 bits a channel (compose.h kd_fine)
     uint pad0;
+    // PRE_OVER3D's (SPREAD_SOLID): the description's KD_FLAGS, KD_BLEND, KD_COEF, KD_MASTER and KD_WIDE as the
+    // composition of the screen takes them
+    uint desc_flags;
+    uint desc_blend;
+    uint desc_coef;
+    uint desc_master;
+    uint desc_wide;
+    uint pad1;
+    uint pad2;
+    uint pad3;
 };
 
 #define FINISH3D_SCALED
@@ -95,13 +109,42 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint lane : SV_GroupIndex)
     // where the alpha is the one it was composed with, else composed here after all (the dot listed).
     bool solid = false;
     float4 behind = float4(0.0f, 0.0f, 0.0f, 0.0f);
-    if (inside && (verdict == PRE_NOTHING_BACKDROP || verdict == PRE_SAME_ALPHA3D) && (flags & SPREAD_SOLID) != 0u) {
-        const uint column = (dot.x + hofs3d) & 511u;
-        uint a3 = 31u;
-        if (column < 256u) {
-            const uint c = raster3d_at(column, (int)(dot.y + row0), texel.x % scale, texel.y % scale);
-            a3 = (c & 0x20000000u) != 0u ? 0u : (c >> 24) & 31u;
-        }
+    const bool by_alpha3d =
+        inside && (verdict == PRE_NOTHING_BACKDROP || verdict == PRE_SAME_ALPHA3D) && (flags & SPREAD_SOLID) != 0u;
+    // PRE_OVER3D: the dot's 2D, and the 3D at this texel put among it as the composition would (kd_over3d)
+    const bool over = inside && verdict == PRE_OVER3D && (flags & SPREAD_SOLID) != 0u;
+    KdOver3d o;
+    const uint other = over ? pre[uint2(dot.x * 2u + 1u, dot.y)] : 0u;
+    o.rank = (word >> PRE_OVER3D_RANK_SHIFT) & 3u;
+    o.c_a = (word >> PRE_OVER3D_A_SHIFT) & 0x7fffu;
+    o.c_b = other & 0x7fffu;
+    o.layer_a = (other >> PRE_OVER3D_LAYER_A_SHIFT) & 7u;
+    o.layer_b = (other >> PRE_OVER3D_LAYER_B_SHIFT) & 7u;
+    o.spr_mode = (other >> PRE_OVER3D_MODE_SHIFT) & 3u;
+    // the 3D's column as kd_pixel reads it (kd_pixel_wide: in the wider target; the one-screen picture's sources are
+    // never wider), read once here for either: raster3d_at inlined twice made the shader half as large again
+    uint column;
+    bool in3d;
+    if (desc_wide != 0u) {
+        const int target = (int)dot.x + (hofs3d < 256u ? (int)hofs3d : (int)hofs3d - 512);
+        column = (uint)target;
+        in3d = target >= 0 && target < 256 + 2 * (int)desc_wide;
+    } else {
+        column = (dot.x + hofs3d) & 511u;
+        in3d = column < 256u;
+    }
+    uint p3 = 0u;
+    if ((by_alpha3d || (over && o.rank < 2u)) && in3d) {
+        p3 = raster3d_at(column, (int)(dot.y + row0), texel.x % scale, texel.y % scale);
+    }
+    if (over) {
+        // kd_pixel's flags without the layers left out (kd_pixel_wide takes them whole)
+        const uint kd_flags = desc_wide != 0u ? desc_flags : desc_flags & ~layers_off;
+        behind = colour_of(kd_over3d(kd_flags, desc_blend, desc_coef, desc_master,
+                                     (word >> PRE_OVER3D_MASK_SHIFT) & 0x3fu, p3, in3d ? 1u : 0u, o));
+    }
+    if (by_alpha3d) {
+        const uint a3 = !in3d ? 31u : (p3 & 0x20000000u) != 0u ? 0u : (p3 >> 24) & 31u;
         if (verdict == PRE_SAME_ALPHA3D) {
             solid = a3 == ((word >> PRE_A3_SHIFT) & 31u);
             if (solid) {
@@ -122,14 +165,15 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint lane : SV_GroupIndex)
     // the dot's first texel puts it on the list, once (a PRE_NOTHING_BACKDROP dot: the first texel that can't be
     // worked out here); the group's places on it taken together
     bool listed = false;
-    const uint why = word >> PRE_WHY_SHIFT; // the listed dot's SPREAD_WHY_* (compose2d.hlsl's DS-sized pass)
+    // the listed dot's SPREAD_WHY_* (compose2d.hlsl's DS-sized pass; a PRE_OVER3D dot's word holds its 2D instead)
+    const uint why = (word & PRE_VERDICT) == PRE_OVER3D ? SPREAD_WHY_3D : word >> PRE_WHY_SHIFT;
     const bool by_texel = verdict == PRE_NOTHING_BACKDROP || verdict == PRE_SAME_ALPHA3D;
     if (inside && by_texel && !solid) {
         const uint bit = dot.y * 1024u + dot.x, w = bit / 32u;
         uint was;
         InterlockedOr(pre[uint2(w % SPREAD_LIST_W, SPREAD_FLAG_ROW + w / SPREAD_LIST_W)], 1u << (bit & 31u), was);
         listed = (was & (1u << (bit & 31u))) == 0u;
-    } else if (inside && verdict != PRE_SAME && verdict != PRE_NOTHING && !by_texel) {
+    } else if (inside && verdict != PRE_SAME && verdict != PRE_NOTHING && !by_texel && !over) {
         listed = texel.x % scale == 0u && texel.y % scale == 0u;
     }
     uint mine = 0u;
@@ -167,7 +211,7 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID, uint lane : SV_GroupIndex)
         out_screen[texel] = colour_of(pre[uint2(dot.x * 2u + 1u, dot.y)]);
     } else if (verdict == PRE_NOTHING) {
         out_screen[texel] = float4(0.0f, 0.0f, 0.0f, 0.0f);
-    } else if (solid) {
+    } else if (solid || over) {
         out_screen[texel] = behind;
     }
 }

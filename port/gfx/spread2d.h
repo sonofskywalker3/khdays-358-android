@@ -29,8 +29,20 @@
  * DS-sized pass composed with (PRE_A3_SHIFT) takes its colour; spread2d.hlsl reads it at each texel */
 #define PRE_SAME_ALPHA3D 5u
 #define PRE_A3_SHIFT 16u /* in the verdict word: that alpha, 5 bits */
+/* Only the 3D varies in the dot (compose_core.h kd_over3d_of: its 2D the same at every place, on a screen showing the
+ * card's 3D with its layers, widescreen too): spread2d.hlsl gives each texel kd_over3d of the 3D there (SPREAD_SOLID),
+ * else it is listed. Its verdict word: the verdict, the window mask from bit 8 (6 bits), the 2D's topmost colour from
+ * bit 14 (15 bits), where the 3D comes from bit 29 (2 bits); its other word: the next colour (15 bits), the topmost's
+ * layer from bit 15 and the next's from bit 18 (3 bits each), the sprite's mode from bit 21 (2 bits). */
+#define PRE_OVER3D 6u
+#define PRE_OVER3D_MASK_SHIFT 8u
+#define PRE_OVER3D_A_SHIFT 14u
+#define PRE_OVER3D_RANK_SHIFT 29u
+#define PRE_OVER3D_LAYER_A_SHIFT 15u
+#define PRE_OVER3D_LAYER_B_SHIFT 18u
+#define PRE_OVER3D_MODE_SHIFT 21u
 /* A dot's verdict word: the verdict in bits 0-7, SPREAD_WHY_* (below) from bit 8 when it is not PRE_SAME,
- * PRE_SAME_ALPHA3D's alpha from bit 16. Its other word: the colour of a PRE_SAME or PRE_SAME_ALPHA3D dot, else a bit
+ * PRE_SAME_ALPHA3D's alpha from bit 16 (PRE_OVER3D's: above). Its other word: the colour of a PRE_SAME or PRE_SAME_ALPHA3D dot, else a bit
  * for each of the first 31 elements that shows something in the dot (the others are not looked at there:
  * compose2d.hlsl KD_ELEMENT_SKIP). */
 #define PRE_VERDICT 0xffu
@@ -44,7 +56,8 @@
 #define SPREAD_RESET 4u /* the list emptied, the dispatch's groups none, the dots' flags cleared */
 #define SPREAD_STATS 8u /* the listed dots counted by why (below), at the list's last row's last texels */
 #define SPREAD_SOLID 16u /* the card's 3D is bound (source3d 2): PRE_NOTHING_BACKDROP's and PRE_SAME_ALPHA3D's
-                          * texels are worked out from its alpha at each (raster3d_at.hlsli), else listed */
+                          * texels are worked out from its alpha at each (raster3d_at.hlsli), PRE_OVER3D's from the
+                          * 3D there, else listed */
 #define SPREAD_ALL 32u /* every dot listed (KHDAYS_GPU_SKIP=spreadall: to find a fault) */
 
 /* Why a dot is listed: compose2d.hlsl's DS-sized pass writes these above the verdict of a dot not PRE_SAME */

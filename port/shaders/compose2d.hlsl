@@ -162,6 +162,21 @@ static uint g_el_skip;
 #define KD_STACK_SEEN(s) \
     (g_stack_3d_only = !g_place_used && (s).color[1] == 0u && (s).color[2] == 0u && (s).color[3] == 0u && \
                        (s).spr.color == 0u && (s).spr.window == 0u)
+#if defined(COMPOSE2D_SPARSE)
+#include "../gfx/compose_core.h"
+// What the composition was given (KD_COMPOSE_SEEN), in the DS-sized pass only: the dot's 2D over which only the 3D
+// varies (PRE_OVER3D), and the window mask
+static KdOver3d g_over;
+static uint g_over_mask;
+// (not in the split part: the one-screen picture's sources are never PRE_OVER3D)
+#if !defined(COMPOSE2D_PART_SPLIT)
+#define KD_COMPOSE_SEEN(c, sp, m, prios)                                                                               \
+    if (pre_mode == 1u) {                                                                                              \
+        g_over = kd_over3d_of((c), (sp), (m), (prios), KD_DESC(KD_BACKDROP));                                         \
+        g_over_mask = (m);                                                                                             \
+    }
+#endif
+#endif
 #include "../gfx/compose.h"
 
 #if defined(COMPOSE2D_SPARSE)
@@ -310,7 +325,7 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID)
     g_3d_used = false;
 #if defined(COMPOSE2D_SPARSE)
     g_el_skip = 0u;
-    if (pre_mode == 2u && verdict != PRE_SAME && verdict != PRE_SAME_ALPHA3D) {
+    if (pre_mode == 2u && verdict != PRE_SAME && verdict != PRE_SAME_ALPHA3D && verdict != PRE_OVER3D) {
         // only the elements the DS-sized pass found showing something in this DS pixel are looked at
         g_el_skip = ~pre[uint2((uint)x * 2u + 1u, id.y / scale)] & PRE_ELEMENTS;
     } else if (pre_mode == 1u) {
@@ -365,7 +380,18 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID)
                               source3d == 2u;
         const uint column = ((uint)x + KD_DESC(KD_HOFS3D)) & 511u;
         const uint a3 = column >= 256u ? 31u : ((g_3d_value >> 29) & 1u) != 0u ? 0u : (g_3d_value >> 24) & 31u;
+        // the 2D the same at every place on a screen showing the card's 3D with its layers (widescreen too): only the
+        // 3D varies, which spread2d.hlsl puts among the rest at each texel (compose_core.h kd_over3d)
+#if defined(COMPOSE2D_PART_SPLIT)
+        const bool over3d = false;
+#else
+        const bool over3d = g_3d_used && !g_place_used && !KD_SPLIT_ON(flags) && (flags & KDF_DISPLAY_MASK) == 1u &&
+                            (flags & KDF_FORCED_BLANK) == 0u && (flags & KDF_BG0_IS_3D) != 0u &&
+                            (flags & (1u << KDF_BG_ON_SHIFT)) != 0u && source3d == 2u &&
+                            (KD_DESC(KD_WIDE) != 0u || (KD_DESC(KD_LAYERS + KDL_KIND) & 0xffu) == KDK_3D);
+#endif
         verdict = !g_place_used && !g_3d_used ? PRE_SAME
+                  : over3d                    ? PRE_OVER3D
                   : alone3d                   ? PRE_3D_ONLY
                   : nothing || (backdrop && !shown3d) ? PRE_NOTHING
                   : backdrop                  ? PRE_NOTHING_BACKDROP
@@ -377,6 +403,14 @@ void cs_main(uint3 dispatched : SV_DispatchThreadID)
                          (KD_SPLIT_ON(flags) ? SPREAD_WHY_SPLIT : 0u) |
                          (((KD_DESC(KD_BLEND) >> 8) & (1u << KD_LAYER_BACKDROP)) != 0u ? SPREAD_WHY_BACKDROP : 0u) |
                          (KD_DESC(KD_WIDE) != 0u ? SPREAD_WHY_WIDE : 0u);
+        if (verdict == PRE_OVER3D) {
+            pre[uint2(id.x * 2u, id.y)] = PRE_OVER3D | (g_over_mask & 0x3fu) << PRE_OVER3D_MASK_SHIFT |
+                                          g_over.c_a << PRE_OVER3D_A_SHIFT | g_over.rank << PRE_OVER3D_RANK_SHIFT;
+            pre[uint2(id.x * 2u + 1u, id.y)] = g_over.c_b | g_over.layer_a << PRE_OVER3D_LAYER_A_SHIFT |
+                                               g_over.layer_b << PRE_OVER3D_LAYER_B_SHIFT |
+                                               g_over.spr_mode << PRE_OVER3D_MODE_SHIFT;
+            return;
+        }
         pre[uint2(id.x * 2u, id.y)] = verdict | (verdict == PRE_SAME ? 0u : why << PRE_WHY_SHIFT) |
                                       (verdict == PRE_SAME_ALPHA3D ? a3 << PRE_A3_SHIFT : 0u);
         // the colour where it is used (PRE_SAME, PRE_SAME_ALPHA3D); else the elements that show something in the

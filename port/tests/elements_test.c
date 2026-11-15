@@ -1,5 +1,6 @@
 /* The port's screen elements in the composition, on the CPU: fixed screens (a BG layer with a tile, and
- * the elements standing in for it) composed by port/gfx/compose.h as the game's frames are.
+ * the elements standing in for it) composed by port/gfx/compose.h as the game's frames are; and the 3D put among a
+ * DS pixel's 2D (compose_core.h kd_over3d) against the composition.
  *   ctest --test-dir build/port/obj-x64 -R khdays-elements --output-on-failure */
 #include "../gfx/describe.h"
 
@@ -153,6 +154,117 @@ static int differences_outside(const uint32_t *a, const uint32_t *b, int x0, int
     return n;
 }
 
+/* compose_core.h's kd_over3d (spread2d.hlsl's PRE_OVER3D texels): a DS pixel's 2D taken once (kd_over3d_of) and the
+ * 3D put among it at each place gives what the composition does with that 3D -- kd_pixel itself where only the 3D
+ * lies, and kd_compose's own choice and effects (kd_pick, kd_effects) with layers and a sprite above, between or
+ * under it: every colour effect and its targets, a sprite's modes, the master brightness, 8-bit channels or the DS's,
+ * the window mask, the 3D scrolled beside its columns, and 3D pixels opaque, translucent and absent. */
+typedef uint32_t uint;
+#define KD_FN static inline
+#include "../gfx/compose_core.h"
+
+static uint32_t layer3d[W * H];
+
+static uint32_t next_random(uint32_t *seed)
+{
+    *seed = *seed * 1664525u + 1013904223u;
+    return *seed >> 8;
+}
+
+static uint32_t random_3d(uint32_t *seed)
+{
+    const uint32_t pick = next_random(seed) % 4u;
+    const uint32_t alpha = pick == 0 ? 0u : pick == 1 ? 31u : 1u + next_random(seed) % 30u;
+    return (next_random(seed) & 0x3f3f3fu) | alpha << 24;
+}
+
+/* the description's effects, at random: flags (8-bit channels or not), BLDCNT with `effect`, BLDALPHA/BLDY, the
+ * backdrop and the master brightness */
+static void random_effects(uint32_t *d, uint32_t *seed, uint32_t fine, uint32_t effect)
+{
+    d[KD_FLAGS] = 1u | KDF_BG0_IS_3D | (1u << KDF_BG_ON_SHIFT) | (fine ? KDF_FINE : 0u);
+    d[KD_BACKDROP] = next_random(seed) & 0x7fffu;
+    d[KD_MASTER] = (next_random(seed) % 17u) | (next_random(seed) % 3u) << 14;
+    d[KD_BLEND] = (next_random(seed) & 0x3f3fu) | effect << 16;
+    d[KD_COEF] = (next_random(seed) % 17u) | (next_random(seed) % 17u) << 8 | (next_random(seed) % 17u) << 16;
+}
+
+static void over3d_matches_composition(void)
+{
+    static uint32_t d[KHDAYS_DESC_WORDS];
+    uint32_t seed = 358u;
+    long compared = 0, differing = 0;
+    KhdaysGfxMemory m;
+    KdSprite none;
+    memset(&none, 0, sizeof(none));
+    memory_of(&m, NULL, NULL);
+    m.layer3d = layer3d;
+    for (int i = 0; i < W * H; ++i) {
+        layer3d[i] = random_3d(&seed);
+    }
+    /* only the 3D: kd_pixel, the whole composition on the CPU */
+    for (int round = 0; round < 512; ++round) {
+        const uint32_t windows = ((uint32_t)round >> 1) & 1u, hofs = ((uint32_t)round >> 4) & 1u ? 300u : 0u;
+        const uint32_t prio = next_random(&seed) % 4u;
+        uint32_t nothing[4] = {0, 0, 0, 0};
+        memset(d, 0, sizeof(d));
+        random_effects(d, &seed, (uint32_t)round & 1u, ((uint32_t)round >> 2) & 3u);
+        d[KD_FLAGS] |= windows ? 1u << KDF_WIN_ON_SHIFT : 0u;
+        d[KD_LAYERS + KDL_KIND] = KDK_3D | prio << 8;
+        d[KD_WINOUT] = next_random(&seed) & 0x3fu; /* window 0 on no line: every pixel outside it */
+        d[KD_HOFS3D] = hofs;
+        for (int n = 0; n < 64; ++n) {
+            const int x = (int)(next_random(&seed) % W), y = (int)(next_random(&seed) % H);
+            const uint32_t column = ((uint32_t)x + hofs) & 511u;
+            const uint32_t mask = windows ? d[KD_WINOUT] & 0x3fu : 0x3fu;
+            const KdOver3d o = kd_over3d_of(nothing, none, mask, prio, d[KD_BACKDROP]);
+            const uint32_t got = kd_over3d(d[KD_FLAGS], d[KD_BLEND], d[KD_COEF], d[KD_MASTER], mask,
+                                           column < 256u ? layer3d[y * W + (int)column] : 0u, column < 256u, o);
+            ++compared;
+            differing += got != khdays_gfx_pixel_cpu(d, &m, x, y);
+        }
+    }
+    /* layers and a sprite above, between and under the 3D: kd_compose's choice and effects at each 3D */
+    for (int round = 0; round < 4096; ++round) {
+        uint32_t color[4];
+        KdSprite spr;
+        const uint32_t mask = next_random(&seed) % 4u == 0 ? next_random(&seed) & 0x3fu : 0x3fu;
+        const uint32_t prios = next_random(&seed) & 0xffu;
+        memset(d, 0, sizeof(d));
+        random_effects(d, &seed, (uint32_t)round & 1u, ((uint32_t)round >> 1) & 3u);
+        color[0] = 0u;
+        for (int b = 1; b < 4; ++b) {
+            color[b] = next_random(&seed) % 3u == 0 ? 0u : KD_OPAQUE | (next_random(&seed) & 0x7fffu);
+        }
+        spr.color = next_random(&seed) % 2u == 0 ? 0u : KD_OPAQUE | (next_random(&seed) & 0x7fffu);
+        spr.prio = next_random(&seed) % 4u;
+        spr.mode = next_random(&seed) % 4u;
+        spr.window = 0u;
+        {
+            const KdOver3d o = kd_over3d_of(color, spr, mask, prios, d[KD_BACKDROP]);
+            for (int n = 0; n < 8; ++n) {
+                const uint32_t p3 = random_3d(&seed), in3d = next_random(&seed) % 8u != 0u;
+                const uint32_t alpha = in3d ? (p3 >> 24) & 31u : 31u;
+                uint32_t with3d[4];
+                KdPick t;
+                uint32_t want;
+                memcpy(with3d, color, sizeof(with3d));
+                with3d[0] = in3d && alpha != 0u
+                                ? KD_OPAQUE | ((p3 >> 1) & 31u) | (((p3 >> 9) & 31u) << 5) | (((p3 >> 17) & 31u) << 10)
+                                : 0u;
+                t = kd_pick(with3d, spr, mask, prios, d[KD_BACKDROP]);
+                want = kd_effects(d[KD_FLAGS], d[KD_BLEND], d[KD_COEF], mask, t.layer0, t.c0, t.layer1, t.c1, spr.mode,
+                                  alpha, in3d ? p3 & 0xffffffu : 0u);
+                want = (d[KD_FLAGS] & KDF_FINE) != 0u ? kd_bright8(want, d[KD_MASTER]) : kd_bright(want, d[KD_MASTER]);
+                ++compared;
+                differing += kd_over3d(d[KD_FLAGS], d[KD_BLEND], d[KD_COEF], d[KD_MASTER], mask, p3, in3d, o) != want;
+            }
+        }
+    }
+    CHECK(compared == 512 * 64 + 4096 * 8);
+    CHECK(differing == 0);
+}
+
 int main(void)
 {
     uint32_t r[KE_WORDS * 2];
@@ -267,6 +379,7 @@ int main(void)
         r[KE_SLOT] |= KES_FINE;
         CHECK(khdays_gfx_pixel_cpu(desc, &m, 40, 40) != 0);
     }
+    over3d_matches_composition();
     for (int i = 0; i < 8; ++i)
         free(images[i]);
     if (failures) {
