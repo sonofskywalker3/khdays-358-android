@@ -1077,18 +1077,20 @@ static SDL_FRect ds_columns(SDL_Texture *texture, int width)
     return part;
 }
 
-/* KHDAYS_GFX=savings: the one-screen picture just drawn, drawn again whole, in one piece and with nothing kept
- * (khdays_gfx_render_set_reference): what [video] partial_2d and keep_screens leave out must not show. Each
- * picture that differs is said, and the count every 600. The second picture is the one shown, and the screens
- * it composed whole are what a later picture keeps: a screen wrongly kept is caught where it first shows.
- * What moves between the two draws differs by itself (a list's rows sliding in, the map's marker): a run with
- * both settings off says those too, and only what the run with them on says more is theirs. */
+/* KHDAYS_GFX=savings: the one-screen picture just drawn (`one`), or both screens (NULL), drawn again whole, in one
+ * piece, with nothing kept and every texel composed (khdays_gfx_render_set_reference): what [video] partial_2d and
+ * keep_screens leave out, and what the 2D composed a DS dot at a time gives, must not show. Each picture that
+ * differs is said, and the count every 600. The second picture is the one shown, and the screens it composed whole
+ * are what a later picture keeps: a screen wrongly kept is caught where it first shows. What moves between the two
+ * draws differs by itself (a list's rows sliding in, the map's marker): a run with both settings off says those too,
+ * and only what the run with them on says more is theirs. */
 static void check_savings(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d, int raster,
                           const KhdaysOneScreenDraw *one)
 {
     static int asked = -1, pictures, differing;
-    int w = 0, h = 0, rw = 0, rh = 0;
-    uint32_t *fast, *whole = NULL;
+    const int count_of = one != NULL ? 1 : 2; /* the pictures compared: the one-screen picture, or engine A's and B's */
+    int w[2] = {0, 0}, h[2] = {0, 0}, rw[2] = {0, 0}, rh[2] = {0, 0}, drawn, differs = 0;
+    uint32_t *fast[2] = {NULL, NULL}, *whole[2] = {NULL, NULL};
     if (asked < 0) {
         const char *gfx = SDL_getenv("KHDAYS_GFX");
         asked = gfx != NULL && SDL_strcmp(gfx, "savings") == 0;
@@ -1096,39 +1098,48 @@ static void check_savings(const KhdaysFramePackage *p, int scale, int scale_b, i
     if (!asked || p->capture) {
         return; /* (a display capture's bank is not taken the same way twice: gfx_render.c plan_capture) */
     }
-    fast = khdays_gfx_render_read(2, &w, &h);
+    for (int k = 0; k < count_of; ++k) {
+        fast[k] = khdays_gfx_render_read(one != NULL ? 2 : k, &w[k], &h[k]);
+    }
     khdays_gfx_render_set_reference(1);
-    if (fast != NULL && khdays_gfx_render_draw_one(p, scale, scale_b, scale3d, raster, one)) {
-        whole = khdays_gfx_render_read(2, &rw, &rh);
+    drawn = one != NULL ? khdays_gfx_render_draw_one(p, scale, scale_b, scale3d, raster, one)
+                        : khdays_gfx_render_draw(p, scale, scale_b, scale3d, raster);
+    for (int k = 0; drawn && k < count_of; ++k) {
+        whole[k] = khdays_gfx_render_read(one != NULL ? 2 : k, &rw[k], &rh[k]);
     }
     khdays_gfx_render_set_reference(0);
-    if (fast != NULL && whole != NULL && w == rw && h == rh) {
-        int x0 = w, y0 = h, x1 = -1, y1 = -1;
-        long count = 0;
-        for (int y = 0; y < h; ++y) {
-            for (int x = 0; x < w; ++x) {
-                if (fast[(size_t)y * (size_t)w + (size_t)x] != whole[(size_t)y * (size_t)w + (size_t)x]) {
-                    ++count;
-                    x0 = x < x0 ? x : x0;
-                    y0 = y < y0 ? y : y0;
-                    x1 = x > x1 ? x : x1;
-                    y1 = y > y1 ? y : y1;
+    for (int k = 0; k < count_of; ++k) {
+        if (fast[k] != NULL && whole[k] != NULL && w[k] == rw[k] && h[k] == rh[k]) {
+            int x0 = w[k], y0 = h[k], x1 = -1, y1 = -1;
+            long count = 0;
+            for (int y = 0; y < h[k]; ++y) {
+                for (int x = 0; x < w[k]; ++x) {
+                    const size_t at = (size_t)y * (size_t)w[k] + (size_t)x;
+                    if (fast[k][at] != whole[k][at]) {
+                        ++count;
+                        x0 = x < x0 ? x : x0;
+                        y0 = y < y0 ? y : y0;
+                        x1 = x > x1 ? x : x1;
+                        y1 = y > y1 ? y : y1;
+                    }
                 }
             }
+            if (count > 0) {
+                differs = 1;
+                fprintf(stderr, "savings check: frame %u differs in %ld texels of %dx%d%s, within %d,%d to %d,%d\n",
+                        p->frame, count, w[k], h[k], one != NULL ? "" : k == 0 ? " (engine A)" : " (engine B)", x0, y0,
+                        x1, y1);
+            }
+        } else {
+            fprintf(stderr, "savings check: frame %u could not be drawn or read twice\n", p->frame);
         }
-        if (count > 0) {
-            ++differing;
-            fprintf(stderr, "savings check: frame %u differs in %ld texels of %dx%d, within %d,%d to %d,%d\n", p->frame,
-                    count, w, h, x0, y0, x1, y1);
-        }
-        if (++pictures % 600 == 0) {
-            fprintf(stderr, "savings check: %d pictures, %d differed\n", pictures, differing);
-        }
-    } else {
-        fprintf(stderr, "savings check: frame %u could not be drawn or read twice\n", p->frame);
+        SDL_free(fast[k]);
+        SDL_free(whole[k]);
     }
-    SDL_free(fast);
-    SDL_free(whole);
+    differing += differs;
+    if (++pictures % 600 == 0) {
+        fprintf(stderr, "savings check: %d pictures, %d differed\n", pictures, differing);
+    }
 }
 
 /* KHDAYS_SHOTS_HD: the screens of this frame, as presented, for each shot asked at it or before it not yet taken
@@ -2120,6 +2131,9 @@ static void present_now(const KhdaysFramePackage *p, int first)
         } else {
             const int scaled = raster || hd_tiles || port2d_mode != 2;
             drawn = khdays_gfx_render_draw(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster);
+            if (drawn) {
+                check_savings(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster, NULL);
+            }
         }
         if (drawn) {
             port2d_drawn = 1;
