@@ -601,18 +601,16 @@ static const char *const texts[TXT_COUNT][5] = {
                            "Cierra otros programas y vuelve a intentarlo."},
     /* The Video page. */
     [TXT_VIDEO] = {"Video", "Vidéo", "Video", "Video", "Vídeo"},
-    [TXT_VIDEO_RESOLUTION] = {"Internal resolution", "Résolution interne", "Interne Auflösung", "Risoluzione interna",
-                              "Resolución interna"},
-    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's 256x192, not the window's size; menus "
-                                   "and text keep theirs.",
-                                   "La 3D est dessinée à ce multiple des 256x192 de la DS, pas de la taille de la "
-                                   "fenêtre ; menus et textes gardent les leurs.",
-                                   "Das 3D wird mit diesem Vielfachen der 256x192 des DS gezeichnet, nicht der "
-                                   "Fenstergröße; Menüs und Text behalten ihre.",
-                                   "Il 3D viene disegnato a questo multiplo dei 256x192 del DS, non della finestra; "
-                                   "menu e testi tengono i loro.",
-                                   "El 3D se dibuja a este múltiplo de los 256x192 de la DS, no del tamaño de la "
-                                   "ventana; menús y textos conservan los suyos."},
+    [TXT_VIDEO_RESOLUTION_NOTE] = {"The upper screen, its 3D and its HUD, menus and text, at this many times the DS's "
+                                   "256x192, with one screen or two. Lower is faster.",
+                                   "L'écran du haut, sa 3D, son HUD, ses menus et son texte, à ce multiple des 256x192 "
+                                   "de la DS, avec un écran ou deux. Plus bas est plus rapide.",
+                                   "Der obere Bildschirm, sein 3D, HUD, Menüs und Text, mit diesem Vielfachen der "
+                                   "256x192 des DS, mit einem Bildschirm oder zwei. Niedriger ist schneller.",
+                                   "Lo schermo superiore, il suo 3D, HUD, menu e testi, a questo multiplo dei 256x192 "
+                                   "del DS, con uno schermo o due. Più basso è più veloce.",
+                                   "La pantalla superior, su 3D, HUD, menús y texto, a este múltiplo de los 256x192 de "
+                                   "la DS, con una pantalla o dos. Más bajo es más rápido."},
 #if defined(__ANDROID__)
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the screen allows", "Selon l'écran", "Wie der Bildschirm erlaubt",
                                      "Quanto permette lo schermo", "Lo que permita la pantalla"},
@@ -624,19 +622,16 @@ static const char *const texts[TXT_COUNT][5] = {
                                     "Pantalla superior"},
     [TXT_VIDEO_LOWER_RESOLUTION] = {"Lower screen", "Écran du bas", "Unterer Bildschirm", "Schermo inferiore",
                                     "Pantalla inferior"},
-    [TXT_VIDEO_SCREEN_2D_NOTE] = {"That screen's HUD, menus and text, at this many times the DS's 256x192, with one "
-                                  "screen or two. Lower is faster; the 3D has its own (Internal resolution).",
-                                  "Le HUD, les menus et le texte de cet écran, à ce multiple des 256x192 de la DS, "
-                                  "avec un écran ou deux. Plus bas est plus rapide ; la 3D a le sien (Résolution "
-                                  "interne).",
-                                  "HUD, Menüs und Text dieses Bildschirms, mit diesem Vielfachen der 256x192 des DS, "
-                                  "mit einem Bildschirm oder zwei. Niedriger ist schneller; das 3D hat sein eigenes "
-                                  "(Interne Auflösung).",
-                                  "HUD, menu e testi di questo schermo, a questo multiplo dei 256x192 del DS, con uno "
-                                  "schermo o due. Più basso è più veloce; il 3D ha il suo (Risoluzione interna).",
-                                  "El HUD, los menús y el texto de esa pantalla, a este múltiplo de los 256x192 de la "
-                                  "DS, con una pantalla o dos. Más bajo es más rápido; el 3D tiene el suyo "
-                                  "(Resolución interna)."},
+    [TXT_VIDEO_SCREEN_2D_NOTE] = {"The lower screen's HUD, menus and text, at this many times the DS's 256x192, with "
+                                  "one screen or two. Lower is faster.",
+                                  "Le HUD, les menus et le texte de l'écran du bas, à ce multiple des 256x192 de la "
+                                  "DS, avec un écran ou deux. Plus bas est plus rapide.",
+                                  "HUD, Menüs und Text des unteren Bildschirms, mit diesem Vielfachen der 256x192 des "
+                                  "DS, mit einem Bildschirm oder zwei. Niedriger ist schneller.",
+                                  "HUD, menu e testi dello schermo inferiore, a questo multiplo dei 256x192 del DS, "
+                                  "con uno schermo o due. Più basso è più veloce.",
+                                  "El HUD, los menús y el texto de la pantalla inferior, a este múltiplo de los "
+                                  "256x192 de la DS, con una pantalla o dos. Más bajo es más rápido."},
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
     [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
                                      "card's work. The HUD, the menus and the text stay sharp.",

@@ -603,7 +603,7 @@ static void test_settings_file(void)
 
     /* A preset this version does not know is read as ds; a version too. */
     CHECK(load_text("preset = kh9\n", &q) == 1 && q.preset == KHDAYS_PRESET_DS);
-    CHECK(load_text("version = 2\n", &q) == 1);
+    CHECK(load_text("version = 3\n", &q) == 1);
 
     /* KHDAYS_SETTINGS chooses the file. */
     SDL_setenv_unsafe("KHDAYS_SETTINGS", "elsewhere/mine.ini", 1);
@@ -676,8 +676,8 @@ static void test_video_settings(void)
     CHECK(load_text("[video]\ninternal_resolution = window\naspect = 16:10\nscaling = smooth\n"
                     "texture_smoothing = on\nhd_graphics = off\ndump_graphics = on\n"
                     "fast_2d = off\npartial_2d = off\nkeep_screens = off\nupper_resolution = 5\nlower_resolution = 2\n",
-                    &q) == 0);
-    CHECK(q.video.upper_resolution == 5 && q.video.lower_resolution == 2); /* (and written back below) */
+                    &q) == 0); /* (a test build's upper_resolution read silently and left out) */
+    CHECK(q.video.lower_resolution == 2); /* (and written back below) */
     CHECK(q.video.fast_2d == KHDAYS_FAST_2D_OFF && !q.video.partial_2d && !q.video.keep_screens);
     CHECK(q.video.internal_resolution == KHDAYS_RESOLUTION_WINDOW && q.video.aspect == KHDAYS_ASPECT_16_10);
     CHECK(q.video.smooth_scaling && q.video.texture_smoothing && !q.video.hd_graphics && q.video.dump_graphics);
@@ -696,6 +696,24 @@ static void test_video_settings(void)
     }
     CHECK(load_text("[video]\naspect = 16:9\n", &q) == 0 && q.video.aspect == KHDAYS_ASPECT_16_9);
     CHECK(load_text("[video]\naspect = window\n", &q) == 0 && q.video.aspect == KHDAYS_ASPECT_WINDOW);
+
+    /* The Thor's defaults (upper 4x, lower 2x), and a version-1 file there: its internal_resolution of 2, Android's
+     * default then, and a lower_resolution of auto become them; a version-2 file is as it says. */
+    khdays_profile_set_thor(1);
+    {
+        KhdaysVideo d;
+        khdays_video_default(&d);
+        CHECK(d.internal_resolution == 4 && d.lower_resolution == 2);
+    }
+    CHECK(load_text("version = 1\n[video]\ninternal_resolution = 2\nlower_resolution = auto\n", &q) == 0);
+    CHECK(q.video.internal_resolution == 4 && q.video.lower_resolution == 2);
+    CHECK(load_text("version = 1\n[video]\ninternal_resolution = 5\nlower_resolution = 3\n", &q) == 0);
+    CHECK(q.video.internal_resolution == 5 && q.video.lower_resolution == 3);
+    CHECK(load_text("version = 2\n[video]\ninternal_resolution = 2\nlower_resolution = auto\n", &q) == 0);
+    CHECK(q.video.internal_resolution == 2 && q.video.lower_resolution == KHDAYS_RESOLUTION_WINDOW);
+    khdays_profile_set_thor(0);
+    CHECK(load_text("version = 1\n[video]\ninternal_resolution = 2\n", &q) == 0 && q.video.internal_resolution == 2);
+    khdays_profile_set_thor(-1);
 
     /* Antialiasing: off by default; fxaa written back as read; the old 2x to 4x read as fxaa; a bad value says so
      * and is off. */
@@ -768,9 +786,9 @@ static void test_video_settings(void)
 
     /* Bad values: a notice each, and the default. */
     CHECK(load_text("[video]\ninternal_resolution = huge\naspect = 21:9\nscaling = blurry\nhd_graphics = maybe\n"
-                    "internal_resolution = 0\nupper_resolution = 1\nlower_resolution = big\n",
+                    "internal_resolution = 0\nlower_resolution = 1\nlower_resolution = big\n",
                     &q) == 7);
-    CHECK(q.video.upper_resolution == KHDAYS_RESOLUTION_WINDOW && q.video.lower_resolution == KHDAYS_RESOLUTION_WINDOW);
+    CHECK(q.video.lower_resolution == KHDAYS_RESOLUTION_WINDOW);
     CHECK(q.video.internal_resolution == KHDAYS_RESOLUTION_WINDOW && q.video.aspect == KHDAYS_ASPECT_16_9 &&
           !q.video.smooth_scaling && q.video.hd_graphics);
     if (SDL_getenv("KHDAYS_LANGUAGE") == NULL) {
@@ -1585,14 +1603,9 @@ static void test_video_page(void)
     key(SDL_SCANCODE_LEFT);
     key(SDL_SCANCODE_LEFT);
     CHECK(v->internal_resolution == 16);
-    key(SDL_SCANCODE_DOWN); /* each screen's 2D: auto, then 2x (no 1x); the lower one apart */
+    key(SDL_SCANCODE_DOWN); /* the lower screen's 2D: auto, then 2x (no 1x) */
     key(SDL_SCANCODE_RIGHT);
-    CHECK(v->upper_resolution == 2 && v->lower_resolution == KHDAYS_RESOLUTION_WINDOW);
-    key(SDL_SCANCODE_LEFT);
-    CHECK(v->upper_resolution == KHDAYS_RESOLUTION_WINDOW);
-    key(SDL_SCANCODE_DOWN);
-    key(SDL_SCANCODE_RIGHT);
-    CHECK(v->lower_resolution == 2 && v->upper_resolution == KHDAYS_RESOLUTION_WINDOW);
+    CHECK(v->lower_resolution == 2 && v->internal_resolution == 16);
     key(SDL_SCANCODE_LEFT);
     key(SDL_SCANCODE_DOWN); /* the antialiasing: off, FXAA, and round */
     key(SDL_SCANCODE_RIGHT);
@@ -1661,11 +1674,9 @@ static void test_video_page(void)
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->internal_resolution == KHDAYS_RESOLUTION_WINDOW);
-    key(SDL_SCANCODE_DOWN); /* nor each screen's 2D */
+    key(SDL_SCANCODE_DOWN); /* nor the lower screen's 2D */
     key(SDL_SCANCODE_RIGHT);
-    key(SDL_SCANCODE_DOWN);
-    key(SDL_SCANCODE_RIGHT);
-    CHECK(v->upper_resolution == KHDAYS_RESOLUTION_WINDOW && v->lower_resolution == KHDAYS_RESOLUTION_WINDOW);
+    CHECK(v->lower_resolution == KHDAYS_RESOLUTION_WINDOW);
     key(SDL_SCANCODE_DOWN); /* nor the antialiasing */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->antialiasing == 1);

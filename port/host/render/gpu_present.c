@@ -546,18 +546,16 @@ static int auto_scale2d(void)
     return n < 1 ? 1 : n;
 }
 
-/* Engine `engine`'s 2D scale over a 3D at `n3d`: [video] upper_resolution (engine A) or lower_resolution (B) as
- * chosen, or auto (auto_scale2d); engine A's never below the 3D's. The 2D check (KHDAYS_GFX=check) compares at
- * the 3D's. */
+/* Engine `engine`'s 2D scale over a 3D at `n3d`: engine A's (the upper screen's) is the 3D's, the upper screen
+ * being one setting ([video] internal_resolution); engine B's [video] lower_resolution as chosen, or auto
+ * (auto_scale2d, never below the 3D's, as before). The 2D check (KHDAYS_GFX=check) compares at the 3D's. */
 static int scale2d_for(int engine, int n3d)
 {
-    if (port2d_mode == 2) {
+    if (port2d_mode == 2 || engine == 0) {
         return n3d < 1 ? 1 : n3d;
     }
-    const int setting = engine == 0 ? video.upper_resolution : video.lower_resolution;
-    /* auto as before for both: never below the 3D's; a number chosen for B as it is (B has no 3D) */
-    return khdays_two_screens_scale2d(setting, auto_scale2d(),
-                                      engine == 0 || setting == KHDAYS_RESOLUTION_WINDOW ? n3d : 1);
+    const int setting = video.lower_resolution;
+    return khdays_two_screens_scale2d(setting, auto_scale2d(), setting == KHDAYS_RESOLUTION_WINDOW ? n3d : 1);
 }
 
 /* The finer of the two engines' 2D scales: the HD pieces' images are made at it, each screen then reading them at
@@ -613,7 +611,8 @@ int khdays_present_text_scale(void)
     if (!port2d_ready || device == NULL || !video.one_screen || !one_drawn) {
         return 0;
     }
-    return khdays_text_overlay_scale(scale2d_finer(scale_now()), shown_scale(), khdays_onescreen_scene(),
+    /* the upper screen's scale decides (the text kept sharp when it is drawn coarser than shown), not the lower's */
+    return khdays_text_overlay_scale(scale2d_for(0, scale_now()), shown_scale(), khdays_onescreen_scene(),
                                      khdays_onescreen_states());
 }
 

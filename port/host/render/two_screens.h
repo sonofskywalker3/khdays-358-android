@@ -48,7 +48,7 @@ typedef struct KhdaysArmedSeen {
 } KhdaysArmedSeen;
 int khdays_two_screens_armed_seen(KhdaysArmedSeen *seen, unsigned now, int armed_now);
 
-/* A screen's 2D scale ([video] upper_resolution / lower_resolution, profile.h): `setting` as chosen, or for 0
+/* A screen's 2D scale ([video] lower_resolution, profile.h): `setting` as chosen, or for 0
  * (auto, KHDAYS_RESOLUTION_WINDOW) `auto_scale`; never below `at_least` (the 3D's scale for the 3D's engine, else
  * 1). The same whether one screen or two is shown. */
 int khdays_two_screens_scale2d(int setting, int auto_scale, int at_least);

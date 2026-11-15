@@ -534,15 +534,12 @@ static void build_video(Builder *b, KhdaysProfile *w)
         r->available = v->display != KHDAYS_DISPLAY_BORDERLESS;
         r->note = khdays_text(TXT_VIDEO_SCREEN_RESOLUTION_NOTE);
     }
-    r = add_choice(b, KHDAYS_SET_RESOLUTION, TXT_VIDEO_RESOLUTION, &v->internal_resolution, resolutions + first,
-                   RESOLUTION_CHOICES - first);
+    /* the upper screen, its 3D and its 2D together (the file's internal_resolution) */
+    r = add_choice(b, KHDAYS_SET_RESOLUTION, TXT_VIDEO_UPPER_RESOLUTION, &v->internal_resolution,
+                   resolutions + first, RESOLUTION_CHOICES - first);
     r->values = resolution_values + first;
     needs_graphics_card(b, r, TXT_VIDEO_RESOLUTION_NOTE);
-    /* each screen's 2D (resolutions[1] is auto, "As the screen allows"; no 1x) */
-    r = add_choice(b, KHDAYS_SET_UPPER_RESOLUTION, TXT_VIDEO_UPPER_RESOLUTION, &v->upper_resolution, resolutions + 1,
-                   RESOLUTION_CHOICES - 1);
-    r->values = resolution_values + 1;
-    needs_graphics_card(b, r, TXT_VIDEO_SCREEN_2D_NOTE);
+    /* the lower screen's 2D (resolutions[1] is auto, "As the screen allows"; no 1x) */
     r = add_choice(b, KHDAYS_SET_LOWER_RESOLUTION, TXT_VIDEO_LOWER_RESOLUTION, &v->lower_resolution, resolutions + 1,
                    RESOLUTION_CHOICES - 1);
     r->values = resolution_values + 1;

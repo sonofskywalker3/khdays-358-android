@@ -8,6 +8,9 @@
 #include "../screens/ui_text.h"
 
 #include <SDL3/SDL_filesystem.h>
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
 #include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_scancode.h>
@@ -255,20 +258,57 @@ int khdays_server_char(int c)
            c == ':';
 }
 
-/* A tablet's whole screen would be about 9x, under 2 pictures a second; under 2x the HUD's small words break up. */
+/* A tablet's whole screen would be about 9x, under 2 pictures a second; under 2x the HUD's small words break up.
+ * Until a device has been measured, 2x for both screens. */
 #define ANDROID_DEFAULT_SCALE 2
+/* The AYN Thor (Adreno 740), measured 2026-11-15 in the Grey Area: upper 4x and lower 2x hold 60 on one screen
+ * (about 100 pictures a second) and on two (about 70); upper 5x falls to about 50 on two screens. */
+#define THOR_DEFAULT_SCALE 4
+#define THOR_MODEL "AYN Thor" /* ro.product.model: "AYN Thor" (a Max or Lite by the same start) */
+
+static int thor_given = -1; /* khdays_profile_set_thor */
+
+void khdays_profile_set_thor(int thor)
+{
+    thor_given = thor;
+}
+
+int khdays_profile_thor(void)
+{
+    if (thor_given >= 0) {
+        return thor_given;
+    }
+#if defined(__ANDROID__)
+    {
+        static int seen = -1;
+        if (seen < 0) {
+            char model[PROP_VALUE_MAX] = "";
+            __system_property_get("ro.product.model", model);
+            seen = SDL_strncmp(model, THOR_MODEL, sizeof(THOR_MODEL) - 1) == 0;
+        }
+        return seen;
+    }
+#else
+    return 0;
+#endif
+}
 
 void khdays_video_default(KhdaysVideo *v)
 {
-    /* the window's own size: on a PC the DS's 1x is too small to read, and HD models and textures need the
-     * pixels to show */
+    /* on a PC the window's own size (upstream's: the DS's 1x is too small to read, and HD models and textures
+     * need the pixels to show); on Android a measured device's, else 2x for both screens */
+    if (khdays_profile_thor()) {
+        v->internal_resolution = THOR_DEFAULT_SCALE;
+        v->lower_resolution = ANDROID_DEFAULT_SCALE;
+    } else {
 #if defined(__ANDROID__)
-    v->internal_resolution = ANDROID_DEFAULT_SCALE;
+        v->internal_resolution = ANDROID_DEFAULT_SCALE;
+        v->lower_resolution = ANDROID_DEFAULT_SCALE;
 #else
-    v->internal_resolution = KHDAYS_RESOLUTION_WINDOW;
+        v->internal_resolution = KHDAYS_RESOLUTION_WINDOW;
+        v->lower_resolution = KHDAYS_RESOLUTION_WINDOW;
 #endif
-    v->upper_resolution = KHDAYS_RESOLUTION_WINDOW;
-    v->lower_resolution = KHDAYS_RESOLUTION_WINDOW;
+    }
     v->antialiasing = 1;            /* off */
 #if defined(__ANDROID__)
     v->aspect = KHDAYS_ASPECT_WINDOW; /* for one screen: a phone's or a tablet's whole screen; two screens use 4:3 */
@@ -325,7 +365,7 @@ static int valid_resolution(int n)
     return n >= 1 || n == KHDAYS_RESOLUTION_WINDOW;
 }
 
-/* Whether `n` is a valid screen's 2D scale (upper_resolution, lower_resolution): 2 or more, or auto. */
+/* Whether `n` is a valid screen's 2D scale (lower_resolution): 2 or more, or auto. */
 static int valid_screen_resolution(int n)
 {
     return (n >= KHDAYS_SCREEN_RESOLUTION_MIN && n <= KHDAYS_SCREEN_RESOLUTION_MAX) || n == KHDAYS_RESOLUTION_WINDOW;
@@ -452,10 +492,6 @@ int khdays_profile_repair(KhdaysProfile *p)
         khdays_video_default(&defaults);
         if (!valid_resolution(p->video.internal_resolution)) {
             p->video.internal_resolution = defaults.internal_resolution;
-            ++changed;
-        }
-        if (!valid_screen_resolution(p->video.upper_resolution)) {
-            p->video.upper_resolution = defaults.upper_resolution;
             ++changed;
         }
         if (!valid_screen_resolution(p->video.lower_resolution)) {
@@ -767,6 +803,7 @@ typedef struct Reader {
     uint8_t owner[KHDAYS_DEVICE_COUNT][KHDAYS_LAYER_COUNT][KHDAYS_KEYBOARD_INPUTS];
     uint8_t action_seen[KHDAYS_DEVICE_COUNT][KHDAYS_LAYER_COUNT][KHDAYS_ACT_COUNT];
     int version_seen;
+    int version; /* the file's (with version_seen) */
     int aspect_seen; /* the file gave [video] aspect (else it follows the screens) */
 } Reader;
 
@@ -1031,9 +1068,11 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         }
         return;
     }
-    if (SDL_strcasecmp(key, "upper_resolution") == 0 || SDL_strcasecmp(key, "lower_resolution") == 0) {
-        const int upper = SDL_strcasecmp(key, "upper_resolution") == 0;
-        int *to = upper ? &v->upper_resolution : &v->lower_resolution;
+    if (SDL_strcasecmp(key, "upper_resolution") == 0) {
+        return; /* a test build's: the upper screen goes with the 3D since (internal_resolution) */
+    }
+    if (SDL_strcasecmp(key, "lower_resolution") == 0) {
+        int *to = &v->lower_resolution;
         char *end;
         const long n = SDL_strtol(value, &end, 10);
         if (SDL_strcasecmp(value, "auto") == 0 || SDL_strcasecmp(value, "window") == 0) {
@@ -1042,7 +1081,7 @@ static void read_video(Reader *r, const char *key, const char *value, const char
             *to = (int)n;
         } else {
             say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "auto");
-            *to = upper ? defaults.upper_resolution : defaults.lower_resolution;
+            *to = defaults.lower_resolution;
         }
         return;
     }
@@ -1548,8 +1587,12 @@ static void read_top(Reader *r, const char *key, const char *value, const char *
 {
     if (SDL_strcasecmp(key, "version") == 0) {
         r->version_seen = 1;
-        if (strcmp(value, "1") != 0) {
-            say(r->notice, "settings: version %s is not known to this port; read as version 1", value);
+        if (strcmp(value, "1") == 0 || strcmp(value, "2") == 0) {
+            r->version = value[0] - '0';
+        } else {
+            say(r->notice, "settings: version %s is not known to this port; read as version %d", value,
+                KHDAYS_SETTINGS_VERSION);
+            r->version = KHDAYS_SETTINGS_VERSION;
         }
     } else if (SDL_strcasecmp(key, "log") == 0) {
         if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
@@ -1641,6 +1684,21 @@ static int read_text(Reader *r, char *text, size_t size)
     return 1;
 }
 
+/* Version 1's resolutions (up to beta 8, and the test builds after it) given version 2's defaults: on the Thor
+ * an internal_resolution of 2, Android's default then, becomes the Thor's own; a lower_resolution of auto (only
+ * the test builds wrote one, nobody chose it) the default. */
+static void upgrade_from_1(KhdaysVideo *v)
+{
+    KhdaysVideo defaults;
+    khdays_video_default(&defaults);
+    if (khdays_profile_thor() && v->internal_resolution == ANDROID_DEFAULT_SCALE) {
+        v->internal_resolution = defaults.internal_resolution;
+    }
+    if (v->lower_resolution == KHDAYS_RESOLUTION_WINDOW) {
+        v->lower_resolution = defaults.lower_resolution;
+    }
+}
+
 void khdays_profile_load(KhdaysProfile *profile, const char *path, KhdaysNotice notice)
 {
     size_t size = 0;
@@ -1667,8 +1725,13 @@ void khdays_profile_load(KhdaysProfile *profile, const char *path, KhdaysNotice 
                 path, bad);
             khdays_profile_default(profile);
             forget_unknown();
-        } else if (!r->aspect_seen) {
-            profile->video.aspect = default_aspect(profile->video.one_screen);
+        } else {
+            if (!r->aspect_seen) {
+                profile->video.aspect = default_aspect(profile->video.one_screen);
+            }
+            if (!r->version_seen || r->version < 2) {
+                upgrade_from_1(&profile->video);
+            }
         }
     } else {
         say(notice, "settings: %s could not be read (%s); the defaults are used", path, SDL_GetError());
@@ -1786,7 +1849,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         "# Each line is \"action = input\" (two inputs at most, separated by a comma;\n"
         "# nothing after = means no input). Keyboard inputs are SDL key names, gamepad\n"
         "# inputs are positions: south, east, west, north, dpup, leftshoulder, ...\n"
-        "version = 1\n"
+        "version = 2\n"
         "# language: system (the system's, if the game has it), en, fr, de, it or es\n"
         "language = %s\n"
         "# log: on writes the session log to saves/logs (F12 marks a moment in it)\n"
@@ -1833,9 +1896,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;
-        char resolution[16], upper[16], lower[16], screen[24];
+        char resolution[16], lower[16], screen[24];
         resolution_text(v->internal_resolution, "window", resolution, sizeof(resolution));
-        resolution_text(v->upper_resolution, "auto", upper, sizeof(upper));
         resolution_text(v->lower_resolution, "auto", lower, sizeof(lower));
         if (v->screen_resolution != 0) {
             SDL_snprintf(screen, sizeof(screen), "%dx%d", KHDAYS_SCREEN_WIDTH(v->screen_resolution),
@@ -1850,13 +1912,12 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# resolution: desktop (the screen's own, the default) or WIDTHxHEIGHT: the full screen's mode, or\n"
             "# the window's size (a borderless window covers the screen at the desktop's)\n"
             "resolution = %s\n"
-            "# internal_resolution: window (the window's size, the default) or a whole multiple of the DS's\n"
-            "# picture: the settings offer 2 to 16; 1, the DS's own, only for comparing with the DS\n"
+            "# internal_resolution: the upper screen, its 3D and its HUD, menus and text (\"Upper screen\"):\n"
+            "# window (the window's size) or a whole multiple of the DS's picture: the settings offer 2 to 16;\n"
+            "# 1, the DS's own, only for comparing with the DS\n"
             "internal_resolution = %s\n"
-            "# upper_resolution, lower_resolution: auto (the default) or 2 to 16 -- each screen's HUD, menus\n"
-            "# and text; lower is faster (the upper goes with the 3D's screen). A number stays the same with\n"
-            "# one screen or two; auto follows the window, so it changes with them\n"
-            "upper_resolution = %s\n"
+            "# lower_resolution: auto or 2 to 16 -- the lower screen's HUD, menus and text; lower is faster.\n"
+            "# A number stays the same with one screen or two; auto follows the window, so it changes with them\n"
             "lower_resolution = %s\n"
             "# antialiasing: off or fxaa -- the 3D's edges smoothed once it is drawn (FXAA), the HUD\n"
             "# and the text left sharp\n"
@@ -1909,7 +1970,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], screen, resolution,
-            upper, lower, v->antialiasing > 1 ? "fxaa" : "off", v->one_screen ? "one" : "two", v->one_screen_second ? "one" : "two",
+            lower, v->antialiasing > 1 ? "fxaa" : "off", v->one_screen ? "one" : "two", v->one_screen_second ? "one" : "two",
             v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked", v->hud_size, v->menu_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp",
