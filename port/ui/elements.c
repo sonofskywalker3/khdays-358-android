@@ -17,15 +17,11 @@
 
 /* Each image is a changing replacement (runtime/mods/textures.h) that the
  * graphics card holds. One that is given back is kept for the next image of
- * its size.
- *
- * The window draws an element from its replacement's texels as they are when the picture is drawn, while the
- * element's place, the cells it stands for and the palettes come with the frame -- and the window may still be
- * drawing an earlier frame (a second picture of it on a display faster than the game, or a late one). Texels
- * written in place would be shown with that frame's place: a piece scrolled over its map a cell off for a picture.
- * So an image a frame's elements were given with is written into another replacement, a copy of it, and the frame's
- * own stays as it was until the image has been written IMAGE_KEPT times more. An image whose replacement a part
- * asked for by number (khdays_ui_image_replacement: the sequences' inputs and outputs) keeps the one. */
+ * its size. */
+/* The window draws an element from its replacement's texels as they are then, its place from the frame, and
+ * may still be drawing an earlier frame: texels written in place would show at that frame's place. So an image
+ * a frame's elements were given with is written into another replacement, a copy of it; the frame's own stays
+ * until IMAGE_KEPT more writes. One a part asked for by number (khdays_ui_image_replacement) keeps the one. */
 #define IMAGE_KEPT 2
 
 typedef struct Image {
