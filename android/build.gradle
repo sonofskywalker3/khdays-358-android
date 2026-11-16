@@ -20,7 +20,7 @@ def hasReleaseKey = keystorePath?.trim() && keystorePassword?.trim()
 // The Android release: upstream's version (the VERSION file) and this build's beta of it, 0 for the
 // version itself. Released as android-<version>-beta<n> (0.1.4-beta1), which the update check compares.
 def upstreamVersion = file("${rootDir}/../VERSION").text.trim()
-def betaNumber = 8
+def betaNumber = 9
 def versionSuffix = betaNumber > 0 ? "-beta${betaNumber}" : ''
 // each release installs over the one before (Android refuses a lower code): 0.1.4 beta 1 is 10401,
 // 0.1.4 itself 10499, 0.1.5 beta 1 10501
