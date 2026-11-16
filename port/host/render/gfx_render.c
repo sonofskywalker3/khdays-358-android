@@ -266,6 +266,23 @@ SDL_COMPILE_TIME_ASSERT(spread_list_w, 2 * PRE_COLUMNS == SPREAD_LIST_W && SPREA
 static SDL_GPUComputePipeline *spread_pipeline;
 static SDL_GPUBuffer *spread_groups[2];
 static int sparse_2d = -1;
+/* Whether the frame's work so far is handed to the card before the list's dispatch. On an Intel card through
+ * Direct3D 12 (UHD 770, driver 31.0.101.4255) the indirect dispatch ran with too few groups when the passes that
+ * wrote its buffer were in the same command buffer: the list's last dots -- or all of them -- kept an older
+ * picture's texels (a menu's text in grey blocks, changing from picture to picture), though the buffer read back
+ * afterwards held the right count. Handed over first, the picture is right; the same card through Vulkan and
+ * other cards are right without it. KHDAYS_LIST_FLUSH=0 or 1 says otherwise, to try a card. */
+static int list_flush;
+
+/* (asked of the device once, as it is taken: not from the drawing, where the game's thread froze now and then) */
+static void list_flush_decide(void)
+{
+    const char *asked = SDL_getenv("KHDAYS_LIST_FLUSH");
+    const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(device), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
+    list_flush = asked != NULL ? SDL_atoi(asked) != 0
+                               : SDL_strcmp(SDL_GetGPUDeviceDriver(device), "direct3d12") == 0 &&
+                                     SDL_strstr(name, "Intel") != NULL;
+}
 static uint32_t sent_flags[2], sent_wide[2]; /* each description's KD_FLAGS and KD_WIDE as the card was sent them */
 /* ... its KD_BLEND, KD_COEF and KD_MASTER (spread2d.hlsl's PRE_OVER3D dots) */
 static uint32_t sent_blend[2], sent_coef[2], sent_master[2];
@@ -883,6 +900,7 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
 {
     int ok;
     device = d;
+    list_flush_decide();
 #if defined(__ANDROID__)
     if (compose_too_big_here()) {
         make_compose_parts();
@@ -1697,6 +1715,18 @@ static int spread_report(int e, SDL_GPUCommandBuffer **cmd)
         to.rows_per_layer = 1;
         SDL_DownloadFromGPUTexture(copy, &region, &to);
     }
+    {
+        /* the list's dispatch's groups as the card holds them (x, y, z) */
+        SDL_GPUBufferRegion from;
+        SDL_GPUTransferBufferLocation to;
+        SDL_zero(from);
+        from.buffer = spread_groups[e];
+        from.size = 12;
+        SDL_zero(to);
+        to.transfer_buffer = download;
+        to.offset = 768;
+        SDL_DownloadFromGPUBuffer(copy, &from, &to);
+    }
     SDL_EndGPUCopyPass(copy);
     fence = SDL_SubmitGPUCommandBufferAndAcquireFence(*cmd);
     *cmd = SDL_AcquireGPUCommandBuffer(device);
@@ -1718,7 +1748,8 @@ static int spread_report(int e, SDL_GPUCommandBuffer **cmd)
                 at += SDL_snprintf(line + at, sizeof(line) - (size_t)at, "%s%s %u", b ? ", " : "", why[b],
                                    (unsigned)w[128 + b]);
             }
-            fprintf(stderr, "%s)\n", line);
+            fprintf(stderr, "%s); the list's dispatch %u x %u x %u groups\n", line, (unsigned)w[192], (unsigned)w[193],
+                    (unsigned)w[194]);
             SDL_UnmapGPUTransferBuffer(device, download);
         }
     }
@@ -2622,7 +2653,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
         const int split = one != NULL && !(e == 0 && whole_a);
         const int sparse = sparse_now() && (se >= PRE_SCALE_MIN || (sparse_2d == 2 && se > 1)) &&
                            screen_columns[e] <= PRE_COLUMNS &&
-                           (cp.source3d == 0u || split || (cp.source3d == 2u && e == 0 && raster)) &&
+                           (cp.source3d == 0u || split ||
+                            (cp.source3d == 2u && e == 0 && raster && !gpu_skip("over3d"))) &&
                            !checked_whole() && !reference && !gpu_skip("sparse");
         SDL_GPUComputePipeline *const sparse_pipeline = sparse ? sparse_for(sent_wide[e], sent_flags[e]) : NULL;
         if (sparse_pipeline != NULL) {
@@ -2701,6 +2733,17 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
             }
             SDL_EndGPUComputePass(spass);
             gpu_split(device, &cmd, e == 0 ? "spread A" : "spread B");
+            if (list_flush) {
+                const bool sent = SDL_SubmitGPUCommandBuffer(cmd);
+                cmd = SDL_AcquireGPUCommandBuffer(device);
+                if (!sent || cmd == NULL) {
+                    if (cmd != NULL) {
+                        SDL_CancelGPUCommandBuffer(cmd);
+                    }
+                    valid = 0;
+                    return 0; /* (SDL's error says why) */
+                }
+            }
             /* the listed dots' texels, composed */
             io[2].cycle = false;
             io[6].cycle = false;
