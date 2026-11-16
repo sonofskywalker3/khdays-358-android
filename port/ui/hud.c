@@ -107,6 +107,8 @@ static int from_piece(const Piece *piece, const char *file)
     return 0;
 }
 
+#define PIECE_SPARES 2
+
 /* A piece's element on one layer: its cells as they were last drawn, and its
  * image. */
 typedef struct Shown {
@@ -117,6 +119,13 @@ typedef struct Shown {
     uint32_t *hd;               /* w * h: the mod's tile drawn instead in each cell (tiles2d.h), 0 none */
     int image, image_w, image_h, image_scale;
     int hd_image1, hd_w, hd_h; /* the image of the mods' tiles in colour, + 1 (0: none), its size */
+    /* The window draws from the images themselves, not from a copy made with the frame, and may still be drawing an
+     * earlier frame: an image written anew would be shown with that frame's place, cells left out and palettes --
+     * a piece scrolled over its map a cell off, a page redrawn half in the old one's colours -- for a picture. So
+     * a piece whose cells changed is drawn into another image, the one it has left alone longest (`spares`,
+     * `hd_spares1`: those of its last changes, the latest first), and a frame's image stays as it was until the
+     * piece has changed PIECE_SPARES times more. (Its size or scale changing gives them all back at once.) */
+    int spares[PIECE_SPARES], hd_spares1[PIECE_SPARES];
 } Shown;
 
 static Shown shown[PIECE_COUNT][4];
@@ -246,9 +255,24 @@ static int emit_piece(int index, int bg, const KhdaysBgLayer *l)
     }
     if (sh->image < 0 || sh->image_w != w * 8 * scale || sh->image_h != h * 8 * scale || sh->image_scale != scale) {
         khdays_ui_image_put(sh->image);
+        for (int k = 0; k < PIECE_SPARES; ++k) {
+            khdays_ui_image_put(sh->spares[k]);
+            sh->spares[k] = -1;
+        }
         sh->image = khdays_ui_image_get(w * 8 * scale, h * 8 * scale);
         sh->image_w = w * 8 * scale, sh->image_h = h * 8 * scale, sh->image_scale = scale;
         changed = 1;
+    } else if (changed) {
+        /* the images the frames before were drawn with stay as they are (Shown) */
+        const int next = sh->spares[PIECE_SPARES - 1] >= 0 ? sh->spares[PIECE_SPARES - 1]
+                                                           : khdays_ui_image_get(sh->image_w, sh->image_h);
+        if (next >= 0) { /* (none to be had: written where it is) */
+            for (int k = PIECE_SPARES - 1; k > 0; --k) {
+                sh->spares[k] = sh->spares[k - 1];
+            }
+            sh->spares[0] = sh->image;
+            sh->image = next;
+        }
     }
     if (sh->image < 0) {
         return 0;
@@ -262,15 +286,32 @@ static int emit_piece(int index, int bg, const KhdaysBgLayer *l)
             coloured |= r != NULL && !(r->info & KHDAYS_REPLACEMENT_INDEXED);
         }
         /* the mods' tiles in colour go in an image of their own, drawn over the piece's */
-        if (coloured && (sh->hd_image1 == 0 || sh->hd_w != tw || sh->hd_h != th)) {
+        if (sh->hd_w != tw || sh->hd_h != th || !coloured) {
             if (sh->hd_image1 != 0) {
                 khdays_ui_image_put(sh->hd_image1 - 1);
             }
+            for (int k = 0; k < PIECE_SPARES; ++k) {
+                if (sh->hd_spares1[k] != 0) {
+                    khdays_ui_image_put(sh->hd_spares1[k] - 1);
+                }
+                sh->hd_spares1[k] = 0;
+            }
+            sh->hd_image1 = 0;
+        } else if (sh->hd_image1 != 0) {
+            /* as the piece's own image */
+            const int next1 = sh->hd_spares1[PIECE_SPARES - 1] != 0 ? sh->hd_spares1[PIECE_SPARES - 1]
+                                                                    : khdays_ui_image_get(tw, th) + 1;
+            if (next1 != 0) {
+                for (int k = PIECE_SPARES - 1; k > 0; --k) {
+                    sh->hd_spares1[k] = sh->hd_spares1[k - 1];
+                }
+                sh->hd_spares1[0] = sh->hd_image1;
+                sh->hd_image1 = next1;
+            }
+        }
+        if (coloured && sh->hd_image1 == 0) {
             sh->hd_image1 = khdays_ui_image_get(tw, th) + 1;
             sh->hd_w = tw, sh->hd_h = th;
-        } else if (!coloured && sh->hd_image1 != 0) {
-            khdays_ui_image_put(sh->hd_image1 - 1);
-            sh->hd_image1 = 0;
         }
         texels = khdays_ui_image_begin(sh->image);
         if (texels == NULL) {
@@ -643,6 +684,9 @@ void khdays_ui_hud_init(void)
     for (int n = 0; n < PIECE_COUNT; ++n) {
         for (int bg = 0; bg < 4; ++bg) {
             shown[n][bg].image = -1;
+            for (int k = 0; k < PIECE_SPARES; ++k) {
+                shown[n][bg].spares[k] = -1;
+            }
         }
     }
     for (int e = 0; e < 2; ++e) {
