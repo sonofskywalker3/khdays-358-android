@@ -612,11 +612,16 @@ static int auto_save_pending;                   /* khdays_present_take_auto */
 static char auto_notice[AUTO_NOTICE_SIZE];       /* khdays_present_take_notice */
 static int auto_notice_pending;
 
-/* Whether Auto has anything to do: the port's 2D drawing and a screen on auto. */
+/* Whether Auto has anything to do: on Android, the port's 2D drawing and a screen on auto. A PC keeps the window's
+ * own size for auto, as before: its player sets a resolution by hand, and no pair is measured or used there. */
 static int auto_on(void)
 {
+#if !defined(__ANDROID__)
+    return 0;
+#else
     return device != NULL && port2d_ready && port2d_mode == 1 &&
            (video.internal_resolution == KHDAYS_RESOLUTION_WINDOW || video.lower_resolution == KHDAYS_RESOLUTION_WINDOW);
+#endif
 }
 
 static int auto_mode(void)
@@ -638,12 +643,18 @@ static void auto_card_key(char *key, size_t size)
 /* The mode's measured pair, on this graphics card. */
 static int auto_have(int mode)
 {
+#if !defined(__ANDROID__)
+    (void)mode;
+    (void)auto_card_key;
+    return 0; /* (auto_on: none on a PC, whatever a settings file brought along says) */
+#else
     char key[KHDAYS_AUTO_CARD_SIZE];
     if (video.auto_upper[mode] <= 0 || video.auto_lower[mode] <= 0 || card_line[0] == '\0') {
         return 0;
     }
     auto_card_key(key, sizeof(key));
     return SDL_strcmp(video.auto_card, key) == 0;
+#endif
 }
 
 static int auto_upper_now(void)
