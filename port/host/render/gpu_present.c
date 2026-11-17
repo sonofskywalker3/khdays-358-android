@@ -1940,7 +1940,14 @@ int khdays_present_refresh_settling(void)
 {
     static uint32_t refreshed_at;
     const uint32_t now = khdays_events_vblank_count();
-    if (!(khdays_present_settling() || khdays_present_waiting()) || now == refreshed_at) {
+    if (khdays_present_waiting()) {
+        if (package_waits(latest)) {
+            return 0;
+        }
+        present(latest, 1); /* its wait is over: drawn for the first time */
+        return 1;
+    }
+    if (!khdays_present_settling() || now == refreshed_at) {
         return 0; /* (once a VBlank) */
     }
     refreshed_at = now;
@@ -2021,9 +2028,21 @@ static void present_now(const KhdaysFramePackage *p, int first);
  * the game's VBlanks have passed, whether or not another package comes. */
 static int package_waits(const KhdaysFramePackage *p)
 {
+    /* (nor past this long by the clock: the game's VBlanks stand still while it is held or put away) */
+    static const Uint64 at_most_ns = 150u * 1000000u;
+    static uint32_t waited_frame = ~0u;
+    static Uint64 waited_since;
     const uint32_t count = khdays_events_vblank_count();
-    return port2d_ready && port2d_drawn && (p->wants & KHDAYS_WANT_2D) != 0u &&
-           khdays_gfx_render_waits(p, count > p->frame ? count : p->frame);
+    const Uint64 now = SDL_GetTicksNS();
+    if (!(port2d_ready && port2d_drawn && (p->wants & KHDAYS_WANT_2D) != 0u &&
+          khdays_gfx_render_waits(p, count > p->frame ? count : p->frame))) {
+        return 0;
+    }
+    if (p->frame != waited_frame) {
+        waited_frame = p->frame;
+        waited_since = now;
+    }
+    return now - waited_since < at_most_ns;
 }
 
 /* Draws package `p`. `first` is set the first time (so its shots and profile

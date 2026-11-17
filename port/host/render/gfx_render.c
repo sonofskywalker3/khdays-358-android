@@ -408,6 +408,7 @@ typedef struct CaptureCopy {
     SDL_GPUTexture *texture;
     int w, h, columns, ok;
     uint32_t frame; /* the package it is the picture of */
+    uint32_t made;  /* the package it was kept at: the first that did not have engine A on that screen */
     SDL_Texture *wrapped;
     SDL_Renderer *wrapped_for;
 } CaptureCopy;
@@ -426,6 +427,8 @@ typedef struct HdBank {
     int w, h;
     uint32_t captures; /* the game's count of captures into the bank when this copy was taken */
     int ok;
+    uint32_t taken_at; /* the package whose capture it took last (`taken`), drawn again between two packages */
+    int taken;
 } HdBank;
 static SDL_GPUComputePipeline *capturer;
 static HdBank hd_bank[4], hd_scratch, hd_source;
@@ -710,8 +713,12 @@ static void plan_capture(const KhdaysFramePackage *p, CapturePlan *plan)
     /* the copy is of this blend: taken at its first capture or after, though the window may have missed
      * some since (a package it never drew); else, when the bank holds that first capture alone (engine A's
      * picture a VBlank before), it is made again from this frame */
-    current = intact && plain && copy->ok && copy->captures >= p->bank_plain[bank] &&
-              copy->captures <= p->bank_captures[bank];
+    /* (or of this very package's capture, the package drawn again -- a picture between two packages on a
+     * screen faster than the game: without it the bank was shown at the DS's size, 4:3 between black bars
+     * in a wider picture, every other picture of a camera's blend) */
+    const int again = copy->ok && copy->taken && copy->taken_at == p->frame;
+    current = intact && plain && copy->ok &&
+              ((copy->captures >= p->bank_plain[bank] && copy->captures <= p->bank_captures[bank]) || again);
     seed = !current && intact && plain && p->bank_plain[bank] == p->bank_captures[bank];
     if (display == 2u && (current || seed)) {
         plan->show = bank;
@@ -726,7 +733,10 @@ static void plan_capture(const KhdaysFramePackage *p, CapturePlan *plan)
                        evb = ((cnt >> 8) & 31u) > 16u ? 16u : (cnt >> 8) & 31u;
         plan->eva = mode == 0 ? 16u : mode == 1 ? 0u : eva;
         plan->evb = mode == 0 ? 0u : mode == 1 ? 16u : evb;
-        if (plan->evb == 0u || plan->show == bank || current) {
+        const HdBank *into = &hd_bank[(cnt >> 16) & 3u];
+        /* (taken once a package: drawn again, the blend would go a step further each time) */
+        if ((plan->evb == 0u || plan->show == bank || current) &&
+            !(into->ok && into->taken && into->taken_at == p->frame)) {
             plan->capture = (int)((cnt >> 16) & 3u);
             plan->source_b = plan->evb != 0u ? bank : -1;
         }
@@ -773,6 +783,7 @@ static void take_capture(SDL_GPUCommandBuffer *cmd, const KhdaysFramePackage *p,
         if (made->ok) {
             copy_texture(cmd, target, made->texture, w, h);
             made->captures = p->bank_captures[show];
+            made->taken = 0;
         }
         show = -1;
     }
@@ -824,6 +835,8 @@ static void take_capture(SDL_GPUCommandBuffer *cmd, const KhdaysFramePackage *p,
         *dest = done;
         dest->captures = p->bank_captures[plan->capture] + 1u;
         dest->ok = 1;
+        dest->taken_at = p->frame;
+        dest->taken = 1;
     } else if (dest != NULL) {
         dest->ok = 0;
     }
@@ -1435,8 +1448,13 @@ static void drop_capture_copy(CaptureCopy *k)
 static CaptureCopy *capture_copy_shown(void)
 {
     CaptureCopy *k = &capture_copy[drawn_upper == 0 ? 1 : 0];
-    if (!drawn_any || !drawn_capture || !k->ok || k->texture == NULL ||
-        !khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both, drawn_armed)) {
+    if (!drawn_any || !drawn_capture || !k->ok || k->texture == NULL) {
+        return NULL;
+    }
+    /* by its picture's age; or, a picture of long before (the game sends no package while nothing changes), for
+     * KHDAYS_KEPT_VBLANKS_BOTH from the package engine A left the screen at */
+    if (!khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both, drawn_armed) &&
+        !(drawn_both && drawn_frame >= k->made && drawn_frame - k->made < KHDAYS_KEPT_VBLANKS_BOTH)) {
         return NULL;
     }
     return k;
@@ -1450,7 +1468,9 @@ static void hold_capture(const KhdaysFramePackage *p)
     if (drawn_any && p->frame == drawn_frame) {
         return;
     }
-    if (drawn_any && drawn_capture && screen[0] != NULL) {
+    /* (also when engine A leaves a screen with no capture in use before: the change of scene's still,
+     * two_screens.h KHDAYS_KEPT_VBLANKS_BOTH) */
+    if (drawn_any && (drawn_capture || p->upper != drawn_upper) && screen[0] != NULL) {
         /* as it was shown: shrunk to the size shown */
         SDL_GPUTexture *const as_shown = screens_shrunk[0] ? shrunk_screen[0].texture : screen[0];
         const int w = screens_shrunk[0] ? shrunk_screen[0].w : screen_columns[0] * screen_scale[0];
@@ -1477,6 +1497,7 @@ static void hold_capture(const KhdaysFramePackage *p)
                 k->ok = SDL_SubmitGPUCommandBuffer(cmd);
                 k->columns = screen_columns[0];
                 k->frame = drawn_frame;
+                k->made = p->frame;
             }
         }
     }
