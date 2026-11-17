@@ -408,7 +408,8 @@ typedef struct CaptureCopy {
     SDL_GPUTexture *texture;
     int w, h, columns, ok;
     uint32_t frame; /* the package it is the picture of */
-    uint32_t made;  /* the package it was kept at: the first that did not have engine A on that screen */
+    int still;      /* kept as engine A left the screen, no capture in use before: a change of scene's still */
+    Uint64 made_ns; /* when (SDL's ns) */
     SDL_Texture *wrapped;
     SDL_Renderer *wrapped_for;
 } CaptureCopy;
@@ -418,6 +419,7 @@ static uint32_t drawn_frame, drawn_before;
 static int drawn_any, drawn_capture, drawn_upper, drawn_both, drawn_armed;
 static KhdaysArmedSeen armed_seen; /* the last drawn package with a capture armed */
 static uint32_t drawn_serial;      /* the last drawn package's 3D list (list3d_serial) */
+static int drawn_whole;            /* it was drawn as two screens: engine A's whole */
 /* The screen blends (a cut between an event's camera shots, Ov023_CmdStartScreenBlend): engine A shows a
  * VRAM bank while its picture, blended with that bank, is captured back into it. The port's capture is at
  * the DS's size, so each one is taken again here from what the window shows, and the bank shown from
@@ -1445,16 +1447,19 @@ static void drop_capture_copy(CaptureCopy *k)
 
 /* The copy engine B's screen shows instead of engine B's picture, or NULL: engine A's picture of when it was on
  * that screen (the one it is not on in the package drawn last), while the capture is in use. */
+#define STILL_NS ((Uint64)KHDAYS_KEPT_VBLANKS_BOTH * 16715u * 1000u) /* (a VBlank is 16.715 ms) */
 static CaptureCopy *capture_copy_shown(void)
 {
     CaptureCopy *k = &capture_copy[drawn_upper == 0 ? 1 : 0];
     if (!drawn_any || !drawn_capture || !k->ok || k->texture == NULL) {
         return NULL;
     }
-    /* by its picture's age; or, a picture of long before (the game sends no package while nothing changes), for
-     * KHDAYS_KEPT_VBLANKS_BOTH from the package engine A left the screen at */
-    if (!khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both, drawn_armed) &&
-        !(drawn_both && drawn_frame >= k->made && drawn_frame - k->made < KHDAYS_KEPT_VBLANKS_BOTH)) {
+    if (k->still) {
+        /* a change of scene's still: for the 8 VBlanks the game keeps engine A away, by the clock (its picture
+         * may be of long before, and no package may follow: the game sends none while nothing changes) */
+        return drawn_both && SDL_GetTicksNS() - k->made_ns < STILL_NS ? k : NULL;
+    }
+    if (!khdays_two_screens_kept_shows(drawn_frame, k->frame, drawn_before, drawn_both, drawn_armed)) {
         return NULL;
     }
     return k;
@@ -1463,14 +1468,14 @@ static CaptureCopy *capture_copy_shown(void)
 /* When a new package comes (not the same one drawn again between two
  * pictures): keep engine A's picture of the previous one, if it was captured
  * (see above). */
-static void hold_capture(const KhdaysFramePackage *p)
+static void hold_capture(const KhdaysFramePackage *p, int one)
 {
     if (drawn_any && p->frame == drawn_frame) {
         return;
     }
     /* (also when engine A leaves a screen with no capture in use before: the change of scene's still,
      * two_screens.h KHDAYS_KEPT_VBLANKS_BOTH) */
-    if (drawn_any && (drawn_capture || p->upper != drawn_upper) && screen[0] != NULL) {
+    if (drawn_any && (drawn_capture || (p->upper != drawn_upper && drawn_whole)) && screen[0] != NULL) {
         /* as it was shown: shrunk to the size shown */
         SDL_GPUTexture *const as_shown = screens_shrunk[0] ? shrunk_screen[0].texture : screen[0];
         const int w = screens_shrunk[0] ? shrunk_screen[0].w : screen_columns[0] * screen_scale[0];
@@ -1497,7 +1502,8 @@ static void hold_capture(const KhdaysFramePackage *p)
                 k->ok = SDL_SubmitGPUCommandBuffer(cmd);
                 k->columns = screen_columns[0];
                 k->frame = drawn_frame;
-                k->made = p->frame;
+                k->still = !drawn_capture;
+                k->made_ns = SDL_GetTicksNS();
             }
         }
     }
@@ -1513,6 +1519,7 @@ static void hold_capture(const KhdaysFramePackage *p)
     drawn_both = p->both != 0;
     drawn_armed = khdays_two_screens_armed_seen(&armed_seen, p->frame, p->dispcapcnt != 0u);
     drawn_upper = p->upper;
+    drawn_whole = !one; /* (the one-screen picture composes only the parts of a screen it reads) */
     drawn_serial = p->list3d_serial;
     drawn_any = 1;
     if (trace_capture() && (drawn_capture || drawn_both)) {
@@ -1529,6 +1536,12 @@ static void hold_capture(const KhdaysFramePackage *p)
                 p->frame, (unsigned)p->list3d_serial, (int)p->list3d.npolys, (int)p->list3d.flushes,
                 (unsigned)p->desc2d[0][KD_FLAGS], (unsigned)p->desc2d[1][KD_FLAGS]);
     }
+}
+
+Uint64 khdays_gfx_render_still_ends(void)
+{
+    const CaptureCopy *k = capture_copy_shown();
+    return k != NULL && k->still ? k->made_ns + STILL_NS : 0u;
 }
 
 int khdays_gfx_render_waits(const KhdaysFramePackage *p, unsigned now)
@@ -2123,7 +2136,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
                 (unsigned)(p->desc2d[0][KD_VRAM] & 3u), raster ? "no current copy of it" : "no 3D drawn");
     }
     if (device != NULL && (p->wants & KHDAYS_WANT_2D)) {
-        hold_capture(p); /* before this package's pictures replace the previous ones */
+        hold_capture(p, one != NULL); /* before this package's pictures replace the previous ones */
     }
     if (raster && !khdays_raster3d_targets(&color3d, &attr3d, &raster_columns)) {
         SDL_SetError("the 3D at that resolution is not drawn");

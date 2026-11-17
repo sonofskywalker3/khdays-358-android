@@ -42,10 +42,9 @@ KhdaysTwoScreensLayout khdays_two_screens_layout(int side_by_side, int columns, 
  * to the DS's capture, 4:3 and without the replaced models, for as long. The game still capturing, an old copy
  * of the screen's own view is the better picture.) */
 #define KHDAYS_WAIT_VBLANKS 8
-/* Without a capture armed, as long as the game says it changes screens (`both`: 8 VBlanks from the last change):
- * at a change of scene engine A goes to the lower screen for 8 VBlanks and the upper one shows a still of its
- * last picture. With 4 the upper screen showed the DS's capture for the other 4, 4:3 between black bars in a
- * wider picture. */
+/* At a change of scene engine A goes to the lower screen for 8 VBlanks and the upper one shows a still of its
+ * last picture: the window's copy of it shows that long by the clock (gfx_render.c STILL_NS), not the DS's
+ * capture, 4:3 between black bars in a wider picture. */
 #define KHDAYS_KEPT_VBLANKS_BOTH 8
 int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned before, int both, int armed);
 

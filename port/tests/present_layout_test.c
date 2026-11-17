@@ -37,12 +37,10 @@ int main(void)
     /* the 3D on both screens: the other screen's copy, of the package just before or a few VBlanks old */
     CHECK(khdays_two_screens_kept_shows(101, 100, 100, 1, 0)); /* each VBlank drawn */
     CHECK(khdays_two_screens_kept_shows(103, 100, 102, 1, 0)); /* a package not drawn between: the copy stays */
-    CHECK(!khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS_BOTH + 1, 100, 104, 1, 0)); /* too old */
+    CHECK(!khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS + 1, 100, 104, 1, 0)); /* too old */
     CHECK(khdays_two_screens_kept_shows(105, 100, 101, 1, 1)); /* drawn two in four, one missed, capturing */
     CHECK(khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS_ARMED, 100, 104, 1, 1));      /* still capturing */
     CHECK(!khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS_ARMED + 1, 100, 104, 1, 1)); /* too old */
-    CHECK(
-        khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS_BOTH, 100, 104, 1, 0)); /* a change of scene's still */
     {
         KhdaysArmedSeen seen = {0};
         CHECK(!khdays_two_screens_armed_seen(&seen, 50, 0)); /* none yet */

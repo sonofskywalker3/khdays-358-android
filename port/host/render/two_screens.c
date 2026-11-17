@@ -27,8 +27,7 @@ int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned befor
     if (age == 0u) {
         return 0; /* this package's own picture: on its own screen */
     }
-    return kept_at == before ||
-           (both && (age <= KHDAYS_KEPT_VBLANKS_BOTH || (armed && age <= KHDAYS_KEPT_VBLANKS_ARMED)));
+    return kept_at == before || (both && (age <= KHDAYS_KEPT_VBLANKS || (armed && age <= KHDAYS_KEPT_VBLANKS_ARMED)));
 }
 
 int khdays_two_screens_armed_seen(KhdaysArmedSeen *seen, unsigned now, int armed_now)

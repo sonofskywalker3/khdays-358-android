@@ -137,6 +137,10 @@ int khdays_gfx_render_capture_frame(const KhdaysFramePackage *p);
  * package brings another 3D list than the one drawn last. Not one that shows a bank in engine A's place. */
 int khdays_gfx_render_waits(const KhdaysFramePackage *p, unsigned now);
 
+/* When (SDL's ns) the still the other screen shows gives way to engine B's own picture: a copy of engine A's
+ * last picture kept as it left the screen at a change of scene. 0 when none shows. The window draws again then. */
+Uint64 khdays_gfx_render_still_ends(void);
+
 /* Reads back the last drawn screen of engine `engine` (2: the one-screen
  * picture, 3: the kept capture), waiting for the card: *width x *height
  * pixels as 0x00RRGGBB, to free with SDL_free. NULL on failure. */

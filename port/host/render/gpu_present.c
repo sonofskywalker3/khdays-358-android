@@ -130,6 +130,7 @@ static int port2d_mode = -1;         /* 0 off, 1 port, 2 check */
 static int port2d_ready;             /* gfx_render.c opened on this device */
 static int port2d_drawn;             /* this frame's screens were drawn by it */
 static int latest_waits;             /* the newest package is not drawn yet (package_waits) */
+static Uint64 still_ends;            /* when the still a screen shows ends (khdays_gfx_render_still_ends), or 0 */
 static int package_waits(const KhdaysFramePackage *p);
 static int one_drawn;                /* and the one-screen picture made from them */
 static int one_made;                 /* a one-screen picture has been made (the last one stays shown until the next) */
@@ -1933,18 +1934,25 @@ void khdays_present_refresh_now(void)
 
 int khdays_present_waiting(void)
 {
-    return latest != NULL && latest_waits;
+    return latest != NULL && (latest_waits || still_ends != 0u);
 }
 
 int khdays_present_refresh_settling(void)
 {
     static uint32_t refreshed_at;
     const uint32_t now = khdays_events_vblank_count();
-    if (khdays_present_waiting()) {
+    if (latest != NULL && latest_waits) {
         if (package_waits(latest)) {
             return 0;
         }
         present(latest, 1); /* its wait is over: drawn for the first time */
+        return 1;
+    }
+    if (latest != NULL && still_ends != 0u) {
+        if (SDL_GetTicksNS() < still_ends) {
+            return 0;
+        }
+        present(latest, 0); /* a change of scene's still is over (gfx_render.h): engine B's own picture */
         return 1;
     }
     if (!khdays_present_settling() || now == refreshed_at) {
@@ -2273,6 +2281,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         if (drawn) {
             port2d_drawn = 1;
             port2d_upper = p->upper;
+            still_ends = khdays_gfx_render_still_ends();
             latest_drawn_by_card = raster;
             khdays_raster3d_use_list(NULL, NULL);
             if (port2d_mode == 2 && !blend_frame) { /* a screen blend's frame is not the DS's picture */
