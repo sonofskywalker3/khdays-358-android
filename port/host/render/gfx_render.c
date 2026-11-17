@@ -416,6 +416,7 @@ static void drop_capture_copy(CaptureCopy *k);
 static uint32_t drawn_frame, drawn_before;
 static int drawn_any, drawn_capture, drawn_upper, drawn_both, drawn_armed;
 static KhdaysArmedSeen armed_seen; /* the last drawn package with a capture armed */
+static uint32_t drawn_serial;      /* the last drawn package's 3D list (list3d_serial) */
 /* The screen blends (a cut between an event's camera shots, Ov023_CmdStartScreenBlend): engine A shows a
  * VRAM bank while its picture, blended with that bank, is captured back into it. The port's capture is at
  * the DS's size, so each one is taken again here from what the window shows, and the bank shown from
@@ -1491,6 +1492,7 @@ static void hold_capture(const KhdaysFramePackage *p)
     drawn_both = p->both != 0;
     drawn_armed = khdays_two_screens_armed_seen(&armed_seen, p->frame, p->dispcapcnt != 0u);
     drawn_upper = p->upper;
+    drawn_serial = p->list3d_serial;
     drawn_any = 1;
     if (trace_capture() && (drawn_capture || drawn_both)) {
         const CaptureCopy *shown_copy = capture_copy_shown();
@@ -1502,7 +1504,17 @@ static void hold_capture(const KhdaysFramePackage *p)
         } else {
             fprintf(stderr, "engine B's own picture\n");
         }
+        fprintf(stderr, "capture: frame %u, list %u of %d polygons (%d flushes), engine A's flags %08x, B's %08x\n",
+                p->frame, (unsigned)p->list3d_serial, (int)p->list3d.npolys, (int)p->list3d.flushes,
+                (unsigned)p->desc2d[0][KD_FLAGS], (unsigned)p->desc2d[1][KD_FLAGS]);
     }
+}
+
+int khdays_gfx_render_waits(const KhdaysFramePackage *p, unsigned now)
+{
+    return drawn_any && p->frame != drawn_frame && (p->wants & KHDAYS_WANT_3D) != 0u &&
+           p->list3d_serial != drawn_serial && !khdays_gfx_render_capture_frame(p) &&
+           khdays_two_screens_waits(&armed_seen, now, p->both != 0, p->dispcapcnt != 0u);
 }
 
 /* The screens composed whole on one screen too: KHDAYS_GFX=check reads them back whole (gpu_present.c

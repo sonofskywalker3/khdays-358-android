@@ -129,6 +129,8 @@ static void layout(void); /* where the screens go, for the picture's width */
 static int port2d_mode = -1;         /* 0 off, 1 port, 2 check */
 static int port2d_ready;             /* gfx_render.c opened on this device */
 static int port2d_drawn;             /* this frame's screens were drawn by it */
+static int latest_waits;             /* the newest package is not drawn yet (package_waits) */
+static int package_waits(const KhdaysFramePackage *p);
 static int one_drawn;                /* and the one-screen picture made from them */
 static int one_made;                 /* a one-screen picture has been made (the last one stays shown until the next) */
 static int one_kind;                 /* how the frame's screens are shown on one screen (KHDAYS_SCREENS_*) */
@@ -1834,7 +1836,9 @@ void khdays_present_package(const KhdaysFramePackage *p)
     if (!khdays_movie_hd_scene_paused()) {
         paused_got = 0; /* the next pause takes the video's picture anew */
     }
-    note_logic_frame(p);
+    if (!package_waits(p)) {
+        note_logic_frame(p); /* (a list that waits is its view's once its own package is drawn) */
+    }
     latest = p;
     package_ns = SDL_GetTicksNS();
     between_drawn = 0;
@@ -1927,11 +1931,16 @@ void khdays_present_refresh_now(void)
     }
 }
 
+int khdays_present_waiting(void)
+{
+    return latest != NULL && latest_waits;
+}
+
 int khdays_present_refresh_settling(void)
 {
     static uint32_t refreshed_at;
     const uint32_t now = khdays_events_vblank_count();
-    if (!khdays_present_settling() || now == refreshed_at) {
+    if (!(khdays_present_settling() || khdays_present_waiting()) || now == refreshed_at) {
         return 0; /* (once a VBlank) */
     }
     refreshed_at = now;
@@ -2008,6 +2017,15 @@ static int has_hd_tiles(const KhdaysFramePackage *p)
 }
 static void present_now(const KhdaysFramePackage *p, int first);
 
+/* Whether `p` is not drawn yet, the screens left as they are (gfx_render.h khdays_gfx_render_waits): until
+ * the game's VBlanks have passed, whether or not another package comes. */
+static int package_waits(const KhdaysFramePackage *p)
+{
+    const uint32_t count = khdays_events_vblank_count();
+    return port2d_ready && port2d_drawn && (p->wants & KHDAYS_WANT_2D) != 0u &&
+           khdays_gfx_render_waits(p, count > p->frame ? count : p->frame);
+}
+
 /* Draws package `p`. `first` is set the first time (so its shots and profile
  * are counted only once). Timed while the Moogle Shop shows (perf). */
 static void present(const KhdaysFramePackage *p, int first)
@@ -2029,7 +2047,12 @@ static void present_now(const KhdaysFramePackage *p, int first)
     int scale;
     Uint64 start;
     double alpha;
-    const KhdaysG3dList *list = picture_list(p, &alpha);
+    const KhdaysG3dList *list;
+    latest_waits = package_waits(p);
+    if (latest_waits) {
+        return; /* a VBlank between two views of the 3D on both screens: the screens stay as they are */
+    }
+    list = picture_list(p, &alpha);
     picture_alpha = alpha;
     {
         /* KHDAYS_TEST_GPU_LOST=FRAME: at that frame, pretend the card was lost, to check the port remakes its

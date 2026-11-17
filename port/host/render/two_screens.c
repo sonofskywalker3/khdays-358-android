@@ -27,8 +27,7 @@ int khdays_two_screens_kept_shows(unsigned now, unsigned kept_at, unsigned befor
     if (age == 0u) {
         return 0; /* this package's own picture: on its own screen */
     }
-    return kept_at == before ||
-           (both && (age <= KHDAYS_KEPT_VBLANKS || (armed && age <= KHDAYS_KEPT_VBLANKS_ARMED)));
+    return kept_at == before || (both && (age <= KHDAYS_KEPT_VBLANKS || (armed && age <= KHDAYS_KEPT_VBLANKS_ARMED)));
 }
 
 int khdays_two_screens_armed_seen(KhdaysArmedSeen *seen, unsigned now, int armed_now)
@@ -41,6 +40,11 @@ int khdays_two_screens_armed_seen(KhdaysArmedSeen *seen, unsigned now, int armed
         seen->valid = 1;
     }
     return seen->valid && now - seen->at <= KHDAYS_KEPT_VBLANKS;
+}
+
+int khdays_two_screens_waits(const KhdaysArmedSeen *seen, unsigned now, int both, int armed_now)
+{
+    return both && !armed_now && seen->valid && now >= seen->at && now - seen->at <= KHDAYS_WAIT_VBLANKS;
 }
 
 int khdays_two_screens_scale2d(int setting, int auto_scale, int at_least)

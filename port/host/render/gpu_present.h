@@ -75,6 +75,9 @@ int khdays_present_refresh_backdrop(void);
  * newest package is to be decided and drawn again, and that drawing, once a VBlank has passed. */
 int khdays_present_settling(void);
 int khdays_present_refresh_settling(void);
+/* Whether the newest package is not drawn yet (a VBlank between two views of the 3D on both screens,
+ * gfx_render.h khdays_gfx_render_waits): the window looks again each VBlank, as while settling. */
+int khdays_present_waiting(void);
 
 /* The newest package drawn again now, for what its picture's composition depends on having changed. */
 void khdays_present_refresh_now(void);

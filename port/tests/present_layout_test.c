@@ -35,20 +35,28 @@ int main(void)
     CHECK(l.width == 512 && l.height == 192);
     CHECK(same(l.upper, 0, 0, 256, 192) && same(l.lower, 256, 0, 256, 192));
     /* the 3D on both screens: the other screen's copy, of the package just before or a few VBlanks old */
-    CHECK(khdays_two_screens_kept_shows(101, 100, 100, 1, 0));  /* each VBlank drawn */
-    CHECK(khdays_two_screens_kept_shows(103, 100, 102, 1, 0));  /* a package not drawn between: the copy stays */
+    CHECK(khdays_two_screens_kept_shows(101, 100, 100, 1, 0)); /* each VBlank drawn */
+    CHECK(khdays_two_screens_kept_shows(103, 100, 102, 1, 0)); /* a package not drawn between: the copy stays */
     CHECK(!khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS + 1, 100, 104, 1, 0)); /* too old */
     CHECK(khdays_two_screens_kept_shows(105, 100, 101, 1, 1)); /* drawn two in four, one missed, capturing */
     CHECK(!khdays_two_screens_kept_shows(100 + KHDAYS_KEPT_VBLANKS_ARMED + 1, 100, 104, 1, 1)); /* too old */
     {
         KhdaysArmedSeen seen = {0};
-        CHECK(!khdays_two_screens_armed_seen(&seen, 50, 0));                          /* none yet */
-        CHECK(khdays_two_screens_armed_seen(&seen, 0, 1));                            /* VBlank 0 counts */
+        CHECK(!khdays_two_screens_armed_seen(&seen, 50, 0)); /* none yet */
+        CHECK(khdays_two_screens_armed_seen(&seen, 0, 1));   /* VBlank 0 counts */
         CHECK(khdays_two_screens_armed_seen(&seen, 100, 1));
-        CHECK(khdays_two_screens_armed_seen(&seen, 100 + KHDAYS_KEPT_VBLANKS, 0));   /* a frame over two VBlanks */
-        CHECK(!khdays_two_screens_armed_seen(&seen, 101 + KHDAYS_KEPT_VBLANKS, 0));  /* stopped capturing */
-        CHECK(!khdays_two_screens_armed_seen(&seen, 90, 0));                          /* went back: forgotten */
-        CHECK(!khdays_two_screens_armed_seen(&seen, 102, 0));                         /* ... for good */
+        CHECK(khdays_two_screens_armed_seen(&seen, 100 + KHDAYS_KEPT_VBLANKS, 0));  /* a frame over two VBlanks */
+        CHECK(!khdays_two_screens_armed_seen(&seen, 101 + KHDAYS_KEPT_VBLANKS, 0)); /* stopped capturing */
+        /* a VBlank between two views waits; an armed one, one without the 3D on both, and one after the game
+         * stopped capturing are drawn */
+        CHECK(khdays_two_screens_waits(&seen, 101, 1, 0));
+        CHECK(!khdays_two_screens_waits(&seen, 101, 1, 1));
+        CHECK(!khdays_two_screens_waits(&seen, 101, 0, 0));
+        CHECK(khdays_two_screens_waits(&seen, 100 + KHDAYS_WAIT_VBLANKS, 1, 0));
+        CHECK(!khdays_two_screens_waits(&seen, 101 + KHDAYS_WAIT_VBLANKS, 1, 0));
+        CHECK(!khdays_two_screens_waits(&seen, 99, 1, 0));
+        CHECK(!khdays_two_screens_armed_seen(&seen, 90, 0));  /* went back: forgotten */
+        CHECK(!khdays_two_screens_armed_seen(&seen, 102, 0)); /* ... for good */
     }
     CHECK(khdays_two_screens_kept_shows(110, 100, 100, 0, 0));  /* one change of screens: the package before */
     CHECK(!khdays_two_screens_kept_shows(103, 100, 102, 0, 0)); /* ... and no older one */

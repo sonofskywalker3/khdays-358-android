@@ -132,6 +132,11 @@ SDL_Texture *khdays_gfx_render_captured(SDL_Renderer *renderer, int *columns);
  * shows a VRAM bank and is drawn as its layers and 3D instead (the 3D rasterized as for its 3D). */
 int khdays_gfx_render_capture_frame(const KhdaysFramePackage *p);
 
+/* Whether package `p` is left undrawn at VBlank `now`, the screens staying as the package drawn before left
+ * them: a VBlank between two views of the 3D on both screens (two_screens.h khdays_two_screens_waits) whose
+ * package brings another 3D list than the one drawn last. Not one that shows a bank in engine A's place. */
+int khdays_gfx_render_waits(const KhdaysFramePackage *p, unsigned now);
+
 /* Reads back the last drawn screen of engine `engine` (2: the one-screen
  * picture, 3: the kept capture), waiting for the card: *width x *height
  * pixels as 0x00RRGGBB, to free with SDL_free. NULL on failure. */

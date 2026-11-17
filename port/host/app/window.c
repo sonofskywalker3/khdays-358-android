@@ -1194,6 +1194,8 @@ static int host_thread(void *unused)
         /* So is a situation still settling on a still picture (a pause opened where the 3D was
          * on both screens): it is decided again as the game's VBlanks pass. */
         const int settling = khdays_present_settling();
+        /* So is a package not drawn yet, the 3D on both screens between two views: drawn once its wait is over */
+        const int waiting = khdays_present_waiting();
         /* the smooth pace's pictures at the packages and the refreshes between, without VSync, while the
          * screen's lock holds (khdays_present_smooth_unblocked) */
         const int unblocked = smooth && khdays_present_smooth_unblocked();
@@ -1249,10 +1251,10 @@ static int host_thread(void *unused)
             SDL_zero(event);
             event.type = SDL_EVENT_RENDER_DEVICE_LOST;
         } else if (!((smooth && !unblocked) || movie || backdrop || kh2_pause ? SDL_WaitEventTimeout(&event, 1)
-                     : unblocked ? SDL_WaitEventTimeout(&event, khdays_present_between_due_ms(settling    ? 4
+                     : unblocked ? SDL_WaitEventTimeout(&event, khdays_present_between_due_ms(settling || waiting ? 4
                                                                                              : animating ? 50
                                                                                                          : 100))
-                     : settling  ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
+                     : settling || waiting ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
                      : animating ? SDL_WaitEventTimeout(&event, 50)
                                  : SDL_WaitEvent(&event))) {
             if (animating) {
@@ -1265,7 +1267,7 @@ static int host_thread(void *unused)
                 }
             }
             if ((smooth && khdays_present_refresh()) || (backdrop && khdays_present_refresh_backdrop()) ||
-                (settling && khdays_present_refresh_settling()) || animating || movie || kh2_pause) {
+                ((settling || waiting) && khdays_present_refresh_settling()) || animating || movie || kh2_pause) {
                 redraw(window, renderer);
             }
             continue;
