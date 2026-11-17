@@ -397,8 +397,9 @@ static u16 player_buttons(void)
     }
     {
         static KhdaysLockAssist assist;
-        lock_actions |= khdays_lock_assist_frame(&assist, (snapshot.actions & KHDAYS_ACTION_LOCK_BUTTON) != 0, lock_actions,
-                                                 double_r, lock_field, game->lock_active, auto_lock, pad_samples);
+        lock_actions |=
+            khdays_lock_assist_frame(&assist, (snapshot.actions & KHDAYS_ACTION_LOCK_BUTTON) != 0, lock_actions,
+                                     double_r, lock_field, game->lock_active, auto_lock, pad_samples);
     }
     const u16 lock_buttons =
         khdays_lock_sequencer_frame(&lock, lock_on || auto_lock ? lock_actions : 0, lock_field, game->lock_active,
@@ -452,11 +453,11 @@ static void share_stick(const KhdaysInputSnapshot *s)
 #define PACE_OWED_MOST 3
 
 static int pace_on = -1, pace_trace;
-static u16 pace_buttons;  /* the buttons at the last Pad_Sample */
-static int pace_heading;  /* the movement stick then: 0 pushed, -1 let go */
-static int pace_owed;     /* VBlanks the game is ahead of its pace */
-static int pace_quiet;    /* game frames since something new was read */
-static int pace_paying;   /* this frame's pace has a VBlank more */
+static u16 pace_buttons; /* the buttons at the last Pad_Sample */
+static int pace_heading; /* the movement stick then: 0 pushed, -1 let go */
+static int pace_owed;    /* VBlanks the game is ahead of its pace */
+static int pace_quiet;   /* game frames since something new was read */
+static int pace_paying;  /* this frame's pace has a VBlank more */
 static u32 pace_early, pace_paid;
 
 static int pace_active(void)
@@ -466,7 +467,8 @@ static int pace_active(void)
         pace_on = v == NULL || v[0] != '0'; /* on unless KHDAYS_PRESS_PACE=0 */
         pace_trace = getenv("KHDAYS_TRACE_PRESS_PACE") != NULL;
     }
-    return pace_on && FRAME_RATE_MODE == 0 && !khdays_net_in_session() && !snapshot.ui_open;
+    /* (not while a recording plays: the pace would follow the pad in the player's hands, not the recording) */
+    return pace_on && FRAME_RATE_MODE == 0 && !khdays_net_in_session() && !snapshot.ui_open && !khdays_replay_playing();
 }
 
 /* Whether the movement stick is pushed (0) or let go (-1, within a fifth of its range): its turns are not
@@ -546,8 +548,8 @@ int khdays_press_pace_wait(unsigned (*count)(void), unsigned target)
             }
             ++pace_early;
             if (pace_trace) {
-                fprintf(stderr, "press pace: game frame %u starts %d VBlank(s) early (%d owed)\n", pad_samples,
-                        skipped, pace_owed);
+                fprintf(stderr, "press pace: game frame %u starts %d VBlank(s) early (%d owed)\n", pad_samples, skipped,
+                        pace_owed);
             }
             return 2;
         }

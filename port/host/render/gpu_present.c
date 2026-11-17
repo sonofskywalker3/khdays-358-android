@@ -2392,6 +2392,12 @@ void khdays_present_wait_for_refresh(int wait)
         always = v != NULL && SDL_strcmp(v, "always") == 0;
     }
     wait = wait || always;
+#ifdef __ANDROID__
+    /* Android keeps VSync throughout: a change builds the swapchain anew, outside the surface's guard
+     * (khdays_game_surface_frame_begin) and unknown to khdays_present_new_surface, and without VSync a
+     * device with no MAILBOX tears. What it would gain there is not measured. */
+    wait = 1;
+#endif
     if (renderer != NULL && wait != vsync_now) {
         /* without VSync three frames in flight, three swapchain images (SDL makes as many, two at the least):
          * with two, where the picture goes to the screen without the compositor (a borderless window over
