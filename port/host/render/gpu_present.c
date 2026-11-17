@@ -2395,8 +2395,16 @@ void khdays_present_wait_for_refresh(int wait)
 #ifdef __ANDROID__
     /* Android keeps VSync throughout: a change builds the swapchain anew, outside the surface's guard
      * (khdays_game_surface_frame_begin) and unknown to khdays_present_new_surface, and without VSync a
-     * device with no MAILBOX tears. What it would gain there is not measured. */
-    wait = 1;
+     * device with no MAILBOX tears. What it would gain there is not measured: KHDAYS_VSYNC=game leaves it
+     * to the game's pictures as on the PC, for measuring. */
+    {
+        static int as_pc = -1;
+        if (as_pc < 0) {
+            const char *v = SDL_getenv("KHDAYS_VSYNC");
+            as_pc = v != NULL && SDL_strcmp(v, "game") == 0;
+        }
+        wait = wait || !as_pc;
+    }
 #endif
     if (renderer != NULL && wait != vsync_now) {
         /* without VSync three frames in flight, three swapchain images (SDL makes as many, two at the least):
