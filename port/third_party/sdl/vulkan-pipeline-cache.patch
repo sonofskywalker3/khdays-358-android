@@ -1,0 +1,247 @@
+--- a/src/gpu/vulkan/SDL_gpu_vulkan.c
++++ b/src/gpu/vulkan/SDL_gpu_vulkan.c
+@@ -1122,6 +1122,9 @@
+     VkPhysicalDeviceProperties2KHR physicalDeviceProperties;
+     VkPhysicalDeviceDriverPropertiesKHR physicalDeviceDriverProperties;
+     VkDevice logicalDevice;
++    VkPipelineCache pipelineCache; // khdays: kept on disk, see VULKAN_INTERNAL_LoadPipelineCache
++    char *pipelineCachePath;
++    SDL_Mutex *pipelineCacheLock;
+     Uint8 integratedMemoryNotification;
+     Uint8 outOfDeviceLocalMemoryWarning;
+     Uint8 outofBARMemoryWarning;
+@@ -4965,6 +4968,178 @@
+     return true;
+ }
+ 
++/* khdays: a pipeline cache kept on disk.
++ *
++ * Without one, every start compiles every pipeline again; a big compute shader takes the Adreno 630's
++ * compiler 10 s to 2 min each start. The file is named by the hint SDL_GPU_VULKAN_PIPELINE_CACHE_FILE
++ * (no hint, no file: SDL's own behaviour). It is the driver's cache data behind a small header of ours
++ * (magic, size, checksum), so a cut-short or damaged file is dropped instead of handed to the driver, and
++ * the driver's own header must name this card (vendor, device, cache UUID) or the data is not used.
++ * It is written again whenever a pipeline took a while to make (a real compile happened), through a
++ * temporary file and a rename, so a process killed mid-write leaves the old file whole. */
++/* KHDAYS_PIPELINE_CACHE_PATCH_2: this patch's revision, looked for by third_party/sdl/apply-patches.cmake */
++#define KHDAYS_PIPELINE_CACHE_MAGIC   0x4b504331u /* 'KPC1' */
++#define KHDAYS_PIPELINE_CACHE_SLOW_NS SDL_MS_TO_NS(50)
++
++static Uint32 VULKAN_INTERNAL_PipelineCacheChecksum(const Uint8 *data, size_t size)
++{
++    Uint32 hash = 2166136261u; // FNV-1a
++    size_t i;
++    for (i = 0; i < size; i += 1) {
++        hash = (hash ^ data[i]) * 16777619u;
++    }
++    return hash;
++}
++
++/* The driver's header (VkPipelineCacheHeaderVersionOne) names this card and driver? */
++static bool VULKAN_INTERNAL_PipelineCacheMatches(VulkanRenderer *renderer, const Uint8 *data, size_t size)
++{
++    const VkPhysicalDeviceProperties *props = &renderer->physicalDeviceProperties.properties;
++    Uint32 headerSize, version, vendorID, deviceID;
++    if (size < 16 + VK_UUID_SIZE) {
++        return false;
++    }
++    SDL_memcpy(&headerSize, data, 4);
++    SDL_memcpy(&version, data + 4, 4);
++    SDL_memcpy(&vendorID, data + 8, 4);
++    SDL_memcpy(&deviceID, data + 12, 4);
++    return headerSize >= 16 + VK_UUID_SIZE && headerSize <= size &&
++           version == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
++           vendorID == props->vendorID && deviceID == props->deviceID &&
++           SDL_memcmp(data + 16, props->pipelineCacheUUID, VK_UUID_SIZE) == 0;
++}
++
++static void VULKAN_INTERNAL_LoadPipelineCache(VulkanRenderer *renderer)
++{
++    const char *path = SDL_GetHint("SDL_GPU_VULKAN_PIPELINE_CACHE_FILE");
++    VkPipelineCacheCreateInfo info;
++    size_t fileSize = 0;
++    Uint8 *file = NULL;
++    const Uint8 *data = NULL;
++    size_t dataSize = 0;
++    VkResult result;
++
++    renderer->pipelineCache = VK_NULL_HANDLE;
++    renderer->pipelineCachePath = NULL;
++    renderer->pipelineCacheLock = NULL;
++    if (path == NULL || *path == '\0') {
++        return;
++    }
++    renderer->pipelineCachePath = SDL_strdup(path);
++    renderer->pipelineCacheLock = SDL_CreateMutex();
++
++    file = (Uint8 *)SDL_LoadFile(path, &fileSize);
++    if (file != NULL && fileSize >= 12) {
++        Uint32 magic, size, checksum;
++        SDL_memcpy(&magic, file, 4);
++        SDL_memcpy(&size, file + 4, 4);
++        SDL_memcpy(&checksum, file + 8, 4);
++        if (magic == KHDAYS_PIPELINE_CACHE_MAGIC && size == fileSize - 12 &&
++            checksum == VULKAN_INTERNAL_PipelineCacheChecksum(file + 12, size) &&
++            VULKAN_INTERNAL_PipelineCacheMatches(renderer, file + 12, size)) {
++            data = file + 12;
++            dataSize = size;
++        } else {
++            SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "Vulkan: pipeline cache %s not for this card or damaged; starting empty", path);
++        }
++    }
++
++    SDL_zero(info);
++    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
++    info.initialDataSize = dataSize;
++    info.pInitialData = data;
++    result = renderer->vkCreatePipelineCache(renderer->logicalDevice, &info, NULL, &renderer->pipelineCache);
++    if (result != VK_SUCCESS && dataSize > 0) {
++        info.initialDataSize = 0; // the driver refused the data: start empty
++        info.pInitialData = NULL;
++        result = renderer->vkCreatePipelineCache(renderer->logicalDevice, &info, NULL, &renderer->pipelineCache);
++    }
++    if (result != VK_SUCCESS) {
++        renderer->pipelineCache = VK_NULL_HANDLE;
++    }
++    SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "Vulkan: pipeline cache %s: %s (%u bytes loaded)", path,
++                renderer->pipelineCache != VK_NULL_HANDLE ? "on" : "off", (unsigned int)dataSize);
++    SDL_free(file);
++}
++
++static void VULKAN_INTERNAL_SavePipelineCache(VulkanRenderer *renderer)
++{
++    size_t size = 0;
++    Uint8 *buffer;
++    char *temp = NULL;
++    SDL_IOStream *io;
++    bool written = false;
++
++    if (renderer->pipelineCache == VK_NULL_HANDLE || renderer->pipelineCachePath == NULL) {
++        return;
++    }
++    SDL_LockMutex(renderer->pipelineCacheLock);
++    /* Another thread can add a pipeline between asking the size and taking the data (VK_INCOMPLETE): ask again,
++     * a few times, rather than drop this save (it may be the last slow compile of the run). */
++    buffer = NULL;
++    for (int attempt = 0; attempt < 4; attempt += 1) {
++        VkResult got;
++        SDL_free(buffer);
++        buffer = NULL;
++        size = 0;
++        if (renderer->vkGetPipelineCacheData(renderer->logicalDevice, renderer->pipelineCache, &size, NULL) != VK_SUCCESS ||
++            size == 0 || size > 0x7fffffff) {
++            break;
++        }
++        buffer = (Uint8 *)SDL_malloc(12 + size);
++        if (buffer == NULL) {
++            break;
++        }
++        got = renderer->vkGetPipelineCacheData(renderer->logicalDevice, renderer->pipelineCache, &size, buffer + 12);
++        if (got == VK_SUCCESS) {
++            break;
++        }
++        SDL_free(buffer);
++        buffer = NULL;
++        if (got != VK_INCOMPLETE) {
++            break;
++        }
++    }
++    if (buffer != NULL &&
++        SDL_asprintf(&temp, "%s.tmp", renderer->pipelineCachePath) > 0) {
++        Uint32 magic = KHDAYS_PIPELINE_CACHE_MAGIC;
++        Uint32 size32 = (Uint32)size;
++        Uint32 checksum = VULKAN_INTERNAL_PipelineCacheChecksum(buffer + 12, size);
++        SDL_memcpy(buffer, &magic, 4);
++        SDL_memcpy(buffer + 4, &size32, 4);
++        SDL_memcpy(buffer + 8, &checksum, 4);
++        io = SDL_IOFromFile(temp, "wb");
++        if (io != NULL) {
++            written = SDL_WriteIO(io, buffer, 12 + size) == 12 + size;
++            written = SDL_CloseIO(io) && written;
++        }
++        if (written) {
++            written = SDL_RenamePath(temp, renderer->pipelineCachePath);
++        } else {
++            SDL_RemovePath(temp);
++        }
++    }
++    SDL_UnlockMutex(renderer->pipelineCacheLock);
++    SDL_LogInfo(SDL_LOG_CATEGORY_GPU, "Vulkan: pipeline cache %s: %s (%u bytes)", renderer->pipelineCachePath,
++                written ? "saved" : "not saved", (unsigned int)size);
++    SDL_free(temp);
++    SDL_free(buffer);
++}
++
++static void VULKAN_INTERNAL_DestroyPipelineCache(VulkanRenderer *renderer)
++{
++    if (renderer->pipelineCache != VK_NULL_HANDLE) {
++        renderer->vkDestroyPipelineCache(renderer->logicalDevice, renderer->pipelineCache, NULL);
++        renderer->pipelineCache = VK_NULL_HANDLE;
++    }
++    SDL_free(renderer->pipelineCachePath);
++    renderer->pipelineCachePath = NULL;
++    if (renderer->pipelineCacheLock != NULL) {
++        SDL_DestroyMutex(renderer->pipelineCacheLock);
++        renderer->pipelineCacheLock = NULL;
++    }
++}
++
+ static void VULKAN_DestroyDevice(
+     SDL_GPUDevice *device)
+ {
+@@ -5061,6 +5236,7 @@
+     SDL_DestroyMutex(renderer->descriptorSetLayoutFetchLock);
+     SDL_DestroyMutex(renderer->windowLock);
+ 
++    VULKAN_INTERNAL_DestroyPipelineCache(renderer);
+     renderer->vkDestroyDevice(renderer->logicalDevice, NULL);
+     renderer->vkDestroyInstance(renderer->instance, NULL);
+ 
+@@ -6608,14 +6784,17 @@
+     vkPipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+     vkPipelineCreateInfo.basePipelineIndex = 0;
+ 
+-    // TODO: enable pipeline caching
++    Uint64 compileStart = SDL_GetTicksNS();
+     vulkanResult = renderer->vkCreateGraphicsPipelines(
+         renderer->logicalDevice,
+-        VK_NULL_HANDLE,
++        renderer->pipelineCache,
+         1,
+         &vkPipelineCreateInfo,
+         NULL,
+         &graphicsPipeline->pipeline);
++    if (vulkanResult == VK_SUCCESS && SDL_GetTicksNS() - compileStart >= KHDAYS_PIPELINE_CACHE_SLOW_NS) {
++        VULKAN_INTERNAL_SavePipelineCache(renderer);
++    }
+ 
+     SDL_stack_free(vertexInputBindingDescriptions);
+     SDL_stack_free(vertexInputAttributeDescriptions);
+@@ -6744,13 +6923,17 @@
+     vkShaderCreateInfo.basePipelineHandle = (VkPipeline)VK_NULL_HANDLE;
+     vkShaderCreateInfo.basePipelineIndex = 0;
+ 
++    Uint64 compileStart = SDL_GetTicksNS();
+     vulkanResult = renderer->vkCreateComputePipelines(
+         renderer->logicalDevice,
+-        (VkPipelineCache)VK_NULL_HANDLE,
++        renderer->pipelineCache,
+         1,
+         &vkShaderCreateInfo,
+         NULL,
+         &vulkanComputePipeline->pipeline);
++    if (vulkanResult == VK_SUCCESS && SDL_GetTicksNS() - compileStart >= KHDAYS_PIPELINE_CACHE_SLOW_NS) {
++        VULKAN_INTERNAL_SavePipelineCache(renderer);
++    }
+ 
+     if (vulkanResult != VK_SUCCESS) {
+         VULKAN_INTERNAL_DestroyComputePipeline(renderer, vulkanComputePipeline);
+@@ -12633,6 +12816,8 @@
+         0,
+         &renderer->unifiedQueue);
+ 
++    VULKAN_INTERNAL_LoadPipelineCache(renderer);
++
+     return 1;
+ }
+ 

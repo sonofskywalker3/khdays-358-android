@@ -101,6 +101,7 @@ else()
 endif()
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+file(SHA256 ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl/vulkan-pipeline-cache.patch KHDAYS_SDL_PATCH_HASH)
 FetchContent_Declare(
     SDL3
     URL
@@ -108,6 +109,9 @@ FetchContent_Declare(
     URL_HASH
         SHA256=f07b958a9ac5020fb7a44cadb957f658b2149c3c8abb4f63145fac9303249db7
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    # Vulkan: the compiled pipelines kept on disk between starts (third_party/sdl/vulkan-pipeline-cache.patch).
+    # (the patch's hash in the command, so a changed patch runs the step again)
+    PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH_HASH=${KHDAYS_SDL_PATCH_HASH} -P ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl/apply-patches.cmake
 )
 FetchContent_MakeAvailable(SDL3)
 

@@ -4,6 +4,7 @@
  * (KHDAYS_SHOTS_HD, KHDAYS_GFX=reference|check, KHDAYS_PROFILE): docs/RENDERING.md. */
 #include "gpu_present.h"
 #include "../app/devices.h"
+#include "../app/instance.h"
 #include "gfx_render.h"
 #include "gpu_hd.h"
 #include "gpu_raster3d.h"
@@ -239,6 +240,22 @@ static int window_cap_for(SDL_GPUDevice *gpu)
     return 0;
 }
 
+/* Where the Vulkan pipeline cache is kept. On Android SDL takes a relative path as the app's internal storage,
+ * which is where a cache belongs (private, kept over updates, gone with the app's data); elsewhere the slot's
+ * user folder. */
+static const char *khdays_pipeline_cache_file(void)
+{
+#if defined(__ANDROID__)
+    return "pipeline-cache.bin";
+#else
+    static char path[512];
+    if (path[0] == '\0') {
+        SDL_snprintf(path, sizeof(path), "%s/pipeline-cache.bin", khdays_host_user_folder());
+    }
+    return path;
+#endif
+}
+
 /* The GPU device for `driver` (NULL: any): the port draws with compute shaders and SDL's renderer only,
  * so the Vulkan features SDL asks for by default that a graphics pipeline would use are not required
  * -- ARM's Mali has no clip distances, and refused the device with them. */
@@ -264,6 +281,8 @@ static SDL_GPUDevice *make_device(int debug, const char *driver)
     if (driver != NULL) {
         SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, driver);
     }
+    /* Vulkan: the compiled pipelines kept between starts (third_party/sdl/vulkan-pipeline-cache.patch) */
+    SDL_SetHint("SDL_GPU_VULKAN_PIPELINE_CACHE_FILE", khdays_pipeline_cache_file());
     made = SDL_CreateGPUDeviceWithProperties(props);
     SDL_DestroyProperties(props);
     return made;
