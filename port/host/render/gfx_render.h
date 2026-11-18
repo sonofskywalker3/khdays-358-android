@@ -12,6 +12,9 @@ typedef struct KhdaysFramePackage KhdaysFramePackage; /* runtime/display/frame_p
  * SDL_GetError) when it cannot. */
 int khdays_gfx_render_open(SDL_GPUDevice *device);
 void khdays_gfx_render_close(void);
+/* The programs otherwise made the first time they are wanted (the 2D a DS dot at a time), made now: on a first
+ * start, while "Compiling shaders" shows, instead of a still picture once the game runs. */
+void khdays_gfx_render_make_the_rest(void);
 
 /* Composes both screens of `package` (which must hold KHDAYS_WANT_2D) at
  * `scale` x 256 x 192 and submits the work. Engine A's 3D comes from the

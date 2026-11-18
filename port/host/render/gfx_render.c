@@ -1076,6 +1076,15 @@ static void drop_shop(void)
     }
 }
 
+static int sparse_now(void);
+
+void khdays_gfx_render_make_the_rest(void)
+{
+    if (device != NULL && sparse_now()) {
+        (void)sparse_for(0u, 0u); /* all its forms at once (sparse_for makes them together) */
+    }
+}
+
 void khdays_gfx_render_close(void)
 {
     khdays_sequence_gpu_close();

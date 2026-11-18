@@ -362,10 +362,12 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
             said_backend = 1;
         }
     }
+    int first_start_shown = 0;
     if (!pipelines_kept && SDL_strcmp(SDL_GetGPUDeviceDriver(device), "vulkan") == 0) {
         /* the programs below are compiled now, minutes on an older card: say so instead of a black screen */
         fprintf(stderr, "host: no pipeline cache yet: the shaders are compiled (first start)\n");
         khdays_first_start_notice(r);
+        first_start_shown = 1;
     }
     raster_ready = khdays_raster3d_open(device);
     if (!raster_ready) {
@@ -373,6 +375,9 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
     }
     if (port2d_wanted()) {
         port2d_ready = khdays_gfx_render_open(device);
+        if (port2d_ready && first_start_shown) {
+            khdays_gfx_render_make_the_rest(); /* under the same words, not a still picture once the game runs */
+        }
         fprintf(stderr,
                 port2d_ready ? "host: the 2D is the port's own renderer's\n"
                              : "host: the port's own 2D renderer cannot run here: %s\n",
