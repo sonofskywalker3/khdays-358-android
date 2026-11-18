@@ -64,7 +64,10 @@ static const Piece pieces_table[] = {
     {"hud.party1", 0, 0, 0, 256, 192, 1u << 3, {"UI/btl/*/main.p2", "UI/btl/main.p2"}, 1},
     {"hud.party2", 0, 0, 0, 256, 192, 1u << 3, {"UI/btl/*/main.p2", "UI/btl/main.p2"}, 2},
     {"hud.party3", 0, 0, 0, 256, 192, 1u << 3, {"UI/btl/*/main.p2", "UI/btl/main.p2"}, 3},
-    {"hud.deck", 0, 0, 136, 88, 192, 1u << 3, {"UI/btl/*/main.p2"}},
+    /* the deck's cells come from the language's main.p2, and from the shared one while it comes back after
+     * a person's words (the talk's state 11, Saix in the Grey Area): without it, it showed at its DS place
+     * on a wide upper screen, then jumped to the side */
+    {"hud.deck", 0, 0, 136, 88, 192, 1u << 3, {"UI/btl/*/main.p2", "UI/btl/main.p2"}},
     {"hud.portrait", 0, 160, 136, 256, 192, 1u << 3, {"UI/btl/*/main.p2", "UI/btl/main.p2"}},
     {"hud.info", 1, 0, 0, 256, 24, 1u << 1, {"UI/btl/*/bl000.NCGR"}},
     {"hud.area", 1, 32, 32, 224, 48, 1u << 2, {"UI/btl/*/bl001.NCGR"}},
