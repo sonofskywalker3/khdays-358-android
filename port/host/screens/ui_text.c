@@ -1017,6 +1017,14 @@ static const char *const texts[TXT_COUNT][5] = {
                              "die Grafik-API %s läuft hier nicht (%s); die Wahl des Systems wird verwendet",
                              "l'API grafica %s non può funzionare qui (%s); si usa la scelta del sistema",
                              "la API gráfica %s no puede funcionar aquí (%s); se usa la elección del sistema"},
+    /* while the graphics card's programs are made the first time (first_start_notice.c) */
+    [TXT_FIRST_START_TITLE] = {"Compiling shaders", "Compilation des shaders", "Shader werden kompiliert",
+                               "Compilazione degli shader", "Compilando shaders"},
+    [TXT_FIRST_START_LINE] = {"First boot only \xe2\x80\x93 this can take a few minutes",
+                              "Premier démarrage uniquement \xe2\x80\x93 cela peut prendre quelques minutes",
+                              "Nur beim ersten Start \xe2\x80\x93 das kann einige Minuten dauern",
+                              "Solo al primo avvio \xe2\x80\x93 può richiedere qualche minuto",
+                              "Solo en el primer arranque \xe2\x80\x93 puede tardar unos minutos"},
     /* the corner's line: the pictures a second, then the game's frames a second */
     [TXT_FPS_LINE] = {"%d FPS", "%d IPS", "%d FPS", "%d FPS", "%d FPS"},
     [TXT_VIDEO_NEEDS_GPU] = {"Needs the graphics card.", "Nécessite la carte graphique.", "Braucht die Grafikkarte.",

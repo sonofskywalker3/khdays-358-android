@@ -265,6 +265,8 @@ enum {
     TXT_VIDEO_BACKEND_AUTO,
     TXT_VIDEO_BACKEND_NOTE,
     TXT_BACKEND_REFUSED,
+    TXT_FIRST_START_TITLE, /* the words while the graphics card's programs are made the first time */
+    TXT_FIRST_START_LINE,
     TXT_FPS_LINE,
     TXT_VIDEO_NEEDS_GPU,
     TXT_RESTORE_VIDEO,

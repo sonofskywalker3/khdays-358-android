@@ -771,6 +771,7 @@ target_sources(khdays-native PRIVATE
     host/app/sound_output.c
     host/settings/settings_sample.cpp       # the settings menu's volume samples
     host/render/gpu_present.c
+    host/render/first_start_notice.c      # "Compiling shaders" while the first start compiles them
     host/render/two_screens.c             # the two screens' places: stacked or side by side
     host/render/auto_quality.c            # Auto: the screens' scales measured, the watch over play
     host/render/gpu_raster3d.c
@@ -963,6 +964,9 @@ set_source_files_properties(${KHDAYS_MISSION_BUILDER} PROPERTIES
 # the window's areas (runtime/core/memory.c), the function references' table
 # (runtime/core/window.c), the DS addresses the port reads (khdays_ds_symbols.h)
 target_include_directories(khdays-native PRIVATE "${KHDAYS_GEN}")
+# the first start's words: the menu's font and ImGui's copy of stb_truetype
+set_source_files_properties(host/render/first_start_notice.c PROPERTIES INCLUDE_DIRECTORIES
+                            "${KHDAYS_MENU_FONT_DIR};${imgui_SOURCE_DIR}")
 target_include_directories(khdays-native PRIVATE "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${pl_mpeg_SOURCE_DIR}"
                                                   "${ufbx_SOURCE_DIR}")
 target_compile_options(khdays-native PRIVATE

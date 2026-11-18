@@ -5,6 +5,7 @@
 #include "gpu_present.h"
 #include "../app/devices.h"
 #include "../app/instance.h"
+#include "first_start_notice.h"
 #include "gfx_render.h"
 #include "gpu_hd.h"
 #include "gpu_raster3d.h"
@@ -243,8 +244,15 @@ static int window_cap_for(SDL_GPUDevice *gpu)
 /* Where the Vulkan pipeline cache is kept. On Android SDL takes a relative path as the app's internal storage,
  * which is where a cache belongs (private, kept over updates, gone with the app's data); elsewhere the slot's
  * user folder. */
+static int pipelines_kept; /* the pipeline cache's file was there when the device was made */
+
 static const char *khdays_pipeline_cache_file(void)
 {
+    /* KHDAYS_PIPELINE_CACHE_FILE=<name>: another file (a new name = a first start, for testing) */
+    const char *named = SDL_getenv("KHDAYS_PIPELINE_CACHE_FILE");
+    if (named != NULL && named[0] != '\0') {
+        return named;
+    }
 #if defined(__ANDROID__)
     return "pipeline-cache.bin";
 #else
@@ -281,8 +289,16 @@ static SDL_GPUDevice *make_device(int debug, const char *driver)
     if (driver != NULL) {
         SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, driver);
     }
-    /* Vulkan: the compiled pipelines kept between starts (third_party/sdl/vulkan-pipeline-cache.patch) */
+    /* Vulkan: the compiled pipelines kept between starts (third_party/sdl/vulkan-pipeline-cache.patch). Whether
+     * the file is there is looked at before the device is made: the device writes it at its first slow compile. */
     SDL_SetHint("SDL_GPU_VULKAN_PIPELINE_CACHE_FILE", khdays_pipeline_cache_file());
+    {
+        SDL_IOStream *kept = SDL_IOFromFile(khdays_pipeline_cache_file(), "rb");
+        pipelines_kept = kept != NULL;
+        if (kept != NULL) {
+            SDL_CloseIO(kept);
+        }
+    }
     made = SDL_CreateGPUDeviceWithProperties(props);
     SDL_DestroyProperties(props);
     return made;
@@ -345,6 +361,11 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
             SDL_strlcpy(said, now, sizeof(said));
             said_backend = 1;
         }
+    }
+    if (!pipelines_kept && SDL_strcmp(SDL_GetGPUDeviceDriver(device), "vulkan") == 0) {
+        /* the programs below are compiled now, minutes on an older card: say so instead of a black screen */
+        fprintf(stderr, "host: no pipeline cache yet: the shaders are compiled (first start)\n");
+        khdays_first_start_notice(r);
     }
     raster_ready = khdays_raster3d_open(device);
     if (!raster_ready) {
