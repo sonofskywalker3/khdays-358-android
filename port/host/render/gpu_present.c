@@ -1428,13 +1428,17 @@ static void find_wipe(const KhdaysG3dList *list)
     }
 }
 
-/* Black outside the wipe's quad, the picture at `at` (logical units: DS dots), the DS's columns in its
- * middle. Half a dot inside the quad's edge: its border texels are the cover's black anyway. */
-static void draw_wipe(const SDL_FRect *at)
+/* Black outside the wipe's quad over `over`, the picture at `at` (logical units; the DS's 192 lines its
+ * height), the DS's columns in its middle. Half a dot inside the quad's edge: its border texels are the
+ * cover's black anyway. */
+static void draw_wipe(const SDL_FRect *at, const SDL_FRect *over)
 {
-    const float ds0 = at->x + (at->w - (float)W) / 2;
-    const float x0 = ds0 + wipe.x0 + 0.5f, x1 = ds0 + wipe.x1 - 0.5f, y0 = wipe.y0 + 0.5f, y1 = wipe.y1 - 0.5f;
-    const float left = 0.0f, right = (float)columns, top = 0.0f, bottom = (float)H;
+    const float k = at->h / (float)H, ds0 = at->x + (at->w - (float)W * k) / 2;
+    const float x0 = ds0 + (wipe.x0 + 0.5f) * k, x1 = ds0 + (wipe.x1 - 0.5f) * k;
+    const float left = over->x, right = over->x + over->w, top = over->y, bottom = over->y + over->h;
+    /* (a quad cut at the view's top and bottom reaches past them: nothing black outside `over`) */
+    const float y0 = SDL_clamp(at->y + (wipe.y0 + 0.5f) * k, top, bottom);
+    const float y1 = SDL_clamp(at->y + (wipe.y1 - 0.5f) * k, top, bottom);
     const SDL_FRect bands[4] = {{left, top, right - left, SDL_max(y0 - top, 0.0f)},
                                 {left, y1, right - left, SDL_max(bottom - y1, 0.0f)},
                                 {left, y0, SDL_max(x0 - left, 0.0f), SDL_max(y1 - y0, 0.0f)},
@@ -2276,6 +2280,9 @@ static void present_now(const KhdaysFramePackage *p, int first)
             drawn = khdays_gfx_render_draw(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster);
             if (drawn) {
                 check_savings(p, scaled ? n2d : 1, scaled ? n2d_b : 1, n, raster, NULL);
+                /* the room change's quad on two screens, the upper one engine A's (drawn wider or not) */
+                find_wipe(raster && p->field_wipe && p->upper == 0 ? (list != NULL ? list : &p->list3d) : NULL);
+                wipe = wipe_next;
             }
         }
         if (drawn) {
@@ -2821,6 +2828,9 @@ static int draw_two_displays(void)
         const SDL_FRect at = {0.0f, 0.0f, wu, H};
         SDL_SetTextureScaleMode(upper, mode_for(upper, wu, H));
         SDL_RenderTexture(renderer, upper, &upper_from, &at);
+        if (wipe.on && wu > W) {
+            draw_wipe(&at, &at); /* the room change on a wider upper screen: black beside it too */
+        }
     }
     if (hd != NULL && hd_upper) {
         const SDL_FRect place = {(wu - (float)hd_columns) / 2, 0.0f, (float)hd_columns, H};
@@ -2886,7 +2896,8 @@ void khdays_present_draw(void)
             SDL_RenderTexture(renderer, picture, NULL, &at);
             khdays_text_overlay_draw(renderer, at.x);
             if (wipe.on) {
-                draw_wipe(&at);
+                const SDL_FRect window = {0.0f, 0.0f, (float)columns, H};
+                draw_wipe(&at, &window);
             }
         }
     } else if (port2d_drawn && video.one_screen && one_kind == KHDAYS_SCREENS_SIDE_BY_SIDE) {
@@ -2925,6 +2936,9 @@ void khdays_present_draw(void)
             SDL_SetTextureScaleMode(lower, mode_for(lower, lower_at.w, H));
             SDL_RenderTexture(renderer, upper, &upper_from, &upper_at);
             SDL_RenderTexture(renderer, lower, &lower_from, &lower_at);
+            if (wipe.on && !beside && cu > W) {
+                draw_wipe(&upper_at, &upper_at); /* stacked, the upper screen wider: as on one screen */
+            }
         }
     } else if (screens != NULL) {
         /* the 1x screens, the DS's 256 columns of each */
