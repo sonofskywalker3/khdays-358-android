@@ -2941,8 +2941,8 @@ void khdays_present_draw(void)
             SDL_RenderTexture(renderer, picture, NULL, &at);
             khdays_text_overlay_draw(renderer, at.x);
             if (wipe.on) {
-                const SDL_FRect window = {0.0f, 0.0f, (float)columns, H};
-                draw_wipe(&at, &window);
+                const SDL_FRect whole = {0.0f, 0.0f, (float)columns, H};
+                draw_wipe(&at, &whole);
             }
         }
     } else if (port2d_drawn && video.one_screen && one_kind == KHDAYS_SCREENS_SIDE_BY_SIDE) {
