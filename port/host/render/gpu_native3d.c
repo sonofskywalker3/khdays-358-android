@@ -250,6 +250,9 @@ static SDL_GPUGraphicsPipeline *make_graphics(SDL_GPUShader *vs, SDL_GPUShader *
     info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    /* no depth clamping: gpu_present.c makes the device without that feature (a pipeline asking for it there is
+     * undefined on Vulkan), and native3d.hlsl's corners keep their depth within the clip space's 0..w anyway */
+    info.rasterizer_state.enable_depth_clip = true;
     info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
     info.depth_stencil_state.compare_op = depth_compare;
     info.depth_stencil_state.enable_depth_test = true;
