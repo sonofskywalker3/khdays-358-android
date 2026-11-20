@@ -118,6 +118,12 @@ static void check_lost(void)
     fflush(stderr);
     khdays_log("graphics: the card stopped answering at internal resolution %d (%s); the last 3D:\n%s", scale_now(),
                SDL_GetError(), last);
+    SDL_ClearError(); /* said: khdays_present_shown reads the error after every present, the new device's too */
+}
+
+void khdays_present_shown(void)
+{
+    check_lost();
 }
 
 int khdays_present_lost(void)

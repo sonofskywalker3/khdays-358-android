@@ -626,6 +626,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
             SDL_Log("window: the picture could not be shown: %s", SDL_GetError());
         }
     }
+    khdays_present_shown(); /* a card lost at the swapchain: the renderer is made again */
     if (SDL_GetWindowFlags(window) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED)) {
         khdays_present_unshown("the window is hidden"); /* (SDL's renderer presented nothing) */
     }

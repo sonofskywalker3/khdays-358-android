@@ -135,6 +135,12 @@ SDL_Renderer *khdays_present_event(const SDL_Event *event, int *renewed);
  * hundred KB each, until the card's driver had no memory left. Waits for the card and lets them go. */
 void khdays_present_unshown(const char *why);
 
+/* After each present of SDL's renderer: its Vulkan present loses the device at the swapchain, logs it and still
+ * says the picture was shown, and none of the port's own calls fails after, so the picture stood still for good
+ * while the game went on (a Mali, 2026-11-20). SDL's error naming a lost card, the device counts as lost
+ * (khdays_present_lost) and the window makes the renderer again. */
+void khdays_present_shown(void);
+
 /* Android: the window's surface came again after going (another app over the game, then back). The
  * swapchain is made again on it, the one of the surface that went let go first; SDL's own remaking
  * waits for the driver to say the surface was lost, and a Mali phone showed only black instead. If no
