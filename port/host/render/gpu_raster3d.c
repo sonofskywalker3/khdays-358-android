@@ -30,6 +30,13 @@
 #define VRAM_PAGES (TEX_PAGES + TEXPAL_PAGES)
 #define VRAM_BYTES (KHDAYS_FRAME_TEX_BYTES + KHDAYS_FRAME_TEXPAL_BYTES)
 #define RECORD_BYTES (KHDAYS_GPU2D_MAX_COLUMNS * KHDAYS_FRAME_H * sizeof(KhdaysGpu2dComposition))
+/* The lists' buffers start with room for a scene of mod models (a KH2 character is a thousand polygons, the DS's
+ * whole list two thousand), and the upload with room for a scene's change of textures: making them again in the
+ * middle of a scene is where a Mali-G57 lost its device (a new corner buffer, 18 ms before; with room from the
+ * start, 1 run in 6 instead of 1 in 2, 2026-11-20). They still grow past this. About 12 MB in all. */
+#define START_POLYS 16384u
+#define START_VERTS 65536u
+#define START_UPLOAD (8u << 20)
 
 /* The shaders' constant buffers, register for register. */
 typedef struct RasterParams {
@@ -246,8 +253,8 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
         fprintf(stderr, "host: the enhanced character shadows cannot be drawn on this graphics card (%s)\n",
                 SDL_GetError());
     }
-    polys_capacity = KHDAYS_G3D_DS_POLYS;
-    verts_capacity = KHDAYS_G3D_DS_VERTS;
+    polys_capacity = START_POLYS;
+    verts_capacity = START_VERTS;
     polys = make_buffer(polys_capacity * (Uint32)sizeof(KhdaysG3dPolygon));
     verts = make_buffer(verts_capacity * (Uint32)sizeof(KhdaysG3dVertex));
     vram = make_buffer(VRAM_BYTES);
@@ -1362,7 +1369,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         }
         SDL_zero(info);
         info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        info.size = size + size / 2;
+        info.size = size + size / 2 > START_UPLOAD ? size + size / 2 : START_UPLOAD;
         upload = SDL_CreateGPUTransferBuffer(device, &info);
         upload_size = upload != NULL ? info.size : 0;
         if (upload == NULL) {

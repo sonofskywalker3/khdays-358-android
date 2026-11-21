@@ -711,7 +711,7 @@ int khdays_native3d_open(SDL_GPUDevice *d)
         clip_nearest = clip_pipeline(0);
         clip_counted = clip_pipeline(1);
     }
-    corner_buffer_size = 1u << 16;
+    corner_buffer_size = 1u << 21; /* 262,144 corners: room for a scene of mod models (gpu_raster3d.c START_POLYS) */
     corner_buffer = make_corner_buffer(corner_buffer_size);
     if (polygon_vs == NULL || polygon_ps == NULL || polygon_ps_z == NULL || rear_vs == NULL || rear_ps == NULL ||
         pack == NULL || pack_image == NULL || clear_masks == NULL || clear_translucent == NULL || corner_buffer == NULL ||
