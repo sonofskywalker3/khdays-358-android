@@ -1449,7 +1449,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
     draw_shadows(cmd, list);
     time_step(&cmd, "shadows");
     if (native) {
-        khdays_native3d_draw(&cmd, &frame, polys, verts, vram, khdays_gpu_hd_buffer(), color3d, attr3d);
+        khdays_native3d_draw(&cmd, &frame, polys, verts, vram, khdays_gpu_hd_buffer(), shadow_soft, color3d, attr3d);
         if (cmd == NULL) {
             vram_valid = 0;
             return 0;

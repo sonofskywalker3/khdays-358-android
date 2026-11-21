@@ -1,7 +1,8 @@
 /* The 3D list drawn by the graphics card's own rasterizer (gpu_native3d.h): each polygon a fan of
  * triangles, drawn in the list's order. The pipelines carry the DS's per-pixel rules a fragment shader
  * cannot: the depth test, the polygon IDs and shadow masks in the stencil, the blending into
- * native3d.hlsl's six targets, of which a picture writes only those its finishing reads; consecutive
+ * native3d.hlsl's six targets, of which a picture writes only those its finishing reads; an enhanced character
+ * shadow's receiver shades the colour of its polygon ID's pixels from the caster's mask; consecutive
  * polygons drawn alike are one draw. native3d_pack.hlsl then makes raster3d's two targets from them (and
  * native3d_pack_image.hlsl puts the clear image's colour in, when it is on). A mod model's clip volumes
  * (docs/RENDERING.md "Clip volumes") are drawn first, in a pass of their own, into two targets the polygons'
@@ -47,7 +48,8 @@ enum {
     STENCIL_ANY_ID,     /* translucent, a mod's: over any */
     STENCIL_MASK,       /* a shadow mask: where its depth test fails, the mask's bit */
     STENCIL_SHADOW_PRE, /* before a shadow: the mask's bit cleared on its own polygon ID */
-    STENCIL_SHADOW      /* a shadow: where the mask's bit is, translucent */
+    STENCIL_SHADOW,     /* a shadow: where the mask's bit is, translucent */
+    STENCIL_RECEIVER    /* an enhanced character shadow's receiver: on its polygon ID's opaque pixel, once */
 };
 /* The targets a picture writes besides the colour (0) and the flags (4) (native3d.hlsl says what each
  * holds): the first translucent colour on an empty pixel (1) when the rear plane may be empty, the fog bit
@@ -335,11 +337,25 @@ static SDL_GPUGraphicsPipeline *polygon_pipeline(int key)
             s = stencil_ops(SDL_GPU_COMPAREOP_EQUAL, SDL_GPU_STENCILOP_REPLACE, SDL_GPU_STENCILOP_KEEP);
             compare_mask = 0x80;
             break;
+        case STENCIL_RECEIVER:
+            /* the opaque pixel of its ID no receiver drew on yet (the masks' bit clear), which it then marks with
+             * that bit: the ID and the translucent bit stay for what is drawn after */
+            s = stencil_ops(SDL_GPU_COMPAREOP_EQUAL, SDL_GPU_STENCILOP_INVERT, SDL_GPU_STENCILOP_KEEP);
+            write_mask = 0x80;
+            break;
         default: /* STENCIL_OPAQUE, STENCIL_ANY_ID */
             s = stencil_ops(SDL_GPU_COMPAREOP_ALWAYS, SDL_GPU_STENCILOP_REPLACE, SDL_GPU_STENCILOP_KEEP);
             break;
         }
         polygon_targets(t, rules != STENCIL_MASK && rules != STENCIL_SHADOW_PRE, write, blending, out, owner);
+        if (rules == STENCIL_RECEIVER) {
+            /* the shade over the colour by the shader's share, and no other target (native3d.hlsl) */
+            for (int i = 1; i < TARGETS; ++i) {
+                t[i].blend_state.color_write_mask = 0;
+            }
+            blend(&t[0], SDL_GPU_BLENDFACTOR_SRC_ALPHA, SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_GPU_BLENDFACTOR_ZERO,
+                  SDL_GPU_BLENDFACTOR_ONE, SDL_GPU_BLENDOP_ADD);
+        }
         pipelines[key] = make_graphics(polygon_vs, z ? polygon_ps_z : polygon_ps, t, depth_ops[compare], write, s,
                                        compare_mask, write_mask);
     }
@@ -640,11 +656,11 @@ int khdays_native3d_open(SDL_GPUDevice *d)
                     native3d_vs_msl_size, NATIVE3D_VS_ENTRY, SDL_GPU_SHADERSTAGE_VERTEX, 0, 4, 1);
     polygon_ps =
         make_shader(native3d_ps_dxil, native3d_ps_dxil_size, native3d_ps_spirv, native3d_ps_spirv_size, native3d_ps_msl,
-                    native3d_ps_msl_size, NATIVE3D_PS_ENTRY, SDL_GPU_SHADERSTAGE_FRAGMENT, CLIP_TARGETS, 4, 1);
+                    native3d_ps_msl_size, NATIVE3D_PS_ENTRY, SDL_GPU_SHADERSTAGE_FRAGMENT, CLIP_TARGETS, 5, 1);
     polygon_ps_z =
         make_shader(native3d_z_ps_dxil, native3d_z_ps_dxil_size, native3d_z_ps_spirv, native3d_z_ps_spirv_size,
                     native3d_z_ps_msl, native3d_z_ps_msl_size, NATIVE3D_Z_PS_ENTRY, SDL_GPU_SHADERSTAGE_FRAGMENT,
-                    CLIP_TARGETS, 4, 1);
+                    CLIP_TARGETS, 5, 1);
     rear_vs = make_shader(native3d_rear_vs_dxil, native3d_rear_vs_dxil_size, native3d_rear_vs_spirv,
                           native3d_rear_vs_spirv_size, native3d_rear_vs_msl, native3d_rear_vs_msl_size,
                           NATIVE3D_REAR_VS_ENTRY, SDL_GPU_SHADERSTAGE_VERTEX, 0, 0, 0);
@@ -712,8 +728,8 @@ int khdays_native3d_count(const KhdaysG3dList *list, int32_t hidden, uint32_t di
 {
     /* the clip volumes too with the clear image on: their end reads the rear plane's depth as one value
      * (native3d_clip_end.hlsl) */
-    const int32_t raster3d_only = KHDAYS_G3D_SEQUENCE | ((disp3dcnt & 0x4000u) ? KHDAYS_G3D_CLIP : 0) |
-                                  (KHDAYS_G3D_SHADOW_RECEIVER & ~hidden);
+    const int32_t raster3d_only = KHDAYS_G3D_SEQUENCE | ((disp3dcnt & 0x4000u) ? KHDAYS_G3D_CLIP : 0);
+    (void)hidden;
     for (int i = 0; i < list->npolys; ++i) {
         if (list->polys[i].flags & raster3d_only) {
             return i;
@@ -840,7 +856,7 @@ static int build(const KhdaysG3dList *list, int count, int32_t hidden, uint32_t 
     const int zbuffer = (list->swap_params & 2u) == 0u;
     static int said;
     const int blending = (disp3dcnt & 8u) != 0;
-    int shadows = 0, masks = 0, markers = 0, lines = 0;
+    int shadows = 0, masks = 0, markers = 0, lines = 0, received = 0;
     draw_count = 0;
     corner_count = 0;
     run_count = 0;
@@ -870,6 +886,8 @@ static int build(const KhdaysG3dList *list, int count, int32_t hidden, uint32_t 
     for (int i = 0; i < count; ++i) {
         const uint32_t attr = list->polys[i].attr;
         shadows |= ((attr >> 4) & 3u) == 3u && ((attr >> 24) & 63u) != 0u;
+        /* (an enhanced shadow's receiver tests the opaque polygon's ID too) */
+        shadows |= (list->polys[i].flags & KHDAYS_G3D_SHADOW_RECEIVER & ~hidden) != 0;
     }
     for (int i = 0; i < count; ++i) {
         const KhdaysG3dPolygon *p = &list->polys[i];
@@ -899,6 +917,27 @@ static int build(const KhdaysG3dList *list, int count, int32_t hidden, uint32_t 
         if (p->count < 3) {
             ++lines;
             continue;
+        }
+        if (p->flags & KHDAYS_G3D_SHADOW_RECEIVER) {
+            /* on the polygon ID it was cut from (gfx/character_shadow.c: a sprite's in its flags) */
+            const uint32_t receiver = (p->flags & KHDAYS_G3D_SHADOW_SPRITE) ? ((uint32_t)p->flags >> 18) & 63u : p->pltt & 63u;
+            if (run_count > 0 && !flush_run(list)) {
+                return 0;
+            }
+            masks = 0;
+            if (!add_polygon(p, i, PIXELS_ALL, KEY(DEPTH_EQUAL, 0, STENCIL_RECEIVER, blending, out, 0, 0),
+                             (uint8_t)receiver, 0)) {
+                return 0;
+            }
+            received = 1;
+            continue;
+        }
+        if (received) {
+            /* the receivers' mark is the shadow masks' bit: cleared before what follows them */
+            if ((run_count > 0 && !flush_run(list)) || new_draw(CLEAR_MASKS, 0, 1) == NULL) {
+                return 0;
+            }
+            received = 0;
         }
         if (mode != 3u && alpha == 31u &&
             ((p->flags & KHDAYS_G3D_MOD) || (textured && (format == 1u || format == 6u || p->replacement >= 0)))) {
@@ -1029,8 +1068,8 @@ void khdays_native3d_upload(SDL_GPUCopyPass *copy, SDL_GPUTransferBuffer *upload
 }
 
 void khdays_native3d_draw(SDL_GPUCommandBuffer **cmdp, const KhdaysNative3dFrame *frame, SDL_GPUBuffer *polys,
-                          SDL_GPUBuffer *verts, SDL_GPUBuffer *vram, SDL_GPUBuffer *hd, SDL_GPUTexture *color3d,
-                          SDL_GPUTexture *attr3d)
+                          SDL_GPUBuffer *verts, SDL_GPUBuffer *vram, SDL_GPUBuffer *hd, SDL_GPUBuffer *shadow_masks,
+                          SDL_GPUTexture *color3d, SDL_GPUTexture *attr3d)
 {
     SDL_GPUCommandBuffer *cmd = *cmdp;
     Params pr;
@@ -1144,13 +1183,14 @@ void khdays_native3d_draw(SDL_GPUCommandBuffer **cmdp, const KhdaysNative3dFrame
     }
     pass = SDL_BeginGPURenderPass(cmd, colours, TARGETS, &ds);
     if (pass != NULL) {
-        SDL_GPUBuffer *buffers[4] = {polys, verts, vram, hd};
+        /* (the masks are read for a receiver only: without any, a buffer that is there) */
+        SDL_GPUBuffer *buffers[5] = {polys, verts, vram, hd, shadow_masks != NULL ? shadow_masks : vram};
         SDL_GPUBufferBinding binding;
         SDL_GPUGraphicsPipeline *bound = NULL;
         binding.buffer = corner_buffer;
         binding.offset = 0;
         SDL_BindGPUVertexStorageBuffers(pass, 0, buffers, 4);
-        SDL_BindGPUFragmentStorageBuffers(pass, 0, buffers, 4);
+        SDL_BindGPUFragmentStorageBuffers(pass, 0, buffers, 5);
         /* the clip volumes' targets, read by the polygons' shader (only with OUT_CLIPS: what they hold from
          * an earlier list is not looked at) */
         SDL_BindGPUFragmentStorageTextures(pass, 0, clip_target, CLIP_TARGETS);

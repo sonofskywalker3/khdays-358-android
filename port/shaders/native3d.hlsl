@@ -26,6 +26,7 @@ ByteAddressBuffer polys : register(t2, space2);
 ByteAddressBuffer verts : register(t3, space2);
 ByteAddressBuffer vram : register(t4, space2); // the texture slots (512 KB), then the palette slots (96 KB)
 ByteAddressBuffer hd : register(t5, space2);   // the replacements (host/render/gpu_hd.h)
+ByteAddressBuffer shadow_mask : register(t6, space2); // the character shadows' masks (gfx/character_shadow.h)
 #endif
 
 #include "native3d_params.hlsli"
@@ -147,6 +148,53 @@ Targets ps_main(Corner i)
             discard;
         }
     }
+#if !defined(STAGE_VS)
+    // an enhanced character shadow's receiver (raster3d.hlsl plot): the shade over the colour by the caster's
+    // mask here, and nothing else of the pixel. The pipeline keeps it to the receiving polygon's pixels: the
+    // depth test "equal", the stencil the opaque polygon ID, once a pixel (gpu_native3d.c STENCIL_RECEIVER)
+    if (((uint)p.flags & 0x10000u) != 0u) {
+        const bool sprite = ((uint)p.flags & 0x100u) != 0u;
+        const float2 uv = st - 0.5f;
+        const int2 q = (int2)floor(uv);
+        const float2 f = frac(uv);
+        const uint base = p.shadow * 128u * 128u;
+        const float cmax = fine != 0u ? 255.0f : 63.0f;
+        float coverage = 0.0f;
+        float3 shade = i.shade.xyz * (fine != 0u ? 255.0f / 63.0f : 1.0f);
+        float share;
+        for (int k = 0; k < 4; ++k) {
+            const int2 a = q + int2(k & 1, k >> 1);
+            if (any(a < 0) || any(a >= 128)) {
+                continue;
+            }
+            coverage += (float)shadow_mask.Load((base + (uint)a.y * 128u + (uint)a.x) * 4u) *
+                        ((k & 1) != 0 ? f.x : 1.0f - f.x) * ((k >> 1) != 0 ? f.y : 1.0f - f.y) / 255.0f;
+        }
+        share = coverage * (float)((p.attr >> 16) & 31u) / 31.0f;
+        if (sprite && ((p.tex >> 26) & 7u) != 0u) {
+            int4 tint;
+            if (p.replacement >= 0) {
+                const uint4 e = hd.Load4((uint)p.replacement * 16u);
+                tint = hd_at(e, (int)(e.y / 2u), (int)(e.z / 2u));
+            } else {
+                const int ss = 8 << (int)((p.tex >> 20) & 7u), ts = 8 << (int)((p.tex >> 23) & 7u);
+                const uint tex = texel(p.tex, p.pltt, ss / 2, ts / 2);
+                tint = int4(channel5((int)(tex & 31u)), channel5((int)((tex >> 5) & 31u)),
+                            channel5((int)((tex >> 10) & 31u)), (int)((tex >> 16) & 31u));
+            }
+            share *= (float)tint.a / 31.0f;
+            shade = floor(((shade + 1.0f) * (float3(tint.rgb) + 1.0f) - 1.0f) / (fine != 0u ? 256.0f : 64.0f));
+        }
+        if (share <= 0.0f) {
+            discard;
+        }
+#if !defined(NATIVE3D_RASTER_DEPTH)
+        o.depth = (float)max((int)depth - 0x200, 0) / 16777216.0f;
+#endif
+        o.colour = float4(shade / cmax, share);
+        return o;
+    }
+#endif
     // the depth test "equal" passes within 0x200 above: tested as less or equal, 0x200 nearer
 #if !defined(NATIVE3D_RASTER_DEPTH)
     o.depth = (float)((p.attr & 0x4000u) != 0u ? max((int)depth - 0x200, 0) : (int)depth) / 16777216.0f;

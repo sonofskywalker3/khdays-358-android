@@ -28,8 +28,8 @@ typedef struct KhdaysNative3dFrame {
  * gpu_raster3d.h), or lets them go (0, the default). */
 void khdays_native3d_keep_two(int on);
 
-/* How many of `list`'s polygons it draws: those before the first it cannot, a native sequence, an enhanced
- * shadow's receiver, or a mod's clip volume while the clear image is on (`disp3dcnt`) (raster3d.hlsl draws them
+/* How many of `list`'s polygons it draws: those before the first it cannot, a native sequence, or a mod's
+ * clip volume while the clear image is on (`disp3dcnt`) (raster3d.hlsl draws them
  * and what follows; the clip volumes among those drawn here still cut its polygons). Polygons with one of the
  * `hidden` flags are drawn by no one and do not stop it. */
 int khdays_native3d_count(const struct KhdaysG3dList *list, int32_t hidden, uint32_t disp3dcnt);
@@ -51,10 +51,11 @@ const void *khdays_native3d_corners(void);
 void khdays_native3d_upload(SDL_GPUCopyPass *copy, SDL_GPUTransferBuffer *upload, uint32_t offset, uint32_t bytes);
 
 /* Records the drawing of the prepared polygons into `*cmdp`, from the list's buffers (raster3d's), into
- * `color3d` and `attr3d`. The drawing is submitted and the rest recorded into a new command buffer, left in
+ * `color3d` and `attr3d`; `shadow_masks` the enhanced character shadows' masks its receivers read (NULL without
+ * any). The drawing is submitted and the rest recorded into a new command buffer, left in
  * `*cmdp` for the caller to go on with and submit (NULL when none could be had). */
 void khdays_native3d_draw(SDL_GPUCommandBuffer **cmdp, const KhdaysNative3dFrame *frame, SDL_GPUBuffer *polys,
-                          SDL_GPUBuffer *verts, SDL_GPUBuffer *vram, SDL_GPUBuffer *hd, SDL_GPUTexture *color3d,
-                          SDL_GPUTexture *attr3d);
+                          SDL_GPUBuffer *verts, SDL_GPUBuffer *vram, SDL_GPUBuffer *hd, SDL_GPUBuffer *shadow_masks,
+                          SDL_GPUTexture *color3d, SDL_GPUTexture *attr3d);
 
 #endif

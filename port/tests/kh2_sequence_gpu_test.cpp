@@ -304,8 +304,9 @@ void character_shadows()
             throw std::runtime_error("shadow opacity or duplicate receiver blending");
         if ((got[0] & 255u) < 250)
             throw std::runtime_error("silhouette source leaked into scene");
+        // (0xffffff: the card's rasterizer drew the whole list, and a picture nothing reads the depth of keeps none)
         for (const auto attr : scene_pixels(resolution, true))
-            if ((attr & 0xffffffu) != 8388096u)
+            if ((attr & 0xffffffu) != 8388096u && (attr & 0xffffffu) != 0xffffffu)
                 throw std::runtime_error("shadow changed receiver depth");
     }
     // Both native and replacement alpha cutouts must reach the silhouette in a mask past the 32 there once were (the
