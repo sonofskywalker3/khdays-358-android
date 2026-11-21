@@ -304,6 +304,12 @@ model geometry and equipped weapons. NPC and enemy flat shadow materials also
 use this path, retaining native visibility, tint and opacity. See
 [CHARACTER_SHADOWS.md](CHARACTER_SHADOWS.md) for the hooks,
 projection and mask passes, fallback behavior, provenance and validation.
+The receivers are drawn by whichever renderer draws the list: `raster3d.hlsl`'s
+`plot`, or the card's rasterizer (`native3d.hlsl`, `gpu_native3d.c`
+`STENCIL_RECEIVER`: the depth test "equal", the stencil the receiving polygon's
+ID with the masks' bit clear, set by the receiver so that a pixel takes one, and
+cleared after the receivers), which no longer hands the rest of the list to
+`raster3d.hlsl` for them (9 ms a picture on an Adreno 740 at 4x, 2026-11-20).
 
 ## On the graphics card
 
