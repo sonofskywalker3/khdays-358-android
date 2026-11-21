@@ -7,11 +7,13 @@
 //   1 RGBA8     that first colour (rgb), and whether there is one (a)
 //   2 RGBA8     the fog bit (r), where the pixel takes it (a)
 //   3 RGBA8     the opaque polygon ID / 255 (r) and the edge bit (g), where an opaque pixel is drawn (a)
-//   4 RGBA8     translucent (r), shown over the 2D (g), the alpha / 31 (a: the largest drawn)
+//   4 RGBA8     translucent (r), shown over the 2D (g), the clip volumes' owner drawn last (b), the alpha / 31
+//               (a: the largest drawn)
 //   5 R32_UINT  the depth, 24 bits, where the depth buffer takes it
 // A picture writes 1, 2, 3 and 5 only when what finishes it reads them (gpu_native3d.c OUT_*). The stencil
 // holds the ID of the last polygon drawn (bits 0-5), whether it was translucent (6) and the shadow masks'
-// bit (7). The host draws the polygons in the list's order (gpu_native3d.c).
+// bit (7). The host draws the polygons in the list's order (gpu_native3d.c), after the list's clip volumes
+// (native3d_clip.hlsl), which this shader reads to leave out what lies inside them.
 
 #if defined(STAGE_VS)
 ByteAddressBuffer polys : register(t0, space0);
@@ -19,13 +21,15 @@ ByteAddressBuffer verts : register(t1, space0);
 ByteAddressBuffer vram : register(t2, space0);
 ByteAddressBuffer hd : register(t3, space0);
 #else
-ByteAddressBuffer polys : register(t0, space2);
-ByteAddressBuffer verts : register(t1, space2);
-ByteAddressBuffer vram : register(t2, space2); // the texture slots (512 KB), then the palette slots (96 KB)
-ByteAddressBuffer hd : register(t3, space2);   // the replacements (host/render/gpu_hd.h)
+// (after native3d_clip_at.hlsli's two textures: SDL's order, the textures then the buffers)
+ByteAddressBuffer polys : register(t2, space2);
+ByteAddressBuffer verts : register(t3, space2);
+ByteAddressBuffer vram : register(t4, space2); // the texture slots (512 KB), then the palette slots (96 KB)
+ByteAddressBuffer hd : register(t5, space2);   // the replacements (host/render/gpu_hd.h)
 #endif
 
 #include "native3d_params.hlsli"
+#include "native3d_clip_at.hlsli"
 #include "g3d_vram.hlsli"
 #include "g3d_polygon.hlsli"
 
@@ -102,6 +106,9 @@ uint edge_at(Polygon p, float2 at)
     }
 }
 
+// gfx/g3d.h's HUD, sequence, marker and clip volume owner flags: never left out by a clip volume
+static const uint G3D_UNCLIPPED = 0x61u | 0x40000000u;
+
 struct Targets {
     float4 colour : SV_Target0;
     float4 first : SV_Target1;
@@ -132,6 +139,14 @@ Targets ps_main(Corner i)
     if (alpha == 0) {
         discard;
     }
+    // a clip volume showing here (docs/RENDERING.md, "Clip volumes"): what is not its owner's, the HUD's, a
+    // sequence or a marker is left out inside the volume and behind it
+    if (((uint)p.flags & G3D_UNCLIPPED) == 0u) {
+        float near;
+        if (clip_volume_at(i.position.xy, near) && (float)depth > near) {
+            discard;
+        }
+    }
     // the depth test "equal" passes within 0x200 above: tested as less or equal, 0x200 nearer
 #if !defined(NATIVE3D_RASTER_DEPTH)
     o.depth = (float)((p.attr & 0x4000u) != 0u ? max((int)depth - 0x200, 0) : (int)depth) / 16777216.0f;
@@ -158,7 +173,10 @@ Targets ps_main(Corner i)
         // an opaque pixel takes its polygon's fog bit, a translucent one only clears it
         o.fog = float4((float)fog, 0.0f, 0.0f, opaque || fog == 0u ? 1.0f : 0.0f);
         o.opaque = float4((float)id / 255.0f, (float)edge, 0.0f, opaque ? 1.0f : 0.0f);
-        o.flags = float4(opaque ? 0.0f : 1.0f, (float)(((uint)p.flags >> 3) & 1u), 0.0f, (float)c.w / 31.0f);
+        // (blue: a clip volume's owner's polygon ID and fog bit, plus one, for native3d_clip_end.hlsl; only an
+        // owner's pipeline writes the channel)
+        o.flags = float4(opaque ? 0.0f : 1.0f, (float)(((uint)p.flags >> 3) & 1u), (float)(1u + id + fog * 64u) / 255.0f,
+                         (float)c.w / 31.0f);
     }
     return o;
 }

@@ -37,7 +37,7 @@ typedef struct RasterParams {
     uint32_t clear_color, clear_depth, smooth;
     int32_t origin_x;
     uint32_t fine, npolys, nverts, entries; /* how much was uploaded: the shader stays within it */
-    uint32_t resume;                        /* start from the targets (the native 3D drew before) */
+    uint32_t resume; /* 1: start from the targets (the native 3D drew before); 2: it drew clip volumes too */
     uint32_t unused0, unused1, unused2;
     uint32_t toon[16];
 } RasterParams;
@@ -703,7 +703,8 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
         const KhdaysG3dPolygon *p = &list->polys[i];
         float xmin = 1e9f, xmax = -1e9f;
         int tx0, tx1, ty0, ty1;
-        if (i < first || (p->flags & hidden_flags()) || unusable(list, p)) {
+        /* (a clip volume the native 3D drew its polygons by still cuts raster3d.hlsl's) */
+        if ((i < first && !(p->flags & KHDAYS_G3D_CLIP)) || (p->flags & hidden_flags()) || unusable(list, p)) {
             box[i][0] = 1;
             box[i][1] = 0; /* empty: drawn before (the native 3D's) or unusable */
             continue;
@@ -1315,7 +1316,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         frame.disp3dcnt &= ~0x4000u;
     }
     if (native) {
-        drawn_natively = khdays_native3d_count(list, hidden_flags());
+        drawn_natively = khdays_native3d_count(list, hidden_flags(), p->disp3dcnt);
         if (!khdays_native3d_prepare(list, drawn_natively, hidden_flags(), &frame, &corner_bytes)) {
             fprintf(stderr, "host: the card's rasterizer cannot draw the 3D (%s): raster3d.hlsl draws it\n",
                     SDL_GetError());
@@ -1477,7 +1478,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         rp.npolys = (uint32_t)list->npolys;
         rp.nverts = (uint32_t)list->nverts;
         rp.entries = entries;
-        rp.resume = (uint32_t)native;
+        rp.resume = native ? 1u | (khdays_native3d_clips() ? 2u : 0u) : 0u;
         {
             Recent *r = &recent[recent_next++ % SDL_arraysize(recent)];
             r->frame = p->frame;

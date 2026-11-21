@@ -42,7 +42,7 @@ cbuffer Params : register(b0, space2) {
     uint npolys;      // what the host uploaded: no polygon, vertex or tile entry past them is read
     uint nverts;
     uint entries;
-    uint resume;      // 1: start from what the targets hold (resumed), not the rear plane
+    uint resume;      // bit 0: start from what the targets hold (resumed), not the rear plane; bit 1: see cs_main
     uint unused0, unused1, unused2;
     uint4 toon[4];    // TOON_TABLE, two entries per uint
 };
@@ -478,6 +478,13 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     // with the last owner's polygon ID and fog
     uint clip_near = 0xffffffffu, clips = 0u, owner_id = px.opaque_id, owner_fog = px.fog;
     bool inside_laid = false, surface = false;
+    // resumed after the native 3D drew the volumes with its polygons (resume bit 1; never with the clear image):
+    // it laid the inside, and a surface was drawn where the depth is no longer the rear plane's
+    const bool laid_before = (resume & 2u) != 0u;
+    if (laid_before) {
+        const uint cd = clear_depth & 0x7fffu;
+        surface = px.depth != cd * 0x200u + ((cd + 1u) / 0x8000u) * 0x1ffu;
+    }
     for (uint k = first; k < last; ++k) {
         const uint index = tiles.Load(k * 4u);
         if (index >= npolys) {
@@ -489,7 +496,9 @@ void cs_main(uint3 id : SV_DispatchThreadID)
         // the volumes come first: past them, the inside goes under all that is drawn, so an effect blends over it
         if (((uint)p.flags & G3D_CLIP) == 0u && !inside_laid) {
             inside_laid = true;
-            lay_clip_inside(px, clips, clip_near);
+            if (!laid_before) {
+                lay_clip_inside(px, clips, clip_near);
+            }
         }
         if (cover(p, x, y, at, edge, ((uint)p.flags & G3D_CLIP) != 0u ? 1.0f : 0.0f)) {
             if (((uint)p.flags & G3D_CLIP) != 0u) {
@@ -520,7 +529,7 @@ void cs_main(uint3 id : SV_DispatchThreadID)
             }
         }
     }
-    if (!inside_laid) {
+    if (!inside_laid && !laid_before) {
         lay_clip_inside(px, clips, clip_near);
     }
     // no surface drawn on the inside (blending writes none): it is the surface here, at the volume's near depth

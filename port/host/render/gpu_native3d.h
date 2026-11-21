@@ -1,6 +1,7 @@
 /* The 3D list drawn by the graphics card's own rasterizer (gpu_native3d.c, shaders/native3d*.hlsl,
  * docs/RENDERING.md "The native 3D"), into raster3d's two targets: the polygons up to the first native
- * sequence (those from it on are raster3d.hlsl's, which resumes from the targets). Window's thread only. */
+ * sequence (those from it on are raster3d.hlsl's, which resumes from the targets); a mod model's clip volumes
+ * among them in a pass of their own before (native3d_clip.hlsl). Window's thread only. */
 #ifndef KHDAYS_GPU_NATIVE3D_H
 #define KHDAYS_GPU_NATIVE3D_H
 
@@ -27,16 +28,21 @@ typedef struct KhdaysNative3dFrame {
  * gpu_raster3d.h), or lets them go (0, the default). */
 void khdays_native3d_keep_two(int on);
 
-/* How many of `list`'s polygons it draws: those before the first it cannot, a native sequence, a mod's clip
- * volume or an enhanced shadow's receiver (raster3d.hlsl draws them and what follows). Polygons with one of
- * the `hidden` flags are drawn by no one and do not stop it. */
-int khdays_native3d_count(const struct KhdaysG3dList *list, int32_t hidden);
+/* How many of `list`'s polygons it draws: those before the first it cannot, a native sequence, an enhanced
+ * shadow's receiver, or a mod's clip volume while the clear image is on (`disp3dcnt`) (raster3d.hlsl draws them
+ * and what follows; the clip volumes among those drawn here still cut its polygons). Polygons with one of the
+ * `hidden` flags are drawn by no one and do not stop it. */
+int khdays_native3d_count(const struct KhdaysG3dList *list, int32_t hidden, uint32_t disp3dcnt);
 
 /* Gets the first `count` polygons of `list` ready to draw for `frame`, those with a `hidden` flag left out:
  * the triangles' corners (their bytes in *corner_bytes, to upload with khdays_native3d_upload), the
  * pipelines and targets they need. Returns 0 (with the reason in SDL_GetError) when it cannot. */
 int khdays_native3d_prepare(const struct KhdaysG3dList *list, int count, int32_t hidden,
                             const KhdaysNative3dFrame *frame, uint32_t *corner_bytes);
+
+/* Whether the prepared polygons have clip volumes among them: the native 3D lays the coat's inside, and
+ * raster3d.hlsl drawing the rest of the list does not lay it again (its `resume`, bit 1). */
+int khdays_native3d_clips(void);
 
 /* The corners (khdays_native3d_prepare's bytes), to copy into the caller's transfer buffer. */
 const void *khdays_native3d_corners(void);

@@ -273,6 +273,30 @@ the nearer model is left out, as it is behind its coat). The software rasterizer
 so no volume. The cost is a volume's triangles (about a hundred) in the tiles it
 covers.
 
+The card's own rasterizer (`gpu_native3d.c`) follows the same rules, so that a
+model with a coat does not send the whole list to `raster3d.hlsl` (on a
+Mali-G57 that was 35-48 ms a picture, a scene with KH2 Roxas at 18 pictures a
+second; 2026-11-20). The volumes' triangles are drawn first, in a pass of their
+own, into two targets (`native3d_clip.hlsl`): their nearest depth, with the depth
+test, and how many cover each pixel, added up without it. Their corners are moved
+a pixel out from the polygon's edges, the depth going on along its plane, which
+stands in for `cover()`'s grown rows and columns. In the polygons' pass a
+triangle over the whole target lays the coat's inside where a volume shows before
+the rear plane (`native3d_clip_inside.hlsl`), and `native3d.hlsl` leaves out a
+pixel of a polygon that is not unclipped behind the nearest depth, reading the
+two targets (`native3d_clip_at.hlsli`). The end -- the inside as the surface
+where no polygon wrote a depth -- is a compute step on the packed targets
+(`native3d_clip_end.hlsl`) when the card draws the whole list; when
+`raster3d.hlsl` draws the rest (a native sequence, a shadow's receiver) it keeps
+the volumes in its tiles, does not lay the inside again (`resume` bit 1) and
+applies the end itself after its polygons, a surface being wherever the depth it
+resumed from is no longer the rear plane's. The owner's polygon drawn last on a
+pixel leaves its ID and fog bit in the flags target's blue (only an owner's
+pipeline writes that channel), which the end reads. Two differences from
+`raster3d.hlsl` alone: resuming, it takes the owner from the opaque ID it finds,
+and the grown coverage is not `cover()`'s pixel for pixel. With the clear image on the volumes
+stay `raster3d.hlsl`'s (the rear plane's depth is then not one value).
+
 The optional **Enhanced character shadows** setting replaces that footprint on
 the GPU with a softened overhead silhouette of the current model pose. It uses
 the original shadow's color, opacity and receiver height range, including mod
