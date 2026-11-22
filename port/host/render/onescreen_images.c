@@ -16,6 +16,35 @@ static Picture *pictures;
 static KhdaysShape *placed;
 static size_t picture_capacity, placed_capacity;
 
+/* most of the lower screen: 3/4 of its columns and of its rows */
+#define LOWER_WHOLE_W 192.0f
+#define LOWER_WHOLE_H 144.0f
+
+int khdays_onescreen_lower_scale(const uint32_t *shapes, int count, int upper_scale)
+{
+    int most = 0;
+    for (int i = 0; shapes != NULL && i < count; ++i) {
+        const uint32_t *w = shapes + (size_t)i * KO_WORDS;
+        float sw, sh, kx, ky;
+        /* (dimmed, it is a backdrop behind something else -- the settings', the save menu's: left as it is) */
+        if ((w[KO_FLAGS] & (KOF_LOWER | KOF_3D | KOF_IMAGE | KOF_DIM)) != KOF_LOWER)
+            continue;
+        memcpy(&sw, w + KO_SRC_W, 4);
+        memcpy(&sh, w + KO_SRC_H, 4);
+        memcpy(&kx, w + KO_SCALE_X, 4);
+        memcpy(&ky, w + KO_SCALE_Y, 4);
+        /* (a number that is none fails every comparison: such a shape asks for nothing) */
+        if (sw >= LOWER_WHOLE_W && sh >= LOWER_WHOLE_H && kx > 0.0f && ky > 0.0f) {
+            const float k = kx < ky ? kx : ky;
+            const float asked = (float)upper_scale * (k < 1.0f ? k : 1.0f);
+            int n = (int)asked;
+            n += (float)n < asked - 0.01f;
+            most = n > most ? n : most;
+        }
+    }
+    return most > upper_scale ? upper_scale : most;
+}
+
 int khdays_onescreen_information(const KhdaysFramePackage *p, KhdaysSituation *s)
 {
     s->states &= ~(1u << KHDAYS_ST_INFORMATION_MOD);

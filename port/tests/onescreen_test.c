@@ -2021,7 +2021,7 @@ static void test_text_overlay(void)
     CHECK(khdays_text_overlay_scale(2, 9.6f, KHDAYS_SIT_FIELD, 0) == 6);
     CHECK(khdays_text_overlay_scale(4, 5.0f, KHDAYS_SIT_FIELD, 0) == 0);
     CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_CAMP_MENU, 0) == 0);
-    CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_TUTORIAL, 0) == 0);
+    CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_TUTORIAL, 0) == 5);
     CHECK(khdays_text_overlay_scale(2, 5.0f, KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_EVENT) == 0);
     /* the upper screen's rows 100-160 at 1.5 times their size from (10, 120), and an image of the pass's */
     put_float(shapes, KO_SRC_X, 0), put_float(shapes, KO_SRC_Y, 100);
@@ -2095,7 +2095,36 @@ static void test_text_overlay(void)
     memcpy(records, kept, sizeof(kept));
     khdays_text_overlay_take(p, NULL, 1);
     CHECK(!(records[KE_SLOT] & KES_OVERLAY) && !(records[KE_WORDS + KE_SLOT] & KES_OVERLAY));
+    /* a tutorial's page lies over the field: the upper screen's text and images stay in the picture under
+     * it, the page's own (the lower screen's) are drawn apart */
+    memcpy(records, kept, sizeof(kept));
+    shapes[KO_WORDS + KO_FLAGS] |= KOF_OVERLAY;
+    p->situation.taken = 1;
+    p->situation.tutorial = 1;
+    khdays_text_overlay_take(p, &one, 1);
+    khdays_text_overlay_pieces(&count);
+    CHECK(count == 0 && !(records[KE_SLOT] & KES_OVERLAY) && !(shapes[KO_WORDS + KO_FLAGS] & KOF_OVERLAY));
+    memcpy(records, kept, sizeof(kept));
+    shapes[KO_FLAGS] |= KOF_LOWER;
+    p->elements[1].records = records;
+    p->elements[1].count = 3;
+    p->elements[0].count = 0;
+    khdays_text_overlay_take(p, &one, 1);
+    khdays_text_overlay_pieces(&count);
+    CHECK(count == 2 && (records[KE_SLOT] & KES_OVERLAY));
     khdays_text_overlay_clear();
+    /* the lower screen whole in the picture is composed at the scale it shows at; a crop of it is not */
+    CHECK(khdays_onescreen_lower_scale(shapes, 3, 4) == 0); /* (60 of its rows) */
+    put_float(shapes, KO_SRC_Y, 0), put_float(shapes, KO_SRC_H, 192);
+    put_float(shapes, KO_DST_X1, 43), put_float(shapes, KO_DST_Y1, 0);
+    put_float(shapes, KO_DST_X2, 43 + 256), put_float(shapes, KO_DST_Y2, 192);
+    put_float(shapes, KO_SCALE_X, 1), put_float(shapes, KO_SCALE_Y, 1);
+    CHECK(khdays_onescreen_lower_scale(shapes, 3, 4) == 4);
+    put_float(shapes, KO_DST_X2, 43 + 256 * 0.6f), put_float(shapes, KO_DST_Y2, 192 * 0.6f);
+    put_float(shapes, KO_SCALE_X, 0.6f), put_float(shapes, KO_SCALE_Y, 0.6f);
+    CHECK(khdays_onescreen_lower_scale(shapes, 3, 4) == 3);
+    shapes[KO_FLAGS] |= KOF_DIM; /* a backdrop */
+    CHECK(khdays_onescreen_lower_scale(shapes, 3, 4) == 0);
     free(p);
 }
 

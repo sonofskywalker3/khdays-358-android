@@ -145,8 +145,13 @@ screens' capture, a screen blend), an element under a shape that fades along an
 edge or turns its source over. They are over everything in the picture, and
 take the screens' master brightness, their layer's blend and their shape's
 `opacity` and `dim`, nothing else: the menus, whose lists pass under their
-frames, and the tutorial, whose page lies over the field, keep their text in
-the composition.
+frames, keep their text in the composition. A tutorial's page (the lower
+screen) lies over the field: its own text is drawn apart, the upper screen's
+under it stays in the composition.
+Where the one-screen picture shows most of the lower screen in one shape (that
+page, a menu's lower screen), engine B is composed at the scale it is shown at
+rather than at `lower_resolution` (`khdays_onescreen_lower_scale`;
+`KHDAYS_LOWER_WHOLE=0` keeps the setting).
 `KHDAYS_TEXT_OVERLAY=0` turns it off; `KHDAYS_2D_CAP=2` on a PC composes the 2D
 as such a device does.
 

@@ -43,11 +43,13 @@ int khdays_text_overlay_scale(int scale2d, float shown, int scene, unsigned stat
 {
     int n = (int)SDL_ceilf(shown - 0.01f);
     n = n > SCALE_MAX ? SCALE_MAX : n;
-    /* the field and what plays in it (a person's words, an event's scene), and the day's card: there nothing
-     * of the game's passes over its text. The menus' lists scroll under their frames, the tutorial lays a
-     * page over the field, the pause is another picture: those stay in the composition */
+    /* the field and what plays in it (a person's words, an event's scene), the day's card and a tutorial's
+     * page: there nothing of the game's passes over its text (the page lies over the field, whose own text
+     * khdays_text_overlay_take leaves under it). The menus' lists scroll under their frames, the pause is
+     * another picture: those stay in the composition */
     if (!enabled() || scale2d < 1 || n < scale2d * COARSER_BY ||
-        (scene != KHDAYS_SIT_FIELD && scene != KHDAYS_SIT_DAY_COUNTER) || (states & (1u << KHDAYS_ST_EVENT)) != 0u) {
+        (scene != KHDAYS_SIT_FIELD && scene != KHDAYS_SIT_DAY_COUNTER && scene != KHDAYS_SIT_TUTORIAL) ||
+        (states & (1u << KHDAYS_ST_EVENT)) != 0u) {
         return 0;
     }
     return n;
@@ -183,6 +185,13 @@ void khdays_text_overlay_take(KhdaysFramePackage *p, const KhdaysOneScreenDraw *
     const int shape_count = shapes != NULL ? one->shape_count : 0;
     const uint32_t upper_master = p->desc2d[p->upper][KD_MASTER] & 0xffffu;
     const uint32_t lower_master = p->desc2d[!p->upper][KD_MASTER] & 0xffffu;
+    /* a tutorial's page (the lower screen) lies over the field: the upper screen's text is under it, and
+     * drawn here it would be over the page. It stays in the composition */
+    static int tutorial; /* (a package without the situation's inputs: as the one before, as the composition) */
+    if (p->situation.taken) {
+        tutorial = p->situation.tutorial != 0;
+    }
+    const int under_page = tutorial;
     int room = 1;
     piece_count = 0;
     fresh = 1;
@@ -217,6 +226,15 @@ void khdays_text_overlay_take(KhdaysFramePackage *p, const KhdaysOneScreenDraw *
             if ((r[KE_SLOT] & KES_OVERLAY) != 0u && (r[KE_SLOT] & (KES_SPRITES | KES_DIRECT)) != KES_DIRECT) {
                 r[KE_SLOT] &= ~KES_OVERLAY; /* (only colours in a layer's slot are drawn here) */
             }
+            if (under_page && e == p->upper) {
+                r[KE_SLOT] &= ~KES_OVERLAY;
+            }
+        }
+    }
+    for (int s = 0; under_page && s < shape_count; ++s) {
+        uint32_t *shape = shapes + (size_t)s * KO_WORDS;
+        if ((shape[KO_FLAGS] & (KOF_IMAGE | KOF_LOWER)) == KOF_IMAGE) {
+            shape[KO_FLAGS] &= ~KOF_OVERLAY;
         }
     }
     /* then where: the first shape that gives a texel is over the others, and so is the first element of a

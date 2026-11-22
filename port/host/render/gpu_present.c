@@ -14,6 +14,7 @@
 #include "text_overlay.h"
 #include "../../runtime/menus/newgame.h"
 #include "onescreen.h"
+#include "onescreen_images.h"
 #include "png_io.h"
 #include "two_screens.h"
 #include "auto_quality.h"
@@ -2247,7 +2248,19 @@ static void present_now(const KhdaysFramePackage *p, int first)
         const int blend_frame = khdays_gfx_render_capture_frame(p);
         const int can_raster = !picture_only && raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) &&
                                n != refused_scale && (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame);
-        const int n2d = scale2d_for(0, n), n2d_b = scale2d_for(1, n); /* engine A's (the upper setting's), B's */
+        const int n2d = scale2d_for(0, n); /* engine A's (the upper setting's) */
+        /* engine B's: its own setting, but where the one-screen picture shows the lower screen whole (a
+         * tutorial's page, a menu's lower screen over the picture) the scale it is shown at -- at 2x under a
+         * picture of 4x its text and frames came out soft (the Thor's defaults). KHDAYS_LOWER_WHOLE=0: its
+         * setting everywhere, to compare */
+        static int lower_whole = -1;
+        if (lower_whole < 0) {
+            const char *e = SDL_getenv("KHDAYS_LOWER_WHOLE");
+            lower_whole = !(e != NULL && e[0] == '0');
+        }
+        const int n2d_shown =
+            picture && lower_whole ? khdays_onescreen_lower_scale(one.shapes, one.shape_count, n2d) : 0;
+        const int n2d_b = SDL_max(scale2d_for(1, n), n2d_shown);
         khdays_gpu_hd_next_frame(); /* (what the last picture drew may leave the card) */
         /* the 3D coarser than the 2D (an internal resolution below the window's): the HUD's polygons (the
          * command menu) drawn apart at the 2D's scale, as sharp as the rest of the HUD */
