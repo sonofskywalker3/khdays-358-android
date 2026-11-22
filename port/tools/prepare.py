@@ -2678,7 +2678,17 @@ HOOKS["ov107@020c6980"] = [
     (  # Ov107_ProcessObjectTick: a held enemy updated as a frozen one is (its tasks with no time, no motion)
         "void Ov107_ProcessObjectTick(struct AiState *self, int delta)\n{\n",
         "int khdays_stop_holding(void *enemy);\nint khdays_stop_held(void *enemy);\n"
+        "int khdays_enemy_far_updates(void);\n"
         "void Ov107_ProcessObjectTick(struct AiState *self, int delta)\n{\n",
+    ),
+    (  # none of the updates is skipped by distance (khdays_enemy_far_updates, runtime/battle/enemy_updates.h): the
+        # DS's saving of its time moved the far enemies by jumps, which the smoothed pictures showed as stutters
+        "        if (self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
+        "        if (khdays_enemy_far_updates() && self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
+    ),
+    (
+        "    } else if (self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
+        "    } else if (khdays_enemy_far_updates() && self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
     ),
     (
         "        if (((self->field_1c4 & 2) != 0 || (self->field_1c4 & 8) != 0) &&\n",
