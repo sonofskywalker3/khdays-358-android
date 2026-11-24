@@ -84,11 +84,11 @@ static int window_scale_cap;               /* the most "window" makes on this de
 static int android_2d_cap = ANDROID_2D_CAP;  /* scale2d_now's cap on Android (window_cap_for) */
 #endif
 static int weaker_card; /* a Mali or an older Adreno (window_cap_for) */
-/* [video] fast_2d = auto: on for a weaker card but a Mali. On the TCL's Mali-G57 (driver 32.1.0) a scene's first
- * picture lost the graphics device in 8 of 30 runs with Fast 2D (the new game's dialog scene after DAY 7), in 0 of
- * 24 without; it gained about 5 pictures a second in dialog scenes there (49-54 against 44-49) and about 1 in the
- * field. On the older Adrenos it halves the 2D's cost (the Tab A9+'s field: 47 ms -> 22 ms). On by hand it stays
- * on, a Mali's too. */
+/* [video] fast_2d = auto: on for a weaker card but a Mali-G57. On the TCL's Mali-G57 (driver 32.1.0) a scene's
+ * first picture lost the graphics device in 8 of 30 runs with Fast 2D (the new game's dialog scene after DAY 7), in
+ * 1 of 32 without; it gained about 5 pictures a second in dialog scenes there (49-54 against 44-49). The Air Mini's
+ * Mali-G76 (driver 26.0.0) lost it in none of 8 with Fast 2D at the same place, and gains with it (2x: 49 -> 54).
+ * On the older Adrenos it halves the 2D's cost (the Tab A9+'s field: 47 ms -> 22 ms). On by hand it stays on. */
 static int fast_2d_auto;
 #define UNSHOWN_SAID_EVERY_MS 60000 /* khdays_present_unshown: its line in the log, at most this often */
 #define NEW_SURFACE_TRIES 120         /* khdays_present_new_surface: turns of the loop (about 2 s) */
@@ -244,7 +244,7 @@ static int window_cap_for(SDL_GPUDevice *gpu)
     android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
                                                                                                    : ANDROID_2D_CAP;
     weaker_card = android_2d_cap == ANDROID_WEAK_2D_CAP;
-    fast_2d_auto = weaker_card && SDL_strstr(name, "Mali") == NULL;
+    fast_2d_auto = weaker_card && SDL_strstr(name, "Mali-G57") == NULL;
     if (model > 0 && model < OLDER_ADRENO_BELOW) {
         fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
         return OLDER_ADRENO_WINDOW_CAP;
