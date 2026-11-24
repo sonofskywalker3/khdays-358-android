@@ -117,15 +117,43 @@ class BottomScreenHost(private val activity: Activity) {
 
     private fun findBottomDisplay(): Display? {
         val candidates = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-        val chosen = candidates.firstOrNull { it.displayId != Display.DEFAULT_DISPLAY && it.isValid }
+        val chosen = candidates.firstOrNull {
+            it.displayId != Display.DEFAULT_DISPLAY && it.isValid && isBuiltIn(it)
+        }
         if (chosen == null) {
             for (display in displayManager.displays) {
                 if (display.displayId != Display.DEFAULT_DISPLAY) {
-                    Log.i(TAG, "bottom screen: display ${display.displayId} '${display.name}' is not in the presentation category (flags 0x${Integer.toHexString(display.flags)}); ignored")
+                    Log.i(TAG, "bottom screen: display ${display.displayId} '${display.name}' (type ${displayType(display) ?: "unknown"}, flags 0x${Integer.toHexString(display.flags)}) is not a built-in presentation display; ignored")
                 }
             }
         }
         return chosen
+    }
+
+    /**
+     * Only a panel built into the device is a lower screen (the Thor's "Screen-2" is one). The presentation
+     * category also holds displays an app or a setting makes (a recorder's or a mirroring tool's virtual
+     * display, Developer options' simulated displays), Wi-Fi displays and HDMI/DisplayPort: on a one-screen
+     * device such a display made the title and the reward screen lay out for two (the Odin 2 Mini, issue #6).
+     * Android gives the type only through Display.getType(), not in its public API: when that cannot be read,
+     * the display is taken as before.
+     */
+    private fun isBuiltIn(display: Display): Boolean {
+        val type = displayType(display) ?: return true
+        if (type != TYPE_INTERNAL) {
+            Log.i(TAG, "bottom screen: display ${display.displayId} '${display.name}' is of type $type, not built in; ignored")
+        }
+        return type == TYPE_INTERNAL
+    }
+
+    private fun displayType(display: Display): Int? = try {
+        Display::class.java.getMethod("getType").invoke(display) as? Int
+    } catch (e: ReflectiveOperationException) {
+        Log.w(TAG, "bottom screen: a display's type cannot be read: $e")
+        null
+    } catch (e: SecurityException) {
+        Log.w(TAG, "bottom screen: a display's type cannot be read: $e")
+        null
     }
 
     private fun showPresentation(display: Display): Boolean {
@@ -204,6 +232,8 @@ class BottomScreenHost(private val activity: Activity) {
     companion object {
         private const val TAG = "khdays"
         private const val PRESENTATION_SURFACE_TIMEOUT_MS = 2000L
+        /** Display.TYPE_INTERNAL (hidden): a panel built into the device. */
+        private const val TYPE_INTERNAL = 1
 
         /** Shared by the Presentation and the fallback activity: black, edge to edge, bars hidden. */
         fun configureBottomWindow(window: Window) {
