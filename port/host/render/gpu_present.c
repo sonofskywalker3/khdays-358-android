@@ -83,7 +83,13 @@ static int window_scale_cap;               /* the most "window" makes on this de
 #if defined(__ANDROID__)
 static int android_2d_cap = ANDROID_2D_CAP;  /* scale2d_now's cap on Android (window_cap_for) */
 #endif
-static int weaker_card; /* a Mali or an older Adreno (window_cap_for): [video] fast_2d = auto is on there */
+static int weaker_card; /* a Mali or an older Adreno (window_cap_for) */
+/* [video] fast_2d = auto: on for a weaker card but a Mali. On the TCL's Mali-G57 (driver 32.1.0) a scene's first
+ * picture lost the graphics device in 8 of 30 runs with Fast 2D (the new game's dialog scene after DAY 7), in 0 of
+ * 24 without; it gained about 5 pictures a second in dialog scenes there (49-54 against 44-49) and about 1 in the
+ * field. On the older Adrenos it halves the 2D's cost (the Tab A9+'s field: 47 ms -> 22 ms). On by hand it stays
+ * on, a Mali's too. */
+static int fast_2d_auto;
 #define UNSHOWN_SAID_EVERY_MS 60000 /* khdays_present_unshown: its line in the log, at most this often */
 #define NEW_SURFACE_TRIES 120         /* khdays_present_new_surface: turns of the loop (about 2 s) */
 
@@ -238,6 +244,7 @@ static int window_cap_for(SDL_GPUDevice *gpu)
     android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
                                                                                                    : ANDROID_2D_CAP;
     weaker_card = android_2d_cap == ANDROID_WEAK_2D_CAP;
+    fast_2d_auto = weaker_card && SDL_strstr(name, "Mali") == NULL;
     if (model > 0 && model < OLDER_ADRENO_BELOW) {
         fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
         return OLDER_ADRENO_WINDOW_CAP;
@@ -1834,7 +1841,7 @@ static void speed_count(void)
         const double s = (double)(now - speed.since) / 1e9;
         const char *const fast = video.fast_2d == KHDAYS_FAST_2D_ON    ? "on"
                                  : video.fast_2d == KHDAYS_FAST_2D_OFF ? "off"
-                                 : weaker_card                         ? "auto (a weaker card: on)"
+                                 : fast_2d_auto                        ? "auto (a weaker card: on)"
                                                                        : "auto (off)";
         khdays_log("speed: %.0f pictures a second, the game's VBlanks %.0f, the longest wait %.0f ms, over %.0f s; "
                    "%s, the 2D at %dx (the lower screen's at %dx), the 3D at %dx; Fast 2D %s, used for %u of %u "
@@ -2368,7 +2375,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         khdays_gfx_render_set_shown(video.smooth_scaling || picture_only ? shown_scale()
                                                                          : (float)SDL_max(SDL_max(n2d, n2d_b), n));
         khdays_gfx_render_set_smooth_3d(video.smooth_scaling);
-        const int coarse = video.fast_2d == KHDAYS_FAST_2D_ON || (video.fast_2d == KHDAYS_FAST_2D_AUTO && weaker_card);
+        const int coarse = video.fast_2d == KHDAYS_FAST_2D_ON || (video.fast_2d == KHDAYS_FAST_2D_AUTO && fast_2d_auto);
         khdays_gfx_render_set_coarse_2d(coarse);
         speed_drew(!video.one_screen                                                        ? "two screens"
                    : one_kind == KHDAYS_SCREENS_SIDE_BY_SIDE                                  ? "one screen, both side by side"
