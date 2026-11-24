@@ -399,7 +399,8 @@ static u16 player_buttons(void)
         static KhdaysLockAssist assist;
         lock_actions |=
             khdays_lock_assist_frame(&assist, (snapshot.actions & KHDAYS_ACTION_LOCK_BUTTON) != 0, lock_actions,
-                                     double_r, lock_field, game->lock_active, auto_lock, pad_samples);
+                                     double_r, lock_field, game->lock_active, auto_lock, game->lock_candidate,
+                                     pad_samples);
     }
     const u16 lock_buttons =
         khdays_lock_sequencer_frame(&lock, lock_on || auto_lock ? lock_actions : 0, lock_field, game->lock_active,

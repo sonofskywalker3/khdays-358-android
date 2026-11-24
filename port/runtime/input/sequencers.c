@@ -93,13 +93,13 @@ static const Sequence *lock_sequence(int action)
 }
 
 uint32_t khdays_lock_assist_frame(KhdaysLockAssist *s, int button, uint32_t actions, int double_r, int field, int locked,
-                                  int auto_lock, uint32_t frame)
+                                  int auto_lock, int candidate, uint32_t frame)
 {
     const uint32_t on = 1u << KHDAYS_LOCK_ON;
     uint32_t out = 0;
     if (!field) {
         s->held = button;
-        s->fired = s->was_locked = s->manual = 0;
+        s->fired = s->was_locked = s->manual = s->pending = 0;
         s->last = 0;
         return button ? on : 0;
     }
@@ -123,7 +123,13 @@ uint32_t khdays_lock_assist_frame(KhdaysLockAssist *s, int button, uint32_t acti
         s->last = all;
     }
     if (auto_lock && s->was_locked && !locked && !s->manual) {
+        s->pending = 1; /* lost by anything but letting go: locked on again once there is a target */
+    }
+    if (!auto_lock || locked || ((out | actions) & on) != 0 || double_r) {
+        s->pending = 0; /* turned off, locked again, or the player's own lock-on or letting go meanwhile */
+    } else if (s->pending && candidate) {
         out |= 1u << KHDAYS_LOCK_AUTO;
+        s->pending = 0;
     }
     if (!locked) {
         s->manual = 0;
@@ -178,6 +184,12 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
             s->queue[i - 1] = s->queue[i];
         }
         --s->queued;
+    }
+    if (s->action == KHDAYS_LOCK_AUTO && locked) {
+        /* the game locked on by itself meanwhile (an attack): the second R would let go */
+        s->action = -1;
+        s->step = 0;
+        return 0;
     }
     {
         const Sequence *seq = lock_sequence(s->action);

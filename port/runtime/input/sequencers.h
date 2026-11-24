@@ -37,16 +37,17 @@ enum { KHDAYS_LOCK_ON, KHDAYS_LOCK_NEXT, KHDAYS_LOCK_PREV, KHDAYS_LOCK_AUTO, KHD
 
 /* One lock button, and a lock lost locking on again. */
 typedef struct KhdaysLockAssist {
-    int held, fired, was_locked, manual;
+    int held, fired, was_locked, manual, pending;
     uint32_t since, last;
 } KhdaysLockAssist;
 
 /* The lock actions (bits of KHDAYS_LOCK_*) to add this game frame. `button`: the one button is held: a tap locks on,
  * or with a target locked moves to the next; held, it lets go. `actions`: the lock actions the player's buttons make.
  * `double_r`: the DS's R pressed for its double press, which lets go. `auto_lock`: a lock lost by anything else locks
- * on again. Outside `field` the button is the DS's R, held. */
+ * on again, once the game has a target to lock on to (`candidate`: right after a defeat it has none for a while,
+ * and R twice then locked nothing). Outside `field` the button is the DS's R, held. */
 uint32_t khdays_lock_assist_frame(KhdaysLockAssist *s, int button, uint32_t actions, int double_r, int field, int locked,
-                                  int auto_lock, uint32_t frame);
+                                  int auto_lock, int candidate, uint32_t frame);
 
 #define KHDAYS_LOCK_QUEUE 4
 
