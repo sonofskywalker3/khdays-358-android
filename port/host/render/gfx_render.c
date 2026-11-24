@@ -1715,6 +1715,13 @@ static void one_reads(const KhdaysOneScreenDraw *one, int upper, const int colum
 /* A weaker card composes the one-screen picture's sources a DS pixel at a time (draw). */
 static int coarse_2d = -1; /* KHDAYS_COARSE_2D=1 or 0 says it instead, to try it on any card */
 static int coarse_pictures[2]; /* KHDAYS_PERF: the pictures each engine's screen was composed so, since it last said */
+static unsigned composed_total, coarse_total; /* every screen composed, and those composed so (the session log's speed) */
+
+void khdays_gfx_render_coarse_counts(unsigned *composed, unsigned *coarse)
+{
+    *composed = composed_total;
+    *coarse = coarse_total;
+}
 
 void khdays_gfx_render_set_coarse_2d(int on)
 {
@@ -2832,6 +2839,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
             coarse = fine.count[0] >= 0;
         }
         coarse_pictures[e] += coarse;
+        ++composed_total;
+        coarse_total += coarse != 0;
         if (!coarse && se >= PRE_SCALE_MIN && cp.source3d == 0u && screen_columns[e] <= PRE_COLUMNS &&
             !reference && !gpu_skip("pre")) {
             /* each DS pixel once: whether its N x N output pixels are all alike. Not for an engine that reads the

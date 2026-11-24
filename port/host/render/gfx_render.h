@@ -77,6 +77,8 @@ void khdays_gfx_render_set_smooth_3d(int on);
 /* 1: the one-screen picture's two sources are composed a DS pixel at a time and enlarged, when the frame has
  * no 2D graphics finer than the DS's ([video] fast_2d; auto: a weaker card, gpu_present.c window_cap_for). */
 void khdays_gfx_render_set_coarse_2d(int on);
+/* Since the start: every DS screen composed, and those composed a DS pixel at a time (Fast 2D as it came out). */
+void khdays_gfx_render_coarse_counts(unsigned *composed, unsigned *coarse);
 /* [video] partial_2d and keep_screens: on one screen only the parts of the screens the picture's shapes read
  * are composed and its texels no shape reaches drawn without them; a screen whose 2D did not change is kept
  * from the picture before. Both on unless said. */

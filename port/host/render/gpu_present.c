@@ -1781,6 +1781,79 @@ static void fps_count(void)
     }
 }
 
+/* The session log's speed line, every SPEED_EVERY_NS of pictures: the pictures a second, the game's VBlanks a
+ * second beside them (a game at full speed under slow pictures is the card's work, not the game's), the longest
+ * wait between two pictures, and what they were drawn with -- the screens as shown, each scale as used (not as
+ * set: a weaker card's cap, a lower screen shown whole), Fast 2D as set and how many screens it composed, a mod's
+ * finer tiles (they turn Fast 2D off for their pictures). A log sent in then says what a slow device is doing
+ * without its owner reading settings out. A wait over SPEED_AWAY_NS (the game put away, a loading) or the
+ * settings menu (it draws while the game stands still) starts the count again. The game's pictures the card's
+ * 2D composed are counted where they are made (present(), a package's or a refresh's), not at the window's
+ * pictures: none in a line means the CPU's renderer drew them, and the scales said are then the last tried. */
+#define SPEED_EVERY_NS 20000000000u
+#define SPEED_AWAY_NS 2000000000u
+static struct {
+    Uint64 since, last, gap_most;
+    unsigned pictures, finer, by_card, composed, coarse;
+    uint32_t first_frame;
+    /* as present() last drew */
+    int n2d, n2d_b, n3d;
+    const char *screens;
+} speed;
+
+static void speed_drew(const char *screens, int n2d, int n2d_b, int n3d, int finer)
+{
+    speed.screens = screens;
+    speed.n2d = n2d;
+    speed.n2d_b = n2d_b;
+    speed.n3d = n3d;
+    ++speed.by_card;
+    speed.finer += finer != 0;
+}
+
+static void speed_count(void)
+{
+    const Uint64 now = SDL_GetTicksNS();
+    if (!khdays_log_on() || latest == NULL) {
+        return;
+    }
+    if (speed.since == 0 || now - speed.last > SPEED_AWAY_NS || khdays_settings_is_open()) {
+        speed.since = speed.last = now;
+        speed.gap_most = 0;
+        speed.pictures = speed.finer = speed.by_card = 0;
+        speed.first_frame = latest->frame;
+        khdays_gfx_render_coarse_counts(&speed.composed, &speed.coarse);
+        return;
+    }
+    ++speed.pictures;
+    speed.gap_most = SDL_max(speed.gap_most, now - speed.last);
+    speed.last = now;
+    if (now - speed.since >= SPEED_EVERY_NS) {
+        unsigned composed, coarse;
+        khdays_gfx_render_coarse_counts(&composed, &coarse);
+        const double s = (double)(now - speed.since) / 1e9;
+        const char *const fast = video.fast_2d == KHDAYS_FAST_2D_ON    ? "on"
+                                 : video.fast_2d == KHDAYS_FAST_2D_OFF ? "off"
+                                 : weaker_card                         ? "auto (a weaker card: on)"
+                                                                       : "auto (off)";
+        khdays_log("speed: %.0f pictures a second, the game's VBlanks %.0f, the longest wait %.0f ms, over %.0f s; "
+                   "%s, the 2D at %dx (the lower screen's at %dx), the 3D at %dx; Fast 2D %s, used for %u of %u "
+                   "screens composed; the card's 2D composed %u pictures, %u with a mod's finer tiles; "
+                   "%s pace, antialiasing %s",
+                   speed.pictures / s, (double)(uint32_t)(latest->frame - speed.first_frame) / s,
+                   (double)speed.gap_most / 1e6, s, speed.screens != NULL ? speed.screens : "?", speed.n2d,
+                   speed.n2d_b, speed.n3d, fast, coarse - speed.coarse, composed - speed.composed, speed.by_card,
+                   speed.finer, video.picture_ds ? "the DS's" : "smooth",
+                   video.antialiasing > 1 ? "on" : "off");
+        speed.since = now;
+        speed.gap_most = 0;
+        speed.pictures = speed.finer = speed.by_card = 0;
+        speed.first_frame = latest->frame;
+        speed.composed = composed;
+        speed.coarse = coarse;
+    }
+}
+
 int khdays_present_fps(int *pictures)
 {
     *pictures = fps_shown;
@@ -2295,8 +2368,13 @@ static void present_now(const KhdaysFramePackage *p, int first)
         khdays_gfx_render_set_shown(video.smooth_scaling || picture_only ? shown_scale()
                                                                          : (float)SDL_max(SDL_max(n2d, n2d_b), n));
         khdays_gfx_render_set_smooth_3d(video.smooth_scaling);
-        khdays_gfx_render_set_coarse_2d(video.fast_2d == KHDAYS_FAST_2D_ON ||
-                                        (video.fast_2d == KHDAYS_FAST_2D_AUTO && weaker_card));
+        const int coarse = video.fast_2d == KHDAYS_FAST_2D_ON || (video.fast_2d == KHDAYS_FAST_2D_AUTO && weaker_card);
+        khdays_gfx_render_set_coarse_2d(coarse);
+        speed_drew(!video.one_screen                                                        ? "two screens"
+                   : one_kind == KHDAYS_SCREENS_SIDE_BY_SIDE                                  ? "one screen, both side by side"
+                   : one_kind == KHDAYS_SCREENS_UPPER || one_kind == KHDAYS_SCREENS_LOWER ? "one screen"
+                                                                                              : "one screen, both stacked",
+                   n2d, n2d_b, n, hd_tiles);
         khdays_gfx_render_set_savings(video.partial_2d, video.keep_screens);
         /* the text drawn apart (text_overlay.h): whose each marked element is, before anything composes them.
          * A picture the card reads back keeps them all: the 3D on both screens' capture, a screen blend's
@@ -2920,6 +2998,7 @@ void khdays_present_draw(void)
         return;
     }
     fps_count();
+    speed_count();
     auto_tick();
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
