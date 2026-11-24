@@ -1965,6 +1965,9 @@ static void fine_parts(const KhdaysFramePackage *p, int e, int split, int (*part
         c1 = (int)clamp_dots(SDL_ceilf(x + ew), (float)(columns - 1)) / ONE_TILE;
         r0 = (int)clamp_dots(SDL_floorf(y), (float)(KHDAYS_FRAME_H - 1)) / ONE_TILE;
         r1 = (int)clamp_dots(SDL_ceilf(y + eh), (float)(KHDAYS_FRAME_H - 1)) / ONE_TILE;
+        if (c1 < c0 || r1 < r0) {
+            continue; /* a negative width or height: no place (memset's length would wrap) */
+        }
         for (int ty = r0; ty <= r1; ++ty) {
             memset(&marked[ty][c0], 1, (size_t)(c1 - c0 + 1));
         }
