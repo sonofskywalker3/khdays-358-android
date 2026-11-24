@@ -1801,9 +1801,9 @@ static struct {
     const char *screens;
 } speed;
 
-static void speed_drew(const char *screens, int n2d, int n2d_b, int n3d, int finer)
+static void speed_drew(const char *shown_as, int n2d, int n2d_b, int n3d, int finer)
 {
-    speed.screens = screens;
+    speed.screens = shown_as;
     speed.n2d = n2d;
     speed.n2d_b = n2d_b;
     speed.n3d = n3d;
