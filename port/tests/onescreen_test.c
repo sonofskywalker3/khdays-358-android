@@ -2109,9 +2109,24 @@ static void test_text_overlay(void)
     p->elements[1].records = records;
     p->elements[1].count = 3;
     p->elements[0].count = 0;
+    /* ... once the picture shows the page: a crop of the lower screen (the field's, the page's first pictures)
+     * draws nothing apart, the lower screen whole does */
     khdays_text_overlay_take(p, &one, 1);
     khdays_text_overlay_pieces(&count);
-    CHECK(count == 2 && (records[KE_SLOT] & KES_OVERLAY));
+    CHECK(count == 0 && !(records[KE_SLOT] & KES_OVERLAY));
+    {
+        uint32_t crop[KO_WORDS];
+        memcpy(crop, shapes, sizeof(crop));
+        memcpy(records, kept, sizeof(kept));
+        put_float(shapes, KO_SRC_Y, 0), put_float(shapes, KO_SRC_H, 192);
+        put_float(shapes, KO_DST_X1, 43), put_float(shapes, KO_DST_Y1, 0);
+        put_float(shapes, KO_DST_X2, 43 + 256), put_float(shapes, KO_DST_Y2, 192);
+        put_float(shapes, KO_SCALE_X, 1), put_float(shapes, KO_SCALE_Y, 1);
+        khdays_text_overlay_take(p, &one, 1);
+        khdays_text_overlay_pieces(&count);
+        CHECK(count == 2 && (records[KE_SLOT] & KES_OVERLAY));
+        memcpy(shapes, crop, sizeof(crop));
+    }
     khdays_text_overlay_clear();
     /* the lower screen whole in the picture is composed at the scale it shows at; a crop of it is not */
     CHECK(khdays_onescreen_lower_scale(shapes, 3, 4) == 0); /* (60 of its rows) */

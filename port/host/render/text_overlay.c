@@ -1,5 +1,6 @@
 /* The port's text over the finished one-screen picture (text_overlay.h). */
 #include "text_overlay.h"
+#include "onescreen_images.h"
 
 #include "../../gfx/elements.h"
 #include "../../gfx/frame.h"
@@ -195,7 +196,11 @@ void khdays_text_overlay_take(KhdaysFramePackage *p, const KhdaysOneScreenDraw *
     int room = 1;
     piece_count = 0;
     fresh = 1;
-    if (!allowed || one == NULL) {
+    /* the situation says tutorial from the first picture the game lays the page on, but the picture may still be
+     * the field's (the page's own first pictures, its fade): its text drawn apart then lay over the field at the
+     * page's places, with the page's own words small in the field's crop of the lower screen (the Air Mini, the
+     * first tutorial after DAY 7). Only once a shape shows the lower screen whole */
+    if (!allowed || one == NULL || (under_page && khdays_onescreen_lower_scale(shapes, shape_count, 1) == 0)) {
         give_back(p, shapes, shape_count);
         return;
     }
