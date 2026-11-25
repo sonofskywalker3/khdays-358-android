@@ -911,6 +911,8 @@ the connection error -- the port boots it again in the same window.
 
 ## Repository
 
+Where each piece of artwork comes from and how it was made: [ART-SOURCES.md](ART-SOURCES.md).
+
 | Path | What it is |
 |---|---|
 | `port/` | The port. `build.py` builds it; `tools/prepare.py` turns the decompilation's C into the game's PC sources |
