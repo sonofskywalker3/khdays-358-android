@@ -668,7 +668,7 @@ static int ensure_hd_bank(HdBank *b, int w, int h)
 }
 
 /* `from` copied to `to` (w x h) by the capture's shader (EVA 16, EVB 0: source A's colour as it is, alpha 1), in a
- * compute pass. Not a copy pass: `to` (the picture, or the screen) was just written by a compute pass, and on the
+ * compute pass. Not a copy pass: `from` or `to` (the picture, a screen) was just written by a compute pass, and on the
  * Mali-G76 (driver r26) a copy recorded after it in the same command buffer was overwritten by that pass's later
  * workgroups -- a screen blend's bank shown over the one-screen picture came out as the new shot with 8x8 blocks
  * of the blend, on the frames with no capture. Compute after compute keeps its order there, as every other pass
@@ -680,6 +680,18 @@ static void copy_texture(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *from, SDL_GP
     } params = {(Uint32)w, (Uint32)h, 16u, 0u};
     SDL_GPUStorageTextureReadWriteBinding io[3];
     SDL_GPUComputePass *pass;
+    if (capturer == NULL) {
+        /* (no capture shader on this card: a copy pass, as before) */
+        SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUTextureLocation a, b;
+        SDL_zero(a);
+        SDL_zero(b);
+        a.texture = from;
+        b.texture = to;
+        SDL_CopyGPUTextureToTexture(copy, &a, &b, (Uint32)w, (Uint32)h, 1, false);
+        SDL_EndGPUCopyPass(copy);
+        return;
+    }
     SDL_zeroa(io);
     io[0].texture = from;        /* read only */
     io[1].texture = no_backdrop; /* not read (EVB 0) */
@@ -1505,21 +1517,15 @@ static void hold_capture(const KhdaysFramePackage *p, int one)
         k->ok = 0;
         if (k->texture == NULL || k->w != w || k->h != h) {
             drop_capture_copy(k);
-            k->texture = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
+            k->texture = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                                      SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, w, h);
             k->w = k->texture != NULL ? w : 0;
             k->h = k->texture != NULL ? h : 0;
         }
         if (k->texture != NULL) {
             SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
             if (cmd != NULL) {
-                SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
-                SDL_GPUTextureLocation from, to;
-                SDL_zero(from);
-                SDL_zero(to);
-                from.texture = as_shown;
-                to.texture = k->texture;
-                SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)w, (Uint32)h, 1, false);
-                SDL_EndGPUCopyPass(copy);
+                copy_texture(cmd, as_shown, k->texture, w, h); /* (a screen just composed: see copy_texture) */
                 k->ok = SDL_SubmitGPUCommandBuffer(cmd);
                 k->columns = screen_columns[0];
                 k->frame = drawn_frame;
