@@ -8,9 +8,9 @@ and, for the HD pieces, your own copy of the HD collections.
 
 | Files | What it is | How it was made |
 | --- | --- | --- |
-| `android/src/main/res/mipmap-*/ic_launcher*.png`, `android/src/main/res/values/ic_launcher_background.xml` | Android launcher icon (plain, round and adaptive) | A crown drawn as vector code by `tools/make_icon/make_icon.py`, a drawing script written by generative AI (Claude, Anthropic) |
-| `port/resources/game.ico` | The game's Windows icon, also used by the installer | The same crown, written by the same script |
-| `studio/resources/studio.ico` | The mod studio's Windows icon | The same crown, written by the same script |
+| [`android/src/main/res/mipmap-*/ic_launcher*.png`](android/src/main/res), [`android/src/main/res/values/ic_launcher_background.xml`](android/src/main/res/values/ic_launcher_background.xml) | Android launcher icon (plain, round and adaptive) | A crown drawn as vector code by [`tools/make_icon/make_icon.py`](tools/make_icon/make_icon.py), a drawing script written by generative AI (Claude, Anthropic) |
+| [`port/resources/game.ico`](port/resources/game.ico) | The game's Windows icon, also used by the installer | The same crown, written by the same script |
+| [`studio/resources/studio.ico`](studio/resources/studio.ico) | The mod studio's Windows icon | The same crown, written by the same script |
 
 The upstream project ([Yokimitsuro/khdays-port](https://github.com/Yokimitsuro/khdays-port)) uses
 icons built on Kingdom Hearts' own logo and symbols. They look great, and this fork used them for a
@@ -22,10 +22,10 @@ That is a choice about what I am comfortable shipping, not a judgement on upstre
 
 | Files | What it is | Where it comes from |
 | --- | --- | --- |
-| `android/src/main/assets/touch/` | The on-screen controls | Kenney's Mobile Controls (CC0), unchanged; see `THIRD_PARTY_NOTICES.md` |
-| `port/resources/input_prompts/` | Controller and keyboard button pictures | Kenney's Input Prompts (CC0), unchanged; see `THIRD_PARTY_NOTICES.md` |
-| `tools/mods/overhaul/art/` | The Menu Overhaul's own pictures (Files symbols, shop and camp pieces) | Drawn for the mod by its author, Filipe Garcia, in the upstream project |
-| `sdk/examples/*/characters/`, `port/tests/mods_v2/` | Placeholder textures for the SDK examples and tests | Made by Yokimitsuro in the upstream project |
+| [`android/src/main/assets/touch/`](android/src/main/assets/touch) | The on-screen controls | Kenney's Mobile Controls (CC0), unchanged; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
+| [`port/resources/input_prompts/`](port/resources/input_prompts) | Controller and keyboard button pictures | Kenney's Input Prompts (CC0), unchanged; see `THIRD_PARTY_NOTICES.md` |
+| [`tools/mods/overhaul/art/`](tools/mods/overhaul/art) | The Menu Overhaul's own pictures (Files symbols, shop and camp pieces) | Drawn for the mod by its author, Filipe Garcia, in the upstream project |
+| [`sdk/examples/*/characters/`](sdk/examples), [`port/tests/mods_v2/`](port/tests/mods_v2) | Placeholder textures for the SDK examples and tests | Made by Yokimitsuro in the upstream project |
 
 ## Replacements welcome
 
