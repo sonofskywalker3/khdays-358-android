@@ -22,6 +22,10 @@ struct ModelSecondaryDeleter {
 };
 using ModelSecondaryPtr = std::unique_ptr<ModelSecondary, ModelSecondaryDeleter>;
 
+// Every model with secondary motion of the mods turned on cooked on a thread of its own, once, as the game starts
+// (a model loaded mid-scene would otherwise stall the game ~0.1-0.25 s to cook it); KHDAYS_SECONDARY_NO_PREWARM: not.
+void prewarm_model_secondaries();
+
 // A model's secondary motion, when its file has one beside it (`<model>.secondary.txt`); null when it
 // has none or it cannot be used (the diagnostics are logged). `joint_of_bone[b]`: the model's joint
 // for imported joint b; `inverse_bind[j]`: joint j's inverse bind (model units to its bone).

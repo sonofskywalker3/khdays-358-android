@@ -36,7 +36,7 @@ are fixed.
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
 | `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked, how it found its place in the world (`placed by ...`) and where it is (`at`, metres); a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; with `weapon_motions`, `hand trace` (the weapon's joint, the frame written and the game's own, moved and turned since the last draw, in the root's space); a `held` weapon's `held trace` (its start against the frame written, its nodes from the first); for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
-| `KHDAYS_SECONDARY_NO_PREWARM=1` | rigs are cooked as their models load, not ahead on a thread of their own once the first loads (`model_link.cpp` prewarm_model_secondary: a later load takes its rig from there when its files are unchanged) |
+| `KHDAYS_SECONDARY_NO_PREWARM=1` | rigs are cooked as their models load, not ahead on a thread of their own as the game starts (or, without that, once the first loads) (`model_link.cpp` prewarm_model_secondary: a later load takes its rig from there when its files are unchanged) |
 
 ## The model it works on
 

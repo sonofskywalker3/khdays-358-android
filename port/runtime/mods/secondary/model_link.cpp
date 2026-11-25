@@ -20,6 +20,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -255,6 +256,8 @@ std::mutex prepared_lock;
 std::condition_variable prepared_done;
 std::map<std::string, Prepared> prepared;
 std::set<std::string> preparing;
+std::string preparing_now; // the one the thread is cooking (the others still waiting their turn)
+std::atomic<bool> prewarm_started{false};
 
 // a file's key there: its full path, normalised (the game names its files with mixed slashes)
 std::string prepared_key(const std::filesystem::path &file)
@@ -270,8 +273,10 @@ std::string prepared_key(const std::filesystem::path &file)
 
 struct Prewarm {
     std::thread worker;
+    std::atomic<bool> stop{false}; // the program ending: the rest left uncooked
     ~Prewarm()
     {
+        stop = true;
         if (worker.joinable())
             worker.join();
     }
@@ -302,14 +307,24 @@ void prewarm_model_secondary(const std::string &skip)
                 continue;
             work.emplace_back(e.path(), model);
             std::lock_guard<std::mutex> lock(prepared_lock);
-            preparing.insert(key);
+            if (prepared.count(key) == 0)
+                preparing.insert(key);
         }
     }
     if (work.empty())
         return;
     prewarm.worker = std::thread([work] {
         for (const auto &[file, model] : work) {
+            if (prewarm.stop)
+                break;
             const std::string key = prepared_key(file);
+            {
+                // (a model the game wanted before its turn came is cooked by the game: take_prepared)
+                std::lock_guard<std::mutex> lock(prepared_lock);
+                if (preparing.count(key) == 0)
+                    continue;
+                preparing_now = key;
+            }
             Prepared p;
             try {
                 const auto imported = assets::kh2::import_mdlx(model);
@@ -334,17 +349,20 @@ void prewarm_model_secondary(const std::string &skip)
             if (p.rig)
                 prepared[key] = std::move(p);
             preparing.erase(key);
+            preparing_now.clear();
             prepared_done.notify_all();
         }
     });
 }
 
-// The rig prepared ahead for this model's file, when its files are as they were then (waits while it is being
-// prepared); null to cook it here
+// The rig prepared ahead for this model's file, when its files are as they were then (waits while the thread is
+// cooking it; one still waiting its turn is taken off the thread's list and cooked here); null to cook it here
 std::shared_ptr<const Rig> take_prepared(ModelSecondary &m)
 {
     const std::string key = prepared_key(u8(m.file));
     std::unique_lock<std::mutex> lock(prepared_lock);
+    if (preparing.count(key) != 0 && preparing_now != key)
+        preparing.erase(key);
     prepared_done.wait(lock, [&] { return preparing.count(key) == 0; });
     const auto it = prepared.find(key);
     if (it == prepared.end())
@@ -1129,6 +1147,13 @@ void build_clip(ModelSecondary &m)
     }
 }
 
+void prewarm_model_secondaries()
+{
+    // (a model loaded before this asks for the rest itself: load_model_secondary; none with the cloth off)
+    if (!flag("KHDAYS_SECONDARY_OFF") && !flag("KHDAYS_SECONDARY_NO_PREWARM") && !prewarm_started.exchange(true))
+        prewarm_model_secondary(std::string());
+}
+
 ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std::string &name,
                                        const assets::ImportedModel &model, const std::vector<int> &joint_of_bone,
                                        const std::vector<Mat4> &inverse_bind)
@@ -1159,13 +1184,10 @@ ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std:
     if (m->rig)
         khdays_log("secondary: %s: cooked and prepared in %.1f ms", name.c_str(),
                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-    // the first model with secondary motion: every other one prepared ahead, so a model loaded mid-scene does
-    // not stall the game to cook it
-    static bool prewarmed = false;
-    if (!prewarmed && !flag("KHDAYS_SECONDARY_NO_PREWARM")) {
-        prewarmed = true;
+    // the first model with secondary motion, when the mods' start did not begin it (prewarm_model_secondaries):
+    // every other one prepared ahead, so a model loaded mid-scene does not stall the game to cook it
+    if (!flag("KHDAYS_SECONDARY_NO_PREWARM") && !prewarm_started.exchange(true))
         prewarm_model_secondary(m->file);
-    }
     const std::size_t n = m->skeleton.names.size();
     m->pose.assign(n, {});
     m->out.assign(n, {});

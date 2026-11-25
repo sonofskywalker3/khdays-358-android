@@ -305,6 +305,11 @@ static void give_vfs_the_mods()
     khdays::vfs::set_mods(std::move(active));
 }
 
+namespace khdays::secondary {
+// mods/secondary/model_link.h (not included: its math header clashes with this file's C declarations)
+void prewarm_model_secondaries();
+}
+
 extern "C" int khdays_rom_init(void)
 {
     khdays::vfs::set_mods_root(khdays_mods_folder()); // "mods", or the folder the player chose
@@ -319,6 +324,7 @@ extern "C" int khdays_rom_init(void)
         khdays_host_tell_no_data(utf8(ec ? fs::path("data/extracted") : searched).c_str(), nullptr);
         return 0;
     }
+    khdays::secondary::prewarm_model_secondaries(); // (on a thread of its own, while the title and its movies show)
     khdays_days_check_originals(utf8(khdays::vfs::data_root() / "nitrofs").c_str());
     const fs::path system = khdays::vfs::data_root() / "system";
     header = read_whole(system / "header.bin");
