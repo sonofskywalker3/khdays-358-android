@@ -667,16 +667,28 @@ static int ensure_hd_bank(HdBank *b, int w, int h)
     return b->texture != NULL;
 }
 
+/* `from` copied to `to` (w x h) by the capture's shader (EVA 16, EVB 0: source A's colour as it is, alpha 1), in a
+ * compute pass. Not a copy pass: `to` (the picture, or the screen) was just written by a compute pass, and on the
+ * Mali-G76 (driver r26) a copy recorded after it in the same command buffer was overwritten by that pass's later
+ * workgroups -- a screen blend's bank shown over the one-screen picture came out as the new shot with 8x8 blocks
+ * of the blend, on the frames with no capture. Compute after compute keeps its order there, as every other pass
+ * here relies on. */
 static void copy_texture(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *from, SDL_GPUTexture *to, int w, int h)
 {
-    SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
-    SDL_GPUTextureLocation a, b;
-    SDL_zero(a);
-    SDL_zero(b);
-    a.texture = from;
-    b.texture = to;
-    SDL_CopyGPUTextureToTexture(copy, &a, &b, (Uint32)w, (Uint32)h, 1, false);
-    SDL_EndGPUCopyPass(copy);
+    struct {
+        Uint32 width, height, eva, evb;
+    } params = {(Uint32)w, (Uint32)h, 16u, 0u};
+    SDL_GPUStorageTextureReadWriteBinding io[3];
+    SDL_GPUComputePass *pass;
+    SDL_zeroa(io);
+    io[0].texture = from;        /* read only */
+    io[1].texture = no_backdrop; /* not read (EVB 0) */
+    io[2].texture = to;
+    pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+    SDL_BindGPUComputePipeline(pass, capturer);
+    SDL_PushGPUComputeUniformData(cmd, 0, &params, sizeof(params));
+    SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
+    SDL_EndGPUComputePass(pass);
 }
 
 /* What a package asks of the screen blends: the bank engine A shows from its copy (-1 none), that copy
