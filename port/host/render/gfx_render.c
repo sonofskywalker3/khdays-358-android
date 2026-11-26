@@ -273,15 +273,27 @@ static int sparse_2d = -1;
  * afterwards held the right count. Handed over first, the picture is right; the same card through Vulkan and
  * other cards are right without it. KHDAYS_LIST_FLUSH=0 or 1 says otherwise, to try a card. */
 static int list_flush;
+/* Whether the card has finished all it was given before each engine's 2D layers pass is handed to it (with the
+ * frame's 2D uploads before the first). On a Mali-G57 (TCL NXTPAPER 11 Plus, Vulkan, driver 32.1.0) with Fast 2D
+ * on, the device was lost (VK_ERROR_DEVICE_LOST) about one run in four at the first picture of a scene (the scene
+ * after DAY 7 of a new game), though SDL's barriers are meant to order the work; with the card idle there first,
+ * 1 in 32 (2026-11-26). Handing the work over there without the wait was not enough (5 lost in 16). A
+ * workaround, not a cure: the driver's fault itself is not known. With Fast 2D on it costs that card about 3.5
+ * pictures a second of 55 in that scene; with it off, nothing that could be measured (49-51).
+ * KHDAYS_2D_SETTLE=0 or 1 says otherwise. */
+static int settle_2d;
 
 /* (asked of the device once, as it is taken: not from the drawing, where the game's thread froze now and then) */
 static void list_flush_decide(void)
 {
     const char *asked = SDL_getenv("KHDAYS_LIST_FLUSH");
+    const char *settle = SDL_getenv("KHDAYS_2D_SETTLE");
     const char *name = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(device), SDL_PROP_GPU_DEVICE_NAME_STRING, "");
+    const int vulkan = SDL_strcmp(SDL_GetGPUDeviceDriver(device), "vulkan") == 0;
     list_flush = asked != NULL ? SDL_atoi(asked) != 0
                                : SDL_strcmp(SDL_GetGPUDeviceDriver(device), "direct3d12") == 0 &&
                                      SDL_strstr(name, "Intel") != NULL;
+    settle_2d = settle != NULL ? SDL_atoi(settle) != 0 : vulkan && SDL_strstr(name, "Mali") != NULL;
 }
 static uint32_t sent_flags[2], sent_wide[2]; /* each description's KD_FLAGS and KD_WIDE as the card was sent them */
 /* ... its KD_BLEND, KD_COEF and KD_MASTER (spread2d.hlsl's PRE_OVER3D dots) */
@@ -2698,6 +2710,24 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
             SDL_DispatchGPUCompute(lpass, KHDAYS_FRAME_W / 8, KHDAYS_FRAME_H / 8, 1);
             SDL_EndGPUComputePass(lpass);
             gpu_split(device, &cmd, e == 0 ? "layers A" : "layers B");
+            if (settle_2d && SDL_getenv("KHDAYS_GPU_TIME") == NULL) {
+                /* (settle_2d) the card idle first; then the uploads and this pass handed to it */
+                bool sent;
+                if (!SDL_WaitForGPUIdle(device)) {
+                    SDL_CancelGPUCommandBuffer(cmd);
+                    valid = 0;
+                    return 0; /* (SDL's error says why) */
+                }
+                sent = SDL_SubmitGPUCommandBuffer(cmd);
+                cmd = SDL_AcquireGPUCommandBuffer(device);
+                if (!sent || cmd == NULL) {
+                    if (cmd != NULL) {
+                        SDL_CancelGPUCommandBuffer(cmd);
+                    }
+                    valid = 0;
+                    return 0; /* (SDL's error says why) */
+                }
+            }
             cp.layers1x_rows = KHDAYS_FRAME_H;
         }
         SDL_zeroa(io);
