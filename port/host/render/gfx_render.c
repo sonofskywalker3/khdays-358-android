@@ -279,8 +279,9 @@ static int list_flush;
  * after DAY 7 of a new game), though SDL's barriers are meant to order the work; with the card idle there first,
  * 1 in 32 (2026-11-26). Handing the work over there without the wait was not enough (5 lost in 16). A
  * workaround, not a cure: the driver's fault itself is not known. With Fast 2D on it costs that card about 3.5
- * pictures a second of 55 in that scene; with it off, nothing that could be measured (49-51).
- * KHDAYS_2D_SETTLE=0 or 1 says otherwise. */
+ * pictures a second of 55 in that scene; with it off, nothing that could be measured (49-51). A Mali-G57 only,
+ * as Fast 2D's automatic setting (gpu_present.c): the Air Mini's Mali-G76 lost the device in none of 8 runs there
+ * with Fast 2D on, which it keeps. KHDAYS_2D_SETTLE=0 or 1 says otherwise. */
 static int settle_2d;
 
 /* (asked of the device once, as it is taken: not from the drawing, where the game's thread froze now and then) */
@@ -293,7 +294,7 @@ static void list_flush_decide(void)
     list_flush = asked != NULL ? SDL_atoi(asked) != 0
                                : SDL_strcmp(SDL_GetGPUDeviceDriver(device), "direct3d12") == 0 &&
                                      SDL_strstr(name, "Intel") != NULL;
-    settle_2d = settle != NULL ? SDL_atoi(settle) != 0 : vulkan && SDL_strstr(name, "Mali") != NULL;
+    settle_2d = settle != NULL ? SDL_atoi(settle) != 0 : vulkan && SDL_strstr(name, "Mali-G57") != NULL;
 }
 static uint32_t sent_flags[2], sent_wide[2]; /* each description's KD_FLAGS and KD_WIDE as the card was sent them */
 /* ... its KD_BLEND, KD_COEF and KD_MASTER (spread2d.hlsl's PRE_OVER3D dots) */
