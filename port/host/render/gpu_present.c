@@ -84,6 +84,7 @@ static int window_scale_cap;               /* the most "window" makes on this de
 static int android_2d_cap = ANDROID_2D_CAP;  /* scale2d_now's cap on Android (window_cap_for) */
 #endif
 static int weaker_card; /* a Mali or an older Adreno (window_cap_for) */
+static SDL_AtomicInt weaker_card_shared; /* the same, for the game thread (khdays_host_graphics_flags) */
 /* [video] fast_2d = auto: on for a weaker card but a Mali-G57. On the TCL's Mali-G57 (driver 32.1.0) a scene's
  * first picture lost the graphics device in 8 of 30 runs with Fast 2D (the new game's dialog scene after DAY 7), in
  * 1 of 32 without; it gained about 5 pictures a second in dialog scenes there (49-54 against 44-49). The Air Mini's
@@ -244,6 +245,7 @@ static int window_cap_for(SDL_GPUDevice *gpu)
     android_2d_cap = SDL_strstr(name, "Mali") != NULL || (model > 0 && model < OLDER_ADRENO_BELOW) ? ANDROID_WEAK_2D_CAP
                                                                                                    : ANDROID_2D_CAP;
     weaker_card = android_2d_cap == ANDROID_WEAK_2D_CAP;
+    SDL_SetAtomicInt(&weaker_card_shared, weaker_card);
     fast_2d_auto = weaker_card && SDL_strstr(name, "Mali-G57") == NULL;
     if (model > 0 && model < OLDER_ADRENO_BELOW) {
         fprintf(stderr, "host: an older Adreno: the window's resolution stops at %dx\n", OLDER_ADRENO_WINDOW_CAP);
@@ -2529,7 +2531,10 @@ static volatile int graphics_flags;
 
 int khdays_host_graphics_flags(void)
 {
-    return graphics_flags;
+    /* far enemies updated as the DS's game updates them (runtime/battle/enemy_updates.h) on a weaker card: every
+     * enemy every frame took the Tab A9+'s Adreno 619 from 42-45 to 36 pictures a second in the Mission Mode
+     * tutorial's field (beta 12 -> 13, 2026-11-26), the same 2D and 3D per picture */
+    return graphics_flags | (SDL_GetAtomicInt(&weaker_card_shared) ? KHDAYS_HOST_ENEMIES_DS : 0);
 }
 
 void khdays_present_set_video(const KhdaysVideo *given)

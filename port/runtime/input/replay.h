@@ -19,6 +19,10 @@ void khdays_replay_init(void);
 /* Whether a recording is being played back. */
 int khdays_replay_playing(void);
 
+/* The far enemies' updates the recording was made with (its "e" line, runtime/battle/enemy_updates.h): 1 the
+ * DS's way, 0 every frame, -1 not said (a recording older than the line). */
+int khdays_replay_enemy_ds(void);
+
 /* Game frame `frame` takes `snapshot`: written down when it changed, or, played back, replaced by
  * the recording's. `script_keys`: an input script's keys held, written down with the player's (a
  * scripted run recorded with KHDAYS_RECORD_INPUT=1, to try its playback). */

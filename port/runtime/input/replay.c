@@ -1,10 +1,12 @@
 /* The player's input written down and played back (replay.h). Its clock is the game's reads of the
  * input: each Pad_Sample's and each other read of the buttons (a movie's, which reads KEYINPUT itself
  * while no game frame runs), counted from the start -- the same count whatever the host's pace.
- * The file is text: a first line "khdays input 1", then one line per change -- "i <read> <the
- * snapshot's fields>" at a Pad_Sample, "k <read> <the buttons>" at another read -- and one per clock
- * reading -- "t <hour> <minute> <second>", in the order they happened. */
+ * The file is text: a first line "khdays input 1", then "e <0 or 1>" (the far enemies' updates the game was
+ * played with, enemy_updates.h), then one line per change -- "i <read> <the snapshot's fields>" at a
+ * Pad_Sample, "k <read> <the buttons>" at another read -- and one per clock reading -- "t <hour> <minute>
+ * <second>", in the order they happened. */
 #include "replay.h"
+#include "../battle/enemy_updates.h"
 #include "../core/session_log.h"
 #include "../../host/app/files.h"
 #include "../../host/app/instance.h"
@@ -41,6 +43,7 @@ static KhdaysInputSnapshot held;
 static Reading *readings;
 static int reading_count, reading_next;
 static int told_end;
+static int recorded_enemy_ds = -1; /* its "e" line */
 
 static u32 reads; /* the input's reads so far: the recording's clock */
 
@@ -136,6 +139,11 @@ void khdays_replay_init(void)
                 exit(2);
             }
             ++change_count;
+        } else if (line[0] == 'e') {
+            if (sscanf(line, "e %d", &recorded_enemy_ds) != 1 || recorded_enemy_ds < 0 || recorded_enemy_ds > 1) {
+                fprintf(stderr, "KHDAYS_REPLAY: cannot read \"%s\"\n", line);
+                exit(2);
+            }
         } else if (line[0] == 't') {
             if (reading_count == readings_room) {
                 Reading *grown;
@@ -164,6 +172,11 @@ void khdays_replay_init(void)
 int khdays_replay_playing(void)
 {
     return playing;
+}
+
+int khdays_replay_enemy_ds(void)
+{
+    return recorded_enemy_ds;
 }
 
 /* --- Writing ------------------------------------------------------------------------------- */
@@ -222,6 +235,7 @@ static void decide_record(void)
         return;
     }
     fprintf(record, FIRST_LINE "\n");
+    fprintf(record, "e %d\n", khdays_enemy_far_updates());
     khdays_log("input: written down in %s", path);
 }
 
