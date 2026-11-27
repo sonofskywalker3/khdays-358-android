@@ -39,9 +39,13 @@ void khdays_gpu_hd_set_most(uint64_t bytes);
 
 SDL_GPUBuffer *khdays_gpu_hd_buffer(void);
 
-/* A number that changes whenever the buffer's contents may have (an upload, a larger buffer, a pass that
- * wrote into it: khdays_gpu_hd_written): what was drawn from it before is as good as new while it stays. */
+/* A number that changes whenever the buffer's contents may have (new pictures and the table, a larger buffer, a
+ * pass that wrote into it: khdays_gpu_hd_written): what was drawn from it before is as good as new while it stays
+ * -- and while none of the pictures it drew was rewritten in place since (khdays_gpu_hd_written_at). */
 uint32_t khdays_gpu_hd_changes(void);
+/* When picture `id`'s texels were last rewritten in place (one whose pixels change: a number that only grows,
+ * the greater the later; 0 never, and for an id not known). */
+uint64_t khdays_gpu_hd_written_at(uint32_t id);
 void khdays_gpu_hd_written(void);
 
 #endif

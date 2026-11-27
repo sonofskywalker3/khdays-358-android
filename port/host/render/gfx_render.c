@@ -2051,7 +2051,8 @@ typedef struct KeptHow {
     Compose2dParams cp;
     int parts[ONE_READS][4];
     int part_count, how, coarse;
-    uint32_t hd_changes;
+    uint32_t hd_changes;  /* the replacements' buffer */
+    uint64_t hd_written;  /* the latest rewrite of a picture it reads */
     SDL_GPUComputePipeline *pipeline;
     SDL_GPUTexture *texture;
 } KeptHow;
@@ -2092,7 +2093,30 @@ static void kept_sent(int e, const uint8_t *bytes, uint32_t n)
     kept[e].sent_bytes = n;
 }
 
-static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int part_count, int how)
+/* The latest rewrite in place of a picture engine e's composition reads (khdays_gpu_hd_written_at): its elements'
+ * images and the mods' tiles (all of them, both engines'). A picture the other engine alone draws -- the command
+ * deck's, rewritten as it moves -- keeps this one's screen: on the Tab A9+ the lower screen of the Mission Mode
+ * tutorial's field was composed again 50 pictures in 300 for it, 5 to 7 of its 42-46 pictures a second. */
+static uint64_t hd_written_for(const KhdaysFramePackage *p, int e)
+{
+    uint64_t latest = 0u;
+    for (uint32_t i = 0; i < p->elements[e].count; ++i) {
+        const uint64_t w = khdays_gpu_hd_written_at(p->elements[e].records[(size_t)i * KE_WORDS + KE_IMAGE]);
+        latest = w > latest ? w : latest;
+    }
+    if (finer_than_ds(p)) {
+        for (size_t i = 0; i < SDL_arraysize(p->hd2d); ++i) {
+            if (p->hd2d[i] != 0u) {
+                const uint64_t w = khdays_gpu_hd_written_at((p->hd2d[i] >> 20) - 1u);
+                latest = w > latest ? w : latest;
+            }
+        }
+    }
+    return latest;
+}
+
+static int kept_screen(const KhdaysFramePackage *p, int e, const Compose2dParams *cp, int (*parts)[4], int part_count,
+                       int how)
 {
     static int asked = -1, perf = -1, pictures[2], hits[2];
     KeptHow now;
@@ -2117,6 +2141,7 @@ static int kept_screen(int e, const Compose2dParams *cp, int (*parts)[4], int pa
     now.how = how;
     now.coarse = coarse_now();
     now.hd_changes = khdays_gpu_hd_changes();
+    now.hd_written = hd_written_for(p, e);
     now.pipeline = compose_engine[e];
     now.texture = screen[e];
     hit = kept[e].ok && !kept[e].stale && memcmp(&kept[e].how, &now, sizeof(now)) == 0;
@@ -2682,7 +2707,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int scale_b, int scale3d
                 cp.fog_table[i] = io32(io3d, 0x60 + 4u * (unsigned)i);
             }
         }
-        if (kept_screen(e, &cp, parts, part_count,
+        if (kept_screen(p, e, &cp, parts, part_count,
                         (one != NULL) | whole_a << 1 | (p->capture != 0) << 2 | finer_than_ds(p) << 3)) {
             continue; /* the screen as it was composed: nothing it is made of changed */
         }

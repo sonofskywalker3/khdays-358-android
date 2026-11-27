@@ -25,6 +25,10 @@ static uint64_t let_go;                         /* on-demand pictures let go sin
  * ones that change), and the picture that last drew it (on-demand ones). */
 static uint32_t *places, *versions, *drawn;
 static uint32_t places_capacity;
+/* For each replacement: when its texels were last rewritten in place (sync_changed), by image_writes -- a number
+ * that only grows; 0: never (khdays_gpu_hd_written_at) */
+static uint64_t *written_at;
+static uint64_t image_writes; /* (64 bits: never back to 0) */
 static SDL_GPUTransferBuffer *changed_upload;
 static uint32_t changed_upload_size;
 
@@ -187,6 +191,11 @@ static uint32_t changes;
 uint32_t khdays_gpu_hd_changes(void)
 {
     return changes;
+}
+
+uint64_t khdays_gpu_hd_written_at(uint32_t id)
+{
+    return id < known && written_at != NULL ? written_at[id] : 0u;
 }
 
 void khdays_gpu_hd_written(void)
@@ -380,7 +389,7 @@ static int sync_changed(SDL_GPUCommandBuffer *cmd)
             dst.offset = (table_capacity * 4u + places[id]) * 4u;
             dst.size = n;
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
-            khdays_gpu_hd_written();
+            written_at[id] = ++image_writes; /* (not khdays_gpu_hd_changes: only what draws this picture) */
             at += n;
         }
     }
@@ -566,6 +575,13 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
             return 0;
         }
         drawn = more;
+        {
+            uint64_t *stamps = (uint64_t *)SDL_realloc(written_at, n * sizeof(uint64_t));
+            if (stamps == NULL) {
+                return 0;
+            }
+            written_at = stamps;
+        }
         places_capacity = n;
     }
     /* what is to be placed: the new pictures kept on the card, the kept ones that did not fit yet, and the
@@ -575,6 +591,7 @@ static int sync(SDL_GPUCommandBuffer *cmd, const KhdaysG3dPolygon *polys, int32_
         places[id] = NOWHERE;
         versions[id] = 0;
         drawn[id] = 0;
+        written_at[id] = 0;
     }
     {
         const uint32_t out = pinned_out;
