@@ -1989,6 +1989,15 @@ static void fine_parts(const KhdaysFramePackage *p, int e, int split, int (*part
         if ((float)w[KE_IW] == ew && (float)w[KE_IH] == eh && x == SDL_floorf(x) && y == SDL_floorf(y)) {
             continue; /* a texel a DS pixel, on the DS's pixels: the same all over each */
         }
+        if ((w[KE_SLOT] & KES_BLOCKY) != 0u && x == SDL_floorf(x) && y == SDL_floorf(y) && ew >= 1.0f && eh >= 1.0f &&
+            ew == SDL_floorf(ew) && eh == SDL_floorf(eh) && w[KE_IW] % (uint32_t)ew == 0u &&
+            w[KE_IH] % (uint32_t)eh == 0u && w[KE_IW] / (uint32_t)ew == w[KE_IH] / (uint32_t)eh) {
+            /* DS pixels made square blocks, drawn at the size they were made for (KES_BLOCKY) and on the DS's
+             * pixels: each DS pixel falls on one block (the Tab A9+'s command deck, 176 x 112 texels drawn 88 x 56:
+             * its tiles composed at each output pixel cost the Mission Mode tutorial's field 3.5 ms of engine A's
+             * 11.7, 2026-11-27) */
+            continue;
+        }
         if (x + ew <= 0.0f || y + eh <= 0.0f || x >= (float)columns || y >= (float)KHDAYS_FRAME_H) {
             continue;
         }

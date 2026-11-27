@@ -22,6 +22,10 @@
 #define KES_PAUSE_LAYOUT 0x200u /* independently positioned pause pieces, centered on one screen */
 #define KES_OVERLAY 0x400u /* left out of the composition: the window draws its image, finer than the 2D, over the
                             * finished one-screen picture (host/render/text_overlay.h) */
+#define KES_BLOCKY 0x800u  /* its image is DS pixels, each a square block of texels of one value (the HUD's pieces
+                            * drawn larger by its scale), drawn at the size it was made for (ui/elements.c takes it
+                            * off a resized one): at whole DS pixels, each DS pixel falls on one block, and it is
+                            * the same at every place of a DS pixel (host/render/gfx_render.c fine_parts) */
 
 #define KE_X 1     /* float bits: its left edge, DS pixels (fractions allowed) */
 #define KE_Y 2     /* its top */

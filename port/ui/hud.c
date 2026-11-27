@@ -120,6 +120,7 @@ typedef struct Shown {
     uint32_t *hd;               /* w * h: the mod's tile drawn instead in each cell (tiles2d.h), 0 none */
     int image, image_w, image_h, image_scale;
     int hd_image1, hd_w, hd_h; /* the image of the mods' tiles in colour, + 1 (0: none), its size */
+    int blocky;                /* the image holds no mod's tile: DS pixels made blocks of the scale (KES_BLOCKY) */
 } Shown;
 
 static Shown shown[PIECE_COUNT][4];
@@ -260,9 +261,11 @@ static int emit_piece(int index, int bg, const KhdaysBgLayer *l)
         const int tw = w * 8 * scale, th = h * 8 * scale;
         uint32_t *texels, *colours = NULL;
         int coloured = 0;
+        sh->blocky = 1;
         for (int c = 0; c < w * h; ++c) {
             const KhdaysTextureReplacement *r = sh->entries[c] != 0xffffffffu ? hd_sheet(sh->hd[c]) : NULL;
             coloured |= r != NULL && !(r->info & KHDAYS_REPLACEMENT_INDEXED);
+            sh->blocky &= r == NULL; /* a mod's tile at its own resolution: finer than the DS's pixels */
         }
         /* the mods' tiles in colour go in an image of their own, drawn over the piece's */
         if (coloured && (sh->hd_image1 == 0 || sh->hd_w != tw || sh->hd_h != th)) {
@@ -351,8 +354,12 @@ static int emit_piece(int index, int bg, const KhdaysBgLayer *l)
         native_hp = 1;
     if (strcmp(piece->id, "hud.mission") == 0 && khdays_ui_mission_panel_owns())
         native_hp = 1;
-    if (!native_hp)
+    if (!native_hp) {
+        if (sh->blocky && e.image == sh->image && e.w == (float)(w * 8) && e.h == (float)(h * 8)) {
+            e.slot |= KES_BLOCKY; /* (the piece's own image at its own size, as no KH2 part changed it) */
+        }
         khdays_ui_emit(KHDAYS_UI_HUD, &e);
+    }
     if (sh->hd_image1 != 0 && !native_hp) {
         /* given later, so above the piece's own image */
         e.slot = KES_DIRECT | (uint32_t)bg;
@@ -581,7 +588,8 @@ static void emit_sprites(int index, int there)
         }
         e.id = sprite_ids[index];
         e.screen = engine;
-        e.slot = KES_SPRITES | ((a2 >> 10) & 3u) | (mode == 1u ? 1u << KES_SEMI_SHIFT : 0u);
+        e.slot = KES_SPRITES | ((a2 >> 10) & 3u) | (mode == 1u ? 1u << KES_SEMI_SHIFT : 0u) |
+                 KES_BLOCKY; /* each pixel of the sprite's made a block of the scale above */
         e.x = (float)x;
         e.y = (float)y;
         e.w = (float)w;

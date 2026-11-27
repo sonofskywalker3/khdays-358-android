@@ -363,7 +363,8 @@ static void add_record(int screen, int list, const Entry *n)
     }
     record_ids[screen][list][record_count[screen][list]] = n->e.id;
     r = records[screen][list] + (size_t)record_count[screen][list]++ * KE_WORDS;
-    r[KE_SLOT] = n->e.slot;
+    /* KES_BLOCKY holds for the size it was given: the layout drawing it larger or smaller (a scale) takes it off */
+    r[KE_SLOT] = n->e.w == n->dw && n->e.h == n->dh ? n->e.slot : n->e.slot & ~KES_BLOCKY;
     r[KE_X] = float_bits(n->e.x);
     r[KE_Y] = float_bits(n->e.y);
     r[KE_W] = float_bits(n->e.w);
