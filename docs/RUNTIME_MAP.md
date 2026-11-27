@@ -5236,9 +5236,7 @@ the port restores it (`runtime/battle/`).
   (`+0x2`) against the actor manager's count (`+0x44`); with the field byte 0x0204c240's bit 2 clear, one behind the
   view (`Ov107_IsBehindView`) one in three. The frames it waited (`+0x30c`, back to 1 once updated) multiply its
   next `delta`: its time is kept, its motion goes by jumps. The port skips none (`runtime/battle/enemy_updates.h`,
-  `KHDAYS_DS_ENEMY_UPDATES=1` the DS's way): the jumps showed as stutters in the PC's smoothed pictures. On a
-  weaker Android card (a Mali, an Adreno below 700) it skips them as the DS does: updating them all took the Tab
-  A9+ from 42-45 to 36 pictures a second in a field with enemies.
+  `KHDAYS_DS_ENEMY_UPDATES=1` the DS's way): the jumps showed as stutters in the PC's smoothed pictures.
 - **A hit on an enemy** (`Ov107_AiState_ApplyHit`): dropped during a hit's grace (`+0x2e4`), with `+0x1ac` bit 0 or
   status 0x10; its damage from `Ov107_CalcHitDamage`, the enemy's own handler (`+0x1d0`) lowering its health
   (`+0x21a`, most `+0x218`). A hit may give a status by its flags (`+2`'s byte, mask 0x88c): 1 burning (time

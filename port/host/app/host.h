@@ -61,7 +61,6 @@ int khdays_host_settings_key_works(void);
 #define KHDAYS_HOST_ONE_SCREEN 0x10    /* [video] screens = one */
 #define KHDAYS_HOST_MOVIES_SMOOTH 0x20 /* [video] movies = hd-smooth: the 60 fps ones first (with MOVIES_HD) */
 #define KHDAYS_HOST_NO_CULLING 0x40    /* [video] culling = off: a mod's models drawn whole */
-#define KHDAYS_HOST_ENEMIES_DS 0x80    /* Android, a Mali or an Adreno below 700: far enemies the DS's way */
 int khdays_host_graphics_flags(void);
 
 /* The package the game thread fills next (NULL without a window). It belongs
